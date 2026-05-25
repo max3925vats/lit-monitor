@@ -22,10 +22,13 @@ config/topics_suggested.yaml
 # --- Internal dev journals (kept locally under docs/internal/) ---
 CLAUDE.md
 docs/internal/
+docs/superpowers/
 IMPLEMENTATION_PLAN*.md
 ANALYSIS_*.md
 ARCHITECTURE*.md
 live_test_*.md
+# Audit reports — case-insensitive so AUDIT_*.md / audit_*.md / Audit_*.md all match.
+[Aa][Uu][Dd][Ii][Tt]_*.md
 
 # --- Claude Code workspace ---
 .claude/
