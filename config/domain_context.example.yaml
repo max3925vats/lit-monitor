@@ -1,0 +1,15 @@
+# domain_context.yaml — short prose passed into the extractor system prompt.
+#
+# Tells the LLM what kind of papers it will be reading. Affects how
+# inferred fields (e.g. relevance_to_domain) are populated.
+#
+# Keep it to 4-8 lines. Bullet keywords work fine.
+#
+# Copy this file to domain_context.yaml and replace with prose describing
+# your own field.
+
+domain_focus: >
+  Brief description of the research domain in 2-3 sentences. List the
+  main topics, techniques, or systems that papers in your library tend
+  to cover. The LLM uses this to judge what counts as on-topic vs
+  tangential during extraction.

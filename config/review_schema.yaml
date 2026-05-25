@@ -1,0 +1,282 @@
+# Review article extraction schema — 20 fields across 3 passes.
+# complexity: simple  → chunked call, end-matter stripped (regurgitative fields)
+# complexity: complex → single full-text call, references kept (synthesis/inferential fields)
+# Structurally identical to extraction_schema.yaml EXCEPT:
+#   - study_type is DROPPED (source_type = "review" is the canonical signal)
+#   - methods_summary prompt → review methodology / PRISMA compliance
+#   - experimental_conditions prompt → review scope and inclusion criteria
+#   - materials_systems prompt → breadth of primary studies included
+#
+# Used when detect_review() returns True or source_type == "review".
+# Changing prompts here takes effect on next lit-monitor run without code changes.
+
+system_role: >
+  You are a research extraction assistant for systematic review and meta-analysis papers.
+
+json_format_instruction: >
+  IMPORTANT: Output valid JSON only.
+  Do not include any prose, markdown, headers, or explanation outside the JSON object.
+  Your entire response must be a single JSON object starting with { and ending with }.
+
+null_instruction: >
+  For every field: if the information is not present or not explicitly stated,
+  respond with null. Do not infer or fill in values from general background
+  knowledge. Only extract what is directly stated in the text provided.
+  Every field must have a corresponding _confidence field with one of:
+  explicit (directly stated), inferred (implied but not stated), absent (null).
+
+null_examples: |
+  Examples of null honesty:
+    {"core_finding": null, "core_finding_confidence": "absent"}
+    {"limitations": "authors acknowledge X", "limitations_confidence": "inferred"}
+    {"future_work": null, "future_work_confidence": "absent"}
+
+ocr_warning: >
+  NOTE: This text was partially or fully extracted via OCR.
+  Mathematical equations and vector graphics may be missing or garbled.
+  Do NOT infer or reconstruct equations that are not explicitly present in the text.
+
+confidence_values: [explicit, inferred, absent]
+
+# pass_labels retained for backward compatibility; phases are the active grouping.
+pass_labels:
+  1: "Core"
+  2: "Methodology"
+  3: "Impact & Provenance"
+
+fields:
+  # ── Simple phase: regurgitative fields (chunked, end-matter stripped) ──────
+  - id: core_finding
+    label: "Core Finding"
+    prompt: >
+      In 2-3 sentences, what is the central finding or conclusion of this review?
+    pass: 1
+    complexity: simple
+    required: true
+    extract: true
+
+  - id: methods_summary
+    label: "Review Methodology"
+    prompt: >
+      Describe the review methodology: databases searched, years covered,
+      inclusion/exclusion criteria, screening process, and PRISMA compliance if mentioned.
+    pass: 1
+    complexity: simple
+    required: true
+    extract: true
+
+  - id: results_summary
+    label: "Results"
+    prompt: >
+      What are the key findings synthesised across the included studies?
+    pass: 1
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: conclusions
+    label: "Conclusions"
+    prompt: >
+      What conclusions do the authors explicitly draw from the evidence base?
+    pass: 1
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: background_motivation
+    label: "Background and Motivation"
+    prompt: >
+      What gap in knowledge or clinical/practical problem motivates this review?
+    pass: 2
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: experimental_conditions
+    label: "Review Scope and Inclusion Criteria"
+    prompt: >
+      Describe the review scope and inclusion criteria: population/problem,
+      intervention/exposure, comparator, outcomes (PICO if applicable).
+      What types of primary studies were eligible (RCTs, observational, etc.)?
+    pass: 2
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: materials_systems
+    label: "Breadth of Primary Studies"
+    prompt: >
+      How many primary studies were included? What was the range of study designs,
+      sample sizes, and geographic spread? If meta-analysis, what effect size metric
+      and heterogeneity measure (I²) were reported?
+    pass: 2
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: key_parameters
+    label: "Key Parameters"
+    prompt: >
+      What specific quantitative values are reported (pooled effect sizes, odds ratios,
+      confidence intervals, p-values, I²)? If none, null.
+    pass: 2
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: statistical_methods
+    label: "Statistical Methods"
+    prompt: >
+      What statistical synthesis methods were used (fixed/random effects,
+      funnel plot, sensitivity analyses)? If not mentioned, null.
+    pass: 2
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: scale
+    label: "Scale"
+    prompt: >
+      Classify the operational scale of the reviewed work. If unclear, null.
+    pass: 2
+    complexity: simple
+    required: false
+    extract: true
+    valid_values:
+      - molecular
+      - lab
+      - pilot
+      - manufacturing
+      - unknown
+
+  - id: software_code
+    label: "Software and Code"
+    prompt: >
+      What software tools or protocols were used for the review (e.g. Rayyan, RevMan,
+      R packages)? If none mentioned, null.
+    pass: 3
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: funding_conflicts
+    label: "Funding and Conflicts"
+    prompt: >
+      What funding sources and conflicts of interest are stated? If not mentioned, null.
+    pass: 3
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: data_availability
+    label: "Data Availability"
+    prompt: >
+      Was the search strategy, data extraction sheet, or PRISMA checklist released?
+      Where? If not mentioned, null.
+    pass: 3
+    complexity: simple
+    required: false
+    extract: true
+
+  # ── Complex phase: synthesis/inferential fields (single full-text call) ────
+  - id: novelty_statement
+    label: "Novelty"
+    prompt: >
+      How do the authors position this review vs. prior reviews on the same topic?
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: actionable_insights
+    label: "Actionable Insights"
+    prompt: >
+      What could a practitioner in this field do differently based on the
+      evidence synthesised here? If not applicable, null.
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: relevance_to_domain
+    label: "Relevance to Domain"
+    prompt: >
+      Based on this research focus: {domain_focus} — how is this review relevant?
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: future_work
+    label: "Future Work Proposed"
+    prompt: >
+      What future research directions do the authors recommend? If none, null.
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: open_questions
+    label: "Open Questions"
+    prompt: >
+      What unresolved questions or evidence gaps does the review identify? If none, null.
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: limitations
+    label: "Limitations / Caveats"
+    prompt: >
+      What limitations do the authors explicitly acknowledge (publication bias,
+      heterogeneity, language restrictions, quality of primary studies)? If none, null.
+    pass: 2
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: assumptions
+    label: "Assumptions"
+    prompt: >
+      What assumptions underpin the synthesis or meta-analysis? If none, null.
+    pass: 2
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: comparison_to_prior
+    label: "Comparison to Prior Reviews"
+    prompt: >
+      How does this review compare to prior reviews on the same topic?
+      Cover: scope differences, additional studies included, different conclusions.
+      Only report comparisons explicitly stated. Return null if none.
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: key_citations
+    label: "Key Citations"
+    prompt: >
+      Identify the primary studies or earlier reviews this paper substantively relies
+      upon — used to justify a claim, borrow a framework, or set a benchmark.
+      For each, output one JSON object with keys:
+        "ref_id"  — verbatim in-text citation marker
+        "context" — one sentence on how it is substantively used.
+      Return null if no prior work is substantively relied upon.
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: discovered_topics
+    label: "Discovered Topics"
+    prompt: >
+      List 3-7 short noun phrases (2-4 words each) that best describe the main topics
+      of this review. These will be used to grow the search vocabulary automatically.
+      Focus on technical topics, not generic terms like "research" or "study".
+      Return as a JSON array of strings, or null if the review is too narrow.
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true

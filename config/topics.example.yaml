@@ -1,0 +1,40 @@
+# topics.yaml — weekly search queries.
+#
+# Each entry runs every time `lit-monitor run` executes. Results are
+# deduplicated by DOI across searches. The brain-build pipeline does not
+# read this file — only the weekly monitor does.
+#
+# Schema:
+#   searches:
+#     - name: <human-readable label>     # used only in logs and reports
+#       query: <findpapers boolean query, e.g. "A AND (B OR C)">
+#       databases: [pubmed, arxiv, scopus]   # any subset
+#
+# Notes:
+#   - findpapers supports pubmed, arxiv, and scopus. WoS, CrossRef, and
+#     OpenAlex are not supported in the 0.6.x line.
+#   - The complex-phase extractor may append discovered topics here with
+#     a "# auto-added YYYY-MM-DD from <DOI>" comment. To revert, delete
+#     those entries or `git checkout` this file (once it is tracked
+#     locally — see README).
+#
+# Copy this file to topics.yaml and replace the examples with searches
+# relevant to your own research area.
+
+searches:
+  - name: example search one
+    query: climate adaptation AND coastal AND vulnerability
+    databases:
+      - pubmed
+      - arxiv
+
+  - name: example search two
+    query: battery chemistry AND lithium AND lifetime
+    databases:
+      - arxiv
+
+  - name: example search three
+    query: catalysis AND green chemistry AND solvent
+    databases:
+      - pubmed
+      - arxiv

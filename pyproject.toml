@@ -1,0 +1,106 @@
+[project]
+name = "lit-monitor"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    # Search
+    "findpapers",
+
+    # LLM providers — Ollama only (no Anthropic API key available)
+    # "anthropic",  # not installed — no key
+
+    # Zotero
+    "pyzotero",
+
+    # BibTeX fallback parser
+    "bibtexparser",
+
+    # DOI resolution + metadata enrichment
+    "habanero",             # CrossRef API client (D2 — polite-pool DOI lookup)
+    "semanticscholar",      # Semantic Scholar client (D3 — enrichment + discovery)
+
+    # HTTP
+    "requests",
+    "tenacity",
+
+    # Embeddings and reranking
+    "chromadb>=0.5.3",     # 0.5.x rewrote Settings to not use pydantic, enabling pydantic v2 coexistence
+    "sentence-transformers>=3.0",  # N19 cross-encoder reranking (hard dep — MPS-accelerated on Mac)
+
+    # NLP
+    "rapidfuzz",
+
+    # Output
+    "jinja2",
+    "pyyaml",
+    "pydantic>=2.0",   # required by litellm [cloud] and planned D1 config validation
+
+    # CLI
+    "click>=8.0",
+
+    # Progress bars (brain-build, textbook-build)
+    "rich>=13.0",
+]
+
+[project.scripts]
+lit-monitor = "scripts.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "pytest",
+    "pytest-cov",
+    "responses",
+    "mypy",
+]
+cloud = [
+    "litellm",          # multi-provider LLM routing (Anthropic, OpenAI, Vertex AI, etc.)
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["scripts*"]
+
+# ─── uv-specific resolver overrides ──────────────────────────────────────────
+# findpapers 0.6.7 strict-pins typer<0.4.0, which in turn forces click<7.2,
+# but our project (via chromadb + Click CLI surface) needs click>=8.0 and
+# typer>=0.9.0.  findpapers doesn't actually enforce its typer version at
+# import time, so the runtime coexists fine — the conflict is metadata-only.
+#
+# pip's resolver tolerates this because we install in a specific order
+# (chromadb first, see README); uv's resolver does not.  These overrides
+# tell uv to ignore findpapers' typer pin during resolution.
+#
+# If you're using pip directly: see the README install section for the
+# chromadb-first workaround.  If you're using uv: `uv sync --extra dev --extra cloud`
+# now works as-is thanks to these overrides.
+[tool.uv]
+override-dependencies = [
+    "typer>=0.9.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+strict = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+markers = [
+    "unit: fast unit tests, no external services",
+    "integration: live-service tests requiring Ollama + Zotero + Obsidian vault. Run with: pytest -m integration",
+]

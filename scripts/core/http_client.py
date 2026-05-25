@@ -1,0 +1,35 @@
+"""
+HTTP client — thin requests + tenacity wrapper.
+Used for direct API calls (Europe PMC, CrossRef, etc.)
+that are not handled by findpapers or pyzotero.
+"""
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import requests
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
+logger = logging.getLogger(__name__)
+_SESSION = requests.Session()
+_SESSION.headers.update({
+    "User-Agent": "lit-monitor/0.1.0 (personal research tool; contact via GitHub)"
+})
+_RETRY_DECORATOR = retry(
+    retry=retry_if_exception_type(requests.RequestException),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    reraise=True,
+)
+@_RETRY_DECORATOR
+def get_json(url: str, params: dict[str, Any] | None = None, timeout: int = 15) -> dict:
+    """GET a URL, return parsed JSON."""
+    resp = _SESSION.get(url, params=params, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()

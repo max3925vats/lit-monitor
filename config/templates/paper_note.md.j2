@@ -1,0 +1,56 @@
+---
+title: "{{ note_title }}"
+doi: "{{ doi }}"
+year: {{ year }}
+authors: [{% for a in authors %}"{{ a }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+journal: "{{ journal }}"
+zotero_key: "{{ zotero_key | default('') }}"
+first_seen: "{{ first_seen_date }}"
+keywords: [{% for k in keywords %}"{{ k | lower | trim }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+themes: [{% for t in themes %}"[[{{ t }}]]"{% if not loop.last %}, {% endif %}{% endfor %}]
+tags: [{% for t in tags %}"{{ t }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+discovered_topics: [{% for t in extraction.discovered_topics | default([]) %}"{{ t }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+study_type: "{{ extraction.study_type | default('') }}"
+scale: "{{ extraction.scale | default('') }}"
+extraction_confidence: {{ extraction._overall_confidence | default(0.0) }}
+s2_citation_count: {{ extraction.s2_citation_count | default('') }}
+s2_influential_citations: {{ extraction.s2_influential_citations | default('') }}
+s2_paper_id: "{{ extraction.s2_paper_id | default('') }}"
+source_type: "paper"
+fulltext_analyzed: {{ fulltext_analyzed | lower }}
+extraction_provider: "{{ extraction_provider | default('') }}"
+---
+
+# {{ title }}
+**{{ authors | join(', ') }}** ({{ year }}) — *{{ journal }}*
+**DOI:** [{{ doi }}](https://doi.org/{{ doi }})
+{% if tracked_author %}⭐ **Tracked Author**{% endif %}
+
+## Themes
+{{ themes | map('regex_replace', '^(.*)$', '[[\\1]]') | join(' · ') }}
+
+## Author Links
+{% for author in authors %}[[{{ author }}]] {% endfor %}
+
+{% for field in schema_fields if field.extract %}
+{% set value = extraction.get(field.id) %}
+{% set confidence = extraction.get(field.id + '_confidence', 'absent') %}
+{% if value is not none %}
+## {{ field.label }}{% if confidence == 'inferred' %} ⚠️{% endif %}
+{{ value }}
+{% if confidence == 'inferred' %}*⚠️ Inferred — not explicitly stated*{% endif %}
+{% endif %}
+{% endfor %}
+
+{% persist "related_work" %}
+## Related Work
+*(populated by `lit-monitor obsidian relink`)*
+{% endpersist %}
+
+{% persist "synthesis" %}
+## Synthesis
+*(populated by `lit-monitor obsidian synthesize`)*
+{% endpersist %}
+
+---
+*Added {{ run_date }} · {{ extraction_provider }}/{{ extraction_model }}*

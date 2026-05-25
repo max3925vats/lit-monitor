@@ -1,0 +1,30 @@
+# Prompts used by scripts/llm/extractor.py to assemble the extraction
+# system and user prompts. The schema-level content (role line, null
+# instruction, JSON-format directive, domain context, per-field guidance,
+# enum constraints, OCR warning) all live in config/extraction_schema.yaml
+# and config/review_schema.yaml — only the connective scaffolding that was
+# previously hardcoded inside extractor.py lives here.
+
+# --- User prompt (sent as the "user" message) ---
+
+# Prefix prepended to the user message before the paper/review text.
+user_prefix: "Extract the requested fields from the following text:"
+
+# --- System prompt connective scaffolding ---
+
+# Header introducing the field list in the system prompt body.
+fields_header: "Respond with a JSON object containing exactly these fields:"
+
+# Header introducing the confidence companion list.
+confidence_header: "And these confidence fields:"
+
+# Footer appended after the confidence list. {conf_vals} is substituted at
+# render time with the comma-separated set of valid confidence strings
+# sourced from extraction_schema.yaml.
+confidence_footer: >-
+  Confidence values must be one of: {conf_vals}.
+  If a field value is null, its confidence must be 'absent'.
+
+# Label prefix used when multi-pass extraction names its current pass.
+# {pass_label} is substituted at render time with e.g. "Simple" or "Complex".
+pass_label_prefix: "Pass: {pass_label}."

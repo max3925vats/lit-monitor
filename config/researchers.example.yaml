@@ -1,0 +1,34 @@
+# researchers.yaml — tracked authors.
+#
+# Papers by these authors surface in the weekly digest with a
+# "⭐ Tracked Author" flag regardless of similarity score to your library.
+#
+# Useful for following groups whose work you want to see even when the
+# paper falls outside your usual keyword clusters.
+#
+# Schema:
+#   researchers:
+#     - name: "Full Name"
+#       affiliation: "Institution"     # informational only
+#       orcid: "0000-0000-0000-0000"   # leave blank if unknown
+#       scopus_id: ""                  # leave blank if unknown
+#       notes: "why you track them"    # informational only
+#
+# Either orcid or scopus_id must be set for the tracker to find their
+# papers. Plain name search is not reliable across all databases.
+#
+# Copy this file to researchers.yaml and replace the examples with
+# authors you actually want to follow. Or leave the list empty.
+
+researchers:
+  - name: "Author One"
+    affiliation: "Example University"
+    orcid: ""
+    scopus_id: ""
+    notes: "Why you track this person"
+
+  - name: "Author Two"
+    affiliation: "Example Lab"
+    orcid: ""
+    scopus_id: ""
+    notes: "Why you track this person"

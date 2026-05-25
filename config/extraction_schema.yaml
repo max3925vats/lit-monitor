@@ -1,0 +1,291 @@
+# Paper extraction schema — single source of truth for field definitions,
+# phase groupings, prompt guidance, and validation constraints.
+# complexity: simple  → chunked call, end-matter stripped (regurgitative fields)
+# complexity: complex → single full-text call, references kept (synthesis/inferential fields)
+# Edited fields automatically take effect on next lit-monitor run (no code change needed).
+
+system_role: >
+  You are a research extraction assistant for academic papers.
+
+json_format_instruction: >
+  IMPORTANT: Output valid JSON only.
+  Do not include any prose, markdown, headers, or explanation outside the JSON object.
+  Your entire response must be a single JSON object starting with { and ending with }.
+
+null_instruction: >
+  For every field: if the information is not present or not explicitly stated,
+  respond with null. Do not infer or fill in values from general background
+  knowledge. Only extract what is directly stated in the text provided.
+  Every field must have a corresponding _confidence field with one of:
+  explicit (directly stated), inferred (implied but not stated), absent (null).
+
+null_examples: |
+  Examples of null honesty:
+    {"core_finding": null, "core_finding_confidence": "absent"}
+    {"study_type": "experimental", "study_type_confidence": "explicit"}
+    {"limitations": "authors acknowledge X", "limitations_confidence": "inferred"}
+
+ocr_warning: >
+  NOTE: This text was partially or fully extracted via OCR.
+  Mathematical equations and vector graphics may be missing or garbled.
+  Do NOT infer or reconstruct equations that are not explicitly present in the text.
+
+confidence_values: [explicit, inferred, absent]
+
+# pass_labels retained for backward compatibility; phases are the active grouping.
+pass_labels:
+  1: "Core"
+  2: "Methodology"
+  3: "Impact & Provenance"
+
+fields:
+  # ── Simple phase: regurgitative fields (chunked, end-matter stripped) ──────
+  - id: core_finding
+    label: "Core Finding"
+    prompt: >
+      In 2-3 sentences, what is the central finding or contribution?
+    pass: 1
+    complexity: simple
+    required: true
+    extract: true
+
+  - id: methods_summary
+    label: "Methods"
+    prompt: >
+      What methods were used? Include key conditions (pH, ionic strength,
+      protein concentration, membrane type, scale) if explicitly reported.
+    pass: 1
+    complexity: simple
+    required: true
+    extract: true
+
+  - id: results_summary
+    label: "Results"
+    prompt: >
+      What are the key quantitative or qualitative results?
+    pass: 1
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: conclusions
+    label: "Conclusions"
+    prompt: >
+      What conclusions do the authors explicitly draw?
+    pass: 1
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: study_type
+    label: "Study Type"
+    prompt: >
+      Classify the study type. If unclear, null.
+    pass: 1
+    complexity: simple
+    required: false
+    extract: true
+    valid_values:
+      - experimental
+      - computational
+      - review
+      - theoretical
+      - case_study
+      - meta_analysis
+      - mixed
+
+  - id: background_motivation
+    label: "Background and Motivation"
+    prompt: >
+      What problem is being solved and why, as stated by the authors?
+    pass: 2
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: experimental_conditions
+    label: "Experimental Conditions"
+    prompt: >
+      What are the key conditions (temperature, pH, concentration, scale)?
+      Return null if purely computational.
+    pass: 2
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: materials_systems
+    label: "Materials and Systems"
+    prompt: >
+      What equipment, reagents, molecules, or membrane types are named? If none, null.
+    pass: 2
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: key_parameters
+    label: "Key Parameters"
+    prompt: >
+      What specific quantitative values or thresholds are reported? If none, null.
+    pass: 2
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: statistical_methods
+    label: "Statistical Methods"
+    prompt: >
+      How were results validated or analysed? If not mentioned, null.
+    pass: 2
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: scale
+    label: "Scale"
+    prompt: >
+      Classify the operational scale of the work. If unclear, null.
+    pass: 2
+    complexity: simple
+    required: false
+    extract: true
+    valid_values:
+      - molecular
+      - lab
+      - pilot
+      - manufacturing
+      - unknown
+
+  - id: software_code
+    label: "Software and Code"
+    prompt: >
+      What software or code are used or released? Include links. If none, null.
+    pass: 3
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: funding_conflicts
+    label: "Funding and Conflicts"
+    prompt: >
+      What funding sources and conflicts are stated? If not mentioned, null.
+    pass: 3
+    complexity: simple
+    required: false
+    extract: true
+
+  - id: data_availability
+    label: "Data Availability"
+    prompt: >
+      Were datasets or code released? Where? If not mentioned, null.
+    pass: 3
+    complexity: simple
+    required: false
+    extract: true
+
+  # ── Complex phase: synthesis/inferential fields (single full-text call) ────
+  - id: novelty_statement
+    label: "Novelty"
+    prompt: >
+      How do the authors position their contribution vs prior work?
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: actionable_insights
+    label: "Actionable Insights"
+    prompt: >
+      What could a practitioner in this field do differently based on the
+      evidence here? If not applicable, null.
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: relevance_to_domain
+    label: "Relevance to Domain"
+    prompt: >
+      Based on this research focus: {domain_focus} — how is this paper relevant?
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: future_work
+    label: "Future Work Proposed"
+    prompt: >
+      What future directions do the authors suggest? If none, null.
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: open_questions
+    label: "Open Questions"
+    prompt: >
+      What unresolved questions does the paper identify? If none, null.
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: limitations
+    label: "Limitations / Caveats"
+    prompt: >
+      What limitations do the authors explicitly acknowledge? If none, null.
+    pass: 2
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: assumptions
+    label: "Assumptions"
+    prompt: >
+      What stated assumptions underpin this work? If none, null.
+    pass: 2
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: comparison_to_prior
+    label: "Comparison to Prior Work"
+    prompt: >
+      Write a single paragraph describing how this paper positions itself relative to
+      existing literature. Cover: (1) what gap motivated this study, (2) how the approach
+      or results differ from the most relevant prior work, (3) whether the authors make
+      explicit quantitative improvement claims over named prior works.
+      Only report comparisons explicitly stated in the paper. Return null if none.
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: key_citations
+    label: "Key Citations"
+    prompt: >
+      Identify the prior works this paper substantively relies upon — meaning the paper
+      uses them to justify a claim, borrow a method, adopt a value, set a benchmark, or
+      make a direct comparison. Passing mentions in survey lists do not qualify.
+      For each, output one JSON object with exactly two keys:
+        "ref_id"  — the citation exactly as it appears in the body text
+                   (e.g., "[20]", "[Smith2020]", "Smith et al. (2020)", "(Smith, 2020)").
+                   Copy it verbatim — do not attempt to resolve numeric citations.
+        "context" — one sentence describing how this work is substantively used.
+      Return null if no prior work is substantively relied upon.
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true
+
+  - id: discovered_topics
+    label: "Discovered Topics"
+    prompt: >
+      List 3-7 short noun phrases (2-4 words each) that best describe the main topics
+      of this paper. These will be used to grow the search vocabulary automatically.
+      Focus on technical topics, not generic terms like "research" or "study".
+      Return as a JSON array of strings, or null if the paper is too narrow to yield
+      useful topic terms.
+    pass: 3
+    complexity: complex
+    required: false
+    extract: true

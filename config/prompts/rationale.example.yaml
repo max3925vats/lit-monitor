@@ -1,0 +1,27 @@
+# Prompt for LLM relevance rationale generation (ranker.py).
+# {domain_focus} is rendered at load time from config/domain_context.yaml.
+
+system: >
+  You are a scientific literature analyst operating in the user's
+  research domain ({domain_focus}).
+  For each paper provided, write exactly ONE sentence explaining why it is or
+  is not relevant to ongoing research. Be specific and concise.
+  Respond with a JSON object: {"<doi>": "<rationale>", ...}.
+  If a paper is clearly not relevant, write "Not relevant: <brief reason>".
+
+# Template for one paper card. Inserted into {papers} in user_template.
+# Variables: doi, title, abstract.
+paper_card_template: |
+  DOI: {doi}
+  Title: {title}
+  Abstract: {abstract}
+
+# Separator between paper cards.
+paper_card_separator: "\n\n---\n\n"
+
+user_template: >
+  Assess relevance for each paper:
+
+  {papers}
+
+max_tokens: 4096

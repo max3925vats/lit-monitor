@@ -1,0 +1,66 @@
+paper_pass1:
+  core_finding: "Mock core finding for testing purposes."
+  core_finding_confidence: "explicit"
+  methods_summary: "Mock methods summary."
+  methods_summary_confidence: "explicit"
+  results_summary: "Mock results summary."
+  results_summary_confidence: "explicit"
+  conclusions: "Mock conclusions."
+  conclusions_confidence: "explicit"
+  study_type: "experimental"
+  study_type_confidence: "explicit"
+
+paper_pass2:
+  background_motivation: "Mock background motivation."
+  background_motivation_confidence: "inferred"
+  experimental_conditions: null
+  experimental_conditions_confidence: "absent"
+  materials_systems: "Mock materials."
+  materials_systems_confidence: "explicit"
+  key_parameters: null
+  key_parameters_confidence: "absent"
+  statistical_methods: null
+  statistical_methods_confidence: "absent"
+  limitations: "Mock limitations."
+  limitations_confidence: "explicit"
+  assumptions: null
+  assumptions_confidence: "absent"
+  scale: "lab"
+  scale_confidence: "explicit"
+
+paper_pass3:
+  novelty_statement: "Mock novelty statement."
+  novelty_statement_confidence: "explicit"
+  actionable_insights: "Mock actionable insights."
+  actionable_insights_confidence: "inferred"
+  relevance_to_domain: "Mock relevance statement."
+  relevance_to_domain_confidence: "explicit"
+  future_work: null
+  future_work_confidence: "absent"
+  open_questions: null
+  open_questions_confidence: "absent"
+  software_code: null
+  software_code_confidence: "absent"
+  funding_conflicts: null
+  funding_conflicts_confidence: "absent"
+  data_availability: null
+  data_availability_confidence: "absent"
+
+paper_pass4:
+  key_citations:
+    - ref_id: "[1]"
+      context: "Establishes the baseline filtration model used throughout."
+    - ref_id: "Smith et al. (2020)"
+      context: "Provides the fouling mechanism adopted here."
+  key_citations_confidence: "explicit"
+  comparison_to_prior: "This study extends the Smith et al. (2020) framework by applying it to novel membrane systems at industrial scale, achieving 15% lower fouling than the prior benchmark."
+  comparison_to_prior_confidence: "explicit"
+
+ranker:
+  rationale: "Mock rationale for relevance."
+
+vocabulary:
+  themes:
+    - "Mock Theme A"
+    - "Mock Theme B"
+  unclustered: []

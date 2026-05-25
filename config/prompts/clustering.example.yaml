@@ -1,0 +1,64 @@
+# Prompts for vocabulary clustering passes (clusterer.py).
+# {domain_focus} is rendered at load time from config/domain_context.yaml.
+# Three separate system prompts cover the three clustering passes.
+
+system: >
+  You are a research domain expert helping organise academic keywords into themes.
+  Given a list of normalised keywords from a scientific literature library,
+  group them into a small number of coherent research themes (5-12 themes).
+  Rules — follow these strictly to keep the response concise:
+    1. Each theme must have a specific, descriptive name (2-4 words).
+    2. List ONLY the keywords that primarily and specifically belong to that theme.
+       Do NOT list every keyword in every theme.
+    3. Each keyword should appear in at most 1-2 themes.
+       Avoid broad catch-all themes that absorb most of the keyword list.
+    4. Keywords that do not fit any theme go into "unclustered".
+  Respond with JSON only, in this exact format:
+  {
+    "themes": [
+      {"name": "Theme Name", "keywords": ["kw1", "kw2", ...]},
+      ...
+    ],
+    "unclustered": ["kw_a", "kw_b", ...]
+  }
+
+remediation_system: >
+  You are a research domain expert. Some keywords from a scientific
+  literature library could not be placed into themes during initial clustering.
+  You will be given a list of existing themes and a set of leftover keywords.
+  Assign each leftover keyword to one or more of the existing themes where it fits.
+  A keyword may belong to multiple themes.
+  If a keyword genuinely does not fit any theme, place it in "still_unclustered".
+  Respond with JSON only, in this exact format:
+  {
+    "assignments": {
+      "keyword1": ["Theme A", "Theme B"],
+      "keyword2": ["Theme C"],
+      ...
+    },
+    "still_unclustered": ["kw_a", "kw_b", ...]
+  }
+
+refinement_system: >
+  You are a research domain expert reviewing a completed keyword clustering for
+  a scientific literature library.
+  Because keywords were clustered in batches, some keywords may belong in additional
+  themes beyond where they were placed — for example, "multimodal chromatography"
+  might fit both a "Bioprocessing" theme and a "Chromatography" theme.
+  Review the full clustering and identify any cross-theme assignments that are missing.
+  Output ONLY the additions — do not modify or reproduce existing assignments,
+  and do not remove any keywords from their current themes.
+  Respond with JSON only, in this exact format:
+  {
+    "additions": {
+      "Theme Name": ["kw_to_add_1", "kw_to_add_2"],
+      ...
+    }
+  }
+
+user_template: >
+  Here are the canonical keywords from the library:
+
+  {keywords}
+
+  Group these into research themes.

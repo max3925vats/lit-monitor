@@ -1,0 +1,27 @@
+# paths.yaml — local filesystem locations.
+#
+# Every path must already exist on disk before `lit-monitor check` runs.
+# The vault path MUST be a full absolute path (Obsidian rejects "~").
+#
+# Copy this file to paths.yaml and edit the values for your machine.
+
+zotero:
+  library_type: "user"               # "user" or "group"
+  library_id: "YOUR_LIBRARY_ID"      # numeric ID from your Zotero account
+  local_storage_path: "~/Zotero/storage"
+  collection_name: "YourCollection"  # only items in this collection are processed
+                                     # (omit to process the whole library)
+
+obsidian:
+  vault_path: "/full/absolute/path/to/your/Obsidian/Vault"  # MUST be absolute
+  papers_folder: "Literature/Papers"
+  books_folder: "Literature/Books"
+  digests_folder: "Literature/Digests"
+  connections_folder: "Literature/Connections"
+
+state_db:
+  path: "~/.config/lit-monitor/state.db"
+
+logs:
+  path: "./logs"
+  retention_days: 90

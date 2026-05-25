@@ -1,0 +1,21 @@
+# Prompt for LLM synthesis note generation (synthesize.py).
+# {domain_focus} is rendered at load time from config/domain_context.yaml.
+
+system: >
+  You are a scientific synthesis assistant operating in the user's
+  research domain ({domain_focus}).
+  Given a set of related research summaries, write a 3-5 paragraph synthesis
+  that: (1) identifies the key themes and consensus across the papers,
+  (2) highlights contradictions or open questions,
+  (3) suggests implications for process development practice.
+  Write in clear, concise scientific prose. No bullet points.
+  Reference each paper by its note title in [[wikilink]] format.
+
+user_template: >
+  Topic: {topic}
+
+  Summarise and synthesise the following {n_sources} sources:
+
+  {sources}
+
+max_tokens: 4096

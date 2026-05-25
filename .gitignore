@@ -1,0 +1,64 @@
+# --- Secrets and runtime state (never commit) ---
+config/databases.yaml
+.env
+.env.*
+
+# --- Personal configs (ship *.example.yaml in git; gitignore the real ones) ---
+# Run: cp config/concepts.example.yaml config/concepts.yaml  (then edit), etc.
+config/concepts.yaml
+config/topics.yaml
+config/domain_context.yaml
+config/researchers.yaml
+config/paths.yaml
+# Prompt files — example versions ship in git; real versions stay local
+config/prompts/*.yaml
+!config/prompts/*.example.yaml
+
+# --- Auto-generated config artifacts ---
+config/concepts_draft.yaml
+config/concepts_draft_refinement_raw.txt
+config/topics_suggested.yaml
+
+# --- Internal dev journals (kept locally under docs/internal/) ---
+CLAUDE.md
+docs/internal/
+IMPLEMENTATION_PLAN*.md
+ANALYSIS_*.md
+ARCHITECTURE*.md
+live_test_*.md
+
+# --- Claude Code workspace ---
+.claude/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# --- Tooling caches / envs ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# --- macOS ---
+.DS_Store
+
+# --- Logs (keep the directory shape; ignore actual logs) ---
+logs/*.jsonl
+logs/*.log
+
+# --- Local benchmark / comparison outputs ---
+benchmarks/
+comparison/*.json
+comparison/*.md
+run_benchmarks.sh
+run_comparison_benchmarks.sh
+
+# --- Accidental test artifacts ---
+MagicMock/
+test_pass_extraction.py

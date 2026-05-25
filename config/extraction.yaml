@@ -1,0 +1,98 @@
+brain_build:
+  ollama_host: "https://ollama.com"
+  model: "gemma4:31b-cloud"          # or qwen3:32b-cloud, etc.
+  pass_strategy: "all"               # cloud-recommended per K1
+  pass_all_model: "gemma4:31b-cloud"
+  max_tokens_per_call: 24576         # ≥ 3× individual budget for pass_strategy: "all"
+  num_ctx_override: 131072           # ample headroom for 30B cloud model
+  think: false                       # disable thinking for gemma4 (not reasoning-capable)
+  # chunk_chars: null                # M5: null = auto-derive from num_ctx (A6); integer = hard cap on simple-phase chunk size in chars
+
+# brain_build:
+  # provider: "ollama"
+  # model: "phi4-mini"              # quality ceiling — switch to qwen2.5:7b or qwen3:8b for overnight runs
+  # ollama_host: "http://localhost:11434"
+  # temperature: 0.1
+  # timeout: 7200                    # 2 hours — full-paper extraction
+  # max_tokens_per_call: 12288       # paper extraction passes 1-3; set ≥3× for pass_strategy: "all"
+  # ocr_dpi: 400
+  # think: false                     # set true only for models with Ollama thinking support (qwen3:*, deepseek-r1:*, phi4-mini:reasoning)
+  # pass_strategy: "individual"      # "individual" = 3-pass (default); "all" = single call with all 21 fields (K1)
+  # pass_all_model: "qwen2.5:7b"  # optional: use a different model for pass_strategy: "all" runs
+  # num_ctx_override: 131072       # H5: override /api/show discovery; null = auto-detect from Ollama
+  # chunk_chars: null              # M5: null = auto-derive from num_ctx (A6); integer = hard cap on simple-phase chunk size in chars
+  # Per-pass model selection (F15) — uncomment to use a larger model for core extraction only:
+  # pass1_model: "qwen2.5:7b"     # Pass 1: core_finding, methods_summary (highest-value fields)
+  # pass2_model: "phi4-mini"      # Pass 2: methodology (omit = inherits model above)
+  # pass3_model: "phi4-mini"      # Pass 3: impact & provenance (omit = inherits model above)
+  # LiteLLM cloud example — set provider: "litellm" and use pass1_litellm_model / pass2_litellm_model etc.
+
+ingestion:
+  ollama_host: "https://ollama.com"
+  model: "gemma4:31b-cloud"          # or qwen3:32b-cloud, etc.
+  pass_strategy: "all"               # cloud-recommended per K1
+  pass_all_model: "gemma4:31b-cloud"
+  max_tokens_per_call: 24576         # ≥ 3× individual budget for pass_strategy: "all"
+  num_ctx_override: 131072           # ample headroom for 30B cloud model
+  think: false                       # disable thinking for gemma4 (not reasoning-capable)
+  # chunk_chars: null                # M5: null = auto-derive from num_ctx (A6); integer = hard cap on simple-phase chunk size in chars
+
+# ingestion:
+#   provider: "ollama"
+#   model: "phi4-mini"              # weekly ingestion — same model as brain_build for consistency
+#   ollama_host: "http://localhost:11434"
+#   temperature: 0.1
+#   timeout: 7200                     # 2 hours — weekly ingestion per-paper pass
+#   max_tokens_per_call: 4096
+#   section_chunking: true
+#   ocr_dpi: 400
+#   think: false                     # set true only for models with Ollama thinking support
+  # num_ctx_override: 131072       # H5: override /api/show discovery; null = auto-detect from Ollama
+  # chunk_chars: null              # M5: null = auto-derive from num_ctx (A6); integer = hard cap on simple-phase chunk size in chars
+
+build_vocabulary:
+  # Cloud Ollama (default) — fits typical libraries in 1 chunk via smart chunking (N1, 2026-05-17).
+  # Requires OLLAMA_API_KEY env var set; the OllamaClient picks it up automatically.
+  provider: "ollama"
+  ollama_host: "https://ollama.com"
+  model: "gemma4:31b-cloud"        # consistent with brain_build; ~128k native context fits any vocabulary in one call
+  temperature: 1.0
+  max_tokens_per_call: 16384       # output cap per chunk; 60-keyword chunks produce verbose JSON
+  num_ctx_override: 131072         # ample headroom for the 30B cloud model
+  # chunk_chars: null               # N1: null = smart-size from num_ctx (default); integer = hard cap on input chars per chunk
+  think: false                     # vocabulary clustering is structured JSON, not reasoning
+
+  # ── Local Ollama alternate (uncomment to switch back) ────────────────────
+  # provider: "ollama"
+  # ollama_host: "http://localhost:11434"
+  # model: "phi4-mini"             # best structured JSON at 3B — runs locally on 8GB M2
+  # temperature: 0.1
+  # max_tokens_per_call: 16384
+  # think: false
+  # On local Ollama (num_ctx=8192), smart chunking still applies — expect 1–3 chunks
+  # depending on library size and avg keyword length.
+
+embeddings:
+  model: "mxbai-embed-large"    # Ollama embedding model (1024-dim) — changing this key triggers a full re-embed of all content via check_embed_model_change()
+  ollama_host: "http://localhost:11434"
+  # Pull the model first: `ollama pull mxbai-embed-large` (~670 MB).
+  # Alternative: "nomic-embed-text" (768-dim, ~270 MB) — smaller, slightly lower quality on dense passages.
+
+reranker:
+  enabled: true
+  model: "mixedbread-ai/mxbai-rerank-large-v2"   # ~670MB — downloaded on first use via HuggingFace
+  candidate_multiplier: 3   # retrieve top_k * 3 by cosine, then rerank to top_k
+  device: null              # null = auto (MPS on Mac); "cpu" / "mps" / "cuda" to override
+
+comparison_models:
+  # No Anthropic key — Ollama only (Session 5)
+  - provider: "ollama"
+    model: "gemma4:e4b"                 # primary candidate (~2GB Q4)
+  - provider: "ollama"
+    model: "qwen2.5:3b"                 # best structured JSON at 3B (~1.5GB Q4)
+  - provider: "ollama"
+    model: "phi4-mini"                  # strong reasoning at small size (~2.3GB Q4)
+  - provider: "ollama"
+    model: "llama3.2:3b"                # fast baseline (~1.9GB Q4)
+# All four Ollama models fit safely on 8GB M2.
+# qwen2.5:7b (~4.5GB) risks memory pressure during long runs — skip on 8GB.

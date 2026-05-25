@@ -1,0 +1,43 @@
+# concepts.yaml — controlled vocabulary that maps Zotero keywords to themes.
+#
+# Generated initially by `lit-monitor build-vocabulary` (writes to
+# concepts_draft.yaml). After human review, copy the curated content here.
+# The brain-build pipeline uses this file to tag each paper with one or
+# more themes based on fuzzy keyword matches (default ratio >= 85).
+#
+# Schema:
+#   themes:
+#     - name: <Theme Name>          # appears as a tag on each matching paper
+#       keywords: [str, str, ...]   # any fuzzy match triggers the theme
+#
+#   unclustered: [str, ...]         # keywords the LLM could not group
+#                                   # (kept for visibility, not used as tags)
+#
+# Copy this file to concepts.yaml and replace the example themes with
+# vocabulary that matches your own research area.
+
+themes:
+  - name: Topic Area One
+    keywords:
+      - keyword one
+      - keyword two
+      - related term
+      - synonym a
+      - synonym b
+
+  - name: Topic Area Two
+    keywords:
+      - keyword three
+      - keyword four
+      - alternate phrasing
+      - acronym
+
+  - name: Topic Area Three
+    keywords:
+      - keyword five
+      - keyword six
+      - common variant
+
+unclustered:
+  - leftover term one
+  - leftover term two

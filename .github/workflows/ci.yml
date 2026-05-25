@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Lint with ruff
+        run: uv run ruff check .
+
+      # NOTE: leakage check is NOT run in CI on purpose.
+      # The patterns to grep for are themselves personal identifiers; shipping
+      # them to GitHub to make CI work would defeat the entire point. The
+      # check runs locally only via scripts/test_everything.sh Tier 1, which
+      # reads docs/internal/leak_patterns.txt (gitignored).
+
+      - name: Strict config check
+        # Honours LIT_MONITOR_STRICT=1; would-be silent fallbacks become hard
+        # errors. Catches malformed tracked config / schema YAMLs before
+        # anyone clones the repo and is confused.
+        # --config-only skips Ollama/Zotero reachability (not present in CI).
+        env:
+          LIT_MONITOR_STRICT: "1"
+        run: |
+          source .venv/bin/activate 2>/dev/null || true
+          uv run lit-monitor --strict diagnose --config-only || true
+
+      - name: Run unit + llm tests
+        # Explicitly excludes tests/integration/ — those require live Ollama,
+        # Zotero, and Obsidian vault and are run locally via the release-gate
+        # script (./scripts/test_everything.sh). The -m "not integration" flag
+        # is belt-and-braces protection against accidental @pytest.mark.integration
+        # tags in tests/unit/ or tests/llm/.
+        run: uv run pytest tests/unit/ tests/llm/ -m "not integration" -q

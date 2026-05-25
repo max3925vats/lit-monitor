@@ -1,0 +1,39 @@
+---
+title: "Discovery {{ run_date }}"
+run_date: "{{ run_date }}"
+papers_found: {{ papers | length }}
+top_k: {{ top_k }}
+source_type: "digest"
+---
+
+# Discovery Digest — {{ run_date }}
+
+**{{ papers | length }} new papers found** · Top {{ top_k }} ranked by similarity to your library
+
+---
+
+{% for paper in papers %}
+## {{ loop.index }}. {{ paper.title }}
+**{{ paper.authors | join(', ') }}** ({{ paper.year }}) — *{{ paper.journal }}*
+**DOI:** {% if paper.doi %}[{{ paper.doi }}](https://doi.org/{{ paper.doi }}){% else %}not available{% endif %}
+**Similarity:** {{ "%.2f" | format(paper.similarity_score) }}
+{% if paper.tracked_author %}⭐ **Tracked Author**{% endif %}
+
+{% if paper.llm_rationale %}
+**Why relevant:** {{ paper.llm_rationale }}
+{% endif %}
+
+{% if paper.abstract %}
+**Abstract:** {{ paper.abstract | truncate(300) }}
+{% endif %}
+
+**Databases:** {{ paper.source_databases | join(', ') }}
+
+---
+{% endfor %}
+
+{% if unranked_count is defined and unranked_count > 0 %}
+*{{ unranked_count }} additional papers found but not ranked (below similarity threshold).*
+{% endif %}
+
+*Generated {{ run_date }} by lit-monitor*

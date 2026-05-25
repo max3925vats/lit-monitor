@@ -1,0 +1,158 @@
+"""
+Smoke tests for scripts/pipelines/model_compare.py.
+
+Primary purpose: prevent kwarg regressions (e.g. passes= vs phases=)
+from silently breaking all extractions in a benchmark run.
+
+All I/O is mocked; no real LLM or Zotero calls.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+
+def _make_config(tmp_path: Path) -> SimpleNamespace:
+    return SimpleNamespace(
+        zotero=SimpleNamespace(collection_name="lit-monitor"),
+        brain_build=SimpleNamespace(timeout=30, temperature=0.1),
+        comparison_models=[],
+    )
+
+
+def _make_state_db_with_one_paper() -> MagicMock:
+    state_db = MagicMock()
+    state_db.get_all_by_source_type.return_value = [
+        {
+            "doi": "10.1/test",
+            "zotero_key": "ZKEY001",
+            "title": "Test Paper",
+        }
+    ]
+    return state_db
+
+
+def _make_zotero_client() -> MagicMock:
+    client = MagicMock()
+    client.get_markdown_attachment.return_value = (
+        "Ultrafiltration of IgG at 30 kDa membrane. Yield was 95%."
+    )
+    return client
+
+
+# ---------------------------------------------------------------------------
+# Critical regression: phases= kwarg must be accepted by extract_paper
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_compare_models_no_extraction_failures(tmp_path):
+    """
+    Smoke test: run_model_comparison must produce items_failed == 0 for a
+    mocked LLM that returns valid JSON.
+
+    Previously broken (M7 regression): model_compare.py called
+    extract_paper(..., passes=(1, 2, 3)) which raises TypeError because
+    extract_paper() has no 'passes' parameter — every paper silently failed.
+    This test would have caught that.
+    """
+    from scripts.pipelines.model_compare import run_model_comparison
+
+    config = _make_config(tmp_path)
+    state_db = _make_state_db_with_one_paper()
+    zotero_client = _make_zotero_client()
+
+    mock_extraction = {
+        "core_finding": "Flux decline above 20 g/L.",
+        "core_finding_confidence": "explicit",
+        "methods_summary": "TFF with 30 kDa PES membrane.",
+        "methods_summary_confidence": "explicit",
+        "_overall_confidence": 0.9,
+    }
+
+    # extract_paper is imported inside run_model_comparison — patch at its definition site.
+    with (
+        patch("scripts.pipelines.model_compare._OUTPUT_DIR", tmp_path / "comparison"),
+        patch(
+            "scripts.llm.extractor.extract_paper",
+            return_value=mock_extraction,
+        ),
+        patch("scripts.llm.llm_client.OllamaClient", return_value=MagicMock()),
+    ):
+        result = run_model_comparison(
+            config=config,
+            state_db=state_db,
+            zotero_client=zotero_client,
+            n_items=1,
+            models=["ollama:qwen2.5:3b"],
+            mode="paper",
+        )
+
+    assert len(result.scores) == 1
+    score = result.scores[0]
+    assert score.items_failed == 0, (
+        f"Expected 0 extraction failures; got {score.items_failed}. "
+        "This likely means extract_paper() was called with the wrong kwargs."
+    )
+    assert score.items_run == 1
+
+
+@pytest.mark.unit
+def test_extract_paper_rejects_passes_kwarg():
+    """
+    Defensive regression: extract_paper() must NOT accept a 'passes' keyword
+    argument. If this test fails, the M3 hard-cut has been rolled back.
+    """
+    import inspect
+
+    from scripts.llm.extractor import extract_paper
+
+    sig = inspect.signature(extract_paper)
+    assert "passes" not in sig.parameters, (
+        "extract_paper() must not have a 'passes' parameter — M3 hard-cut "
+        "replaced it with 'phases'. Roll back this change."
+    )
+    assert "**" not in str(sig), (
+        "extract_paper() must not accept **kwargs — that would hide kwarg drift."
+    )
+
+
+@pytest.mark.unit
+def test_compare_models_writes_output_json(tmp_path):
+    """run_model_comparison must write a summary JSON file to the output directory."""
+    from scripts.pipelines.model_compare import run_model_comparison
+
+    config = _make_config(tmp_path)
+    state_db = _make_state_db_with_one_paper()
+    zotero_client = _make_zotero_client()
+
+    mock_extraction = {
+        "core_finding": "Result.",
+        "core_finding_confidence": "explicit",
+        "_overall_confidence": 0.8,
+    }
+
+    with (
+        patch("scripts.pipelines.model_compare._OUTPUT_DIR", tmp_path / "comparison"),
+        patch(
+            "scripts.llm.extractor.extract_paper",
+            return_value=mock_extraction,
+        ),
+        patch("scripts.llm.llm_client.OllamaClient", return_value=MagicMock()),
+    ):
+        result = run_model_comparison(
+            config=config,
+            state_db=state_db,
+            zotero_client=zotero_client,
+            n_items=1,
+            models=["ollama:qwen2.5:3b"],
+            mode="paper",
+        )
+
+    out_dir = Path(result.output_dir)
+    assert out_dir.exists(), f"Output directory not created: {out_dir}"
+    # At least one JSON file written
+    json_files = list(out_dir.rglob("*.json"))
+    assert json_files, "No JSON output files written by run_model_comparison"
