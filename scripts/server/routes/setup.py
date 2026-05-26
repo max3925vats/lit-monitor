@@ -156,6 +156,79 @@ def _validate_paths(data: dict[str, Any]) -> list[str]:
     return errors
 
 
+# Extraction wizard (F2.6) — modes owned by the wizard and the only seven
+# per-mode keys the wizard surfaces. All other keys (pass_strategy, chunk_chars,
+# OCR settings, per-pass model overrides, ...) round-trip unchanged.
+_WIZARD_MODES = ("brain_build", "ingestion", "build_vocabulary")
+
+_MODE_DEFAULTS: dict[str, Any] = {
+    "provider": "ollama",
+    "ollama_host": "http://localhost:11434",
+    "model": "",
+    "temperature": 0.1,
+    "timeout": 7200,
+    "think": False,
+    "litellm_model": "",
+}
+
+
+def _mode_view(existing: dict[str, Any], mode: str) -> dict[str, Any]:
+    """Build the form ctx for one mode, falling back to defaults when missing."""
+    section = existing.get(mode, {}) or {}
+    return {k: section.get(k, v) for k, v in _MODE_DEFAULTS.items()}
+
+
+def _merge_extraction(
+    existing: dict[str, Any], form: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    """Merge per-mode form fields into existing extraction.yaml.
+
+    Preserves all unrelated keys inside each mode block (pass_strategy,
+    max_tokens_per_call, etc.) and every non-wizard top-level section
+    (embeddings, reranker, comparison_models, ...).
+    """
+    out: dict[str, Any] = dict(existing)
+    for mode in _WIZARD_MODES:
+        cur = dict(out.get(mode, {}) or {})
+        new = form.get(mode, {})
+        cur["provider"] = new["provider"]
+        cur["ollama_host"] = new["ollama_host"]
+        cur["model"] = new["model"]
+        cur["temperature"] = new["temperature"]
+        cur["timeout"] = new["timeout"]
+        cur["think"] = new["think"]
+        if new["provider"] == "litellm":
+            cur["litellm_model"] = new["litellm_model"]
+        else:
+            # When switching away from litellm, drop the stale key so loaders
+            # don't pick up the previous litellm_model value.
+            cur.pop("litellm_model", None)
+        out[mode] = cur
+    return out
+
+
+def _validate_extraction(data: dict[str, dict[str, Any]]) -> list[str]:
+    """Return a list of human-readable errors. Empty list means OK."""
+    errors: list[str] = []
+    for mode, section in data.items():
+        prefix = f"[{mode}]"
+        provider = section["provider"]
+        if provider not in ("ollama", "litellm"):
+            errors.append(f"{prefix} provider must be 'ollama' or 'litellm'.")
+        if not section["model"]:
+            errors.append(f"{prefix} model is required.")
+        t = section["temperature"]
+        if not (0.0 <= t <= 1.0):
+            errors.append(f"{prefix} temperature must be in [0.0, 1.0].")
+        if section["timeout"] <= 0:
+            errors.append(f"{prefix} timeout must be > 0 seconds.")
+        if provider == "litellm" and not section["litellm_model"]:
+            errors.append(
+                f"{prefix} litellm_model is required when provider=litellm."
+            )
+    return errors
+
+
 def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[str, Any]]:
     """Build the wizard-landing card list.
 
@@ -183,10 +256,20 @@ def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[st
         pass
     except Exception as exc:  # noqa: BLE001 — defensive: yaml parse, etc.
         logger.debug("step2 status check failed: %s", exc)
+    step3_ok = False
+    try:
+        ext = load_config("extraction")
+        step3_ok = all(
+            (ext.get(mode, {}) or {}).get("model") for mode in _WIZARD_MODES
+        )
+    except FileNotFoundError:
+        pass
+    except Exception as exc:  # noqa: BLE001 — defensive: yaml parse, etc.
+        logger.debug("step3 status check failed: %s", exc)
     return [
         {"num": 1, "title": "Credentials", "status": "ok" if step1_ok else "missing", "url": "/setup/step-1"},
         {"num": 2, "title": "Paths (vault + collection)", "status": "ok" if step2_ok else "missing", "url": "/setup/step-2"},
-        {"num": 3, "title": "Extraction (provider + model)", "status": "todo", "url": "/setup/step-3"},
+        {"num": 3, "title": "Extraction (provider + model)", "status": "ok" if step3_ok else "missing", "url": "/setup/step-3"},
         {"num": 4, "title": "Topics (weekly searches)", "status": "todo", "url": "/setup/step-4"},
         {"num": 5, "title": "Domain context", "status": "todo", "url": "/setup/step-5"},
         {"num": 6, "title": "Concepts (vocabulary)", "status": "todo", "url": "/setup/step-6"},
@@ -433,3 +516,137 @@ def fs_modal(request: Request, path: str) -> HTMLResponse:
 def fs_modal_close(request: Request) -> HTMLResponse:
     """Return an empty fragment to close the modal."""
     return HTMLResponse("")
+
+
+@router.get("/step-3", response_class=HTMLResponse)
+def step_extraction_form(request: Request) -> HTMLResponse:
+    """Step 3 form: extraction.yaml editor (per-mode LLM provider/model/tuning)."""
+    try:
+        existing = load_config("extraction")
+    except FileNotFoundError:
+        existing = {}
+    ctx = {
+        "current_step": 3,
+        "modes": [(mode, _mode_view(existing, mode)) for mode in _WIZARD_MODES],
+    }
+    return templates.TemplateResponse(request, "setup/step_extraction.html", ctx)
+
+
+@router.post("/api/extraction", response_class=HTMLResponse)
+def save_extraction(
+    request: Request,
+    # brain_build
+    brain_build__provider: str = Form("ollama"),
+    brain_build__ollama_host: str = Form(""),
+    brain_build__model: str = Form(""),
+    brain_build__temperature: float = Form(0.1),
+    brain_build__timeout: int = Form(7200),
+    brain_build__think: bool = Form(False),
+    brain_build__litellm_model: str = Form(""),
+    # ingestion
+    ingestion__provider: str = Form("ollama"),
+    ingestion__ollama_host: str = Form(""),
+    ingestion__model: str = Form(""),
+    ingestion__temperature: float = Form(0.1),
+    ingestion__timeout: int = Form(7200),
+    ingestion__think: bool = Form(False),
+    ingestion__litellm_model: str = Form(""),
+    # build_vocabulary
+    build_vocabulary__provider: str = Form("ollama"),
+    build_vocabulary__ollama_host: str = Form(""),
+    build_vocabulary__model: str = Form(""),
+    build_vocabulary__temperature: float = Form(0.1),
+    build_vocabulary__timeout: int = Form(7200),
+    build_vocabulary__think: bool = Form(False),
+    build_vocabulary__litellm_model: str = Form(""),
+) -> HTMLResponse:
+    """Save extraction.yaml, preserving non-wizard keys + sections."""
+    form_data: dict[str, dict[str, Any]] = {
+        "brain_build": {
+            "provider": brain_build__provider.strip(),
+            "ollama_host": brain_build__ollama_host.strip(),
+            "model": brain_build__model.strip(),
+            "temperature": brain_build__temperature,
+            "timeout": brain_build__timeout,
+            "think": brain_build__think,
+            "litellm_model": brain_build__litellm_model.strip(),
+        },
+        "ingestion": {
+            "provider": ingestion__provider.strip(),
+            "ollama_host": ingestion__ollama_host.strip(),
+            "model": ingestion__model.strip(),
+            "temperature": ingestion__temperature,
+            "timeout": ingestion__timeout,
+            "think": ingestion__think,
+            "litellm_model": ingestion__litellm_model.strip(),
+        },
+        "build_vocabulary": {
+            "provider": build_vocabulary__provider.strip(),
+            "ollama_host": build_vocabulary__ollama_host.strip(),
+            "model": build_vocabulary__model.strip(),
+            "temperature": build_vocabulary__temperature,
+            "timeout": build_vocabulary__timeout,
+            "think": build_vocabulary__think,
+            "litellm_model": build_vocabulary__litellm_model.strip(),
+        },
+    }
+
+    errors = _validate_extraction(form_data)
+    if errors:
+        return templates.TemplateResponse(
+            request,
+            "setup/_extraction_result.html",
+            {"ok": False, "errors": errors},
+        )
+
+    try:
+        existing = load_config("extraction")
+    except FileNotFoundError:
+        existing = {}
+
+    merged = _merge_extraction(existing, form_data)
+
+    try:
+        save_config("extraction", merged)
+    except OSError as exc:
+        logger.error("save_extraction: write failed: %s", exc)
+        return templates.TemplateResponse(
+            request,
+            "setup/_extraction_result.html",
+            {"ok": False, "errors": [f"Could not save: {exc}"]},
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "setup/_extraction_result.html",
+        {"ok": True, "errors": None},
+    )
+
+
+@router.get("/api/ollama-test", response_class=HTMLResponse)
+def ollama_test(request: Request, host: str = "") -> HTMLResponse:
+    """Probe an Ollama host's /api/tags. Returns an inline HTMX status pill."""
+    if not host.strip():
+        return HTMLResponse('<span class="pill warning">no host provided</span>')
+
+    import httpx
+
+    url = host.strip().rstrip("/") + "/api/tags"
+    try:
+        r = httpx.get(url, timeout=5.0, headers={"User-Agent": "lit-monitor"})
+    except httpx.RequestError as exc:
+        return HTMLResponse(
+            f'<span class="pill danger">unreachable: {type(exc).__name__}</span>'
+        )
+
+    if r.status_code == 200:
+        try:
+            n_models = len(r.json().get("models", []))
+        except ValueError:
+            n_models = 0
+        return HTMLResponse(
+            f'<span class="pill success">reachable — {n_models} models</span>'
+        )
+    return HTMLResponse(
+        f'<span class="pill warning">HTTP {r.status_code}</span>'
+    )
