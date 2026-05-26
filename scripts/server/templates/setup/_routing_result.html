@@ -1,0 +1,12 @@
+{% if errors %}
+<div class="card danger">
+  <h3>Could not save</h3>
+  <ul>{% for e in errors %}<li><pre style="white-space: pre-wrap;">{{ e }}</pre></li>{% endfor %}</ul>
+</div>
+{% else %}
+<div class="card success">
+  <h3>Saved</h3>
+  <p>item_routing.yaml updated.</p>
+  <p><a href="/setup/complete" class="button">Finish setup →</a></p>
+</div>
+{% endif %}

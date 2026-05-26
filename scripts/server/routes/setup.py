@@ -15,6 +15,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import yaml
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
@@ -380,6 +381,14 @@ def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[st
         pass
     except Exception as exc:  # noqa: BLE001 — defensive: yaml parse, etc.
         logger.debug("step7 status check failed: %s", exc)
+    step8_ok = False
+    try:
+        ir = load_config("item_routing")
+        step8_ok = isinstance(ir, dict) and "routes" in ir
+    except FileNotFoundError:
+        pass
+    except Exception as exc:  # noqa: BLE001 — defensive: yaml parse, etc.
+        logger.debug("step8 status check failed: %s", exc)
     return [
         {"num": 1, "title": "Credentials", "status": "ok" if step1_ok else "missing", "url": "/setup/step-1"},
         {"num": 2, "title": "Paths (vault + collection)", "status": "ok" if step2_ok else "missing", "url": "/setup/step-2"},
@@ -388,7 +397,7 @@ def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[st
         {"num": 5, "title": "Domain context", "status": "ok" if step5_ok else "missing", "url": "/setup/step-5"},
         {"num": 6, "title": "Concepts (vocabulary)", "status": "ok" if step6_ok else "missing", "url": "/setup/step-6"},
         {"num": 7, "title": "Researchers (optional)", "status": "ok" if step7_ok else "missing", "url": "/setup/step-7"},
-        {"num": 8, "title": "Item routing (advanced)", "status": "todo", "url": "/setup/step-8"},
+        {"num": 8, "title": "Item routing (advanced)", "status": "ok" if step8_ok else "missing", "url": "/setup/step-8"},
     ]
 
 
@@ -1110,4 +1119,73 @@ def researchers_new_row(request: Request, idx: int = 0) -> HTMLResponse:
             "idx": idx,
             "r": {"name": "", "affiliation": "", "orcid": "", "scopus_id": "", "notes": ""},
         },
+    )
+
+
+# --- F2.11: item_routing (read-only grid + advanced raw YAML edit) -----
+
+
+def _routes_summary(data: dict[str, Any]) -> list[dict[str, str]]:
+    """Flatten the routes table for the read-only grid."""
+    out: list[dict[str, str]] = []
+    routes = (data or {}).get("routes", {}) or {}
+    for item_type, cfg in sorted(routes.items()):
+        out.append({
+            "item_type": item_type,
+            "pipeline": str(cfg.get("pipeline", "")),
+            "default_schema": str(cfg.get("default_schema", "")),
+            "source_type": str(cfg.get("source_type", "")),
+        })
+    return out
+
+
+@router.get("/step-8", response_class=HTMLResponse)
+def step_routing_form(request: Request) -> HTMLResponse:
+    """Step 8 form: item_routing.yaml read-only grid + raw YAML edit."""
+    try:
+        data = load_config("item_routing")
+    except FileNotFoundError:
+        data = {}
+    summary = _routes_summary(data)
+    raw_yaml = yaml.safe_dump(data or {"routes": {}}, sort_keys=False)
+    return templates.TemplateResponse(
+        request,
+        "setup/step_routing.html",
+        {"current_step": 8, "rows": summary, "raw_yaml": raw_yaml},
+    )
+
+
+@router.post("/api/routing", response_class=HTMLResponse)
+def save_routing(
+    request: Request,
+    raw_yaml: str = Form(""),
+) -> HTMLResponse:
+    """Lint the raw YAML; if it parses AND has a top-level 'routes' key, save it."""
+    try:
+        parsed = yaml.safe_load(raw_yaml)
+    except yaml.YAMLError as exc:
+        return templates.TemplateResponse(
+            request,
+            "setup/_routing_result.html",
+            {"ok": False, "errors": [f"YAML parse error: {exc}"]},
+        )
+    if not isinstance(parsed, dict) or "routes" not in parsed:
+        return templates.TemplateResponse(
+            request,
+            "setup/_routing_result.html",
+            {"ok": False, "errors": ["Top-level 'routes:' key is required."]},
+        )
+    try:
+        save_config("item_routing", parsed)
+    except OSError as exc:
+        logger.error("save_routing: write failed: %s", exc)
+        return templates.TemplateResponse(
+            request,
+            "setup/_routing_result.html",
+            {"ok": False, "errors": [f"Could not save: {exc}"]},
+        )
+    return templates.TemplateResponse(
+        request,
+        "setup/_routing_result.html",
+        {"ok": True, "errors": []},
     )

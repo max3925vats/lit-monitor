@@ -1,0 +1,35 @@
+{% extends "setup/_base.html" %}
+{% block step_content %}
+<h1>Step 8 — Item routing</h1>
+<p>Maps every Zotero item type (journalArticle, conferencePaper, book, etc.) to a pipeline. Stored at <code>config/item_routing.yaml</code>.</p>
+
+<h2>Current routes</h2>
+<table class="routes-table">
+  <thead>
+    <tr><th>item_type</th><th>pipeline</th><th>default_schema</th><th>source_type</th></tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td><code>{{ row.item_type }}</code></td>
+      <td>{{ row.pipeline }}</td>
+      <td>{{ row.default_schema }}</td>
+      <td>{{ row.source_type }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<details>
+<summary><strong>Advanced — edit YAML directly</strong> (incorrect routes can break brain-build)</summary>
+<form class="setup-form" hx-post="/setup/api/routing" hx-target="#result" hx-swap="innerHTML">
+  <textarea name="raw_yaml" rows="18" style="font-family: monospace; width: 100%;">{{ raw_yaml }}</textarea>
+  <button type="submit">Save raw YAML</button>
+</form>
+</details>
+
+<div id="result"></div>
+
+<p><a href="/setup">← Back to setup overview</a> &middot;
+   <a href="/setup/complete" class="button">Finish setup →</a></p>
+{% endblock %}
