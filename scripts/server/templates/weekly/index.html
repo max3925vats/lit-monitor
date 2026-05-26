@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="dashboard">
+  <h1>Weekly run</h1>
+
+  {% if db_unavailable %}
+  <div class="card warning">
+    <h3>State DB unavailable</h3>
+    <p>Complete the <a href="/setup">setup wizard</a> first.</p>
+  </div>
+  {% else %}
+
+  {% if last_run %}
+  <h2>Last run</h2>
+  <table class="runs-table">
+    <tr><th>Run ID</th><td><code>{{ last_run.run_id }}</code></td></tr>
+    <tr><th>Started</th><td>{{ last_run.started_at }}</td></tr>
+    <tr><th>Finished</th><td>{{ last_run.finished_at or "—" }}</td></tr>
+    <tr><th>Status</th><td>{{ last_run.status or "—" }}</td></tr>
+    <tr><th>Papers processed</th><td>{{ last_run.papers_processed or 0 }}</td></tr>
+    <tr><th>Papers skipped</th><td>{{ last_run.papers_skipped or 0 }}</td></tr>
+    <tr><th>Papers failed</th><td>{{ last_run.papers_failed or 0 }}</td></tr>
+  </table>
+  {% else %}
+  <p class="field-note">No weekly runs in the log yet.</p>
+  {% endif %}
+
+  <h2>Run history (last 10)</h2>
+  {% if recent_runs %}
+  <table class="runs-table">
+    <thead>
+      <tr><th>Started</th><th>Status</th><th>Processed</th><th>Skipped</th><th>Failed</th></tr>
+    </thead>
+    <tbody>
+      {% for run in recent_runs %}
+      <tr>
+        <td>{{ run.started_at }}</td>
+        <td>{{ run.status or "—" }}</td>
+        <td>{{ run.papers_processed or 0 }}</td>
+        <td>{{ run.papers_skipped or 0 }}</td>
+        <td>{{ run.papers_failed or 0 }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="field-note">No history.</p>
+  {% endif %}
+
+  <h2>Today's digest</h2>
+  {% if digest_path %}
+  <p class="field-note">Source: <code>{{ digest_path }}</code></p>
+  {% if digest_content %}
+  <pre class="digest-pre">{{ digest_content }}</pre>
+  {% else %}
+  <p class="field-note">Digest file exists but could not be read.</p>
+  {% endif %}
+  {% else %}
+  <p class="field-note">No digest file for today (or vault path not configured).</p>
+  {% endif %}
+
+  {% endif %}
+</section>
+{% endblock %}

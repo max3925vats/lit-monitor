@@ -117,11 +117,13 @@ def create_app() -> FastAPI:
     from scripts.server.routes.control import router as control_router
     from scripts.server.routes.setup import router as setup_router
     from scripts.server.routes.sse import router as sse_router
+    from scripts.server.routes.weekly import router as weekly_router
 
     app.include_router(setup_router)
     app.include_router(brain_build_router)
     app.include_router(control_router)
     app.include_router(sse_router)
+    app.include_router(weekly_router)
 
     return app
 

@@ -453,3 +453,8 @@ a:hover {
 .collection-switcher details { padding: 0; }
 .collection-switcher summary { cursor: pointer; padding: 0.25rem 0.5rem; }
 .collection-switcher form { padding: 0.5rem 0; display: flex; gap: 0.5rem; align-items: end; }
+
+/* --- Weekly digest preview --- */
+.digest-pre { background: var(--card-bg); border: 1px solid var(--border); padding: 1rem;
+  border-radius: var(--radius); max-height: 50vh; overflow-y: auto;
+  white-space: pre-wrap; font-family: monospace; font-size: 0.85em; }

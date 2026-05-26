@@ -588,6 +588,15 @@ class StateDB:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def get_recent_runs_by_type(self, run_type: str, limit: int = 10) -> list[dict]:
+        """Return the most recent run_log entries of one type, newest first."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM run_log WHERE run_type = ? ORDER BY started_at DESC LIMIT ?",
+                (run_type, limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     # -- Utility --
     def known_dois(self) -> set[str]:
         with self._connect() as conn:
