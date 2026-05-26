@@ -13,6 +13,10 @@
   </div>
   {% else %}
 
+  <section hx-get="/api/brain-build/controls" hx-trigger="load" hx-swap="outerHTML">
+    <p class="field-note">Loading controls…</p>
+  </section>
+
   <p class="field-note">Collection:
     <code>{{ collection_name or "(not set — see setup step 2)" }}</code>
   </p>

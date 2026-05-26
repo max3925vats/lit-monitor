@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,17 +22,14 @@ from fastapi.responses import HTMLResponse
 
 from scripts.server.app import templates
 from scripts.server.config_io import load_config, load_secrets, save_config, save_secrets
+from scripts.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/setup", tags=["setup"])
 
-# --- F2.9: build-vocabulary subprocess registry ---------------------------
-# TODO(F3.3): replace with the shared process registry in
-# scripts/server/runtime.py. For now we keep the running subprocess as a
-# module-level singleton so the SSE stream endpoint can reach it.
-_vocab_proc: asyncio.subprocess.Process | None = None
-_vocab_lock: asyncio.Lock = asyncio.Lock()
-_vocab_output: list[str] = []  # captured stdout lines; cleared per run
+# F3.3: the build-vocabulary subprocess now lives in the shared process
+# registry at ``runtime.processes["vocabulary"]``. The previous module-level
+# globals (``_vocab_proc``, ``_vocab_lock``, ``_vocab_output``) are gone.
 
 # Sentinel prefix used to render masked secret tails in the form's value
 # attribute. ``_merge_credentials`` treats any submission starting with this
@@ -919,13 +917,13 @@ def step_concepts_form(request: Request) -> HTMLResponse:
     data, source = _load_concepts()
     themes = (data or {}).get("themes", []) or []
     unclustered = (data or {}).get("unclustered", []) or []
-    is_running = _vocab_proc is not None and _vocab_proc.returncode is None
+    slot = get_runtime().processes["vocabulary"]
     ctx = {
         "current_step": 6,
         "themes": themes,
         "unclustered": unclustered,
         "source": source,
-        "is_running": is_running,
+        "is_running": slot.is_running(),
     }
     return templates.TemplateResponse(request, "setup/step_concepts.html", ctx)
 
@@ -933,29 +931,30 @@ def step_concepts_form(request: Request) -> HTMLResponse:
 @router.post("/api/build-vocabulary/start", response_class=HTMLResponse)
 async def build_vocab_start(request: Request) -> HTMLResponse:
     """Spawn the build-vocabulary subprocess. Returns an HTMX-swappable card."""
-    global _vocab_proc, _vocab_output
-    async with _vocab_lock:
-        if _vocab_proc is not None and _vocab_proc.returncode is None:
+    slot = get_runtime().processes["vocabulary"]
+    async with slot.lock:
+        if slot.is_running():
             return HTMLResponse(
                 '<div class="card warning">'
                 '<p>Vocabulary build already in progress '
-                f'(pid {_vocab_proc.pid}).</p>'
+                f'(pid {slot.process.pid}).</p>'
                 '<p><a href="/setup/step-6/progress" class="button">'
                 'View live output →</a></p>'
                 '</div>'
             )
-        _vocab_output = []
+        slot.output = []  # reset per-run buffer
         # Repo root: scripts/server/routes/setup.py → parents[3] is repo root.
         repo_root = Path(__file__).resolve().parents[3]
-        _vocab_proc = await asyncio.create_subprocess_exec(
+        slot.process = await asyncio.create_subprocess_exec(
             "uv", "run", "lit-monitor", "build-vocabulary",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=str(repo_root),
         )
+        slot.started_at = datetime.now(UTC).isoformat(timespec="seconds")
     return HTMLResponse(
         '<div class="card success">'
-        f'<p>Vocabulary build started (pid {_vocab_proc.pid}).</p>'
+        f'<p>Vocabulary build started (pid {slot.process.pid}).</p>'
         '<p><a href="/setup/step-6/progress" class="button">'
         'View live output →</a></p>'
         '</div>'
@@ -965,12 +964,13 @@ async def build_vocab_start(request: Request) -> HTMLResponse:
 @router.get("/step-6/progress", response_class=HTMLResponse)
 def step_concepts_progress(request: Request) -> HTMLResponse:
     """Live SSE-streamed stdout viewer for the running build-vocabulary subprocess."""
+    slot = get_runtime().processes["vocabulary"]
     return templates.TemplateResponse(
         request,
         "setup/_concepts_progress.html",
         {
             "current_step": 6,
-            "pid": _vocab_proc.pid if _vocab_proc else None,
+            "pid": slot.process.pid if slot.process else None,
         },
     )
 
@@ -984,8 +984,10 @@ async def build_vocab_stream(request: Request):
     """
     from sse_starlette.sse import EventSourceResponse
 
+    slot = get_runtime().processes["vocabulary"]
+
     async def gen():
-        proc = _vocab_proc
+        proc = slot.process
         if proc is None or proc.stdout is None:
             yield {"event": "error", "data": "no build process running"}
             return
@@ -996,7 +998,7 @@ async def build_vocab_stream(request: Request):
             if not line:
                 break
             text = line.decode("utf-8", errors="replace").rstrip()
-            _vocab_output.append(text)
+            slot.append_line(text)
             yield {"event": "progress", "data": text}
         rc = await proc.wait()
         yield {"event": "done", "data": f"exit code: {rc}"}
@@ -1007,17 +1009,12 @@ async def build_vocab_stream(request: Request):
 @router.post("/api/build-vocabulary/stop", response_class=HTMLResponse)
 async def build_vocab_stop() -> HTMLResponse:
     """SIGTERM the build-vocabulary subprocess if running; SIGKILL on timeout."""
-    proc = _vocab_proc
-    if proc is None or proc.returncode is not None:
+    slot = get_runtime().processes["vocabulary"]
+    stopped = await slot.stop(timeout=10.0)
+    if not stopped:
         return HTMLResponse(
             '<div class="card warning">No vocabulary build in progress.</div>'
         )
-    proc.terminate()
-    try:
-        await asyncio.wait_for(proc.wait(), timeout=10)
-    except TimeoutError:
-        proc.kill()
-        await proc.wait()
     return HTMLResponse(
         '<div class="card success">Vocabulary build stopped.</div>'
     )

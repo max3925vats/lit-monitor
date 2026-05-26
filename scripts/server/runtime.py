@@ -8,9 +8,13 @@ cached for the lifetime of the process.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def _load_secrets() -> dict:
@@ -35,6 +39,54 @@ def _load_secrets() -> dict:
 
 
 @dataclass
+class ProcessSlot:
+    """A registered subprocess + its bookkeeping.
+
+    ``output`` is a bounded list (last ~1000 lines) so memory doesn't grow
+    unbounded for long-running pipelines. The full record stays in the
+    JSONL log; this in-memory buffer is just for the dashboard's "Live
+    progress" panel when reloading the page mid-run.
+    """
+
+    process: asyncio.subprocess.Process | None = None
+    started_at: str | None = None  # ISO-format
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    output: list[str] = field(default_factory=list)
+    output_cap: int = 1000
+
+    def append_line(self, line: str) -> None:
+        """Append a line, truncating from the start if cap exceeded."""
+        self.output.append(line)
+        if len(self.output) > self.output_cap:
+            # Drop ~10% from the front so we don't reallocate every line.
+            drop = max(1, self.output_cap // 10)
+            del self.output[:drop]
+
+    def is_running(self) -> bool:
+        return self.process is not None and self.process.returncode is None
+
+    async def stop(self, *, timeout: float = 30.0) -> bool:
+        """SIGTERM the process; SIGKILL after timeout. Returns True if stopped."""
+        async with self.lock:
+            p = self.process
+            if p is None or p.returncode is not None:
+                return False
+            p.terminate()
+            try:
+                await asyncio.wait_for(p.wait(), timeout=timeout)
+            except TimeoutError:
+                logger.warning(
+                    "subprocess pid=%s didn't exit on SIGTERM after %ss; SIGKILL",
+                    p.pid, timeout,
+                )
+                p.kill()
+                await p.wait()
+            self.process = None
+            self.started_at = None
+            return True
+
+
+@dataclass
 class ServerRuntime:
     """Lazily-constructed holder for shared per-process clients.
 
@@ -49,6 +101,16 @@ class ServerRuntime:
     _embeddings_db: Any | None = field(default=None, repr=False)
     _zotero_client: Any | None = field(default=None, repr=False)
     _secrets: dict | None = field(default=None, repr=False)
+
+    # Process registry — one slot per long-running pipeline. Start endpoints
+    # refuse to spawn when the matching slot is already running.
+    processes: dict[str, ProcessSlot] = field(
+        default_factory=lambda: {
+            "brain_build": ProcessSlot(),
+            "weekly": ProcessSlot(),
+            "vocabulary": ProcessSlot(),
+        }
+    )
 
     @property
     def secrets(self) -> dict:
@@ -132,4 +194,4 @@ def reset_runtime() -> None:
     _RUNTIME = None
 
 
-__all__ = ["ServerRuntime", "get_runtime", "reset_runtime"]
+__all__ = ["ServerRuntime", "ProcessSlot", "get_runtime", "reset_runtime"]
