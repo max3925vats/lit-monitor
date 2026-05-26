@@ -31,7 +31,11 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        # Server extra brings fastapi / uvicorn / sse-starlette / tomli_w /
+        # python-multipart that the F2.x wizard tests import. Without it,
+        # 11 of the unit test files fail at collection time with
+        # ModuleNotFoundError: No module named 'fastapi'.
+        run: uv sync --extra dev --extra server
 
       - name: Lint with ruff
         run: uv run ruff check .
