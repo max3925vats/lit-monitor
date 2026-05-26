@@ -1024,7 +1024,7 @@ def brain_build_cmd(
             except Exception as exc:
                 click.echo(click.style(f"  Error processing {doi_input}: {exc}", fg="red"))
 # ---------------------------------------------------------------------------
-# run (weekly monitor)
+# run (discovery pipeline)
 # ---------------------------------------------------------------------------
 @main.command("run")
 @click.option("--dry-run", is_flag=True, default=False,
@@ -1043,10 +1043,10 @@ def run_cmd(
     top_k: int,
     sim_threshold: float,
 ) -> None:
-    """Run the weekly discovery + ingestion pipeline."""
-    _setup_logging("weekly", verbose=ctx.obj.get("verbose", False))
+    """Run the discovery pipeline: search + ranking + ingest new Zotero items."""
+    _setup_logging("discovery", verbose=ctx.obj.get("verbose", False))
     from scripts.output.embeddings import check_embed_model_change
-    from scripts.pipelines.weekly_monitor import run_weekly_monitor
+    from scripts.pipelines.discovery import run_discovery
     try:
         config = _make_config()
         secrets = _load_secrets()
@@ -1060,8 +1060,8 @@ def run_cmd(
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
     mode_label = "[DRY RUN] " if dry_run else ""
-    click.echo(f"{mode_label}Starting weekly monitor…")
-    summary = run_weekly_monitor(
+    click.echo(f"{mode_label}Starting discovery pipeline…")
+    summary = run_discovery(
         config=config,
         state_db=state_db,
         zotero_client=zotero_client,
@@ -1073,7 +1073,7 @@ def run_cmd(
         top_k=top_k,
         sim_threshold=sim_threshold,
     )
-    click.echo(click.style("\n── Weekly Run Summary ──", bold=True))
+    click.echo(click.style("\n── Discovery Run Summary ──", bold=True))
     click.echo(f"  New papers found: {summary.new_papers_found}")
     click.echo(f"  Papers ingested:  {summary.papers_ingested}")
     click.echo(f"  Papers failed:    {summary.papers_failed}")

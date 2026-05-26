@@ -3,7 +3,7 @@ D2 — CrossRef DOI resolution via habanero.
 
 Attempts to find a DOI for Zotero items that have no DOI field by querying
 the CrossRef API using the paper title and author names.  Called from
-brain_build and weekly_monitor ingestion *before* skipping a no-DOI item.
+brain_build and discovery ingestion *before* skipping a no-DOI item.
 
 Only returns a DOI when the top CrossRef result exceeds ``min_score``
 (default 70.0).  This is deliberately conservative — false positives (wrong

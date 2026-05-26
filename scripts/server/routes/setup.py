@@ -388,14 +388,14 @@ def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[st
     except Exception as exc:  # noqa: BLE001 — defensive: yaml parse, etc.
         logger.debug("step8 status check failed: %s", exc)
     return [
-        {"num": 1, "title": "Credentials", "status": "ok" if step1_ok else "missing", "url": "/setup/step-1"},
-        {"num": 2, "title": "Paths (vault + collection)", "status": "ok" if step2_ok else "missing", "url": "/setup/step-2"},
-        {"num": 3, "title": "Extraction (provider + model)", "status": "ok" if step3_ok else "missing", "url": "/setup/step-3"},
-        {"num": 4, "title": "Topics (weekly searches)", "status": "ok" if step4_ok else "missing", "url": "/setup/step-4"},
-        {"num": 5, "title": "Domain context", "status": "ok" if step5_ok else "missing", "url": "/setup/step-5"},
-        {"num": 6, "title": "Concepts (vocabulary)", "status": "ok" if step6_ok else "missing", "url": "/setup/step-6"},
-        {"num": 7, "title": "Researchers (optional)", "status": "ok" if step7_ok else "missing", "url": "/setup/step-7"},
-        {"num": 8, "title": "Item routing (advanced)", "status": "ok" if step8_ok else "missing", "url": "/setup/step-8"},
+        {"num": 1, "title": "Credentials", "status": "ok" if step1_ok else "missing", "url": "/setup/step-1", "optional": False},
+        {"num": 2, "title": "Paths (vault + collection)", "status": "ok" if step2_ok else "missing", "url": "/setup/step-2", "optional": False},
+        {"num": 3, "title": "Extraction (provider + model)", "status": "ok" if step3_ok else "missing", "url": "/setup/step-3", "optional": False},
+        {"num": 4, "title": "Topics (recurring searches)", "status": "ok" if step4_ok else "missing", "url": "/setup/step-4", "optional": False},
+        {"num": 5, "title": "Domain context", "status": "ok" if step5_ok else "missing", "url": "/setup/step-5", "optional": False},
+        {"num": 6, "title": "Concepts (vocabulary)", "status": "ok" if step6_ok else "missing", "url": "/setup/step-6", "optional": True},
+        {"num": 7, "title": "Researchers", "status": "ok" if step7_ok else "missing", "url": "/setup/step-7", "optional": True},
+        {"num": 8, "title": "Item routing (advanced)", "status": "ok" if step8_ok else "missing", "url": "/setup/step-8", "optional": False},
     ]
 
 

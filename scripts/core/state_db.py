@@ -8,7 +8,7 @@ Tables:
   run_log                  — pipeline run history
   brain_build_progress     — per-pass completion tracking for brain-build
   kv_store                 — arbitrary pipeline metadata (e.g. last Zotero
-                             library version for weekly ingestion polling)
+                             library version for discovery ingestion polling)
 Schema is created on first use (CREATE TABLE IF NOT EXISTS).
 No migration support — extend by adding nullable columns only.
 """
@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS papers (
 );
 CREATE TABLE IF NOT EXISTS run_log (
     run_id               TEXT PRIMARY KEY,
-    run_type             TEXT,           -- brain_build | weekly | ingestion
+    run_type             TEXT,           -- brain_build | discovery | ingestion
     started_at           TEXT,
     finished_at          TEXT,
     status               TEXT,           -- running | complete | failed
@@ -195,6 +195,33 @@ class StateDB:
             except Exception as exc:
                 logger.warning(
                     "N7 stale-row cleanup failed (will retry on next startup): %s", exc
+                )
+            # 2026-05-26: rename run_type='weekly' → run_type='discovery' (the
+            # pipeline no longer ships under a weekly-only brand). Gated by a kv_store
+            # flag so it only runs once per database.
+            try:
+                done = conn.execute(
+                    "SELECT value FROM kv_store WHERE key = 'weekly_to_discovery_rename'"
+                ).fetchone()
+                if not done:
+                    cur = conn.execute(
+                        "UPDATE run_log SET run_type = 'discovery' WHERE run_type = 'weekly'"
+                    )
+                    n = cur.rowcount
+                    if n:
+                        logger.info(
+                            "Renamed %d run_log row(s) from run_type='weekly' to 'discovery'",
+                            n,
+                        )
+                    conn.execute(
+                        "INSERT INTO kv_store (key, value) "
+                        "VALUES ('weekly_to_discovery_rename', '1') "
+                        "ON CONFLICT(key) DO UPDATE SET value = '1'"
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "weekly→discovery run_type rename failed (will retry on next startup): %s",
+                    exc,
                 )
     # -- Paper / review CRUD --
     def upsert_paper(self, data: dict[str, Any]) -> None:

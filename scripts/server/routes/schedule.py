@@ -1,4 +1,4 @@
-"""Weekly-run schedule management endpoints.
+"""Discovery-run schedule management endpoints.
 
 Front-end for scripts.server.scheduler. Supports macOS (launchd) and Linux
 (systemd user timer). Unsupported platforms (Windows, BSD, etc.) get a
@@ -27,10 +27,10 @@ router = APIRouter(tags=["schedule"])
 
 
 def _safe_recent_runs() -> list[dict]:
-    """Last 10 weekly runs, or [] if state DB is unavailable."""
+    """Last 10 discovery runs, or [] if state DB is unavailable."""
     try:
         r = get_runtime()
-        return r.state_db.get_recent_runs_by_type("weekly", limit=10)
+        return r.state_db.get_recent_runs_by_type("discovery", limit=10)
     except Exception:
         logger.debug("get_recent_runs_by_type failed", exc_info=True)
         return []

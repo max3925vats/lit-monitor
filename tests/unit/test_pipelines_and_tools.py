@@ -1,5 +1,5 @@
 """
-Unit tests for the weekly monitor pipeline, ranker, and obsidian tools.
+Unit tests for the discovery pipeline, ranker, and obsidian tools.
 """
 from __future__ import annotations
 
@@ -51,11 +51,11 @@ def _make_paper(doi: str = "10.1000/test", score: float = 0.0) -> dict:
         "llm_rationale": "",
     }
 # ===========================================================================
-# Weekly monitor tests
+# Discovery pipeline tests
 # ===========================================================================
 
 @pytest.mark.unit
-def test_full_weekly_dry_run_no_writes(tmp_path):
+def test_full_discovery_dry_run_no_writes(tmp_path):
     """dry_run=True: discovery runs but nothing is written to state DB."""
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
@@ -65,15 +65,15 @@ def test_full_weekly_dry_run_no_writes(tmp_path):
     llm.complete.return_value = "{}"
     zotero_client = MagicMock()
     papers = [_make_paper("10.1/new1"), _make_paper("10.1/new2")]
-    with patch("scripts.pipelines.weekly_monitor.run_searches", return_value=papers):
-        with patch("scripts.pipelines.weekly_monitor.run_researcher_searches",
+    with patch("scripts.pipelines.discovery.run_searches", return_value=papers):
+        with patch("scripts.pipelines.discovery.run_researcher_searches",
                    return_value=[]):
-            with patch("scripts.pipelines.weekly_monitor.filter_known_dois",
+            with patch("scripts.pipelines.discovery.filter_known_dois",
                        return_value=papers):
-                with patch("scripts.pipelines.weekly_monitor.rank_papers",
+                with patch("scripts.pipelines.discovery.rank_papers",
                            return_value=papers):
-                    from scripts.pipelines.weekly_monitor import run_weekly_monitor
-                    summary = run_weekly_monitor(
+                    from scripts.pipelines.discovery import run_discovery
+                    summary = run_discovery(
                         config, state_db, zotero_client, embeddings_db, llm,
                         dry_run=True
                     )
@@ -93,15 +93,15 @@ def test_discovery_digest_written(tmp_path):
     zotero_client = MagicMock()
     zotero_client.get_current_version.return_value = 100  # first-run baseline
     papers = [_make_paper("10.1/p1", score=0.85)]
-    with patch("scripts.pipelines.weekly_monitor.run_searches", return_value=papers):
-        with patch("scripts.pipelines.weekly_monitor.run_researcher_searches",
+    with patch("scripts.pipelines.discovery.run_searches", return_value=papers):
+        with patch("scripts.pipelines.discovery.run_researcher_searches",
                    return_value=[]):
-            with patch("scripts.pipelines.weekly_monitor.filter_known_dois",
+            with patch("scripts.pipelines.discovery.filter_known_dois",
                        return_value=papers):
-                with patch("scripts.pipelines.weekly_monitor.rank_papers",
+                with patch("scripts.pipelines.discovery.rank_papers",
                            return_value=papers):
-                    from scripts.pipelines.weekly_monitor import run_weekly_monitor
-                    summary = run_weekly_monitor(
+                    from scripts.pipelines.discovery import run_discovery
+                    summary = run_discovery(
                         config, state_db, zotero_client, embeddings_db, llm,
                         dry_run=False
                     )
@@ -122,16 +122,16 @@ def test_duplicate_dois_not_reprocessed(tmp_path):
     zotero_client.get_current_version.return_value = 100  # first-run baseline
     raw = [_make_paper("10.1/existing"), _make_paper("10.1/new")]
     # Use real filter_known_dois
-    with patch("scripts.pipelines.weekly_monitor.run_searches", return_value=raw):
-        with patch("scripts.pipelines.weekly_monitor.run_researcher_searches",
+    with patch("scripts.pipelines.discovery.run_searches", return_value=raw):
+        with patch("scripts.pipelines.discovery.run_researcher_searches",
                    return_value=[]):
-            with patch("scripts.pipelines.weekly_monitor.rank_papers",
+            with patch("scripts.pipelines.discovery.rank_papers",
                        return_value=[_make_paper("10.1/new")]):
-                from scripts.pipelines.weekly_monitor import run_weekly_monitor
+                from scripts.pipelines.discovery import run_discovery
                 from scripts.search.search_runner import filter_known_dois
-                with patch("scripts.pipelines.weekly_monitor.filter_known_dois",
+                with patch("scripts.pipelines.discovery.filter_known_dois",
                            side_effect=lambda papers, db: filter_known_dois(papers, db)):
-                    summary = run_weekly_monitor(
+                    summary = run_discovery(
                         config, state_db, zotero_client, embeddings_db, llm,
                         dry_run=True
                     )
@@ -145,16 +145,16 @@ def test_pipeline_continues_on_search_failure(tmp_path):
     llm = MagicMock()
     llm.complete.return_value = "{}"
     zotero_client = MagicMock()
-    with patch("scripts.pipelines.weekly_monitor.run_searches",
+    with patch("scripts.pipelines.discovery.run_searches",
                side_effect=RuntimeError("API down")):
-        with patch("scripts.pipelines.weekly_monitor.run_researcher_searches",
+        with patch("scripts.pipelines.discovery.run_researcher_searches",
                    return_value=[]):
-            with patch("scripts.pipelines.weekly_monitor.filter_known_dois",
+            with patch("scripts.pipelines.discovery.filter_known_dois",
                        return_value=[]):
-                with patch("scripts.pipelines.weekly_monitor.rank_papers",
+                with patch("scripts.pipelines.discovery.rank_papers",
                            return_value=[]):
-                    from scripts.pipelines.weekly_monitor import run_weekly_monitor
-                    summary = run_weekly_monitor(
+                    from scripts.pipelines.discovery import run_discovery
+                    summary = run_discovery(
                         config, state_db, zotero_client, embeddings_db, llm,
                         dry_run=True
                     )
@@ -202,22 +202,22 @@ def test_new_zotero_items_ingested(tmp_path):
     zotero_client.get_current_version.return_value = 101
     # M1: pipeline reads markdown attachments — not PDFs
     zotero_client.get_markdown_attachment.return_value = "Full paper text."
-    with patch("scripts.pipelines.weekly_monitor.run_searches", return_value=[]):
-        with patch("scripts.pipelines.weekly_monitor.run_researcher_searches",
+    with patch("scripts.pipelines.discovery.run_searches", return_value=[]):
+        with patch("scripts.pipelines.discovery.run_researcher_searches",
                    return_value=[]):
-            with patch("scripts.pipelines.weekly_monitor.filter_known_dois",
+            with patch("scripts.pipelines.discovery.filter_known_dois",
                        return_value=[]):
-                with patch("scripts.pipelines.weekly_monitor.rank_papers", return_value=[]):
-                    with patch("scripts.pipelines.weekly_monitor.enrich_paper",
+                with patch("scripts.pipelines.discovery.rank_papers", return_value=[]):
+                    with patch("scripts.pipelines.discovery.enrich_paper",
                                return_value={}):
-                        with patch("scripts.pipelines.weekly_monitor.extract_paper",
+                        with patch("scripts.pipelines.discovery.extract_paper",
                                    return_value={"core_finding": "ok",
                                                  "core_finding_confidence": "explicit"}):
-                            with patch("scripts.pipelines.weekly_monitor.write_paper_note",
+                            with patch("scripts.pipelines.discovery.write_paper_note",
                                        return_value=note_path):
-                                with patch("scripts.pipelines.weekly_monitor.relink_note"):
-                                    from scripts.pipelines.weekly_monitor import run_weekly_monitor
-                                    summary = run_weekly_monitor(
+                                with patch("scripts.pipelines.discovery.relink_note"):
+                                    from scripts.pipelines.discovery import run_discovery
+                                    summary = run_discovery(
                                         config, state_db, zotero_client, embeddings_db,
                                         llm,
                                         dry_run=False
@@ -248,7 +248,7 @@ def test_item_quality_filter_passes_valid_item(tmp_path):
     assert reason == ""
 
 @pytest.mark.unit
-def test_weekly_ingestion_resumes_after_partial_failure(tmp_path):
+def test_discovery_ingestion_resumes_after_partial_failure(tmp_path):
     """A3: Items marked fully_complete in brain_build_progress are skipped on re-run."""
     from scripts.core.state_db import StateDB
     state_db = StateDB(tmp_path / "state.db")
@@ -281,12 +281,12 @@ def test_weekly_ingestion_resumes_after_partial_failure(tmp_path):
             },
         }
     ]
-    with patch("scripts.pipelines.weekly_monitor.run_searches", return_value=[]):
-        with patch("scripts.pipelines.weekly_monitor.run_researcher_searches", return_value=[]):
-            with patch("scripts.pipelines.weekly_monitor.filter_known_dois", return_value=[]):
-                with patch("scripts.pipelines.weekly_monitor.rank_papers", return_value=[]):
-                    from scripts.pipelines.weekly_monitor import run_weekly_monitor
-                    summary = run_weekly_monitor(
+    with patch("scripts.pipelines.discovery.run_searches", return_value=[]):
+        with patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]):
+            with patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]):
+                with patch("scripts.pipelines.discovery.rank_papers", return_value=[]):
+                    from scripts.pipelines.discovery import run_discovery
+                    summary = run_discovery(
                         config, state_db, zotero_client, embeddings_db, llm,
                         dry_run=False,
                     )
@@ -319,13 +319,13 @@ def test_since_days_computed_from_last_run_date(tmp_path):
         captured_since.append(since_days)
         return []
 
-    with patch("scripts.pipelines.weekly_monitor.run_searches",
+    with patch("scripts.pipelines.discovery.run_searches",
                side_effect=capture_run_searches):
-        with patch("scripts.pipelines.weekly_monitor.run_researcher_searches", return_value=[]):
-            with patch("scripts.pipelines.weekly_monitor.filter_known_dois", return_value=[]):
-                with patch("scripts.pipelines.weekly_monitor.rank_papers", return_value=[]):
-                    from scripts.pipelines.weekly_monitor import run_weekly_monitor
-                    run_weekly_monitor(
+        with patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]):
+            with patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]):
+                with patch("scripts.pipelines.discovery.rank_papers", return_value=[]):
+                    from scripts.pipelines.discovery import run_discovery
+                    run_discovery(
                         config, state_db, zotero_client, embeddings_db, llm,
                         dry_run=False,
                     )
@@ -609,7 +609,7 @@ def test_brain_build_respects_max_papers(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# L1: pre-extraction S2 enrichment in weekly_monitor._run_ingestion
+# L1: pre-extraction S2 enrichment in discovery._run_ingestion
 # ---------------------------------------------------------------------------
 
 def _make_zotero_item_for_ingestion(doi: str, key: str = "KEY001") -> dict:
@@ -628,7 +628,7 @@ def _make_zotero_item_for_ingestion(doi: str, key: str = "KEY001") -> dict:
 
 
 def _run_ingestion_with_item(tmp_path, item, enrich_return=None):
-    """Helper: run weekly monitor ingestion for a single item and return (summary, state_db)."""
+    """Helper: run discovery ingestion for a single item and return (summary, state_db)."""
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
     state_db.set_kv("zotero_library_version", "100")
@@ -642,18 +642,18 @@ def _run_ingestion_with_item(tmp_path, item, enrich_return=None):
     zotero_client.get_markdown_attachment.return_value = "Full paper text in markdown."
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Smith2021.md")
 
-    with patch("scripts.pipelines.weekly_monitor.run_searches", return_value=[]), \
-         patch("scripts.pipelines.weekly_monitor.run_researcher_searches", return_value=[]), \
-         patch("scripts.pipelines.weekly_monitor.filter_known_dois", return_value=[]), \
-         patch("scripts.pipelines.weekly_monitor.rank_papers", return_value=[]), \
-         patch("scripts.pipelines.weekly_monitor.enrich_paper",
+    with patch("scripts.pipelines.discovery.run_searches", return_value=[]), \
+         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]), \
+         patch("scripts.pipelines.discovery.rank_papers", return_value=[]), \
+         patch("scripts.pipelines.discovery.enrich_paper",
                return_value=enrich_return or {}), \
-         patch("scripts.pipelines.weekly_monitor.extract_paper",
+         patch("scripts.pipelines.discovery.extract_paper",
                return_value={"core_finding": "ok", "core_finding_confidence": "explicit"}), \
-         patch("scripts.pipelines.weekly_monitor.write_paper_note", return_value=note_path), \
-         patch("scripts.pipelines.weekly_monitor.relink_note"):
-        from scripts.pipelines.weekly_monitor import run_weekly_monitor
-        summary = run_weekly_monitor(
+         patch("scripts.pipelines.discovery.write_paper_note", return_value=note_path), \
+         patch("scripts.pipelines.discovery.relink_note"):
+        from scripts.pipelines.discovery import run_discovery
+        summary = run_discovery(
             config, state_db, zotero_client, embeddings_db, llm, dry_run=False
         )
     return summary, state_db
@@ -701,7 +701,7 @@ def test_discovery_digest_prepends_pipeline_run_summary(tmp_path):
     write_discovery_digest() with a non-empty recent_runs list must prepend a
     '## Pipeline Run Summary' section before the discovery content.
     """
-    from scripts.pipelines.weekly_monitor import _write_digest
+    from scripts.pipelines.discovery import _write_digest
     config = _make_config(tmp_path)
     recent_runs = [
         {
@@ -729,7 +729,7 @@ def test_discovery_digest_prepends_pipeline_run_summary(tmp_path):
 @pytest.mark.unit
 def test_pipeline_run_summary_sources_from_run_log_not_in_memory(tmp_path):
     """
-    run_weekly_monitor() passes state_db.get_recent_runs() to write_discovery_digest().
+    run_discovery() passes state_db.get_recent_runs() to write_discovery_digest().
     The written digest must include run_log data even when no in-memory variable tracks it.
     """
     config = _make_config(tmp_path)
@@ -745,15 +745,15 @@ def test_pipeline_run_summary_sources_from_run_log_not_in_memory(tmp_path):
     zotero_client = MagicMock()
     papers = [_make_paper("10.1/L2paper", score=0.8)]
 
-    with patch("scripts.pipelines.weekly_monitor.run_searches", return_value=papers):
-        with patch("scripts.pipelines.weekly_monitor.run_researcher_searches",
+    with patch("scripts.pipelines.discovery.run_searches", return_value=papers):
+        with patch("scripts.pipelines.discovery.run_researcher_searches",
                    return_value=[]):
-            with patch("scripts.pipelines.weekly_monitor.filter_known_dois",
+            with patch("scripts.pipelines.discovery.filter_known_dois",
                        return_value=papers):
-                with patch("scripts.pipelines.weekly_monitor.rank_papers",
+                with patch("scripts.pipelines.discovery.rank_papers",
                            return_value=papers):
-                    from scripts.pipelines.weekly_monitor import run_weekly_monitor
-                    run_weekly_monitor(
+                    from scripts.pipelines.discovery import run_discovery
+                    run_discovery(
                         config, state_db, zotero_client, embeddings_db, llm,
                         dry_run=False,
                     )

@@ -1,7 +1,7 @@
 """FastAPI application factory for the lit-monitor web UI.
 
 Only the landing page and a health endpoint are wired here. Sub-app
-routers (Setup, Brain-Build, Weekly, Schedule) are introduced in later
+routers (Setup, Brain-Build, Discovery, Schedule) are introduced in later
 F-series tasks and will be mounted alongside these via their own
 include_router calls.
 """
@@ -115,16 +115,16 @@ def create_app() -> FastAPI:
     # import templates` — by the time create_app() runs, `templates` is bound.
     from scripts.server.routes.brain_build import router as brain_build_router
     from scripts.server.routes.control import router as control_router
+    from scripts.server.routes.discovery import router as discovery_router
     from scripts.server.routes.schedule import router as schedule_router
     from scripts.server.routes.setup import router as setup_router
     from scripts.server.routes.sse import router as sse_router
-    from scripts.server.routes.weekly import router as weekly_router
 
     app.include_router(setup_router)
     app.include_router(brain_build_router)
     app.include_router(control_router)
     app.include_router(sse_router)
-    app.include_router(weekly_router)
+    app.include_router(discovery_router)
     app.include_router(schedule_router)
 
     return app

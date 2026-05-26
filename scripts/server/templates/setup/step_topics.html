@@ -1,7 +1,7 @@
 {% extends "setup/_base.html" %}
 {% block step_content %}
 <h1>Step 4 — Topics</h1>
-<p>Weekly search queries. Each runs every <code>lit-monitor run</code>. Stored at <code>config/topics.yaml</code>.</p>
+<p>Recurring search queries. Each runs every <code>lit-monitor run</code>. Stored at <code>config/topics.yaml</code>.</p>
 <p class="field-note">Note: comments in topics.yaml are stripped on save (PyYAML limitation). Use git to track history if needed.</p>
 
 <form class="setup-form" hx-post="/setup/api/topics" hx-target="#result" hx-swap="innerHTML">

@@ -1,5 +1,5 @@
 """
-Weekly monitor pipeline.
+Discovery pipeline.
 Discovery + ingestion in two blocks:
 DISCOVERY BLOCK:
   1. run_searches() + run_researcher_searches() from topics/researchers config
@@ -77,7 +77,7 @@ class _RunSummary:
     papers_failed: int = 0
     digest_path: str = ""
     errors: list[str] = field(default_factory=list)
-def run_weekly_monitor(
+def run_discovery(
     config,
     state_db,
     zotero_client,
@@ -89,7 +89,7 @@ def run_weekly_monitor(
     sim_threshold: float = 0.3,
 ) -> _RunSummary:
     """
-    Run the weekly discovery + ingestion pipeline.
+    Run the discovery + ingestion pipeline.
     Parameters
     ----------
     config:
@@ -117,7 +117,7 @@ def run_weekly_monitor(
     summary = _RunSummary()
     run_id = str(uuid.uuid4())
     if not dry_run:
-        state_db.start_run(run_id, "weekly")
+        state_db.start_run(run_id, "discovery")
 
     # A4: compute search window from last successful run date.
     # Cap at 90 days to avoid overwhelming databases after a long gap.
@@ -351,7 +351,7 @@ def _run_ingestion(
     if last_version_str is None:
         current_version = zotero_client.get_current_version()
         state_db.set_kv("zotero_library_version", str(current_version))
-        logger.warning("First weekly run: baseline Zotero version %d stored", current_version)
+        logger.warning("First discovery run: baseline Zotero version %d stored", current_version)
         return
     last_version = int(last_version_str)
     try:

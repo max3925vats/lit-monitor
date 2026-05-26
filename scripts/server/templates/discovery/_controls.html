@@ -1,25 +1,25 @@
-<section class="weekly-controls card"
-  hx-get="/api/weekly/controls" hx-trigger="every 5s" hx-swap="outerHTML">
+<section class="discovery-controls card"
+  hx-get="/api/discovery/controls" hx-trigger="every 5s" hx-swap="outerHTML">
   {% if is_running %}
   <p class="pill warning">
     {% if dry_run %}dry-run{% else %}running{% endif %} —
     pid {{ pid }}, started {{ started_at }}
   </p>
-  <form hx-post="/api/weekly/stop" hx-target="#weekly-result" hx-swap="innerHTML">
+  <form hx-post="/api/discovery/stop" hx-target="#discovery-result" hx-swap="innerHTML">
     <button type="submit" class="button danger">Stop</button>
     <p class="field-note">Sends SIGTERM; SIGKILL fallback after 30 seconds.</p>
   </form>
   {% else %}
-  <div class="weekly-buttons">
-    <form hx-post="/api/weekly/start"
-          hx-target="#weekly-result" hx-swap="innerHTML"
+  <div class="discovery-buttons">
+    <form hx-post="/api/discovery/start"
+          hx-target="#discovery-result" hx-swap="innerHTML"
           hx-encoding="multipart/form-data"
           style="display:inline-block; margin-right:0.5rem;">
       <input type="hidden" name="dry_run" value="false">
       <button type="submit" class="button">Run now</button>
     </form>
-    <form hx-post="/api/weekly/start"
-          hx-target="#weekly-result" hx-swap="innerHTML"
+    <form hx-post="/api/discovery/start"
+          hx-target="#discovery-result" hx-swap="innerHTML"
           hx-encoding="multipart/form-data"
           style="display:inline-block;">
       <input type="hidden" name="dry_run" value="true">
@@ -31,5 +31,5 @@
     "Dry-run" only previews — no writes.
   </p>
   {% endif %}
-  <div id="weekly-result"></div>
+  <div id="discovery-result"></div>
 </section>

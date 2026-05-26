@@ -50,7 +50,7 @@ class ProcessSlot:
 
     process: asyncio.subprocess.Process | None = None
     started_at: str | None = None  # ISO-format
-    # Set by /api/weekly/start so the controls fragment can label the run
+    # Set by /api/discovery/start so the controls fragment can label the run
     # as "dry-run" vs "running". Other slots ignore this field.
     dry_run: bool = False
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -111,7 +111,7 @@ class ServerRuntime:
     processes: dict[str, ProcessSlot] = field(
         default_factory=lambda: {
             "brain_build": ProcessSlot(),
-            "weekly": ProcessSlot(),
+            "discovery": ProcessSlot(),
             "vocabulary": ProcessSlot(),
         }
     )

@@ -1,8 +1,13 @@
 {% extends "setup/_base.html" %}
 {% block step_content %}
-<h1>Step 7 — Researchers</h1>
-<p>Tracked researchers — new papers by these authors get a Tracked Author flag in weekly digests. Stored at <code>config/researchers.yaml</code>.</p>
-<p class="field-note">Optional — leave empty if you don't track specific authors. For each entry, set <code>orcid</code> or <code>scopus_id</code> to actually enable lookups.</p>
+<h1>Step 7 &mdash; Researchers <span class="pill optional-pill">Optional &mdash; accelerator</span></h1>
+<p>Tracked researchers &mdash; new papers by these authors get a Tracked Author flag in the discovery digest. Stored at <code>config/researchers.yaml</code>.</p>
+<div class="card warning">
+  <p><strong>Optional &mdash; purely additive.</strong> Skipping this step has no
+  effect on the rest of the pipeline. Use it only when there's a specific author
+  whose new work you want flagged regardless of similarity score to your library.</p>
+</div>
+<p class="field-note">For each entry, set <code>orcid</code> or <code>scopus_id</code> to enable lookups &mdash; plain-name search is unreliable across databases.</p>
 
 <form class="setup-form" hx-post="/setup/api/researchers" hx-target="#result" hx-swap="innerHTML">
   <div id="researchers-rows">

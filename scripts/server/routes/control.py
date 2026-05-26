@@ -1,4 +1,4 @@
-"""Process control endpoints for brain-build (and forthcoming weekly).
+"""Process control endpoints for brain-build + discovery.
 
 Spawns and supervises CLI subprocesses via the runtime process registry.
 SIGTERM-then-SIGKILL stop pattern; the existing rate-limit-abort precedent

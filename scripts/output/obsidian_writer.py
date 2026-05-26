@@ -314,7 +314,7 @@ def write_paper_note(
         tracked_author=paper.get("tracked_author", False),
         fulltext_analyzed=paper.get("fulltext_analyzed", False),
         extraction=extraction,
-        # N8d: read from paper dict (populated by brain_build / weekly_monitor
+        # N8d: read from paper dict (populated by brain_build / discovery
         # with the actual runtime provider) — fall back to config only for
         # legacy callers that pre-date N8d (e.g. old rerender paths).
         extraction_provider=paper.get("extraction_provider") or getattr(config, "extraction_provider", ""),

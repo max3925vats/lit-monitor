@@ -1205,7 +1205,7 @@ def test_assign_themes_warns_when_vocab_has_dict_keywords(tmp_path, caplog):
 @pytest.mark.unit
 def test_assign_themes_warning_is_one_shot_per_process(tmp_path, caplog):
     """The corruption warning should fire ONCE per process, not once per paper.
-    Otherwise weekly_monitor processing 50 papers would log 50× the same line.
+    Otherwise discovery processing 50 papers would log 50× the same line.
     """
     import logging
 

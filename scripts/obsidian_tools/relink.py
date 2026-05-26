@@ -255,7 +255,7 @@ def _focused_embed_query(
 ) -> str:
     """Build a corpus-shape query for relink's cosine retrieval.
 
-    Mirrors ``_paper_embed_text`` in brain_build / weekly_monitor: returns
+    Mirrors ``_paper_embed_text`` in brain_build / discovery: returns
     ``title + abstract + core_finding`` from the state DB.  Falls back to the
     first ``_FOCUSED_EMBED_QUERY_MAX_CHARS`` of the note text if the DB lookup
     or extraction blob is unavailable.

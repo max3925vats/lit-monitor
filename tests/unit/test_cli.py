@@ -338,7 +338,7 @@ class TestCliRun:
             patch("scripts.cli._make_llm", return_value=MagicMock()),
             patch("scripts.cli._load_secrets", return_value={}),
             patch(
-                "scripts.pipelines.weekly_monitor.run_weekly_monitor",
+                "scripts.pipelines.discovery.run_discovery",
                 return_value=mock_summary,
             ),
         ):

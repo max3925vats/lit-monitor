@@ -6,7 +6,8 @@
   <section class="hero">
     <h1>lit-monitor</h1>
     <p class="muted">
-      Local literature monitoring, embeddings, and weekly briefings.
+      Track new papers, ranked by semantic similarity to your existing
+      Zotero library. Run discovery on whatever schedule fits.
     </p>
     <p class="last-run">
       {% if last_run %}
@@ -23,19 +24,21 @@
   <section class="cards">
     <a class="card" href="/setup">
       <h2>Setup</h2>
-      <p>Configure Zotero credentials, paths, and search vocabulary.</p>
+      <p>Configure Zotero credentials, vault path, topics, and providers.</p>
+    </a>
+    <a class="card" href="/discovery">
+      <h2>Discovery</h2>
+      <p>Search, rank, and ingest new papers. Run ad-hoc or on a schedule.</p>
     </a>
     <a class="card" href="/brain-build">
-      <h2>Brain-Build</h2>
-      <p>Ingest your Zotero library and build the embeddings index.</p>
-    </a>
-    <a class="card" href="/weekly-lit-run">
-      <h2>Weekly Lit Run</h2>
-      <p>Fetch fresh papers, score them, and generate the digest.</p>
+      <h2>Brain-Build <span class="muted">(optional)</span></h2>
+      <p>Batch-ingest your existing Zotero library to front-load the
+         embedding index. Costs LLM tokens.</p>
     </a>
     <a class="card" href="/schedule">
       <h2>Schedule</h2>
-      <p>Automate runs and review recent run history.</p>
+      <p>Automate discovery on a recurring cadence. Weekly is a sensible
+         default.</p>
     </a>
   </section>
 {% endblock %}

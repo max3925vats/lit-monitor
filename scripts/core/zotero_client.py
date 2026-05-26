@@ -127,7 +127,7 @@ class ZoteroClient:
         not synced locally, returns None (no cloud download for text files).
         Returns None if no markdown attachment exists.
 
-        Phase M ingestion path: brain-build and weekly_monitor call this instead
+        Phase M ingestion path: brain-build and discovery call this instead
         of resolving a PDF. If None is returned, the item is skipped silently.
         """
         children = self.get_children(item_key)
@@ -192,7 +192,7 @@ class ZoteroClient:
     def get_items_since(self, library_version: int) -> list[dict]:
         """
         Return all items modified after library_version.
-        Used by weekly ingestion to detect new items.
+        Used by discovery ingestion to detect new items.
         """
         return self._zot.items(since=library_version)
     # ------------------------------------------------------------------ #

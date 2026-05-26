@@ -21,8 +21,8 @@ def client():
 
 @pytest.mark.unit
 def test_dashboard_renders_db_unavailable_when_runtime_fails(client):
-    with patch("scripts.server.routes.weekly.get_runtime", side_effect=RuntimeError):
-        resp = client.get("/weekly-lit-run")
+    with patch("scripts.server.routes.discovery.get_runtime", side_effect=RuntimeError):
+        resp = client.get("/discovery")
     assert resp.status_code == 200
     assert b"State DB unavailable" in resp.content
 
@@ -34,14 +34,14 @@ def test_dashboard_shows_no_runs_message_when_db_empty(client):
     fake_runtime = MagicMock()
     fake_runtime.state_db = fake_db
     fake_runtime.config.obsidian.vault_path = ""
-    with patch("scripts.server.routes.weekly.get_runtime", return_value=fake_runtime):
-        resp = client.get("/weekly-lit-run")
+    with patch("scripts.server.routes.discovery.get_runtime", return_value=fake_runtime):
+        resp = client.get("/discovery")
     assert resp.status_code == 200
-    assert b"No weekly runs in the log yet." in resp.content
+    assert b"No discovery runs in the log yet." in resp.content
 
 
 @pytest.mark.unit
-def test_dashboard_filters_by_run_type_weekly(client):
+def test_dashboard_filters_by_run_type_discovery(client):
     fake_db = MagicMock()
     fake_db.get_recent_runs_by_type.return_value = [
         {"run_id": "abc", "started_at": "2026-05-26", "status": "complete",
@@ -51,8 +51,8 @@ def test_dashboard_filters_by_run_type_weekly(client):
     fake_runtime = MagicMock()
     fake_runtime.state_db = fake_db
     fake_runtime.config.obsidian.vault_path = ""
-    with patch("scripts.server.routes.weekly.get_runtime", return_value=fake_runtime):
-        resp = client.get("/weekly-lit-run")
+    with patch("scripts.server.routes.discovery.get_runtime", return_value=fake_runtime):
+        resp = client.get("/discovery")
     assert resp.status_code == 200
-    fake_db.get_recent_runs_by_type.assert_called_once_with("weekly", limit=10)
+    fake_db.get_recent_runs_by_type.assert_called_once_with("discovery", limit=10)
     assert b"abc" in resp.content

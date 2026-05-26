@@ -219,6 +219,21 @@ a:hover {
 .step-card.todo {
   border-left: 4px solid var(--muted);
 }
+.step-card.optional {
+  border-left: 4px dashed var(--muted);
+  opacity: 0.9;
+}
+.step-card.optional .step-title {
+  font-weight: normal;
+}
+.pill.optional-pill {
+  background: var(--card-bg);
+  border: 1px dashed var(--muted);
+  color: var(--muted);
+  font-size: 0.75em;
+  margin-left: 0.4rem;
+  font-weight: normal;
+}
 .banner.danger {
   background: var(--danger-bg);
   color: var(--danger-fg);
@@ -454,7 +469,7 @@ a:hover {
 .collection-switcher summary { cursor: pointer; padding: 0.25rem 0.5rem; }
 .collection-switcher form { padding: 0.5rem 0; display: flex; gap: 0.5rem; align-items: end; }
 
-/* --- Weekly digest preview --- */
+/* --- Discovery digest preview --- */
 .digest-pre { background: var(--card-bg); border: 1px solid var(--border); padding: 1rem;
   border-radius: var(--radius); max-height: 50vh; overflow-y: auto;
   white-space: pre-wrap; font-family: monospace; font-size: 0.85em; }

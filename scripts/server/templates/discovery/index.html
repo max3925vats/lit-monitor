@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="dashboard">
-  <h1>Weekly run</h1>
+  <h1>Discovery</h1>
 
   {% if db_unavailable %}
   <div class="card warning">
@@ -11,19 +11,19 @@
   {% else %}
 
   <h2>Controls</h2>
-  <section hx-get="/api/weekly/controls" hx-trigger="load" hx-swap="outerHTML">
+  <section hx-get="/api/discovery/controls" hx-trigger="load" hx-swap="outerHTML">
     <p class="field-note">Loading controls…</p>
   </section>
 
   <h2>Live progress</h2>
-  <div hx-ext="sse" sse-connect="/api/weekly/stream" class="live-progress">
-    <div id="weekly-progress-lines"
+  <div hx-ext="sse" sse-connect="/api/discovery/stream" class="live-progress">
+    <div id="discovery-progress-lines"
          sse-swap="progress"
          hx-swap="beforeend show:bottom"
          class="live-progress-pane"
          style="max-height: 30vh; overflow-y: auto; background: #111; color: #eee; padding: 0.5rem; border-radius: var(--radius); font-family: monospace; font-size: 0.85em;">
       <div class="field-note live-progress-hint" style="color: #888;">
-        Streaming from the newest <code>weekly</code> JSONL log.
+        Streaming from the newest <code>discovery</code> JSONL log.
         New lines appear here as the pipeline runs.
       </div>
     </div>
@@ -41,7 +41,7 @@
     <tr><th>Papers failed</th><td>{{ last_run.papers_failed or 0 }}</td></tr>
   </table>
   {% else %}
-  <p class="field-note">No weekly runs in the log yet.</p>
+  <p class="field-note">No discovery runs in the log yet.</p>
   {% endif %}
 
   <h2>Run history (last 10)</h2>

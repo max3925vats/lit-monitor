@@ -1,8 +1,8 @@
-# topics.yaml — weekly search queries.
+# topics.yaml — recurring search queries (weekly is the typical cadence).
 #
 # Each entry runs every time `lit-monitor run` executes. Results are
 # deduplicated by DOI across searches. The brain-build pipeline does not
-# read this file — only the weekly monitor does.
+# read this file — only the discovery pipeline does.
 #
 # Schema:
 #   searches:

@@ -21,7 +21,7 @@ from scripts.server import scheduler
 def macos_tmp_dirs(tmp_path, monkeypatch):
     """Redirect launchd paths into tmp_path and force platform=macos."""
     launch_dir = tmp_path / "LaunchAgents"
-    plist = launch_dir / "com.litmonitor.weekly.plist"
+    plist = launch_dir / "com.litmonitor.discovery.plist"
     monkeypatch.setattr(scheduler, "_LAUNCHD_DIR", launch_dir)
     monkeypatch.setattr(scheduler, "_LAUNCHD_PLIST", plist)
     monkeypatch.setattr(scheduler, "detect_platform", lambda: "macos")
@@ -32,8 +32,8 @@ def macos_tmp_dirs(tmp_path, monkeypatch):
 def linux_tmp_dirs(tmp_path, monkeypatch):
     """Redirect systemd paths into tmp_path and force platform=linux."""
     sysd_dir = tmp_path / "systemd"
-    timer = sysd_dir / "lit-monitor-weekly.timer"
-    service = sysd_dir / "lit-monitor-weekly.service"
+    timer = sysd_dir / "lit-monitor-discovery.timer"
+    service = sysd_dir / "lit-monitor-discovery.service"
     monkeypatch.setattr(scheduler, "_SYSTEMD_DIR", sysd_dir)
     monkeypatch.setattr(scheduler, "_SYSTEMD_TIMER", timer)
     monkeypatch.setattr(scheduler, "_SYSTEMD_SERVICE", service)

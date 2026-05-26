@@ -2,7 +2,7 @@
 
 GET /api/brain-build/stream — tails the newest brain_build JSONL log
 under ``<repo>/logs/``, forwards each new line as a ``progress`` event.
-GET /api/weekly/stream — same machinery, but tails the newest weekly
+GET /api/discovery/stream — same machinery, but tails the newest discovery
 log instead. Both routes are thin wrappers around ``stream_log``.
 
 15-second heartbeats are emitted by sse-starlette via the ``ping`` kwarg.
@@ -98,7 +98,7 @@ def stream_log(request: Request, mode: str) -> EventSourceResponse:
     If no log file exists yet, emits a single ``error`` event and closes.
     Otherwise tails the file indefinitely until the client disconnects.
 
-    Used by both ``/api/brain-build/stream`` and ``/api/weekly/stream``.
+    Used by both ``/api/brain-build/stream`` and ``/api/discovery/stream``.
     """
 
     log_path = _newest_log(mode)

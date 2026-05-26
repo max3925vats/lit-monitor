@@ -1,8 +1,8 @@
-"""Platform-aware weekly schedule reader/writer.
+"""Platform-aware recurring-schedule reader/writer for the discovery pipeline.
 
-Manages an OS-level schedule that invokes ``lit-monitor run`` once a week.
-On macOS the schedule lives in a launchd LaunchAgent plist; on Linux it is a
-systemd user timer + service pair.
+Manages an OS-level schedule that invokes ``lit-monitor run`` on a recurring
+day-of-week cadence (weekly by default). On macOS the schedule lives in a
+launchd LaunchAgent plist; on Linux it is a systemd user timer + service pair.
 
 This module is *library code*. It does not invoke ``launchctl`` or
 ``systemctl`` at import time; only the public ``write_schedule`` and
@@ -59,11 +59,11 @@ _ONCALENDAR_RE = re.compile(
 # ---------------------------------------------------------------------------
 
 _LAUNCHD_DIR = Path.home() / "Library" / "LaunchAgents"
-_LAUNCHD_PLIST = _LAUNCHD_DIR / "com.litmonitor.weekly.plist"
+_LAUNCHD_PLIST = _LAUNCHD_DIR / "com.litmonitor.discovery.plist"
 
 _SYSTEMD_DIR = Path.home() / ".config" / "systemd" / "user"
-_SYSTEMD_TIMER = _SYSTEMD_DIR / "lit-monitor-weekly.timer"
-_SYSTEMD_SERVICE = _SYSTEMD_DIR / "lit-monitor-weekly.service"
+_SYSTEMD_TIMER = _SYSTEMD_DIR / "lit-monitor-discovery.timer"
+_SYSTEMD_SERVICE = _SYSTEMD_DIR / "lit-monitor-discovery.service"
 
 # ---------------------------------------------------------------------------
 # Jinja environment
@@ -84,7 +84,7 @@ _ENV = Environment(
 
 @dataclass(frozen=True)
 class ScheduleSpec:
-    """A weekly schedule: which day of the week, what HH:MM (24h local)."""
+    """A recurring schedule: which day of the week, what HH:MM (24h local)."""
 
     day_of_week: DayOfWeek
     time: str  # "HH:MM"
@@ -218,15 +218,15 @@ def write_schedule(spec: ScheduleSpec) -> Path:
         hour = int(spec.time.split(":")[0])
         minute = int(spec.time.split(":")[1])
         ctx = {
-            "label": "com.litmonitor.weekly",
+            "label": "com.litmonitor.discovery",
             "command": _uv_path(),
             "args": ["run", "lit-monitor", "run"],
             "working_dir": str(repo),
             "day_num": _DAY_TO_LAUNCHD[spec.day_of_week],
             "hour": hour,
             "minute": minute,
-            "stdout_path": str(repo / "logs" / "weekly-launchd.stdout.log"),
-            "stderr_path": str(repo / "logs" / "weekly-launchd.stderr.log"),
+            "stdout_path": str(repo / "logs" / "discovery-launchd.stdout.log"),
+            "stderr_path": str(repo / "logs" / "discovery-launchd.stderr.log"),
         }
         _LAUNCHD_DIR.mkdir(parents=True, exist_ok=True)
         rendered = _ENV.get_template("launchd.plist.j2").render(**ctx)
@@ -249,8 +249,8 @@ def write_schedule(spec: ScheduleSpec) -> Path:
             "command": _uv_path(),
             "args": ["run", "lit-monitor", "run"],
             "working_dir": str(repo),
-            "stdout_path": str(repo / "logs" / "weekly-systemd.stdout.log"),
-            "stderr_path": str(repo / "logs" / "weekly-systemd.stderr.log"),
+            "stdout_path": str(repo / "logs" / "discovery-systemd.stdout.log"),
+            "stderr_path": str(repo / "logs" / "discovery-systemd.stderr.log"),
         }
         _SYSTEMD_DIR.mkdir(parents=True, exist_ok=True)
         timer_text = _ENV.get_template("systemd.timer.j2").render(**ctx)
@@ -262,7 +262,7 @@ def write_schedule(spec: ScheduleSpec) -> Path:
             capture_output=True, check=True,
         )
         subprocess.run(
-            ["systemctl", "--user", "enable", "--now", "lit-monitor-weekly.timer"],
+            ["systemctl", "--user", "enable", "--now", "lit-monitor-discovery.timer"],
             capture_output=True, check=True,
         )
         return _SYSTEMD_TIMER
@@ -294,7 +294,7 @@ def remove_schedule() -> None:
         if _SYSTEMD_TIMER.exists():
             subprocess.run(
                 ["systemctl", "--user", "disable", "--now",
-                 "lit-monitor-weekly.timer"],
+                 "lit-monitor-discovery.timer"],
                 capture_output=True, check=False,
             )
             _SYSTEMD_TIMER.unlink(missing_ok=True)

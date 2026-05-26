@@ -1,7 +1,7 @@
 """
 M4 — discovered_topics auto-append to topics.yaml and concepts.yaml.
 
-At end-of-run, brain-build and weekly_monitor call merge_discovered_topics()
+At end-of-run, brain-build and discovery call merge_discovered_topics()
 with the list of DOI→topics pairs collected during extraction.  Novel topics
 (rapidfuzz ratio < 85 against all existing entries) are appended to:
 

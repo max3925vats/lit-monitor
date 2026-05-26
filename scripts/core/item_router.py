@@ -2,7 +2,7 @@
 Item routing — maps Zotero item types to pipeline, extraction schema, and source_type.
 
 Routing decisions for every Zotero item type live in config/item_routing.yaml
-rather than scattered if/elif chains in brain_build.py and weekly_monitor.py.
+rather than scattered if/elif chains in brain_build.py and discovery.py.
 
 Public API
 ----------

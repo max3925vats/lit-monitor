@@ -1,12 +1,12 @@
-"""Weekly-run dashboard + process controls + SSE progress stream.
+"""Discovery dashboard + process controls + SSE progress stream.
 
 Routes:
-    GET  /weekly-lit-run        — dashboard (last run, history, today's digest)
-    POST /api/weekly/start      — spawn ``lit-monitor run [--dry-run]``
-    POST /api/weekly/stop       — SIGTERM the running subprocess
-    GET  /api/weekly/status     — JSON status for polling
-    GET  /api/weekly/controls   — HTMX HTML fragment (5-second self-refresh)
-    GET  /api/weekly/stream     — SSE tail of newest weekly JSONL log
+    GET  /discovery             — dashboard (last run, history, today's digest)
+    POST /api/discovery/start   — spawn ``lit-monitor run [--dry-run]``
+    POST /api/discovery/stop    — SIGTERM the running subprocess
+    GET  /api/discovery/status  — JSON status for polling
+    GET  /api/discovery/controls — HTMX HTML fragment (5-second self-refresh)
+    GET  /api/discovery/stream  — SSE tail of newest discovery JSONL log
 """
 from __future__ import annotations
 
@@ -24,9 +24,9 @@ from scripts.server.routes.sse import stream_log
 from scripts.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["weekly"])
+router = APIRouter(tags=["discovery"])
 
-# Repo root: scripts/server/routes/weekly.py → 3 parents up.
+# Repo root: scripts/server/routes/discovery.py → 3 parents up.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -74,7 +74,7 @@ def _digests_folder_name() -> str:
 def _todays_digest() -> tuple[Path | None, str | None]:
     """Locate today's digest file, if any. Returns (path, content_or_None).
 
-    The weekly pipeline writes to ``{vault}/{digests_folder}/Discovery_{YYYY-MM-DD}.md``
+    The discovery pipeline writes to ``{vault}/{digests_folder}/Discovery_{YYYY-MM-DD}.md``
     using ``date.today()`` (local timezone). Falls back to the most recent
     ``Discovery_*.md`` if today's exact filename is missing.
     """
@@ -107,14 +107,14 @@ def _todays_digest() -> tuple[Path | None, str | None]:
         return newest, None
 
 
-@router.get("/weekly-lit-run", response_class=HTMLResponse)
+@router.get("/discovery", response_class=HTMLResponse)
 def dashboard(request: Request) -> HTMLResponse:
     db = _safe_db()
     recent_runs: list[dict] = []
     last_run: dict | None = None
     if db is not None:
         try:
-            recent_runs = db.get_recent_runs_by_type("weekly", limit=10)
+            recent_runs = db.get_recent_runs_by_type("discovery", limit=10)
             if recent_runs:
                 last_run = recent_runs[0]
         except Exception:
@@ -123,7 +123,7 @@ def dashboard(request: Request) -> HTMLResponse:
     digest_path, digest_content = _todays_digest()
     return templates.TemplateResponse(
         request,
-        "weekly/index.html",
+        "discovery/index.html",
         {
             "last_run": last_run,
             "recent_runs": recent_runs,
@@ -139,23 +139,23 @@ def dashboard(request: Request) -> HTMLResponse:
 # ---------------------------------------------------------------------------
 
 
-async def _spawn_weekly(*, dry_run: bool) -> asyncio.subprocess.Process:
+async def _spawn_discovery(*, dry_run: bool) -> asyncio.subprocess.Process:
     """Build the argv and spawn ``lit-monitor run [--dry-run]``."""
     argv = ["uv", "run", "lit-monitor", "run"]
     if dry_run:
         argv.append("--dry-run")
-    logger.info("Spawning weekly: %s", " ".join(argv))
+    logger.info("Spawning discovery: %s", " ".join(argv))
     return await asyncio.create_subprocess_exec(*argv, cwd=str(_REPO_ROOT))
 
 
-@router.post("/api/weekly/start")
-async def weekly_start(
+@router.post("/api/discovery/start")
+async def discovery_start(
     request: Request,
     dry_run: bool = Form(False),
 ) -> JSONResponse:
-    """Spawn a weekly run subprocess. Refuses if a run is already in flight."""
+    """Spawn a discovery run subprocess. Refuses if a run is already in flight."""
     runtime = get_runtime()
-    slot = runtime.processes["weekly"]
+    slot = runtime.processes["discovery"]
     async with slot.lock:
         if slot.is_running():
             return JSONResponse(
@@ -167,11 +167,11 @@ async def weekly_start(
                 status_code=409,
             )
         try:
-            slot.process = await _spawn_weekly(dry_run=dry_run)
+            slot.process = await _spawn_discovery(dry_run=dry_run)
             slot.started_at = datetime.now(UTC).isoformat(timespec="seconds")
             slot.dry_run = dry_run
         except Exception as exc:  # noqa: BLE001 — surface any spawn failure
-            logger.exception("Failed to spawn weekly")
+            logger.exception("Failed to spawn discovery")
             return JSONResponse(
                 {"started": False, "reason": f"spawn failed: {exc}"},
                 status_code=500,
@@ -186,20 +186,20 @@ async def weekly_start(
     )
 
 
-@router.post("/api/weekly/stop")
-async def weekly_stop() -> JSONResponse:
-    """SIGTERM the weekly subprocess; wait up to 30s, then SIGKILL."""
+@router.post("/api/discovery/stop")
+async def discovery_stop() -> JSONResponse:
+    """SIGTERM the discovery subprocess; wait up to 30s, then SIGKILL."""
     runtime = get_runtime()
-    slot = runtime.processes["weekly"]
+    slot = runtime.processes["discovery"]
     stopped = await slot.stop(timeout=30.0)
     return JSONResponse({"stopped": stopped})
 
 
-@router.get("/api/weekly/status")
-async def weekly_status() -> JSONResponse:
+@router.get("/api/discovery/status")
+async def discovery_status() -> JSONResponse:
     """Polled by the controls fragment to drive the button state."""
     runtime = get_runtime()
-    slot = runtime.processes["weekly"]
+    slot = runtime.processes["discovery"]
     running = slot.is_running()
     return JSONResponse(
         {
@@ -211,15 +211,15 @@ async def weekly_status() -> JSONResponse:
     )
 
 
-@router.get("/api/weekly/controls", response_class=HTMLResponse)
-async def weekly_controls(request: Request) -> HTMLResponse:
+@router.get("/api/discovery/controls", response_class=HTMLResponse)
+async def discovery_controls(request: Request) -> HTMLResponse:
     """HTMX-polled HTML fragment that renders Run/Dry-run or Stop buttons."""
     runtime = get_runtime()
-    slot = runtime.processes["weekly"]
+    slot = runtime.processes["discovery"]
     running = slot.is_running()
     return templates.TemplateResponse(
         request,
-        "weekly/_controls.html",
+        "discovery/_controls.html",
         {
             "is_running": running,
             "pid": slot.process.pid if running and slot.process else None,
@@ -229,7 +229,7 @@ async def weekly_controls(request: Request) -> HTMLResponse:
     )
 
 
-@router.get("/api/weekly/stream")
-async def weekly_stream(request: Request) -> EventSourceResponse:
-    """SSE stream of the newest weekly JSONL log."""
-    return stream_log(request, "weekly")
+@router.get("/api/discovery/stream")
+async def discovery_stream(request: Request) -> EventSourceResponse:
+    """SSE stream of the newest discovery JSONL log."""
+    return stream_log(request, "discovery")

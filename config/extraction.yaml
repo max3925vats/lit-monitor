@@ -39,10 +39,10 @@ ingestion:
 
 # ingestion:
 #   provider: "ollama"
-#   model: "phi4-mini"              # weekly ingestion — same model as brain_build for consistency
+#   model: "phi4-mini"              # discovery ingestion — same model as brain_build for consistency
 #   ollama_host: "http://localhost:11434"
 #   temperature: 0.1
-#   timeout: 7200                     # 2 hours — weekly ingestion per-paper pass
+#   timeout: 7200                     # 2 hours — discovery ingestion per-paper pass
 #   max_tokens_per_call: 4096
 #   section_chunking: true
 #   ocr_dpi: 400

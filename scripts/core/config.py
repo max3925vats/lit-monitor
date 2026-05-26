@@ -70,7 +70,7 @@ class Config:
     Top-level configuration object assembled from:
     - config/paths.yaml      — filesystem paths (vault, zotero, state db, logs)
     - config/extraction.yaml — LLM model selection per pipeline mode
-    - config/topics.yaml     — weekly search queries  (optional)
+    - config/topics.yaml     — recurring search queries  (optional)
     - config/researchers.yaml — tracked researchers   (optional)
     - config/concepts.yaml   — vocabulary themes      (optional)
     - config/domain_context.yaml — domain description (optional)
