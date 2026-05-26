@@ -735,9 +735,12 @@ def step_topics_form(request: Request) -> HTMLResponse:
     searches = topics.get("searches", []) or []
     # Ensure each entry has the keys the template expects.
     for s in searches:
-        s.setdefault("name", "")
-        s.setdefault("query", "")
-        s.setdefault("databases", [])
+        if not s.get("name"):
+            s["name"] = ""
+        if not s.get("query"):
+            s["query"] = ""
+        if not s.get("databases"):
+            s["databases"] = []
     ctx = {
         "current_step": 4,
         "searches": searches,

@@ -2,7 +2,7 @@
 {% block step_content %}
 <h1>Step 4 — Topics</h1>
 <p>Weekly search queries. Each runs every <code>lit-monitor run</code>. Stored at <code>config/topics.yaml</code>.</p>
-<p class="muted">Note: comments in topics.yaml are stripped on save (PyYAML limitation). Use git to track history if needed.</p>
+<p class="field-note">Note: comments in topics.yaml are stripped on save (PyYAML limitation). Use git to track history if needed.</p>
 
 <form class="setup-form" hx-post="/setup/api/topics" hx-target="#result" hx-swap="innerHTML">
   <div id="topics-rows">
@@ -10,7 +10,8 @@
     <fieldset class="topics-row">
       <label>name <input type="text" name="name_{{ loop.index0 }}" value="{{ s.name }}"></label>
       <label>query <textarea name="query_{{ loop.index0 }}" rows="2">{{ s.query }}</textarea></label>
-      <label>databases
+      <div class="field-group">
+        <span class="field-label">databases</span>
         {% for db in all_databases %}
         <label class="checkbox-inline">
           <input type="checkbox" name="databases_{{ loop.index0 }}" value="{{ db }}"
@@ -18,7 +19,7 @@
           {{ db }}
         </label>
         {% endfor %}
-      </label>
+      </div>
       <button type="button" class="button danger"
         onclick="this.closest('fieldset').remove()">Remove</button>
     </fieldset>

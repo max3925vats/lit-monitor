@@ -8,7 +8,7 @@
     <textarea id="domain_focus" name="domain_focus" rows="8" maxlength="6000"
       oninput="document.getElementById('word-count').innerText = this.value.trim().split(/\s+/).filter(Boolean).length">{{ domain_focus }}</textarea>
   </label>
-  <p class="muted">words: <span id="word-count">0</span> (soft target: under 400)</p>
+  <p class="field-note">words: <span id="word-count">0</span> (soft target: under 400)</p>
 
   <button type="submit">Save</button>
 </form>

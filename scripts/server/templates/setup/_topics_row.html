@@ -3,7 +3,8 @@
 <fieldset class="topics-row">
   <label>name <input type="text" name="name_{{ idx }}" value="{{ search.name }}"></label>
   <label>query <textarea name="query_{{ idx }}" rows="2">{{ search.query }}</textarea></label>
-  <label>databases
+  <div class="field-group">
+    <span class="field-label">databases</span>
     {% for db in all_databases %}
     <label class="checkbox-inline">
       <input type="checkbox" name="databases_{{ idx }}" value="{{ db }}"
@@ -11,7 +12,7 @@
       {{ db }}
     </label>
     {% endfor %}
-  </label>
+  </div>
   <button type="button" class="button danger"
     onclick="this.closest('fieldset').remove()">Remove</button>
 </fieldset>
