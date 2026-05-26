@@ -392,3 +392,42 @@ a:hover {
 .status-grid { width: 100%; }
 .status-grid td { padding: 0.5rem; border-bottom: 1px solid var(--border); }
 .status-grid td:last-child { text-align: right; }
+
+/* --- Brain-build dashboard (F3.1) --- */
+.dashboard h2 { margin-top: 1.5rem; }
+.progress-block { margin: 1rem 0; }
+.progress-label { font-weight: bold; margin-bottom: 0.25rem; }
+.progress-bar {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  height: 1rem;
+  overflow: hidden;
+}
+.progress-fill {
+  background: var(--accent);
+  height: 100%;
+  transition: width 0.3s;
+}
+.papers-table, .runs-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  font-size: 0.9em;
+}
+.papers-table th, .papers-table td,
+.runs-table th, .runs-table td {
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.papers-table .row-done { color: var(--muted); }
+.papers-table .row-error { background: #fef4f4; }
+.failed-block {
+  margin: 1rem 0;
+  padding: 0.5rem;
+  border: 1px solid #c66;
+  border-radius: var(--radius);
+  background: #fef4f4;
+}
+.field-note.error { color: #c00; }

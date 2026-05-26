@@ -113,9 +113,11 @@ def create_app() -> FastAPI:
 
     # Imported lazily so the setup module can safely `from scripts.server.app
     # import templates` — by the time create_app() runs, `templates` is bound.
+    from scripts.server.routes.brain_build import router as brain_build_router
     from scripts.server.routes.setup import router as setup_router
 
     app.include_router(setup_router)
+    app.include_router(brain_build_router)
 
     return app
 

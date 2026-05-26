@@ -349,6 +349,46 @@ class StateDB:
                 (zotero_key,),
             ).fetchone()
         return dict(row) if row else None
+
+    def get_all_brain_build_progress(
+        self, limit: int = 100, offset: int = 0
+    ) -> list[dict]:
+        """Return brain-build progress rows joined with paper metadata (F3.1).
+
+        LEFT JOINs ``brain_build_progress`` with ``papers`` on ``doi`` so the
+        dashboard can show title + authors + year alongside the per-pass
+        completion flags. Rows where the DOI is missing or unknown still come
+        back with NULL paper_* columns.
+
+        Sort order: ``fully_complete`` ASC (incomplete first), then
+        ``zotero_key`` for stable ties. ``limit`` and ``offset`` support
+        paginated UIs. Read-only.
+        """
+        sql = """
+            SELECT
+                bbp.zotero_key,
+                bbp.doi,
+                bbp.pass1_complete,
+                bbp.pass2_complete,
+                bbp.pass3_complete,
+                bbp.simple_complete,
+                bbp.complex_complete,
+                bbp.fully_complete,
+                bbp.failure_reason,
+                p.title           AS paper_title,
+                p.year            AS paper_year,
+                p.authors         AS paper_authors,
+                p.source_type     AS paper_source_type,
+                p.status          AS paper_status,
+                p.extraction_json AS paper_extraction_json
+            FROM brain_build_progress bbp
+            LEFT JOIN papers p ON p.doi = bbp.doi
+            ORDER BY bbp.fully_complete ASC, bbp.zotero_key ASC
+            LIMIT ? OFFSET ?
+        """
+        with self._connect() as conn:
+            rows = conn.execute(sql, (limit, offset)).fetchall()
+        return [dict(r) for r in rows]
     # -- Key-value store (pipeline metadata) --
     def get_kv(self, key: str) -> str | None:
         with self._connect() as conn:

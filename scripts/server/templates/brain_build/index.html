@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Brain build · lit-monitor{% endblock %}
+{% block content %}
+<section class="dashboard">
+  <h1>Brain build</h1>
+
+  {% if db_unavailable %}
+  <div class="card warning">
+    <h3>State DB unavailable</h3>
+    <p>The dashboard cannot read the state database. Complete the
+      <a href="/setup">setup wizard</a> first, or check the
+      <a href="/api/health">health endpoint</a> for details.</p>
+  </div>
+  {% else %}
+
+  <p class="field-note">Collection:
+    <code>{{ collection_name or "(not set — see setup step 2)" }}</code>
+  </p>
+
+  {% if progress and progress.total %}
+  <div class="progress-block">
+    <div class="progress-label">
+      {{ progress.done }} / {{ progress.total }} papers fully extracted
+      ({{ progress.pct }}%)
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" style="width: {{ progress.pct }}%;"></div>
+    </div>
+  </div>
+  {% else %}
+  <p class="field-note">No papers tracked yet. Run
+    <code>lit-monitor brain-build</code> to populate the state DB.</p>
+  {% endif %}
+
+  <h2>Per-paper status (latest {{ rows | length }})</h2>
+  {% if rows %}
+  <table class="papers-table">
+    <thead>
+      <tr>
+        <th>DOI</th>
+        <th>Title</th>
+        <th>Authors</th>
+        <th>Year</th>
+        <th>Simple</th>
+        <th>Complex</th>
+        <th>Fully</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr class="{% if r.error_message %}row-error{% elif r.fully_complete %}row-done{% endif %}">
+        <td><code>{{ r.doi or "(no DOI)" }}</code></td>
+        <td>{{ r.paper_title or "(no title)" }}</td>
+        <td>{{ r.authors_short or "—" }}</td>
+        <td>{{ r.paper_year or "—" }}</td>
+        <td>{{ "✓" if r.simple_complete else "·" }}</td>
+        <td>{{ "✓" if r.complex_complete else "·" }}</td>
+        <td>{{ "✓" if r.fully_complete else "·" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if failed_rows %}
+  <details class="failed-block">
+    <summary><strong>Failed papers ({{ failed_rows | length }})</strong></summary>
+    <ul>
+      {% for r in failed_rows %}
+      <li>
+        <code>{{ r.doi or r.zotero_key }}</code> —
+        {{ r.paper_title or "(no title)" }}
+        <div class="field-note error">{{ r.error_message }}</div>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  <h2>Recent runs</h2>
+  {% if recent_runs %}
+  <table class="runs-table">
+    <thead>
+      <tr>
+        <th>Run ID</th>
+        <th>Type</th>
+        <th>Started</th>
+        <th>Status</th>
+        <th>Papers</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in recent_runs %}
+      <tr>
+        <td><code>{{ run.run_id[:8] }}…</code></td>
+        <td>{{ run.run_type or "—" }}</td>
+        <td>{{ run.started_at or "—" }}</td>
+        <td>{{ run.status or "—" }}</td>
+        <td>
+          {{ run.papers_processed or 0 }}{% if run.papers_failed %}
+            ({{ run.papers_failed }} failed){% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="field-note">No runs in the log.</p>
+  {% endif %}
+
+  {% endif %}
+</section>
+{% endblock %}
