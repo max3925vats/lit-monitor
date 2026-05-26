@@ -32,12 +32,12 @@ def _read_version() -> str:
     """Resolve the installed package version, falling back to ``dev``."""
 
     try:
-        from importlib.metadata import PackageNotFoundError, version
+        from importlib.metadata import version
 
         return version("lit-monitor")
     except Exception:
-        # PackageNotFoundError when running from a fresh source tree
-        # without an editable install. Anything else: degrade quietly.
+        # importlib.metadata.PackageNotFoundError when running from a fresh
+        # source tree without an editable install. Anything else: degrade quietly.
         return "dev"
 
 
