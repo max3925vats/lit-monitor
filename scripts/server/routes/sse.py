@@ -2,6 +2,9 @@
 
 GET /api/brain-build/stream — tails the newest brain_build JSONL log
 under ``<repo>/logs/``, forwards each new line as a ``progress`` event.
+GET /api/weekly/stream — same machinery, but tails the newest weekly
+log instead. Both routes are thin wrappers around ``stream_log``.
+
 15-second heartbeats are emitted by sse-starlette via the ``ping`` kwarg.
 Closes on client disconnect.
 
@@ -9,7 +12,7 @@ The JSONL log layout is defined by ``scripts.cli._setup_logging`` /
 ``_JsonlFileHandler`` — one JSON object per line, file named
 ``{YYYY-MM-DD}_{mode}.jsonl``. The filename suffix is the only mode
 indicator, so "filter by mode" reduces to "tail the newest file whose
-name ends in ``_brain_build.jsonl``".
+name ends in ``_{mode}.jsonl``".
 """
 
 from __future__ import annotations
@@ -89,21 +92,29 @@ async def _tail(log_path: Path, request: Request) -> AsyncIterator[dict]:
         fh.close()
 
 
-@router.get("/api/brain-build/stream")
-async def stream_brain_build(request: Request) -> EventSourceResponse:
-    """SSE stream of the newest brain_build JSONL log.
+def stream_log(request: Request, mode: str) -> EventSourceResponse:
+    """Return an SSE response tailing the newest ``*_{mode}.jsonl`` log.
 
     If no log file exists yet, emits a single ``error`` event and closes.
     Otherwise tails the file indefinitely until the client disconnects.
+
+    Used by both ``/api/brain-build/stream`` and ``/api/weekly/stream``.
     """
 
-    log_path = _newest_log("brain_build")
+    log_path = _newest_log(mode)
     if log_path is None:
         async def _empty() -> AsyncIterator[dict]:
-            yield {"event": "error", "data": "no brain-build log file found"}
+            yield {"event": "error", "data": f"no {mode} log file found"}
 
         return EventSourceResponse(_empty(), ping=15)
     return EventSourceResponse(_tail(log_path, request), ping=15)
 
 
-__all__ = ["router"]
+@router.get("/api/brain-build/stream")
+async def stream_brain_build(request: Request) -> EventSourceResponse:
+    """SSE stream of the newest brain_build JSONL log."""
+
+    return stream_log(request, "brain_build")
+
+
+__all__ = ["router", "stream_log"]

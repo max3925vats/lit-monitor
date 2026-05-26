@@ -50,6 +50,9 @@ class ProcessSlot:
 
     process: asyncio.subprocess.Process | None = None
     started_at: str | None = None  # ISO-format
+    # Set by /api/weekly/start so the controls fragment can label the run
+    # as "dry-run" vs "running". Other slots ignore this field.
+    dry_run: bool = False
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     output: list[str] = field(default_factory=list)
     output_cap: int = 1000
@@ -83,6 +86,7 @@ class ProcessSlot:
                 await p.wait()
             self.process = None
             self.started_at = None
+            self.dry_run = False
             return True
 
 

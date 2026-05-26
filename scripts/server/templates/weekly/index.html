@@ -10,6 +10,25 @@
   </div>
   {% else %}
 
+  <h2>Controls</h2>
+  <section hx-get="/api/weekly/controls" hx-trigger="load" hx-swap="outerHTML">
+    <p class="field-note">Loading controls…</p>
+  </section>
+
+  <h2>Live progress</h2>
+  <div hx-ext="sse" sse-connect="/api/weekly/stream" class="live-progress">
+    <div id="weekly-progress-lines"
+         sse-swap="progress"
+         hx-swap="beforeend show:bottom"
+         class="live-progress-pane"
+         style="max-height: 30vh; overflow-y: auto; background: #111; color: #eee; padding: 0.5rem; border-radius: var(--radius); font-family: monospace; font-size: 0.85em;">
+      <div class="field-note live-progress-hint" style="color: #888;">
+        Streaming from the newest <code>weekly</code> JSONL log.
+        New lines appear here as the pipeline runs.
+      </div>
+    </div>
+  </div>
+
   {% if last_run %}
   <h2>Last run</h2>
   <table class="runs-table">

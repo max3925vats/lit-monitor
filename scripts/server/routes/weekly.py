@@ -1,21 +1,33 @@
-"""Weekly-run dashboard read-only view.
+"""Weekly-run dashboard + process controls + SSE progress stream.
 
-GET /weekly-lit-run — last run summary + recent runs table + today's digest viewer.
+Routes:
+    GET  /weekly-lit-run        — dashboard (last run, history, today's digest)
+    POST /api/weekly/start      — spawn ``lit-monitor run [--dry-run]``
+    POST /api/weekly/stop       — SIGTERM the running subprocess
+    GET  /api/weekly/status     — JSON status for polling
+    GET  /api/weekly/controls   — HTMX HTML fragment (5-second self-refresh)
+    GET  /api/weekly/stream     — SSE tail of newest weekly JSONL log
 """
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from sse_starlette.sse import EventSourceResponse
 
 from scripts.server.app import templates
+from scripts.server.routes.sse import stream_log
 from scripts.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["weekly"])
+
+# Repo root: scripts/server/routes/weekly.py → 3 parents up.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _safe_runtime():
@@ -120,3 +132,104 @@ def dashboard(request: Request) -> HTMLResponse:
             "db_unavailable": db is None,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Process control endpoints (F4.2)
+# ---------------------------------------------------------------------------
+
+
+async def _spawn_weekly(*, dry_run: bool) -> asyncio.subprocess.Process:
+    """Build the argv and spawn ``lit-monitor run [--dry-run]``."""
+    argv = ["uv", "run", "lit-monitor", "run"]
+    if dry_run:
+        argv.append("--dry-run")
+    logger.info("Spawning weekly: %s", " ".join(argv))
+    return await asyncio.create_subprocess_exec(*argv, cwd=str(_REPO_ROOT))
+
+
+@router.post("/api/weekly/start")
+async def weekly_start(
+    request: Request,
+    dry_run: bool = Form(False),
+) -> JSONResponse:
+    """Spawn a weekly run subprocess. Refuses if a run is already in flight."""
+    runtime = get_runtime()
+    slot = runtime.processes["weekly"]
+    async with slot.lock:
+        if slot.is_running():
+            return JSONResponse(
+                {
+                    "started": False,
+                    "reason": "already running",
+                    "pid": slot.process.pid if slot.process else None,
+                },
+                status_code=409,
+            )
+        try:
+            slot.process = await _spawn_weekly(dry_run=dry_run)
+            slot.started_at = datetime.now(UTC).isoformat(timespec="seconds")
+            slot.dry_run = dry_run
+        except Exception as exc:  # noqa: BLE001 — surface any spawn failure
+            logger.exception("Failed to spawn weekly")
+            return JSONResponse(
+                {"started": False, "reason": f"spawn failed: {exc}"},
+                status_code=500,
+            )
+    return JSONResponse(
+        {
+            "started": True,
+            "pid": slot.process.pid,
+            "started_at": slot.started_at,
+            "dry_run": dry_run,
+        }
+    )
+
+
+@router.post("/api/weekly/stop")
+async def weekly_stop() -> JSONResponse:
+    """SIGTERM the weekly subprocess; wait up to 30s, then SIGKILL."""
+    runtime = get_runtime()
+    slot = runtime.processes["weekly"]
+    stopped = await slot.stop(timeout=30.0)
+    return JSONResponse({"stopped": stopped})
+
+
+@router.get("/api/weekly/status")
+async def weekly_status() -> JSONResponse:
+    """Polled by the controls fragment to drive the button state."""
+    runtime = get_runtime()
+    slot = runtime.processes["weekly"]
+    running = slot.is_running()
+    return JSONResponse(
+        {
+            "running": running,
+            "pid": slot.process.pid if running and slot.process else None,
+            "started_at": slot.started_at if running else None,
+            "dry_run": slot.dry_run if running else None,
+        }
+    )
+
+
+@router.get("/api/weekly/controls", response_class=HTMLResponse)
+async def weekly_controls(request: Request) -> HTMLResponse:
+    """HTMX-polled HTML fragment that renders Run/Dry-run or Stop buttons."""
+    runtime = get_runtime()
+    slot = runtime.processes["weekly"]
+    running = slot.is_running()
+    return templates.TemplateResponse(
+        request,
+        "weekly/_controls.html",
+        {
+            "is_running": running,
+            "pid": slot.process.pid if running and slot.process else None,
+            "started_at": slot.started_at if running else None,
+            "dry_run": slot.dry_run if running else False,
+        },
+    )
+
+
+@router.get("/api/weekly/stream")
+async def weekly_stream(request: Request) -> EventSourceResponse:
+    """SSE stream of the newest weekly JSONL log."""
+    return stream_log(request, "weekly")
