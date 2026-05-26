@@ -431,3 +431,19 @@ a:hover {
   background: #fef4f4;
 }
 .field-note.error { color: #c00; }
+
+/* --- Live progress panel (brain-build SSE stream) --- */
+.live-progress { margin: 1rem 0; }
+.live-progress-pane {
+  max-height: 30vh;
+  overflow-y: auto;
+  background: #111;
+  color: #eee;
+  padding: 0.5rem;
+  border-radius: var(--radius);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.live-progress-hint { color: #888; }

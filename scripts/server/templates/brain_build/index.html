@@ -32,6 +32,19 @@
     <code>lit-monitor brain-build</code> to populate the state DB.</p>
   {% endif %}
 
+  <h2>Live progress</h2>
+  <div hx-ext="sse" sse-connect="/api/brain-build/stream" class="live-progress">
+    <div id="progress-lines"
+         sse-swap="progress"
+         hx-swap="beforeend show:bottom"
+         class="live-progress-pane">
+      <div class="field-note live-progress-hint">
+        Streaming from the newest <code>brain_build</code> JSONL log.
+        New lines appear here as the pipeline runs.
+      </div>
+    </div>
+  </div>
+
   <h2>Per-paper status (latest {{ rows | length }})</h2>
   {% if rows %}
   <table class="papers-table">
