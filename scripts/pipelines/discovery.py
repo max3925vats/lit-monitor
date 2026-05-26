@@ -39,6 +39,7 @@ from scripts.llm.llm_client import RateLimitError
 from scripts.llm.ranker import rank_papers
 from scripts.obsidian_tools.relink import relink_note
 from scripts.output.obsidian_writer import write_paper_note
+from scripts.pipelines._ingest import index_embeddings_and_mark_phases
 from scripts.pipelines.brain_build import (
     _check_item_quality,  # A2: metadata quality gate
     _extract_keywords,
@@ -504,19 +505,32 @@ def _run_ingestion(
             note_path = write_paper_note(paper_record, extraction, config)
             note_title = Path(note_path).stem
             embed_text = _paper_embed_text(title, abstract, extraction)
-            embeddings_db.add_paper(
-                doi,
-                embed_text,
-                {"source_type": "paper", "title": title, "year": year},
-            )
+            # Each ingested item embeds into ChromaDB here — this is the "embeddings grow
+            # on every run" mechanic the README leans on.
+            chunks: list = []
             if fulltext:
                 try:
                     from scripts.core.chunker import chunk_markdown
                     from scripts.core.markdown_processor import strip_end_matter
                     chunks = chunk_markdown(strip_end_matter(fulltext), doi)
-                    embeddings_db.add_chunks(doi, chunks)
                 except Exception as exc:
-                    logger.warning("Chunk indexing failed for %s (non-fatal): %s", doi, exc)
+                    logger.warning("Chunking failed for %s (non-fatal): %s", doi, exc)
+            # R28: helper centralises add_paper + add_chunks + deferred phase marks.
+            embed_ok, embed_err = index_embeddings_and_mark_phases(
+                doi=doi,
+                zotero_key=zotero_key,
+                fulltext=embed_text,
+                paper_metadata={"source_type": "paper", "title": title, "year": year},
+                chunks=chunks,
+                state_db=state_db,
+                embeddings_db=embeddings_db,
+                phases_to_mark=tuple(_phases_to_mark),
+                logger=logger,
+            )
+            if not embed_ok:
+                # Skip downstream work (state flag, relink) so the paper isn't
+                # falsely marked complete; outer except will mark it failed.
+                raise RuntimeError(embed_err)
             state_db.upsert_paper({
                 "doi": doi,
                 "note_title": note_title,
@@ -524,10 +538,6 @@ def _run_ingestion(
                 "embeddings_indexed": 1,
                 "last_updated": _now(),
             })
-            # Audit R28 fix: commit phase progress only after the embed step has
-            # succeeded.  See _phases_to_mark assignment above for rationale.
-            for _phase in _phases_to_mark:
-                state_db.mark_brain_build_phase(zotero_key, _phase)
             # Relink this note only
             try:
                 relink_note(note_path, embeddings_db, state_db, config=config)

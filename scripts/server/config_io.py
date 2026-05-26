@@ -86,6 +86,34 @@ def save_secrets(data: dict[str, Any]) -> Path:
     return final
 
 
+def load_server_config() -> dict[str, Any]:
+    """Return the [server] block from secrets TOML, or {} if absent.
+
+    Caller is responsible for applying defaults — this just exposes
+    whatever the user has persisted.
+    """
+    secrets = load_secrets()
+    block = secrets.get("server", {})
+    # Defensive: a malformed TOML could have [server] as a non-table.
+    return block if isinstance(block, dict) else {}
+
+
+def save_server_config(host: str, port: int, open_browser: bool) -> None:
+    """Merge a [server] block into the secrets TOML atomically.
+
+    Preserves all other top-level keys (zotero/pubmed/scopus/etc.) by
+    round-tripping through load_secrets() + save_secrets().  Atomic write
+    via os.replace; 0o600 mode preserved (save_secrets handles both).
+    """
+    secrets = load_secrets()
+    secrets["server"] = {
+        "host": host,
+        "port": int(port),
+        "open_browser": bool(open_browser),
+    }
+    save_secrets(secrets)
+
+
 def _atomic_write(target: Path, content: str) -> Path:
     """Write ``content`` to ``target`` via a same-directory temp file + os.replace.
 

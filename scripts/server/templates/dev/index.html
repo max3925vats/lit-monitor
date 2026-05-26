@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}/dev — lit-monitor{% endblock %}
+{% block content %}
+<h1>/dev — Test surface</h1>
+<p class="muted">
+  Sandbox sink: <code>state_dev.db</code>, <code>dev-*</code> ChromaDB collections,
+  <code>Literature/_Dev/</code>. Panels 3-7 land in subsequent tasks.
+</p>
+
+<section class="dev-panel">
+  <h2>Panel 1 — Tier 1: code correctness</h2>
+  <p class="muted">
+    Full Tier 1 (lint + pytest + leakage grep) lives in the shell:
+    <code>./scripts/test_everything.sh --tier 1</code>. Here you can run lint alone.
+  </p>
+  <button hx-post="/api/dev/ruff"
+          hx-target="#panel-1-result"
+          hx-swap="innerHTML"
+          hx-indicator="#panel-1-spinner">Run ruff in-process</button>
+  <span id="panel-1-spinner" class="htmx-indicator">running…</span>
+  <div id="panel-1-result"></div>
+</section>
+
+<section class="dev-panel">
+  <h2>Panel 2 — Tier 2: service health</h2>
+  <div class="button-row">
+    <button hx-post="/api/dev/diagnose"
+            hx-target="#panel-2-result"
+            hx-swap="innerHTML">diagnose --config-only</button>
+    <button hx-post="/api/dev/check"
+            hx-target="#panel-2-result"
+            hx-swap="innerHTML">check (full health probe)</button>
+    <button hx-get="/api/dev/status"
+            hx-target="#panel-2-result"
+            hx-swap="innerHTML">status (DB counts)</button>
+  </div>
+  <div id="panel-2-result"></div>
+</section>
+
+<section class="dev-panel">
+  <h2>Panel 3 — Tier 3a: sandbox ingestion</h2>
+  <p class="muted">
+    Run one paper end-to-end through chunk → extract → state DB → embeddings → Obsidian note.
+    All writes go to the sandbox (<code>state_dev.db</code>, <code>dev-*</code> ChromaDB
+    collections, <code>Literature/_Dev/</code>).
+  </p>
+  <details>
+    <summary>Mode A — paste markdown</summary>
+    <form hx-post="/api/dev/ingest/markdown" hx-target="#panel-3-result-A" hx-swap="innerHTML">
+      <label>DOI <input name="doi" type="text" required></label>
+      <label>Markdown<br>
+        <textarea name="markdown" rows="8" cols="80" required></textarea>
+      </label>
+      <button type="submit">Process</button>
+    </form>
+    <div id="panel-3-result-A"></div>
+  </details>
+  <details>
+    <summary>Mode B — Zotero by item key</summary>
+    <form hx-post="/api/dev/ingest/zotero-key" hx-target="#panel-3-result-B" hx-swap="innerHTML">
+      <label>Zotero item key <input name="zotero_key" type="text" required></label>
+      <button type="submit">Fetch &amp; ingest</button>
+    </form>
+    <div id="panel-3-result-B"></div>
+  </details>
+  <details>
+    <summary>Mode C — Zotero by DOI</summary>
+    <form hx-post="/api/dev/ingest/doi" hx-target="#panel-3-result-C" hx-swap="innerHTML">
+      <label>DOI <input name="doi" type="text" required></label>
+      <button type="submit">Lookup &amp; ingest</button>
+    </form>
+    <div id="panel-3-result-C"></div>
+  </details>
+</section>
+<section class="dev-panel">
+  <h2>Panel 4 — Tier 3b: Obsidian tooling on a sandbox DOI</h2>
+  <p class="muted">
+    Operates on DOIs already in the sandbox state DB. Run Panel 3 first to
+    populate. All writes target the sandbox (<code>state_dev.db</code>,
+    <code>dev-*</code> ChromaDB collections, <code>Literature/_Dev/</code>).
+  </p>
+
+  <div class="row">
+    <label>Pick a sandbox DOI:
+      <select id="sandbox-doi-picker" name="doi"
+              hx-get="/api/dev/sandbox-dois"
+              hx-trigger="load"
+              hx-swap="innerHTML">
+        <option value="">(loading…)</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="button-row">
+    <button hx-post="/api/dev/relink"
+            hx-include="#sandbox-doi-picker"
+            hx-target="#panel-4-result"
+            hx-swap="innerHTML">Relink</button>
+
+    <button hx-post="/api/dev/rerender"
+            hx-include="#sandbox-doi-picker"
+            hx-target="#panel-4-result"
+            hx-swap="innerHTML">Re-render</button>
+
+    <form hx-post="/api/dev/re-extract"
+          hx-include="#sandbox-doi-picker"
+          hx-target="#panel-4-result"
+          hx-swap="innerHTML"
+          style="display:inline-block;">
+      <label><input type="checkbox" name="phases" value="simple" checked> simple</label>
+      <label><input type="checkbox" name="phases" value="complex" checked> complex</label>
+      <button type="submit">Re-extract</button>
+    </form>
+  </div>
+
+  <hr>
+  <p class="muted">Synthesize is topic-based, not DOI-based:</p>
+  <form hx-post="/api/dev/synthesize"
+        hx-target="#panel-4-result"
+        hx-swap="innerHTML">
+    <label>Topic <input type="text" name="topic" required></label>
+    <button type="submit">Synthesize</button>
+  </form>
+
+  <div id="panel-4-result"></div>
+</section>
+<section class="dev-panel">
+  <h2>Panel 5 — Tier 3c: discovery dry-run</h2>
+  <p class="muted">Runs <code>lit-monitor run --dry-run</code> against the live search APIs but writes nothing to state.db. Verifies the discovery side of the pipeline is healthy.</p>
+  <p class="muted">⚠ Don't start this while a real <code>discovery</code> run is active — their logs would interleave.</p>
+  <button hx-post="/api/dev/dryrun/start" hx-target="#panel-5-status" hx-swap="innerHTML">Start dry-run</button>
+  <div id="panel-5-status"></div>
+  <div id="panel-5-stream" hx-ext="sse" sse-connect="/api/dev/dryrun/stream" sse-swap="message"
+       style="max-height: 200px; overflow-y: auto; background: #fafafa; padding: 0.5rem; margin-top: 0.5rem; font-family: monospace; font-size: 0.85em;"></div>
+  <button hx-get="/api/dev/dryrun/result" hx-target="#panel-5-result" hx-swap="innerHTML">Show result</button>
+  <div id="panel-5-result"></div>
+</section>
+<section class="dev-panel">
+  <h2>Panel 6 — Tier 4: quality + safety</h2>
+  <p class="muted">
+    Synthetic guard tests + the on-disk Tier-4 release quality report.
+    The compare-models button burns LLM tokens — wait up to 10 minutes.
+    Comparison output is written to the repo's <code>comparison/</code> folder
+    (shared with any production compare-models run).
+  </p>
+  <div class="button-row">
+    <button hx-post="/api/dev/compare-models"
+            hx-target="#panel-6-compare"
+            hx-swap="innerHTML"
+            hx-indicator="#panel-6-compare-spinner">compare-models (1 sandbox paper)</button>
+    <span id="panel-6-compare-spinner" class="htmx-indicator">running… up to 10 min</span>
+  </div>
+  <div id="panel-6-compare"></div>
+
+  <hr>
+
+  <div class="button-row">
+    <button hx-post="/api/dev/safety"
+            hx-target="#panel-6-safety"
+            hx-swap="innerHTML">Prompt-injection guard</button>
+    <button hx-post="/api/dev/render-guard"
+            hx-target="#panel-6-render"
+            hx-swap="innerHTML">{domain_focus} render guard</button>
+    <button hx-get="/api/dev/quality-report"
+            hx-target="#panel-6-report"
+            hx-swap="innerHTML">Quality report</button>
+  </div>
+  <div id="panel-6-safety"></div>
+  <div id="panel-6-render"></div>
+  <div id="panel-6-report"></div>
+</section>
+<section class="dev-panel">
+  <h2>Panel 7 — Sandbox status + clear</h2>
+  <p class="muted">Live counts of sandbox state (refreshes every 5s).</p>
+  <div id="panel-7-status" hx-get="/api/dev/sandbox/status"
+       hx-trigger="load, every 5s" hx-swap="innerHTML">
+    <span class="pill loading">loading…</span>
+  </div>
+
+  <hr>
+
+  <p class="muted">⚠ Destructive: wipes <code>state_dev.db</code>, drops <code>dev-papers</code> + <code>dev-chunks</code> ChromaDB collections, removes <code>Literature/_Dev/</code>.</p>
+  <form hx-post="/api/dev/sandbox/clear" hx-target="#panel-7-clear-result" hx-swap="innerHTML">
+    <label>Type <code>yes</code> to confirm: <input type="text" name="confirm" placeholder="yes"></label>
+    <button type="submit">Clear sandbox</button>
+  </form>
+  <div id="panel-7-clear-result"></div>
+</section>
+{% endblock %}

@@ -473,3 +473,64 @@ a:hover {
 .digest-pre { background: var(--card-bg); border: 1px solid var(--border); padding: 1rem;
   border-radius: var(--radius); max-height: 50vh; overflow-y: auto;
   white-space: pre-wrap; font-family: monospace; font-size: 0.85em; }
+
+/* --- Health badge in topnav (Task #65) --- */
+/* .topnav is already display:flex with gap, so just push the badge to the right. */
+#health-badge { margin-left: auto; }
+.status-badge { display: inline-flex; align-items: center; gap: 0.35em;
+                padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.82em;
+                cursor: pointer; text-decoration: none; }
+.status-badge::before { content: "●"; }
+.status-badge.healthy { background: #efe; color: #060; border: 1px solid #6c6; }
+.status-badge.degraded { background: #ffe; color: #960; border: 1px solid #cc6; }
+.status-badge.misconfigured { background: #fee; color: #c00; border: 1px solid #c66; }
+.status-badge.unconfigured { background: #eee; color: #555; border: 1px solid #aaa; }
+.status-badge.loading { background: #f0f0f0; color: #888; border: 1px solid #ccc; }
+#health-detail { padding: 0.5rem 1.25rem; border-bottom: 1px solid var(--border);
+                 background: #fafafa; }
+#health-detail[hidden] { display: none; }
+.health-detail-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+.health-detail-table td { padding: 0.2rem 0.5rem; }
+.health-detail-error { color: var(--danger-fg); padding: 0.5rem 1rem; }
+
+/* Dev-mode banner (rendered only when LIT_MONITOR_DEV=1). */
+.dev-banner { background: #fff3cd; color: #6b4f00; padding: 0.4rem 1rem;
+              text-align: center; font-size: 0.85em; border-bottom: 1px solid #f5d77a; }
+.dev-banner a { color: #6b4f00; font-weight: 600; }
+
+/* /dev page panels (Task #67). */
+.dev-panel { padding: 1rem 1.25rem; border: 1px solid var(--border); border-radius: 4px; margin: 1rem 0; }
+.dev-panel.dev-panel-placeholder { opacity: 0.5; border-style: dashed; }
+.dev-panel h2 { margin-top: 0; }
+.dev-panel .button-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.dev-result { margin-top: 0.75rem; }
+.dev-output { background: #f8f8f8; padding: 0.5rem; border-radius: 3px; font-size: 0.85em;
+              max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
+.dev-output-err { background: #fff4f4; padding: 0.5rem; border-radius: 3px; font-size: 0.85em;
+                  white-space: pre-wrap; }
+.dev-checks-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+.dev-checks-table td { padding: 0.25rem 0.5rem; }
+.htmx-indicator { display: none; color: var(--muted); font-style: italic; }
+.htmx-request .htmx-indicator { display: inline; }
+
+/* Footer (GitHub / Issues / README) */
+.site-footer {
+  padding: 0.75rem 1.25rem;
+  margin-top: 2rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.85em;
+  color: var(--muted);
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.site-footer a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.site-footer a:hover {
+  text-decoration: underline;
+}
+.footer-sep {
+  color: var(--muted);
+}

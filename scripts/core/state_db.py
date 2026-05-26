@@ -155,6 +155,8 @@ class StateDB:
             # M3: backfill simple/complex from old pass columns for existing rows.
             # Only touches rows that have pass progress but no phase progress yet.
             try:
+                # Hardcoded pass3 as max; if _schema_max_pass() ever returns >3, this backfill
+                # block must be revisited.
                 conn.execute(
                     "UPDATE brain_build_progress SET "
                     "simple_complete = CASE WHEN pass1_complete=1 AND pass2_complete=1 THEN 1 ELSE 0 END, "

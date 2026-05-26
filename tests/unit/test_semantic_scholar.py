@@ -123,7 +123,7 @@ class TestEnrichPaper:
             "scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch
         ) as mock_cls:
             enrich_paper("10.1016/j.foo.2024.001", api_key="my-s2-key")
-        mock_cls.assert_called_once_with(api_key="my-s2-key")
+        mock_cls.assert_called_once_with(api_key="my-s2-key", timeout=30)
 
     def test_citation_counts_coerced_to_int(self):
         """Ensure counts are stored as int, not as raw API type."""

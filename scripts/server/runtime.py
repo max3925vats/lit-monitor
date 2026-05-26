@@ -56,6 +56,8 @@ class ProcessSlot:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     output: list[str] = field(default_factory=list)
     output_cap: int = 1000
+    # Free-form per-slot metadata (e.g. state.db mtime snapshot for dev_dryrun).
+    metadata: dict = field(default_factory=dict)
 
     def append_line(self, line: str) -> None:
         """Append a line, truncating from the start if cap exceeded."""
@@ -113,6 +115,7 @@ class ServerRuntime:
             "brain_build": ProcessSlot(),
             "discovery": ProcessSlot(),
             "vocabulary": ProcessSlot(),
+            "dev_dryrun": ProcessSlot(),
         }
     )
 

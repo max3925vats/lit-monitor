@@ -11,6 +11,9 @@
     <script defer src="/static/site.js"></script>
   </head>
   <body>
+    {% if request.app.state.dev_mode %}
+    <div class="dev-banner">DEV MODE — sandbox active. Test surface at <a href="/dev">/dev</a>.</div>
+    {% endif %}
     <header class="topnav">
       <a class="brand" href="/">lit-monitor</a>
       <nav>
@@ -20,16 +23,26 @@
         <a href="/brain-build">Brain-Build</a>
         <a href="/schedule">Schedule</a>
       </nav>
+      <div id="health-badge" hx-get="/api/health/badge" hx-trigger="load, every 30s" hx-swap="innerHTML">
+        <span class="status-badge loading">checking…</span>
+      </div>
     </header>
 
+    <div id="health-detail" hidden></div>
     <div id="status-banner" class="status-banner" hidden></div>
 
     <main class="content">
       {% block content %}{% endblock %}
     </main>
 
-    <footer class="footer">
-      <span>lit-monitor v{{ version | default("dev") }}</span>
+    <footer class="site-footer">
+      <span>lit-monitor v{{ request.app.state.version }}</span>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/max3925vats/lit-monitor" target="_blank" rel="noopener">GitHub</a>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/max3925vats/lit-monitor/issues" target="_blank" rel="noopener">Report a bug</a>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/max3925vats/lit-monitor/blob/main/README.md" target="_blank" rel="noopener">README</a>
     </footer>
   </body>
 </html>

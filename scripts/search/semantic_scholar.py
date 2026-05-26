@@ -90,7 +90,7 @@ def enrich_paper(
     if not doi or not doi.strip():
         return {}
 
-    sch = _SemanticScholar(api_key=api_key)
+    sch = _SemanticScholar(api_key=api_key, timeout=30)
     try:
         paper = sch.get_paper(f"DOI:{doi.strip()}", fields=_ENRICH_FIELDS)
     except Exception as exc:
@@ -174,7 +174,7 @@ def search_semantic_scholar(
     # S2 publication_date_or_year: "YYYY-MM-DD:" means "from this date onward".
     pub_date_filter = f"{since_date}:"
 
-    sch = _SemanticScholar(api_key=api_key)
+    sch = _SemanticScholar(api_key=api_key, timeout=30)
     try:
         results = sch.search_paper(
             clean_query,

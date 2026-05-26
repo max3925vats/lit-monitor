@@ -581,6 +581,11 @@ def get_clients_for_passes(
             "Expected one of: brain_build, ingestion, build_vocabulary"
         )
     provider = getattr(mode_config, "provider", "ollama")
+    if provider not in ("ollama", "litellm"):
+        raise ValueError(
+            f"Unknown provider {provider!r} in mode {mode!r}. "
+            "Expected 'ollama' or 'litellm'."
+        )
 
     # Detect per-pass overrides based on provider.
     if provider == "litellm":
@@ -632,11 +637,6 @@ def get_clients_for_passes(
                 num_ctx=int(context_window) if context_window is not None else None,
             )
         else:  # ollama
-            if provider != "ollama":
-                raise ValueError(
-                    f"Unsupported LLM provider: {provider!r}. "
-                    "Valid values: 'ollama' (default) or 'litellm' (requires [cloud] extra)."
-                )
             # Per-pass model, falling back to the mode default.
             pass_model = pass_overrides[pass_num] or getattr(mode_config, "model", "qwen2.5:3b")
             clients[pass_num] = OllamaClient(

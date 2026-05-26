@@ -106,6 +106,25 @@ def test_long_section_split_on_paragraphs():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.unit
+def test_merge_short_chunks_never_merges_large_across_headings():
+    """A8 — cross-heading merges must NOT happen when combined > target_chars // 2."""
+    # target_tokens=320 → target_chars=1120 → target_chars//2=560.
+    # Two paragraphs under different headings, each 400 chars.
+    # Combined = 800 > 560 → must NOT merge across the heading boundary.
+    para_len = 400
+    text = f"## Section A\n\n{'A' * para_len}\n\n## Section B\n\n{'B' * para_len}\n"
+    chunks = chunk_markdown(text, "10.test/a8", target_tokens=320)
+    headings = [c.section_heading for c in chunks]
+    # If the buggy code merged them, only one heading would survive.
+    assert any("Section A" in h for h in headings), (
+        f"Expected a chunk for Section A; got {headings}"
+    )
+    assert any("Section B" in h for h in headings), (
+        f"Expected a chunk for Section B; got {headings}"
+    )
+
+
+@pytest.mark.unit
 def test_short_sections_merged():
     # Three very short sections — should merge into ≤ 2 chunks
     text = (
@@ -197,6 +216,31 @@ def test_giant_single_sentence_is_hard_sliced():
     for c in chunks:
         assert len(c.text) <= target_chars, (
             f"Hard-slice produced chunk of {len(c.text)} > {target_chars} chars"
+        )
+
+
+@pytest.mark.unit
+def test_chunk_offsets_correct_with_repeated_boilerplate():
+    """A9 — repeated boilerplate must not confuse chunk offset tracking."""
+    from scripts.core.chunker import chunk_markdown
+    boilerplate = "These authors contributed equally to this work.\n\n"
+    text = (
+        "## Section A\n\n"
+        + boilerplate
+        + "Unique text in section A. " * 30 + "\n\n"
+        + "## Section B\n\n"
+        + boilerplate
+        + "Unique text in section B. " * 30 + "\n"
+    )
+    chunks = chunk_markdown(text, "10.test/a9", target_tokens=320)
+    # Every chunk's (char_start, char_end) must point at a substring of `text`
+    # that matches its `.text` field exactly.
+    for chunk in chunks:
+        slice_ = text[chunk.char_start:chunk.char_end]
+        assert slice_ == chunk.text, (
+            f"Chunk offsets mismatched for chunk_index={chunk.chunk_index}:\n"
+            f"  text[{chunk.char_start}:{chunk.char_end}] = {slice_!r}\n"
+            f"  chunk.text = {chunk.text!r}"
         )
 
 

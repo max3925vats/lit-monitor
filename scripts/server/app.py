@@ -9,6 +9,7 @@ include_router calls.
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -80,7 +81,15 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     """Build and return the FastAPI application instance."""
 
+    # Read the dev flag from the environment (set by `serve --dev`).
+    # Anything other than "1" is treated as off, including unset.
+    dev_mode = os.environ.get("LIT_MONITOR_DEV") == "1"
+
     app = FastAPI(title="lit-monitor", version=__version__, lifespan=lifespan)
+    app.state.dev_mode = dev_mode
+    # Exposed on app.state so base.html footer can render the version on every
+    # route, not just routes that explicitly pass `version` into their context.
+    app.state.version = __version__
 
     app.mount(
         "/static",
@@ -116,6 +125,7 @@ def create_app() -> FastAPI:
     from scripts.server.routes.brain_build import router as brain_build_router
     from scripts.server.routes.control import router as control_router
     from scripts.server.routes.discovery import router as discovery_router
+    from scripts.server.routes.health import router as health_router
     from scripts.server.routes.schedule import router as schedule_router
     from scripts.server.routes.setup import router as setup_router
     from scripts.server.routes.sse import router as sse_router
@@ -126,6 +136,19 @@ def create_app() -> FastAPI:
     app.include_router(sse_router)
     app.include_router(discovery_router)
     app.include_router(schedule_router)
+    app.include_router(health_router)
+
+    # Dev-only /dev test surface. Wrapped in try/except so a syntax error or
+    # import-time failure inside routes/dev.py downgrades to a warning rather
+    # than killing the whole server.
+    if dev_mode:
+        try:
+            from scripts.server.routes import dev as dev_routes
+
+            app.include_router(dev_routes.router)
+            logger.info("Dev mode enabled — /dev router mounted.")
+        except Exception as exc:  # pragma: no cover — defensive boot path
+            logger.warning("Failed to mount /dev router: %s", exc)
 
     return app
 

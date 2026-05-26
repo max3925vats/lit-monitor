@@ -116,7 +116,8 @@ def run_searches(
 
     for topic in topics:
         logger.info("Searching topic: %r", topic)
-        tmp = tempfile.mktemp(suffix=".json")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as _tmp_fh:
+            tmp = _tmp_fh.name
         try:
             _findpapers.search(
                 outputpath=tmp,
@@ -148,8 +149,10 @@ def run_searches(
                 exc,
             )
         finally:
-            if os.path.exists(tmp):
+            try:
                 os.unlink(tmp)
+            except FileNotFoundError:
+                pass
 
     # D3: Semantic Scholar supplementary search — best-effort, runs after findpapers
     # so that DOI deduplication covers both sources.  Errors never abort the run.
@@ -207,10 +210,14 @@ def _format_query(topic: str) -> str:
     findpapers 0.6.x requires every search term wrapped in square brackets:
         [ultrafiltration] AND [monoclonal antibody]
     Multi-word phrases stay as one term: [monoclonal antibody] (not split further).
-    If the topic already contains '[', assume it's in findpapers format and pass through.
+
+    Any pre-existing '[' or ']' in the input is stripped first, so the canonical
+    formatting path runs every time. This guarantees validation regardless of
+    whether the caller already wrapped terms in brackets (Audit_31 H2).
     """
-    if '[' in topic:
-        return topic
+    # Strip any user-supplied brackets so the canonical path re-adds them
+    # exactly where findpapers expects.
+    topic = topic.replace('[', '').replace(']', '')
 
     if not re.search(r'\b(?:AND NOT|AND|OR)\b', topic, re.IGNORECASE):
         return f'[{topic.strip()}]'

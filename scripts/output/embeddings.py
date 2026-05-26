@@ -56,17 +56,25 @@ class EmbeddingsDB:
         persist_dir: str,
         ollama_host: str = "http://localhost:11434",
         embed_model: str = "mxbai-embed-large",
+        *,
+        papers_collection: str = _COLLECTION_NAME,
+        chunks_collection: str = _CHUNKS_COLLECTION_NAME,
     ) -> None:
         # Telemetry already suppressed via os.environ above; no Settings object needed.
         self._client = chromadb.PersistentClient(path=persist_dir)
         self._ollama_host = ollama_host.rstrip("/")
         self._embed_model = embed_model  # configurable — change triggers full re-embed
+        # Collection names are instance-bound so the same class can be reused
+        # for the production indices AND the /dev sandbox (which uses _dev_*).
+        # Defaults preserve historic behaviour exactly.
+        self._papers_collection_name = papers_collection
+        self._chunks_collection_name = chunks_collection
         self._collection = self._client.get_or_create_collection(
-            name=_COLLECTION_NAME,
+            name=papers_collection,
             metadata={"hnsw:space": "cosine"},
         )
         self._chunks_collection = self._client.get_or_create_collection(
-            name=_CHUNKS_COLLECTION_NAME,
+            name=chunks_collection,
             metadata={"hnsw:space": "cosine"},
         )
     # ------------------------------------------------------------------
@@ -316,24 +324,24 @@ class EmbeddingsDB:
         are not mixed with vectors from the new one. Clears both the paper-level
         and chunk-level collections. Safe to call on a fresh install.
         """
-        for name in (_COLLECTION_NAME, _CHUNKS_COLLECTION_NAME):
+        for name in (self._papers_collection_name, self._chunks_collection_name):
             try:
                 self._client.delete_collection(name)
             except Exception as exc:
                 # ChromaDB raises ValueError or InvalidCollectionException if absent
                 logger.debug("delete_collection raised (likely collection absent): %s", exc)
         self._collection = self._client.get_or_create_collection(
-            name=_COLLECTION_NAME,
+            name=self._papers_collection_name,
             metadata={"hnsw:space": "cosine"},
         )
         self._chunks_collection = self._client.get_or_create_collection(
-            name=_CHUNKS_COLLECTION_NAME,
+            name=self._chunks_collection_name,
             metadata={"hnsw:space": "cosine"},
         )
         logger.info(
             "ChromaDB collections '%s' and '%s' cleared.",
-            _COLLECTION_NAME,
-            _CHUNKS_COLLECTION_NAME,
+            self._papers_collection_name,
+            self._chunks_collection_name,
         )
 
     def clear_chunks(self) -> None:
@@ -344,14 +352,14 @@ class EmbeddingsDB:
         index is still valid).
         """
         try:
-            self._client.delete_collection(_CHUNKS_COLLECTION_NAME)
+            self._client.delete_collection(self._chunks_collection_name)
         except Exception as exc:
             logger.debug("delete_collection raised (likely chunks collection absent): %s", exc)
         self._chunks_collection = self._client.get_or_create_collection(
-            name=_CHUNKS_COLLECTION_NAME,
+            name=self._chunks_collection_name,
             metadata={"hnsw:space": "cosine"},
         )
-        logger.info("ChromaDB chunks collection '%s' cleared.", _CHUNKS_COLLECTION_NAME)
+        logger.info("ChromaDB chunks collection '%s' cleared.", self._chunks_collection_name)
 
     # ------------------------------------------------------------------
     # Internal

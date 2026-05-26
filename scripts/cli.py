@@ -228,30 +228,22 @@ def main(ctx: click.Context, verbose: bool, strict: bool) -> None:
 @click.pass_context
 def check(ctx: click.Context) -> None:
     """Verify configuration, Ollama, and Zotero are all reachable."""
-    from scripts.setup.check_configured import check_configured
-    from scripts.setup.check_ollama import check_ollama
-    from scripts.setup.check_zotero import check_zotero
+    from scripts.setup.health_check import run_health_check
     _setup_logging("check", verbose=ctx.obj.get("verbose", False))
     overall_ok = True
+    # Single in-process call returns per-section results in the same
+    # shape the original inline code produced — the web UI (Phase C/D)
+    # reuses run_health_check() directly instead of shelling out.
+    health = run_health_check()
     click.echo(click.style("\n── Configuration ──", bold=True))
-    results = check_configured()
-    if not _print_check_results(results):
+    if not _print_check_results(health["config"]):
         overall_ok = False
 
     click.echo(click.style("\n── Ollama ──", bold=True))
-    # Try to load the configured model name for the check
-    model: str | None = None
-    try:
-        cfg = _make_config()
-        model = getattr(cfg.brain_build, "model", None)
-    except Exception:
-        pass
-    ollama_results = check_ollama(model=model)
-    if not _print_check_results(ollama_results):
+    if not _print_check_results(health["ollama"]):
         overall_ok = False
     click.echo(click.style("\n── Zotero ──", bold=True))
-    zotero_results = check_zotero()
-    if not _print_check_results(zotero_results):
+    if not _print_check_results(health["zotero"]):
         overall_ok = False
     # Ollama API key visibility — show source without leaking the key value.
     click.echo(click.style("\n── Ollama API Key ──", bold=True))
@@ -315,94 +307,61 @@ def diagnose(ctx: click.Context, config_only: bool) -> None:
     Exit code 0 if all files load cleanly; 1 if any FAIL.
     """
     _setup_logging("diagnose", verbose=ctx.obj.get("verbose", False))
-    # Activate strict mode for this command regardless of --strict flag.
-    set_strict(True)
-
-    import yaml as _yaml
-
-    from scripts.core.config import _CONFIG_DIR
-    from scripts.llm.extraction_schema import _resolve_path
-
+    from scripts.setup.diagnose import (
+        ABSENT_OPTIONAL_MSG,
+        check_core_configs,
+        check_optional_configs,
+        check_prompts,
+        check_schemas,
+    )
+    from scripts.setup.health_check import run_health_check
+    # Helper closure: prints a single (label, (ok, msg)) row in the same
+    # format the old inline _check_yaml emitted. Mutates `all_ok` via
+    # nonlocal so the section loops match the original control flow.
     all_ok = True
 
-    def _check_yaml(label: str, path: Path) -> None:
+    def _print_file_row(label: str, status: tuple[bool, str]) -> None:
         nonlocal all_ok
-        try:
-            if not path.exists():
-                raise FileNotFoundError(f"not found: {path}")
-            with path.open(encoding="utf-8") as fh:
-                data = _yaml.safe_load(fh)
-            if data is None:
-                raise ValueError("file is empty or contains only comments")
-            click.echo(f"  {click.style('OK', fg='green')}  {label}: {path}")
-        except Exception as exc:
-            click.echo(f"  {click.style('FAIL', fg='red')}  {label}: {exc}")
+        ok, msg = status
+        # ABSENT_OPTIONAL_MSG is encoded as (True, ABSENT_OPTIONAL_MSG)
+        # by check_optional_configs(); render the same yellow "--" row
+        # the inline code produced. Not a failure.
+        if ok and msg == ABSENT_OPTIONAL_MSG:
+            click.echo(f"  {click.style('--', fg='yellow')}  {label}: {ABSENT_OPTIONAL_MSG}")
+            return
+        if ok:
+            click.echo(f"  {click.style('OK', fg='green')}  {label}: {msg}")
+        else:
+            click.echo(f"  {click.style('FAIL', fg='red')}  {label}: {msg}")
             all_ok = False
 
     click.echo(click.style("\n── Core config files ──", bold=True))
-    _check_yaml("paths.yaml", _CONFIG_DIR / "paths.yaml")
-    _check_yaml("extraction.yaml", _CONFIG_DIR / "extraction.yaml")
+    for label, status in check_core_configs().items():
+        _print_file_row(label, status)
 
     click.echo(click.style("\n── Schema files ──", bold=True))
-    for schema_name in ("extraction_schema.yaml", "review_schema.yaml"):
-        try:
-            resolved = _resolve_path(Path(f"config/{schema_name}"))
-            label = schema_name
-            if resolved.name.endswith(".example.yaml"):
-                label += " (using .example.yaml fallback)"
-            _check_yaml(label, resolved)
-        except Exception as exc:
-            click.echo(f"  {click.style('FAIL', fg='red')}  {schema_name}: {exc}")
-            all_ok = False
+    for label, status in check_schemas().items():
+        _print_file_row(label, status)
 
     click.echo(click.style("\n── Optional config files ──", bold=True))
-    for optional_name in (
-        "topics.yaml",
-        "domain_context.yaml",
-        "researchers.yaml",
-        "concepts.yaml",
-    ):
-        p = _CONFIG_DIR / optional_name
-        if p.exists():
-            _check_yaml(optional_name, p)
-        else:
-            click.echo(f"  {click.style('--', fg='yellow')}  {optional_name}: absent (optional)")
+    for label, status in check_optional_configs().items():
+        _print_file_row(label, status)
 
     click.echo(click.style("\n── Prompt YAMLs ──", bold=True))
-    prompts_dir = _CONFIG_DIR / "prompts"
-    for prompt_name in ("clustering.yaml", "extraction.yaml", "rationale.yaml", "synthesis.yaml"):
-        p = prompts_dir / prompt_name
-        example_p = prompts_dir / prompt_name.replace(".yaml", ".example.yaml")
-        if p.exists():
-            _check_yaml(f"prompts/{prompt_name}", p)
-        elif example_p.exists():
-            _check_yaml(f"prompts/{prompt_name} (using .example.yaml fallback)", example_p)
-        else:
-            click.echo(f"  {click.style('FAIL', fg='red')}  prompts/{prompt_name}: absent")
-            all_ok = False
+    for label, status in check_prompts().items():
+        _print_file_row(label, status)
 
     if not config_only:
         click.echo(click.style("\n── Service checks ──", bold=True))
-        from scripts.setup.check_configured import check_configured
-        from scripts.setup.check_ollama import check_ollama
-        from scripts.setup.check_zotero import check_zotero
+        health = run_health_check()
         click.echo(click.style("  Configuration:", bold=False))
-        results = check_configured()
-        if not _print_check_results(results):
+        if not _print_check_results(health["config"]):
             all_ok = False
-        model: str | None = None
-        try:
-            cfg = _make_config()
-            model = getattr(cfg.brain_build, "model", None)
-        except Exception:
-            pass
         click.echo(click.style("  Ollama:", bold=False))
-        ollama_results = check_ollama(model=model)
-        if not _print_check_results(ollama_results):
+        if not _print_check_results(health["ollama"]):
             all_ok = False
         click.echo(click.style("  Zotero:", bold=False))
-        zotero_results = check_zotero()
-        if not _print_check_results(zotero_results):
+        if not _print_check_results(health["zotero"]):
             all_ok = False
 
     click.echo()
@@ -415,23 +374,184 @@ def diagnose(ctx: click.Context, config_only: bool) -> None:
 # serve
 # ---------------------------------------------------------------------------
 @main.command("serve")
-@click.option("--host", default="127.0.0.1", show_default=True)
-@click.option("--port", default=8765, type=int, show_default=True)
+@click.option("--host", default=None,
+              help="Bind host (default: [server].host from config.toml, else 127.0.0.1).")
+@click.option("--port", default=None, type=int,
+              help="Bind port (default: [server].port from config.toml, else 8765).")
 @click.option("--reload", is_flag=True, default=False)
+@click.option("--no-browser", is_flag=True, default=False,
+              help="Skip auto-opening the browser even if [server].open_browser is true.")
+@click.option("--dev", is_flag=True, default=False,
+              help="Enable internal test-setup page at /dev. Adds dev-mode banner; mounts /dev router.")
 @click.pass_context
-def serve(ctx: click.Context, host: str, port: int, reload: bool) -> None:
-    """Start the lit-monitor web UI + API server."""
+def serve(
+    ctx: click.Context,
+    host: str | None,
+    port: int | None,
+    reload: bool,
+    no_browser: bool,
+    dev: bool,
+) -> None:
+    """Start the lit-monitor web UI + API server.
+
+    Precedence for host/port: CLI flag > [server] block in config.toml >
+    hardcoded default (127.0.0.1:8765).
+    """
+    import threading
+    import webbrowser
+
     import uvicorn
 
+    from scripts.server.config_io import load_server_config
+
     _setup_logging("serve", verbose=ctx.obj.get("verbose", False))
+    server_cfg = load_server_config()
+    final_host = host if host is not None else server_cfg.get("host", "127.0.0.1")
+    final_port = port if port is not None else int(server_cfg.get("port", 8765))
+
+    # Browser-open precedence: --no-browser CLI flag wins, else [server].open_browser,
+    # else default True.
+    cfg_open_browser = bool(server_cfg.get("open_browser", True))
+    effective_open_browser = (not no_browser) and cfg_open_browser
+
+    # Propagate --dev to the worker process started by uvicorn's app factory.
+    # uvicorn spawns create_app() in a fresh import context, so an env var is
+    # the cleanest hand-off (Python-level state would not survive the import).
+    if dev:
+        os.environ["LIT_MONITOR_DEV"] = "1"
+
+    click.echo(">> lit-monitor serve")
+    click.echo(f">> running at http://{final_host}:{final_port}  (Ctrl+C to stop)")
+    if dev:
+        click.echo(">> DEV MODE enabled — /dev test surface mounted; sandbox active.")
+
+    if effective_open_browser:
+        url = f"http://{final_host}:{final_port}"
+
+        def _open_browser_safe() -> None:
+            # Headless boxes (no DISPLAY) raise from webbrowser.open — swallow,
+            # log a warning, and keep serving.
+            try:
+                webbrowser.open(url)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("Failed to auto-open browser at %s: %s", url, exc)
+
+        timer = threading.Timer(1.5, _open_browser_safe)
+        timer.daemon = True
+        timer.start()
+
     uvicorn.run(
         "scripts.server.app:create_app",
         factory=True,
-        host=host,
-        port=port,
+        host=final_host,
+        port=final_port,
         reload=reload,
         log_config=None,
     )
+
+
+# ---------------------------------------------------------------------------
+# first-run — interactive onboarding
+# ---------------------------------------------------------------------------
+@main.command("first-run")
+@click.pass_context
+def first_run(ctx: click.Context) -> None:
+    """Interactive onboarding: write credentials, configure server, launch it.
+
+    Idempotent — re-running after a previous setup will NOT re-prompt for
+    credentials and will NOT spawn a second `serve` instance if the chosen
+    port is already in use.
+    """
+    import socket
+    import subprocess
+    import time
+    import webbrowser
+
+    from scripts.server.config_io import (
+        load_server_config,
+        save_secrets,
+        save_server_config,
+    )
+    from scripts.setup._paths import SECRETS_PATH
+
+    _setup_logging("first_run", verbose=ctx.obj.get("verbose", False))
+
+    # Step 1: credentials. Only prompt if the file doesn't exist yet.
+    if not SECRETS_PATH.exists():
+        click.echo(click.style("\nWelcome to lit-monitor!", bold=True))
+        click.echo(
+            "We'll set up the minimum credentials now. You can add more "
+            "(Scopus, WoS, etc.) later from the web UI."
+        )
+        api_key = click.prompt("Zotero API key", type=str).strip()
+        library_id = click.prompt("Zotero library ID", type=str).strip()
+        email = click.prompt("PubMed contact email (required by NCBI)", type=str).strip()
+        secrets: dict[str, Any] = {
+            "zotero": {"api_key": api_key, "library_id": library_id},
+            "pubmed": {"email": email},
+        }
+        save_secrets(secrets)
+        click.echo(f"  Wrote credentials to {SECRETS_PATH} (mode 0600).")
+    else:
+        click.echo(f"Found existing credentials at {SECRETS_PATH} — skipping credential prompts.")
+
+    # Step 2: server settings. Always prompt (re-runnable), defaults from
+    # the existing [server] block if present.
+    existing = load_server_config()
+    host: str = click.prompt(
+        "Server host", default=existing.get("host", "127.0.0.1"), show_default=True,
+    )
+    port: int = click.prompt(
+        "Server port", default=int(existing.get("port", 8765)), type=int, show_default=True,
+    )
+    open_browser: bool = click.confirm(
+        "Open browser to the setup page after launch?",
+        default=bool(existing.get("open_browser", True)),
+    )
+
+    # Step 3: persist [server] block.
+    save_server_config(host=host, port=port, open_browser=open_browser)
+    click.echo(f"  Saved [server] block to {SECRETS_PATH}.")
+
+    # Step 4: detect whether the port is already in use; if so, skip launch.
+    url = f"http://{host}:{port}"
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            port_in_use = True
+    except OSError:
+        port_in_use = False
+
+    if port_in_use:
+        click.echo(
+            f"  Port {port} on {host} is already in use — assuming lit-monitor serve "
+            "is already running. Skipping launch."
+        )
+        if open_browser:
+            click.echo(f"  Opening browser at {url}/setup …")
+            webbrowser.open(f"{url}/setup")
+        return
+
+    # Step 5: detached launch.
+    click.echo(f">> launching lit-monitor serve at {url}")
+    if open_browser:
+        click.echo(f"   (will open browser at {url}/setup once the server is ready)")
+    # Detach stdout/stderr so the spawned serve doesn't leak uvicorn output
+    # into the user's shell after first-run exits. Structured JSONL logs from
+    # _setup_logging("serve", ...) still get written to disk under logs/.
+    subprocess.Popen(
+        [sys.executable, "-m", "scripts.cli", "serve"],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if open_browser:
+        # Give uvicorn ~1.5s to bind before pointing the browser at it.
+        time.sleep(1.5)
+        webbrowser.open(f"{url}/setup")
+    log_date = datetime.now().strftime("%Y-%m-%d")
+    click.echo("lit-monitor serve is running in the background.")
+    click.echo(f"  Logs: logs/{log_date}_serve.jsonl")
+    click.echo(f"  To stop it: find the PID via `lsof -i :{port}` and `kill <pid>`.")
 # ---------------------------------------------------------------------------
 # status
 # ---------------------------------------------------------------------------

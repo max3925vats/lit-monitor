@@ -36,6 +36,7 @@ from scripts.llm.extraction_schema import all_fields_for_schema
 from scripts.llm.extractor import extract_fields, extract_paper
 from scripts.llm.llm_client import RateLimitError
 from scripts.output.obsidian_writer import write_paper_note
+from scripts.pipelines._ingest import index_embeddings_and_mark_phases
 from scripts.search.semantic_scholar import enrich_paper
 
 logger = logging.getLogger(__name__)
@@ -520,19 +521,30 @@ def _process_paper(
     note_title = Path(note_path).stem
     # Index in ChromaDB — paper-level and chunk-level
     embed_text = _paper_embed_text(title, abstract, extraction)
-    embeddings_db.add_paper(
-        doi,
-        embed_text,
-        {"source_type": "paper", "title": title, "year": year, "note_title": note_title},
-    )
+    chunks: list = []
     if fulltext:
         try:
             from scripts.core.chunker import chunk_markdown
             from scripts.core.markdown_processor import strip_end_matter
             chunks = chunk_markdown(strip_end_matter(fulltext), doi)
-            embeddings_db.add_chunks(doi, chunks)
         except Exception as exc:
-            logger.warning("Chunk indexing failed for %s (non-fatal): %s", doi, exc)
+            logger.warning("Chunking failed for %s (non-fatal): %s", doi, exc)
+    # R28: helper centralises add_paper + add_chunks + deferred phase marks.
+    # add_paper failure -> phases NOT marked, returns (False, err).
+    embed_ok, embed_err = index_embeddings_and_mark_phases(
+        doi=doi,
+        zotero_key=zotero_key,
+        fulltext=embed_text,
+        paper_metadata={"source_type": "paper", "title": title, "year": year, "note_title": note_title},
+        chunks=chunks,
+        state_db=state_db,
+        embeddings_db=embeddings_db,
+        phases_to_mark=tuple(_phases_to_mark),
+        logger=logger,
+    )
+    if not embed_ok:
+        # Propagate embed failure to caller so the paper isn't marked complete.
+        raise RuntimeError(embed_err)
     # Update state with note info + embeddings flag
     state_db.upsert_paper({
         "doi": doi,
@@ -541,12 +553,6 @@ def _process_paper(
         "embeddings_indexed": 1,
         "last_updated": _now(),
     })
-    # Audit R28 fix: only mark phase progress as complete AFTER the paper-level
-    # embedding has succeeded.  Marking earlier left papers in a stuck state
-    # where status='error' coexisted with fully_complete=1, and `--resume`
-    # would silently skip them.
-    for _phase in _phases_to_mark:
-        state_db.mark_brain_build_phase(zotero_key, _phase)
     logger.debug("Paper complete: %s → %s", doi, note_path)
     # M4: collect discovered_topics for end-of-run vocabulary merge.
     _raw_topics = extraction.get("discovered_topics")

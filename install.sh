@@ -73,28 +73,30 @@ done
 echo
 
 # --- 5. next steps ---
-cat <<'EOF'
->> install complete.
+echo ">> install complete."
+echo
+echo "Launch lit-monitor now?"
+echo "This will run \`lit-monitor first-run\` to configure credentials,"
+echo "pick a host/port, and open the setup wizard in your browser."
+read -r -p "Launch now? [Y/n] " ans
+ans="${ans:-Y}"
+if [[ "$ans" =~ ^[Yy] ]]; then
+    echo
+    # Activate the venv inside this subshell so `lit-monitor` resolves
+    # without `uv run`. The user must source the venv themselves in their
+    # own shell for subsequent invocations.
+    # shellcheck disable=SC1091
+    . .venv/bin/activate
+    lit-monitor first-run
+else
+    cat <<'EOF'
 
-Next steps:
+Skipping interactive launch. When you're ready:
 
-  1. Create your credentials file at ~/.config/lit-monitor/config.toml
-     (see README.md "First-time setup" for the template).
-
-  2. Edit the seeded configs in ./config/ for your own research area:
-     - config/paths.yaml          (Zotero library_id, Obsidian vault path)
-     - config/topics.yaml         (weekly search queries)
-     - config/concepts.yaml       (theme vocabulary; or generate via
-                                   `lit-monitor build-vocabulary`)
-     - config/domain_context.yaml (one-paragraph description of your field)
-     - config/researchers.yaml    (tracked authors; optional)
-
-  3. Verify the setup:
-     source .venv/bin/activate
-     lit-monitor check
-
-  4. First run:
-     lit-monitor build-vocabulary
-     lit-monitor brain-build --resume
+    source .venv/bin/activate
+    lit-monitor first-run     # interactive setup + launch
+  or
+    lit-monitor serve         # if already configured
 
 EOF
+fi

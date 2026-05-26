@@ -677,6 +677,18 @@ def test_get_clients_for_passes_litellm_returns_dict():
         assert isinstance(client, LiteLLMClient)
 
 
+def test_get_clients_for_passes_rejects_unknown_provider():
+    """Unknown provider raises ValueError up front, before any per-pass work."""
+    from types import SimpleNamespace
+
+    from scripts.llm.llm_client import get_clients_for_passes
+
+    mode_config = SimpleNamespace(provider="bogus")
+    config = SimpleNamespace(brain_build=mode_config)
+    with pytest.raises(ValueError, match="Unknown provider"):
+        get_clients_for_passes(config, "brain_build")
+
+
 # ---------------------------------------------------------------------------
 # H5 — /api/show context-window discovery + num_ctx_override escape hatch
 # ---------------------------------------------------------------------------

@@ -307,11 +307,11 @@ def _normalise_extraction(
             value = None
 
         # Validate confidence
-        if confidence not in VALID_CONFIDENCE:
-            confidence = "explicit" if value is not None else "absent"
         # If value is None, confidence must be absent
         if value is None:
             confidence = "absent"
+        elif confidence not in VALID_CONFIDENCE:
+            confidence = "explicit"
 
         result[field] = value
         result[conf_key] = confidence

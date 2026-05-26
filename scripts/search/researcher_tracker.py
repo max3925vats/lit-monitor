@@ -92,7 +92,8 @@ def run_researcher_searches(
         # has no author-ID or author-field support.
         au_query = f'[{name}]'
         logger.info("Searching for researcher: %r (query: %r)", name, au_query)
-        tmp = tempfile.mktemp(suffix=".json")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as _tmp_fh:
+            tmp = _tmp_fh.name
         try:
             _findpapers.search(
                 outputpath=tmp,
@@ -113,8 +114,10 @@ def run_researcher_searches(
         except Exception as exc:
             logger.error("Search failed for researcher %r: %s", name, exc)
         finally:
-            if os.path.exists(tmp):
+            try:
                 os.unlink(tmp)
+            except FileNotFoundError:
+                pass
 
         # Supplementary: OpenAlex ORCID lookup (if orcid provided)
         if orcid:
