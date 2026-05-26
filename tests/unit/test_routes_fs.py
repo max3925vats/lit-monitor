@@ -74,3 +74,20 @@ def test_exists_true_for_writable_tmp(
     resp = client.get("/api/fs/exists", params={"path": str(tmp_path)})
     assert resp.status_code == 200
     assert resp.json() == {"exists": True, "is_dir": True, "is_writable": True}
+
+
+@pytest.mark.unit
+def test_ls_returns_400_for_file_path(client, tmp_path, monkeypatch):
+    """ls on a file (not a dir) returns 400."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    (tmp_path / "f.txt").write_text("x")
+    resp = client.get("/api/fs/ls", params={"path": str(tmp_path / "f.txt")})
+    assert resp.status_code == 400
+
+
+@pytest.mark.unit
+def test_ls_returns_404_for_missing_path(client, tmp_path, monkeypatch):
+    """ls on a non-existent path returns 404."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    resp = client.get("/api/fs/ls", params={"path": str(tmp_path / "nope")})
+    assert resp.status_code == 404

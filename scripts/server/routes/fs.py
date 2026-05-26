@@ -55,13 +55,17 @@ def ls(
     for child in target.iterdir():
         # is_symlink() must be checked before is_dir/is_file because those
         # follow symlinks and would hide the symlink-ness from callers.
-        if child.is_symlink():
-            etype: Literal["dir", "file", "symlink", "other"] = "symlink"
-        elif child.is_dir():
-            etype = "dir"
-        elif child.is_file():
-            etype = "file"
-        else:
+        try:
+            if child.is_symlink():
+                etype: Literal["dir", "file", "symlink", "other"] = "symlink"
+            elif child.is_dir():
+                etype = "dir"
+            elif child.is_file():
+                etype = "file"
+            else:
+                etype = "other"
+        except OSError:
+            # Race: child was removed between iterdir() and the stat call.
             etype = "other"
         entries.append(
             {"name": child.name, "type": etype, "full_path": str(child)}
