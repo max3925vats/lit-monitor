@@ -371,6 +371,15 @@ def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[st
         step6_ok = bool(cdata and cdata.get("themes"))
     except Exception as exc:  # noqa: BLE001 — defensive: yaml parse, etc.
         logger.debug("step6 status check failed: %s", exc)
+    step7_ok = False
+    try:
+        rs = load_config("researchers")
+        # Optional step: file exists + parses as a dict is enough (empty list OK).
+        step7_ok = isinstance(rs, dict)
+    except FileNotFoundError:
+        pass
+    except Exception as exc:  # noqa: BLE001 — defensive: yaml parse, etc.
+        logger.debug("step7 status check failed: %s", exc)
     return [
         {"num": 1, "title": "Credentials", "status": "ok" if step1_ok else "missing", "url": "/setup/step-1"},
         {"num": 2, "title": "Paths (vault + collection)", "status": "ok" if step2_ok else "missing", "url": "/setup/step-2"},
@@ -378,7 +387,7 @@ def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[st
         {"num": 4, "title": "Topics (weekly searches)", "status": "ok" if step4_ok else "missing", "url": "/setup/step-4"},
         {"num": 5, "title": "Domain context", "status": "ok" if step5_ok else "missing", "url": "/setup/step-5"},
         {"num": 6, "title": "Concepts (vocabulary)", "status": "ok" if step6_ok else "missing", "url": "/setup/step-6"},
-        {"num": 7, "title": "Researchers (optional)", "status": "todo", "url": "/setup/step-7"},
+        {"num": 7, "title": "Researchers (optional)", "status": "ok" if step7_ok else "missing", "url": "/setup/step-7"},
         {"num": 8, "title": "Item routing (advanced)", "status": "todo", "url": "/setup/step-8"},
     ]
 
@@ -1002,4 +1011,103 @@ async def build_vocab_stop() -> HTMLResponse:
         await proc.wait()
     return HTMLResponse(
         '<div class="card success">Vocabulary build stopped.</div>'
+    )
+
+
+# --- F2.10: researchers (optional list editor) -------------------------
+
+
+def _validate_researchers(researchers: list[dict[str, Any]]) -> list[str]:
+    """Researchers list is optional — only flag truly malformed rows.
+
+    No errors for empty list. Warnings (returned as errors) for rows with
+    a name but no orcid/scopus_id (tracking won't work).
+    """
+    errors: list[str] = []
+    for i, r in enumerate(researchers, start=1):
+        name = (r.get("name") or "").strip()
+        if not name:
+            continue  # silent-skip empty rows
+        orcid = (r.get("orcid") or "").strip()
+        scopus_id = (r.get("scopus_id") or "").strip()
+        if not orcid and not scopus_id:
+            errors.append(
+                f"Researcher #{i} ('{name}'): set orcid OR scopus_id to enable tracking."
+            )
+    return errors
+
+
+@router.get("/step-7", response_class=HTMLResponse)
+def step_researchers_form(request: Request) -> HTMLResponse:
+    """Step 7 form: researchers.yaml row editor (optional)."""
+    try:
+        existing = load_config("researchers")
+    except FileNotFoundError:
+        existing = {}
+    rs = existing.get("researchers", []) or []
+    for r in rs:
+        for key in ("name", "affiliation", "orcid", "scopus_id", "notes"):
+            if not r.get(key):
+                r[key] = ""
+    return templates.TemplateResponse(
+        request,
+        "setup/step_researchers.html",
+        {"current_step": 7, "researchers": rs},
+    )
+
+
+@router.post("/api/researchers", response_class=HTMLResponse)
+async def save_researchers(request: Request) -> HTMLResponse:
+    """Researchers POST is parsed manually because the row count is dynamic."""
+    form = await request.form()
+    indices: set[int] = set()
+    for key in form.keys():
+        if key.startswith("name_"):
+            try:
+                n = int(key.split("_", 1)[1])
+                if n >= 0:
+                    indices.add(n)
+            except ValueError:
+                pass
+    out: list[dict[str, Any]] = []
+    for i in sorted(indices):
+        name = str(form.get(f"name_{i}", "")).strip()
+        if not name:
+            continue
+        out.append({
+            "name": name,
+            "affiliation": str(form.get(f"affiliation_{i}", "")).strip(),
+            "orcid": str(form.get(f"orcid_{i}", "")).strip(),
+            "scopus_id": str(form.get(f"scopus_id_{i}", "")).strip(),
+            "notes": str(form.get(f"notes_{i}", "")).strip(),
+        })
+
+    errors = _validate_researchers(out)
+    # Researchers is optional — warnings are shown but save still proceeds.
+    try:
+        save_config("researchers", {"researchers": out})
+    except OSError as exc:
+        logger.error("save_researchers: write failed: %s", exc)
+        return templates.TemplateResponse(
+            request,
+            "setup/_researchers_result.html",
+            {"ok": False, "errors": [f"Could not save: {exc}"], "warnings": []},
+        )
+    return templates.TemplateResponse(
+        request,
+        "setup/_researchers_result.html",
+        {"ok": True, "errors": [], "warnings": errors, "count": len(out)},
+    )
+
+
+@router.get("/api/researchers/new-row", response_class=HTMLResponse)
+def researchers_new_row(request: Request, idx: int = 0) -> HTMLResponse:
+    """Return the HTML fragment for a fresh researcher row at the given index."""
+    return templates.TemplateResponse(
+        request,
+        "setup/_researchers_row.html",
+        {
+            "idx": idx,
+            "r": {"name": "", "affiliation": "", "orcid": "", "scopus_id": "", "notes": ""},
+        },
     )

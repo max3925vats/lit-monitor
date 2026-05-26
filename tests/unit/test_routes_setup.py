@@ -141,14 +141,10 @@ def test_build_step_descriptors_any_missing_marks_step1_missing():
 
 
 @pytest.mark.unit
-def test_build_step_descriptors_steps_6_through_8_are_todo():
-    """Steps 7-8 haven't been wired yet — landing must show them as 'todo'.
+def test_build_step_descriptors_no_todo_placeholders():
+    """After F2.12 closes the wizard, every step has a disk-derived status.
 
-    Steps 2, 3, 4, 5, and 6 are exempt: F2.5 derives step 2's status from
-    paths.yaml, F2.6 derives step 3's status from extraction.yaml,
-    F2.7 derives step 4's status from topics.yaml, F2.8 derives step 5's
-    status from domain_context.yaml, and F2.9 derives step 6's status
-    from concepts.yaml (with concepts_draft.yaml fallback).
+    Every step's status must be one of {'ok', 'missing'} — never 'todo'.
     """
     steps = _build_step_descriptors({
         "secrets_file": (True, ""),
@@ -158,8 +154,9 @@ def test_build_step_descriptors_steps_6_through_8_are_todo():
         "pubmed.email": (True, ""),
     })
     for s in steps:
-        if s["num"] not in (1, 2, 3, 4, 5, 6):
-            assert s["status"] == "todo", f"step {s['num']} should be 'todo' until F2.{s['num'] + 3} lands"
+        assert s["status"] in ("ok", "missing"), (
+            f"step {s['num']} has placeholder status {s['status']!r}"
+        )
 
 
 @pytest.mark.unit

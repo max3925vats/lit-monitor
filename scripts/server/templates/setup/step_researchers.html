@@ -1,0 +1,35 @@
+{% extends "setup/_base.html" %}
+{% block step_content %}
+<h1>Step 7 — Researchers</h1>
+<p>Tracked researchers — new papers by these authors get a Tracked Author flag in weekly digests. Stored at <code>config/researchers.yaml</code>.</p>
+<p class="field-note">Optional — leave empty if you don't track specific authors. For each entry, set <code>orcid</code> or <code>scopus_id</code> to actually enable lookups.</p>
+
+<form class="setup-form" hx-post="/setup/api/researchers" hx-target="#result" hx-swap="innerHTML">
+  <div id="researchers-rows">
+    {% for r in researchers %}
+    <fieldset class="topics-row">
+      <label>name <input type="text" name="name_{{ loop.index0 }}" value="{{ r.name }}"></label>
+      <label>affiliation <input type="text" name="affiliation_{{ loop.index0 }}" value="{{ r.affiliation }}"></label>
+      <label>orcid <input type="text" name="orcid_{{ loop.index0 }}" value="{{ r.orcid }}" placeholder="0000-0000-0000-0000"></label>
+      <label>scopus_id <input type="text" name="scopus_id_{{ loop.index0 }}" value="{{ r.scopus_id }}"></label>
+      <label>notes <textarea name="notes_{{ loop.index0 }}" rows="2">{{ r.notes }}</textarea></label>
+      <button type="button" class="button danger"
+        onclick="this.closest('fieldset').remove()">Remove</button>
+    </fieldset>
+    {% endfor %}
+  </div>
+
+  <button type="button" class="button"
+    hx-get="/setup/api/researchers/new-row?idx={{ researchers | length }}"
+    hx-target="#researchers-rows"
+    hx-swap="beforeend">+ Add researcher</button>
+
+  <hr>
+  <button type="submit">Save</button>
+</form>
+
+<div id="result"></div>
+
+<p><a href="/setup">← Back to setup overview</a> &middot;
+   <a href="/setup/step-8" class="button">Skip to step 8 →</a></p>
+{% endblock %}
