@@ -1,0 +1,9 @@
+[Unit]
+Description=lit-monitor weekly run
+
+[Service]
+Type=oneshot
+WorkingDirectory={{ working_dir }}
+ExecStart={{ command }} {{ args | join(' ') }}
+StandardOutput=append:{{ stdout_path }}
+StandardError=append:{{ stderr_path }}

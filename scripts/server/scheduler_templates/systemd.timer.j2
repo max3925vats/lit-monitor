@@ -1,0 +1,9 @@
+[Unit]
+Description=lit-monitor weekly run
+
+[Timer]
+OnCalendar={{ day_of_week_systemd }} *-*-* {{ time }}:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
