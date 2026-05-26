@@ -40,6 +40,9 @@ dependencies = [
 
     # Progress bars (brain-build, textbook-build)
     "rich>=13.0",
+
+    # Web UI — FastAPI Form() data parsing (F2.4 setup wizard POST endpoints)
+    "python-multipart>=0.0.29",
 ]
 
 [project.scripts]

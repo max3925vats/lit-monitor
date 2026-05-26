@@ -19,6 +19,10 @@ from fastapi.templating import Jinja2Templates
 
 from scripts.server.routes.fs import router as fs_router
 from scripts.server.routes.zotero import router as zotero_router
+
+# NOTE: setup router imports `templates` from this module, so its import
+# must come AFTER the `templates = Jinja2Templates(...)` line below to
+# avoid an AttributeError at import time. We import it inside create_app().
 from scripts.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
@@ -106,6 +110,12 @@ def create_app() -> FastAPI:
 
     app.include_router(fs_router)
     app.include_router(zotero_router)
+
+    # Imported lazily so the setup module can safely `from scripts.server.app
+    # import templates` — by the time create_app() runs, `templates` is bound.
+    from scripts.server.routes.setup import router as setup_router
+
+    app.include_router(setup_router)
 
     return app
 

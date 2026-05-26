@@ -1,0 +1,21 @@
+{% extends "setup/_base.html" %}
+{% block step_content %}
+<h1>Setup wizard</h1>
+<p class="muted">Walk through these steps in order. You can come back and edit any step.</p>
+<ul class="step-list">
+  {% for step in steps %}
+  <li class="step-card {{ step.status }}">
+    <a href="{{ step.url }}">
+      <span class="step-num">{{ step.num }}</span>
+      <span class="step-title">{{ step.title }}</span>
+      <span class="step-status">
+        {% if step.status == "ok" %}✓ configured
+        {% elif step.status == "missing" %}⚠ missing
+        {% else %}pending
+        {% endif %}
+      </span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}
