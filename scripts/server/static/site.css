@@ -351,3 +351,15 @@ a:hover {
   border-radius: var(--radius);
   margin-top: 0.25rem;
 }
+
+/* --- Status pills (live-test feedback in wizard) --- */
+.pill { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px;
+  font-size: 0.85em; margin-left: 0.5rem; }
+.pill.success { background: #efe; color: #060; border: 1px solid #6c6; }
+.pill.warning { background: #ffe; color: #960; border: 1px solid #cc6; }
+.pill.danger  { background: #fee; color: #c00; border: 1px solid #c66; }
+
+/* --- Collapsible mode sections in setup form --- */
+.setup-form details { margin: 0.5rem 0; border: 1px solid var(--border); border-radius: var(--radius); }
+.setup-form details summary { padding: 0.5rem 0.75rem; cursor: pointer; background: var(--card-bg); }
+.setup-form details fieldset { border: none; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }

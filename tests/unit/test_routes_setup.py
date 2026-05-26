@@ -7,8 +7,11 @@ from scripts.server.routes.setup import (
     _build_step_descriptors,
     _key_tail,
     _merge_credentials,
+    _merge_extraction,
     _merge_paths,
+    _mode_view,
     _validate_credentials,
+    _validate_extraction,
     _validate_paths,
 )
 
@@ -285,3 +288,123 @@ def test_build_step_descriptors_step2_missing_when_paths_yaml_absent():
         steps = _build_step_descriptors(checks)
     step2 = next(s for s in steps if s["num"] == 2)
     assert step2["status"] == "missing"
+
+
+@pytest.mark.unit
+def test_mode_view_uses_existing_values_when_present():
+    existing = {"brain_build": {"model": "qwen2.5:7b", "ollama_host": "https://ollama.com",
+                                "temperature": 0.3, "think": True}}
+    view = _mode_view(existing, "brain_build")
+    assert view["model"] == "qwen2.5:7b"
+    assert view["ollama_host"] == "https://ollama.com"
+    assert view["temperature"] == 0.3
+    assert view["think"] is True
+
+
+@pytest.mark.unit
+def test_mode_view_falls_back_to_defaults_when_absent():
+    view = _mode_view({}, "brain_build")
+    assert view["provider"] == "ollama"
+    assert view["temperature"] == 0.1
+    assert view["timeout"] == 7200
+    assert view["think"] is False
+
+
+@pytest.mark.unit
+def test_merge_extraction_preserves_non_wizard_keys_in_mode():
+    """pass_strategy, max_tokens_per_call, etc. must survive a wizard save."""
+    existing = {
+        "brain_build": {
+            "model": "old",
+            "pass_strategy": "all",
+            "max_tokens_per_call": 24576,
+            "num_ctx_override": 131072,
+            "chunk_chars": None,
+        }
+    }
+    form = {mode: _mode_view({}, mode) | {"model": "new-model"}
+            for mode in ("brain_build", "ingestion", "build_vocabulary")}
+    merged = _merge_extraction(existing, form)
+    bb = merged["brain_build"]
+    assert bb["model"] == "new-model"
+    assert bb["pass_strategy"] == "all"
+    assert bb["max_tokens_per_call"] == 24576
+    assert bb["num_ctx_override"] == 131072
+    assert bb["chunk_chars"] is None
+
+
+@pytest.mark.unit
+def test_merge_extraction_preserves_non_wizard_top_level_sections():
+    """embeddings, reranker, comparison_models must round-trip untouched."""
+    existing = {
+        "brain_build": {"model": "old"},
+        "embeddings": {"model": "mxbai-embed-large"},
+        "reranker": {"enabled": True, "device": "mps"},
+        "comparison_models": [{"provider": "ollama", "model": "x"}],
+    }
+    form = {mode: _mode_view({}, mode) | {"model": "new"}
+            for mode in ("brain_build", "ingestion", "build_vocabulary")}
+    merged = _merge_extraction(existing, form)
+    assert merged["embeddings"] == {"model": "mxbai-embed-large"}
+    assert merged["reranker"] == {"enabled": True, "device": "mps"}
+    assert merged["comparison_models"] == [{"provider": "ollama", "model": "x"}]
+
+
+@pytest.mark.unit
+def test_merge_extraction_drops_litellm_model_on_provider_switchback():
+    """If user switches litellm→ollama, the stale litellm_model is removed."""
+    existing = {"brain_build": {"model": "x", "provider": "litellm",
+                                "litellm_model": "anthropic/claude-haiku-4-5"}}
+    form_data = _mode_view(existing, "brain_build") | {"provider": "ollama", "litellm_model": ""}
+    form = {"brain_build": form_data,
+            "ingestion": _mode_view({}, "ingestion") | {"model": "x"},
+            "build_vocabulary": _mode_view({}, "build_vocabulary") | {"model": "x"}}
+    merged = _merge_extraction(existing, form)
+    assert "litellm_model" not in merged["brain_build"]
+
+
+@pytest.mark.unit
+def test_validate_extraction_rejects_bad_provider():
+    bad = {mode: _mode_view({}, mode) | {"model": "x", "provider": "openai"}
+           for mode in ("brain_build", "ingestion", "build_vocabulary")}
+    errors = _validate_extraction(bad)
+    assert any("ollama" in e and "litellm" in e for e in errors)
+
+
+@pytest.mark.unit
+def test_validate_extraction_rejects_empty_model():
+    bad = {mode: _mode_view({}, mode) for mode in ("brain_build", "ingestion", "build_vocabulary")}
+    errors = _validate_extraction(bad)
+    # All three modes complain.
+    assert sum(1 for e in errors if "model is required" in e) == 3
+
+
+@pytest.mark.unit
+def test_validate_extraction_rejects_temperature_outside_range():
+    bad = {mode: _mode_view({}, mode) | {"model": "x", "temperature": 1.5}
+           for mode in ("brain_build", "ingestion", "build_vocabulary")}
+    errors = _validate_extraction(bad)
+    assert any("temperature must be in" in e for e in errors)
+
+
+@pytest.mark.unit
+def test_validate_extraction_rejects_zero_timeout():
+    bad = {mode: _mode_view({}, mode) | {"model": "x", "timeout": 0}
+           for mode in ("brain_build", "ingestion", "build_vocabulary")}
+    errors = _validate_extraction(bad)
+    assert any("timeout must be" in e for e in errors)
+
+
+@pytest.mark.unit
+def test_validate_extraction_rejects_litellm_without_model():
+    bad = {mode: _mode_view({}, mode) | {"model": "x", "provider": "litellm", "litellm_model": ""}
+           for mode in ("brain_build", "ingestion", "build_vocabulary")}
+    errors = _validate_extraction(bad)
+    assert any("litellm_model is required" in e for e in errors)
+
+
+@pytest.mark.unit
+def test_validate_extraction_happy_path():
+    good = {mode: _mode_view({}, mode) | {"model": "gemma4:31b-cloud"}
+            for mode in ("brain_build", "ingestion", "build_vocabulary")}
+    assert _validate_extraction(good) == []

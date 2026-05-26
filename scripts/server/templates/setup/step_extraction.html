@@ -24,7 +24,7 @@
             id="{{ mode }}__ollama_host">
           <button type="button" class="button"
             hx-get="/setup/api/ollama-test"
-            hx-include="#{{ mode }}__ollama_host"
+            hx-vals='js:{host: document.getElementById("{{ mode }}__ollama_host").value}'
             hx-target="#{{ mode }}__ollama_test_result"
             hx-swap="innerHTML">
             Test
