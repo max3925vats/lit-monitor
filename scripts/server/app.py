@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from scripts.server.routes.fs import router as fs_router
 from scripts.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,8 @@ def create_app() -> FastAPI:
                 "last_run": last_run,
             },
         )
+
+    app.include_router(fs_router)
 
     return app
 
