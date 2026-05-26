@@ -275,3 +275,79 @@ a:hover {
 .setup-form button:hover {
   filter: brightness(1.05);
 }
+
+/* --- Modal --- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-width: 600px;
+  width: 90%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal header,
+.modal footer {
+  padding: 0.5rem 1rem;
+}
+.modal header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.modal-body {
+  padding: 1rem;
+  overflow-y: auto;
+  flex: 1;
+}
+.modal-path {
+  background: var(--muted);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius);
+}
+.modal footer {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+}
+.fs-list {
+  list-style: none;
+  padding: 0;
+}
+.fs-list li {
+  padding: 0.25rem 0;
+}
+.fs-list a {
+  text-decoration: none;
+}
+.fs-up a {
+  font-weight: bold;
+  color: var(--accent);
+}
+.input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.input-row input {
+  flex: 1;
+}
+.banner.warning {
+  background: #ffe;
+  border: 1px solid #cb6;
+  padding: 0.5rem;
+  border-radius: var(--radius);
+  margin-top: 0.25rem;
+}

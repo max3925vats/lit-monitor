@@ -1,0 +1,44 @@
+{# Partial: returned by GET /setup/fs-modal — fragment, no extends. #}
+<div class="modal-backdrop">
+  <div class="modal">
+    <header>
+      <h3>Pick a folder</h3>
+      <button type="button"
+        hx-get="/setup/fs-modal-close" hx-target="#fs-modal" hx-swap="innerHTML">
+        ×
+      </button>
+    </header>
+    <div class="modal-body">
+      {% if error %}
+      <p class="banner danger">{{ error }}</p>
+      {% endif %}
+      <p class="modal-path"><code>{{ path }}</code></p>
+      <ul class="fs-list">
+        {% if parent %}
+        <li class="fs-up">
+          <a href="#" hx-get="/setup/fs-modal?path={{ parent | urlencode }}"
+             hx-target="#fs-modal" hx-swap="innerHTML">↑ Up</a>
+        </li>
+        {% endif %}
+        {% for entry in entries %}
+          {% if entry.type == "dir" %}
+          <li class="fs-dir">
+            <a href="#" hx-get="/setup/fs-modal?path={{ entry.full_path | urlencode }}"
+               hx-target="#fs-modal" hx-swap="innerHTML">{{ entry.name }}/</a>
+          </li>
+          {% endif %}
+        {% endfor %}
+      </ul>
+    </div>
+    <footer>
+      <button type="button" class="button"
+        hx-on:click="document.getElementById('vault_path').value = '{{ path }}'; document.getElementById('fs-modal').innerHTML = '';">
+        Select this folder
+      </button>
+      <button type="button"
+        hx-get="/setup/fs-modal-close" hx-target="#fs-modal" hx-swap="innerHTML">
+        Cancel
+      </button>
+    </footer>
+  </div>
+</div>

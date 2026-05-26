@@ -134,8 +134,12 @@ def test_build_step_descriptors_any_missing_marks_step1_missing():
 
 
 @pytest.mark.unit
-def test_build_step_descriptors_steps_2_through_8_are_todo():
-    """Future steps haven't been wired yet — landing must show them as 'todo'."""
+def test_build_step_descriptors_steps_3_through_8_are_todo():
+    """Steps 3-8 haven't been wired yet — landing must show them as 'todo'.
+
+    Step 2 is exempt: F2.5 derives its status from paths.yaml (see
+    ``test_build_step_descriptors_step2_status_*`` below).
+    """
     steps = _build_step_descriptors({
         "secrets_file": (True, ""),
         "secrets_parse": (True, ""),
@@ -144,5 +148,5 @@ def test_build_step_descriptors_steps_2_through_8_are_todo():
         "pubmed.email": (True, ""),
     })
     for s in steps:
-        if s["num"] != 1:
+        if s["num"] not in (1, 2):
             assert s["status"] == "todo", f"step {s['num']} should be 'todo' until F2.{s['num'] + 3} lands"

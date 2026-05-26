@@ -11,13 +11,14 @@ positional-dict form is rejected by Starlette 1.x (confirmed broken in F1.2).
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from scripts.server.app import templates
-from scripts.server.config_io import load_secrets, save_secrets
+from scripts.server.config_io import load_config, load_secrets, save_config, save_secrets
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/setup", tags=["setup"])
@@ -85,6 +86,76 @@ def _validate_credentials(data: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _merge_paths(existing: dict[str, Any], form: dict[str, str]) -> dict[str, Any]:
+    """Merge form fields into existing paths.yaml, preserving unrelated keys.
+
+    The form owns these five fields:
+      - obsidian.vault_path
+      - zotero.collection_name
+      - zotero.library_id  (mirror of secrets, required in paths.yaml)
+      - zotero.library_type
+      - zotero.local_storage_path
+
+    All other keys (papers_folder, books_folder, state_db.*, logs.*, etc.)
+    are preserved verbatim from ``existing``, with sensible defaults
+    backfilled only when missing.
+    """
+    out: dict[str, Any] = dict(existing)
+    z = dict(out.get("zotero", {}))
+    o = dict(out.get("obsidian", {}))
+
+    o["vault_path"] = form["vault_path"]
+    z["collection_name"] = form["collection_name"]
+    z["library_id"] = form["library_id"]
+    z["library_type"] = form["library_type"]
+    z["local_storage_path"] = form["local_storage_path"]
+
+    # Backfill the non-user-tunable obsidian sub-folder defaults if absent.
+    o.setdefault("papers_folder", "Literature/Papers")
+    o.setdefault("books_folder", "Literature/Books")
+    o.setdefault("digests_folder", "Literature/Digests")
+    o.setdefault("connections_folder", "Literature/Connections")
+
+    out["zotero"] = z
+    out["obsidian"] = o
+
+    # Same defaulting for state_db and logs, only if missing.
+    out.setdefault("state_db", {"path": "~/.config/lit-monitor/state.db"})
+    out.setdefault("logs", {"path": "./logs", "retention_days": 90})
+
+    return out
+
+
+def _validate_paths(data: dict[str, Any]) -> list[str]:
+    """Return a list of human-readable errors. Empty list means OK."""
+    errors: list[str] = []
+    o = data.get("obsidian", {})
+    z = data.get("zotero", {})
+
+    vault = o.get("vault_path", "")
+    if not vault:
+        errors.append("Obsidian vault path is required.")
+    else:
+        p = Path(vault).expanduser()
+        if not p.exists():
+            errors.append(f"Vault path does not exist: {vault}")
+        elif not p.is_dir():
+            errors.append(f"Vault path is not a directory: {vault}")
+
+    if not z.get("library_id"):
+        errors.append("Zotero library ID is required.")
+    elif not str(z["library_id"]).isdigit():
+        errors.append("Zotero library ID must be numeric.")
+
+    if not z.get("collection_name"):
+        errors.append("Zotero collection name is required.")
+
+    if z.get("library_type") not in ("user", "group"):
+        errors.append("Library type must be 'user' or 'group'.")
+
+    return errors
+
+
 def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[str, Any]]:
     """Build the wizard-landing card list.
 
@@ -101,9 +172,20 @@ def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[st
             "pubmed.email",
         )
     )
+    step2_ok = False
+    try:
+        paths = load_config("paths")
+        vault = paths.get("obsidian", {}).get("vault_path", "")
+        if vault:
+            p = Path(vault).expanduser()
+            step2_ok = p.exists() and p.is_dir()
+    except FileNotFoundError:
+        pass
+    except Exception as exc:  # noqa: BLE001 — defensive: yaml parse, etc.
+        logger.debug("step2 status check failed: %s", exc)
     return [
         {"num": 1, "title": "Credentials", "status": "ok" if step1_ok else "missing", "url": "/setup/step-1"},
-        {"num": 2, "title": "Paths (vault + collection)", "status": "todo", "url": "/setup/step-2"},
+        {"num": 2, "title": "Paths (vault + collection)", "status": "ok" if step2_ok else "missing", "url": "/setup/step-2"},
         {"num": 3, "title": "Extraction (provider + model)", "status": "todo", "url": "/setup/step-3"},
         {"num": 4, "title": "Topics (weekly searches)", "status": "todo", "url": "/setup/step-4"},
         {"num": 5, "title": "Domain context", "status": "todo", "url": "/setup/step-5"},
@@ -215,3 +297,139 @@ def save_credentials(
         "setup/_credentials_result.html",
         {"ok": True, "errors": None, "test_result": test_result},
     )
+
+
+@router.get("/step-2", response_class=HTMLResponse)
+def step_paths_form(request: Request) -> HTMLResponse:
+    """Step 2 form: paths.yaml editor (vault picker + collection dropdown)."""
+    try:
+        paths = load_config("paths")
+    except FileNotFoundError:
+        paths = {}
+
+    z = paths.get("zotero", {}) if isinstance(paths, dict) else {}
+    o = paths.get("obsidian", {}) if isinstance(paths, dict) else {}
+
+    ctx = {
+        "current_step": 2,
+        "vault_path": o.get("vault_path", ""),
+        "collection_name": z.get("collection_name", ""),
+        "library_id": str(z.get("library_id", "")),
+        "library_type": z.get("library_type", "user"),
+        "local_storage_path": z.get("local_storage_path", "~/Zotero/storage"),
+        "home": str(Path.home()),
+    }
+    return templates.TemplateResponse(request, "setup/step_paths.html", ctx)
+
+
+@router.post("/api/paths", response_class=HTMLResponse)
+def save_paths(
+    request: Request,
+    vault_path: str = Form(""),
+    collection_name: str = Form(""),
+    library_id: str = Form(""),
+    library_type: str = Form("user"),
+    local_storage_path: str = Form("~/Zotero/storage"),
+) -> HTMLResponse:
+    """Save paths.yaml, preserving non-form keys (papers_folder, state_db, etc.)."""
+    try:
+        existing = load_config("paths")
+    except FileNotFoundError:
+        existing = {}
+
+    merged = _merge_paths(
+        existing,
+        {
+            "vault_path": vault_path.strip(),
+            "collection_name": collection_name.strip(),
+            "library_id": library_id.strip(),
+            "library_type": library_type.strip(),
+            "local_storage_path": local_storage_path.strip(),
+        },
+    )
+
+    errors = _validate_paths(merged)
+    if errors:
+        return templates.TemplateResponse(
+            request,
+            "setup/_paths_result.html",
+            {"ok": False, "errors": errors},
+        )
+
+    try:
+        save_config("paths", merged)
+    except OSError as exc:
+        logger.error("save_paths: write failed: %s", exc)
+        return templates.TemplateResponse(
+            request,
+            "setup/_paths_result.html",
+            {"ok": False, "errors": [f"Could not save: {exc}"]},
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "setup/_paths_result.html",
+        {"ok": True, "errors": None},
+    )
+
+
+@router.get("/api/collections-options", response_class=HTMLResponse)
+def collections_options(request: Request, current: str = "") -> HTMLResponse:
+    """HTML-wrapped wrapper around /api/zotero/collections for the dropdown.
+
+    On 503 (creds missing) or any other failure, falls back to a text
+    input + banner telling the user to complete step 1 first.
+    """
+    from scripts.server.routes.zotero import collections as zotero_collections
+
+    names: list[str] = []
+    try:
+        result = zotero_collections()
+        names = [c["name"] for c in result.get("collections", [])]
+    except (HTTPException, Exception):  # noqa: BLE001 — fallback path is sensible
+        names = []
+
+    from html import escape
+
+    if not names:
+        current_esc = escape(current, quote=True)
+        html = (
+            f'<input type="text" name="collection_name" value="{current_esc}">'
+            '<div class="banner warning">Complete step 1 first to see your collections, '
+            'or type a name manually.</div>'
+        )
+    else:
+        opts = "\n".join(
+            f'<option value="{escape(n, quote=True)}"'
+            f'{" selected" if n == current else ""}>{escape(n)}</option>'
+            for n in names
+        )
+        html = opts
+
+    return HTMLResponse(html)
+
+
+@router.get("/fs-modal", response_class=HTMLResponse)
+def fs_modal(request: Request, path: str) -> HTMLResponse:
+    """Render the directory browser modal for a given path."""
+    from scripts.server.routes.fs import ls
+
+    try:
+        result = ls(path=path)
+    except HTTPException as exc:
+        return templates.TemplateResponse(
+            request,
+            "setup/_fs_modal.html",
+            {"path": path, "parent": None, "entries": [], "error": exc.detail},
+        )
+    return templates.TemplateResponse(
+        request,
+        "setup/_fs_modal.html",
+        result,  # {path, parent, entries}
+    )
+
+
+@router.get("/fs-modal-close", response_class=HTMLResponse)
+def fs_modal_close(request: Request) -> HTMLResponse:
+    """Return an empty fragment to close the modal."""
+    return HTMLResponse("")

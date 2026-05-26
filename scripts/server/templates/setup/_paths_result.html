@@ -1,0 +1,15 @@
+{# Partial: returned by POST /setup/api/paths — fragment, no extends. #}
+{% if errors %}
+<div class="card danger">
+  <h3>Could not save</h3>
+  <ul>
+    {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+  </ul>
+</div>
+{% else %}
+<div class="card success">
+  <h3>Saved</h3>
+  <p>paths.yaml updated.</p>
+  <p><a href="/setup/step-3" class="button">Continue to step 3 →</a></p>
+</div>
+{% endif %}
