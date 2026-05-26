@@ -11,7 +11,7 @@
     <p class="last-run">
       {% if last_run %}
         Last run:
-        <code>{{ last_run.kind | default("run") }}</code>
+        <code>{{ last_run.run_type | default("run") }}</code>
         at <code>{{ last_run.started_at }}</code>
         {% if last_run.status %}— <code>{{ last_run.status }}</code>{% endif %}
       {% else %}

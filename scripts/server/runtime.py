@@ -122,4 +122,14 @@ def get_runtime() -> ServerRuntime:
     return _RUNTIME
 
 
-__all__ = ["ServerRuntime", "get_runtime"]
+def reset_runtime() -> None:
+    """Drop the cached runtime singleton.
+
+    Intended for tests that need a fresh ServerRuntime per case. Production
+    code never calls this — the server runs with a single runtime per process.
+    """
+    global _RUNTIME
+    _RUNTIME = None
+
+
+__all__ = ["ServerRuntime", "get_runtime", "reset_runtime"]
