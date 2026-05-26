@@ -412,6 +412,27 @@ def diagnose(ctx: click.Context, config_only: bool) -> None:
         click.echo(click.style("Some diagnostics failed — see above.", fg="red", bold=True))
         sys.exit(1)
 # ---------------------------------------------------------------------------
+# serve
+# ---------------------------------------------------------------------------
+@main.command("serve")
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8765, type=int, show_default=True)
+@click.option("--reload", is_flag=True, default=False)
+@click.pass_context
+def serve(ctx: click.Context, host: str, port: int, reload: bool) -> None:
+    """Start the lit-monitor web UI + API server."""
+    import uvicorn
+
+    _setup_logging("serve", verbose=ctx.obj.get("verbose", False))
+    uvicorn.run(
+        "scripts.server.app:create_app",
+        factory=True,
+        host=host,
+        port=port,
+        reload=reload,
+        log_config=None,
+    )
+# ---------------------------------------------------------------------------
 # status
 # ---------------------------------------------------------------------------
 @main.command()
