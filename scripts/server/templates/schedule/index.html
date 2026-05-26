@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="dashboard">
+  <h1>Schedule</h1>
+
+  {% if not is_supported %}
+  <div class="card warning">
+    <h3>Scheduling not supported on this platform</h3>
+    <p>lit-monitor schedules weekly runs via launchd (macOS) or systemd user timers (Linux). Your platform: <code>{{ platform }}</code>.</p>
+    <p>You can still run <code>lit-monitor run</code> manually from the dashboard.</p>
+  </div>
+  {% else %}
+
+  <p class="field-note">Platform: <strong>{{ platform }}</strong></p>
+
+  <h2>Current schedule</h2>
+  {% if current %}
+  <table class="runs-table">
+    <tr><th>Day of week</th><td>{{ current.day_of_week }}</td></tr>
+    <tr><th>Time</th><td>{{ current.time }}</td></tr>
+  </table>
+  <form hx-delete="/api/schedule" hx-target="#schedule-result" hx-swap="innerHTML" hx-confirm="Remove the weekly schedule?">
+    <button type="submit" class="button danger">Remove schedule</button>
+  </form>
+  {% else %}
+  <p class="field-note">No schedule installed.</p>
+  {% endif %}
+
+  <h2>{% if current %}Replace{% else %}Create{% endif %} schedule</h2>
+  <form hx-post="/api/schedule" hx-target="#schedule-result" hx-swap="innerHTML"
+        hx-encoding="multipart/form-data">
+    <label>Day of week
+      <select name="day_of_week" required>
+        {% for day in ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] %}
+        <option value="{{ day }}" {% if current and current.day_of_week == day %}selected{% endif %}>{{ day }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Time (HH:MM, 24h, local time)
+      <input type="time" name="time" value="{{ current.time if current else "08:00" }}" required>
+    </label>
+    <button type="submit" class="button">{% if current %}Replace{% else %}Create{% endif %}</button>
+  </form>
+
+  <div id="schedule-result"></div>
+
+  {% endif %}
+
+  <h2>Recent weekly runs (last 10)</h2>
+  {% if recent_runs %}
+  <table class="runs-table">
+    <thead>
+      <tr><th>Started</th><th>Status</th><th>Processed</th><th>Failed</th></tr>
+    </thead>
+    <tbody>
+      {% for run in recent_runs %}
+      <tr>
+        <td>{{ run.started_at }}</td>
+        <td>{{ run.status or "—" }}</td>
+        <td>{{ run.papers_processed or 0 }}</td>
+        <td>{{ run.papers_failed or 0 }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="field-note">No weekly runs in the log.</p>
+  {% endif %}
+</section>
+{% endblock %}
