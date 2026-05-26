@@ -50,7 +50,7 @@ class ZoteroClient:
         a string key; this helper normalizes the ``False`` case to ``None`` so
         the wizard's JSON is unambiguous.
         """
-        raw = self._zot.collections()
+        raw = self._paginate(lambda start, lim: self._zot.collections(start=start, limit=lim))
         out: list[dict] = []
         for col in raw:
             data = col.get("data", {})
