@@ -47,7 +47,7 @@ fi
 
 # --- 3. dependencies ---
 echo ">> installing dependencies (this can take a few minutes on first run)"
-uv sync --extra dev --extra cloud
+uv sync --extra dev --extra cloud --extra server
 echo
 
 # --- 4. seed configs from examples ---

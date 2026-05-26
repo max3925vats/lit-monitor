@@ -56,6 +56,12 @@ dev = [
 cloud = [
     "litellm",          # multi-provider LLM routing (Anthropic, OpenAI, Vertex AI, etc.)
 ]
+server = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sse-starlette>=2.1",
+    "tomli_w>=1.0",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
