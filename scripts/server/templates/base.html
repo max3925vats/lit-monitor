@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}lit-monitor{% endblock %}</title>
+    <link rel="stylesheet" href="/static/site.css" />
+    <!-- HTMX 2.x + SSE extension via CDN; no JS framework. -->
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
+    <script defer src="/static/site.js"></script>
+  </head>
+  <body>
+    <header class="topnav">
+      <a class="brand" href="/">lit-monitor</a>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/setup">Setup</a>
+        <a href="/brain-build">Brain-Build</a>
+        <a href="/weekly-lit-run">Weekly</a>
+        <a href="/schedule">Schedule</a>
+      </nav>
+    </header>
+
+    <div id="status-banner" class="status-banner" hidden></div>
+
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+      <span>lit-monitor v{{ version | default("dev") }}</span>
+    </footer>
+  </body>
+</html>

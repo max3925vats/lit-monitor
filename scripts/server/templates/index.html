@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}lit-monitor — Home{% endblock %}
+
+{% block content %}
+  <section class="hero">
+    <h1>lit-monitor</h1>
+    <p class="muted">
+      Local literature monitoring, embeddings, and weekly briefings.
+    </p>
+    <p class="last-run">
+      {% if last_run %}
+        Last run:
+        <code>{{ last_run.kind | default("run") }}</code>
+        at <code>{{ last_run.started_at }}</code>
+        {% if last_run.status %}— <code>{{ last_run.status }}</code>{% endif %}
+      {% else %}
+        No runs yet.
+      {% endif %}
+    </p>
+  </section>
+
+  <section class="cards">
+    <a class="card" href="/setup">
+      <h2>Setup</h2>
+      <p>Configure Zotero credentials, paths, and search vocabulary.</p>
+    </a>
+    <a class="card" href="/brain-build">
+      <h2>Brain-Build</h2>
+      <p>Ingest your Zotero library and build the embeddings index.</p>
+    </a>
+    <a class="card" href="/weekly-lit-run">
+      <h2>Weekly Lit Run</h2>
+      <p>Fetch fresh papers, score them, and generate the digest.</p>
+    </a>
+    <a class="card" href="/schedule">
+      <h2>Schedule</h2>
+      <p>Automate runs and review recent run history.</p>
+    </a>
+  </section>
+{% endblock %}
