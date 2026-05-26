@@ -40,6 +40,28 @@ class ZoteroClient:
             f"Zotero collection '{collection_name}' not found. "
             "Check config/paths.yaml collection_name setting."
         )
+    def get_all_collections(self) -> list[dict]:
+        """Return all collections in the library, flattened.
+
+        Each entry: ``{"key": str, "name": str, "parent_collection_key": str | None}``.
+        Used by the setup wizard's collection-name dropdown — the parent key is
+        included so the UI can render nested collections later if it wants to.
+        ``parentCollection`` from pyzotero is either ``False`` (top-level) or
+        a string key; this helper normalizes the ``False`` case to ``None`` so
+        the wizard's JSON is unambiguous.
+        """
+        raw = self._zot.collections()
+        out: list[dict] = []
+        for col in raw:
+            data = col.get("data", {})
+            parent = data.get("parentCollection") or None
+            out.append({
+                "key": col.get("key", ""),
+                "name": data.get("name", ""),
+                "parent_collection_key": parent if parent else None,
+            })
+        return out
+
     def get_collection_items(self, collection_name: str, limit: int | None = None) -> list[dict]:
         """Return all items in a Zotero collection (paginated)."""
         key = self.get_collection_key(collection_name)

@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from scripts.server.routes.fs import router as fs_router
+from scripts.server.routes.zotero import router as zotero_router
 from scripts.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,7 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(fs_router)
+    app.include_router(zotero_router)
 
     return app
 
