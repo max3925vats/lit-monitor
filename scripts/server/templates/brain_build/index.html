@@ -17,9 +17,27 @@
     <p class="field-note">Loading controls…</p>
   </section>
 
-  <p class="field-note">Collection:
-    <code>{{ collection_name or "(not set — see setup step 2)" }}</code>
-  </p>
+  <section class="collection-switcher">
+    <p class="field-note">Current collection:
+      <code>{{ collection_name or "(not set — see setup step 2)" }}</code>
+    </p>
+    <details>
+      <summary>Change collection…</summary>
+      <form hx-post="/setup/api/paths/collection"
+            hx-target="#collection-result" hx-swap="innerHTML">
+        <label>New collection
+          <select name="collection_name"
+            hx-get="/setup/api/collections-options?current={{ (collection_name or '') | urlencode }}"
+            hx-trigger="load"
+            hx-target="this" hx-swap="innerHTML">
+            <option value="{{ collection_name or '' }}">{{ collection_name or "(loading…)" }}</option>
+          </select>
+        </label>
+        <button type="submit" class="button">Switch</button>
+      </form>
+      <div id="collection-result"></div>
+    </details>
+  </section>
 
   {% if progress and progress.total %}
   <div class="progress-block">

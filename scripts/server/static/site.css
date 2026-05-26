@@ -447,3 +447,9 @@ a:hover {
   word-break: break-all;
 }
 .live-progress-hint { color: #888; }
+
+/* --- Collection switcher --- */
+.collection-switcher { margin: 1rem 0; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); }
+.collection-switcher details { padding: 0; }
+.collection-switcher summary { cursor: pointer; padding: 0.25rem 0.5rem; }
+.collection-switcher form { padding: 0.5rem 0; display: flex; gap: 0.5rem; align-items: end; }

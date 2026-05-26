@@ -577,6 +577,52 @@ def save_paths(
     )
 
 
+@router.post("/api/paths/collection", response_class=HTMLResponse)
+def update_collection(
+    request: Request, collection_name: str = Form("")
+) -> HTMLResponse:
+    """F3.4: rewrite only ``zotero.collection_name`` in paths.yaml.
+
+    Used by the brain-build dashboard's collection switcher. All other
+    keys in paths.yaml round-trip untouched via the atomic ``save_config``
+    helper. Response carries ``HX-Refresh: true`` so HTMX does a full
+    window reload — the dashboard's per-paper progress block must rebind
+    to the new collection.
+    """
+    name = collection_name.strip()
+    if not name:
+        return HTMLResponse(
+            '<div class="card danger">Collection name is required.</div>',
+            status_code=400,
+        )
+    try:
+        paths = load_config("paths")
+    except FileNotFoundError:
+        return HTMLResponse(
+            '<div class="card danger">paths.yaml not configured yet. '
+            'Complete setup step 2 first.</div>',
+            status_code=400,
+        )
+    z = dict(paths.get("zotero", {}) or {})
+    z["collection_name"] = name
+    paths["zotero"] = z
+    try:
+        save_config("paths", paths)
+    except OSError as exc:
+        logger.error("update_collection: write failed: %s", exc)
+        return HTMLResponse(
+            f'<div class="card danger">Could not save: {exc}</div>',
+            status_code=500,
+        )
+    from html import escape
+
+    return HTMLResponse(
+        f'<div class="card success">Collection updated to '
+        f'<code>{escape(name)}</code>. Reloading…</div>',
+        headers={"HX-Refresh": "true"},
+    )
+
+
 @router.get("/api/collections-options", response_class=HTMLResponse)
 def collections_options(request: Request, current: str = "") -> HTMLResponse:
     """HTML-wrapped wrapper around /api/zotero/collections for the dropdown.

@@ -408,3 +408,77 @@ def test_validate_extraction_happy_path():
     good = {mode: _mode_view({}, mode) | {"model": "gemma4:31b-cloud"}
             for mode in ("brain_build", "ingestion", "build_vocabulary")}
     assert _validate_extraction(good) == []
+
+
+# --- F3.4: collection switcher --------------------------------------------
+
+
+@pytest.mark.unit
+def test_update_collection_writes_back():
+    """POST /setup/api/paths/collection rewrites only the collection_name key."""
+    from fastapi.testclient import TestClient
+
+    from scripts.server.app import create_app
+    from scripts.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+
+    fake_paths = {
+        "zotero": {"library_id": "1", "library_type": "user", "collection_name": "OLD"},
+        "obsidian": {"vault_path": "/tmp", "papers_folder": "P"},
+        "state_db": {"path": "x"},
+    }
+    saved_with: dict = {}
+
+    def fake_save(name, data):
+        saved_with["name"] = name
+        saved_with["data"] = data
+
+    with patch("scripts.server.routes.setup.load_config", return_value=fake_paths), \
+         patch("scripts.server.routes.setup.save_config", side_effect=fake_save):
+        resp = client.post(
+            "/setup/api/paths/collection", data={"collection_name": "NEW"}
+        )
+
+    assert resp.status_code == 200
+    assert resp.headers.get("HX-Refresh") == "true"
+    assert saved_with["name"] == "paths"
+    assert saved_with["data"]["zotero"]["collection_name"] == "NEW"
+    # Other keys must round-trip untouched.
+    assert saved_with["data"]["zotero"]["library_id"] == "1"
+    assert saved_with["data"]["obsidian"] == {"vault_path": "/tmp", "papers_folder": "P"}
+    assert saved_with["data"]["state_db"] == {"path": "x"}
+
+
+@pytest.mark.unit
+def test_update_collection_rejects_empty():
+    from fastapi.testclient import TestClient
+
+    from scripts.server.app import create_app
+    from scripts.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    resp = client.post(
+        "/setup/api/paths/collection", data={"collection_name": "  "}
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.unit
+def test_update_collection_returns_400_when_paths_missing():
+    from fastapi.testclient import TestClient
+
+    from scripts.server.app import create_app
+    from scripts.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    with patch(
+        "scripts.server.routes.setup.load_config", side_effect=FileNotFoundError
+    ):
+        resp = client.post(
+            "/setup/api/paths/collection", data={"collection_name": "X"}
+        )
+    assert resp.status_code == 400
