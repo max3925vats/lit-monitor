@@ -229,6 +229,58 @@ def _validate_extraction(data: dict[str, dict[str, Any]]) -> list[str]:
     return errors
 
 
+# Topics + domain (F2.7, F2.8) — wizard-owned helpers.
+_DATABASES = ("pubmed", "arxiv", "scopus")
+
+
+def _merge_topics(form_searches: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build topics.yaml content from the form rows.
+
+    Unlike paths/extraction, topics.yaml has no non-wizard keys to preserve —
+    the wizard owns the whole file (the LLM-appended discovered_topics
+    entries are still in `searches:`, so they'll round-trip if the form
+    includes them).
+    """
+    return {"searches": form_searches}
+
+
+def _validate_topics(searches: list[dict[str, Any]]) -> list[str]:
+    errors: list[str] = []
+    if not searches:
+        errors.append("At least one search entry is required.")
+        return errors
+    seen: set[str] = set()
+    for i, s in enumerate(searches, start=1):
+        prefix = f"Search #{i}"
+        name = s.get("name", "").strip()
+        query = s.get("query", "").strip()
+        databases = s.get("databases", [])
+        if not name:
+            errors.append(f"{prefix}: name is required.")
+        elif name in seen:
+            errors.append(f"{prefix}: name '{name}' is duplicated.")
+        else:
+            seen.add(name)
+        if not query:
+            errors.append(f"{prefix}: query is required.")
+        if not databases:
+            errors.append(f"{prefix}: at least one database is required.")
+        for db in databases:
+            if db not in _DATABASES:
+                errors.append(f"{prefix}: invalid database '{db}'.")
+    return errors
+
+
+def _validate_domain(text: str) -> list[str]:
+    errors: list[str] = []
+    if not text.strip():
+        errors.append("Domain description is required.")
+    elif len(text.split()) > 800:
+        # Hard cap — soft cap (400 words warning) is client-side only.
+        errors.append("Domain description is too long (over 800 words).")
+    return errors
+
+
 def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[str, Any]]:
     """Build the wizard-landing card list.
 
@@ -266,12 +318,30 @@ def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[st
         pass
     except Exception as exc:  # noqa: BLE001 — defensive: yaml parse, etc.
         logger.debug("step3 status check failed: %s", exc)
+    step4_ok = False
+    try:
+        topics = load_config("topics")
+        searches = topics.get("searches", []) if isinstance(topics, dict) else []
+        step4_ok = bool(searches)
+    except FileNotFoundError:
+        pass
+    except Exception as exc:  # noqa: BLE001 — defensive: yaml parse, etc.
+        logger.debug("step4 status check failed: %s", exc)
+    step5_ok = False
+    try:
+        dom = load_config("domain_context")
+        focus = dom.get("domain_focus", "") if isinstance(dom, dict) else ""
+        step5_ok = bool(str(focus).strip())
+    except FileNotFoundError:
+        pass
+    except Exception as exc:  # noqa: BLE001 — defensive: yaml parse, etc.
+        logger.debug("step5 status check failed: %s", exc)
     return [
         {"num": 1, "title": "Credentials", "status": "ok" if step1_ok else "missing", "url": "/setup/step-1"},
         {"num": 2, "title": "Paths (vault + collection)", "status": "ok" if step2_ok else "missing", "url": "/setup/step-2"},
         {"num": 3, "title": "Extraction (provider + model)", "status": "ok" if step3_ok else "missing", "url": "/setup/step-3"},
-        {"num": 4, "title": "Topics (weekly searches)", "status": "todo", "url": "/setup/step-4"},
-        {"num": 5, "title": "Domain context", "status": "todo", "url": "/setup/step-5"},
+        {"num": 4, "title": "Topics (weekly searches)", "status": "ok" if step4_ok else "missing", "url": "/setup/step-4"},
+        {"num": 5, "title": "Domain context", "status": "ok" if step5_ok else "missing", "url": "/setup/step-5"},
         {"num": 6, "title": "Concepts (vocabulary)", "status": "todo", "url": "/setup/step-6"},
         {"num": 7, "title": "Researchers (optional)", "status": "todo", "url": "/setup/step-7"},
         {"num": 8, "title": "Item routing (advanced)", "status": "todo", "url": "/setup/step-8"},
@@ -649,4 +719,136 @@ def ollama_test(request: Request, host: str = "") -> HTMLResponse:
         )
     return HTMLResponse(
         f'<span class="pill warning">HTTP {r.status_code}</span>'
+    )
+
+
+# --- F2.7: topics ---
+
+
+@router.get("/step-4", response_class=HTMLResponse)
+def step_topics_form(request: Request) -> HTMLResponse:
+    """Step 4 form: topics.yaml row editor."""
+    try:
+        topics = load_config("topics")
+    except FileNotFoundError:
+        topics = {}
+    searches = topics.get("searches", []) or []
+    # Ensure each entry has the keys the template expects.
+    for s in searches:
+        s.setdefault("name", "")
+        s.setdefault("query", "")
+        s.setdefault("databases", [])
+    ctx = {
+        "current_step": 4,
+        "searches": searches,
+        "all_databases": _DATABASES,
+    }
+    return templates.TemplateResponse(request, "setup/step_topics.html", ctx)
+
+
+@router.post("/api/topics", response_class=HTMLResponse)
+async def save_topics(request: Request) -> HTMLResponse:
+    """Topics POST is parsed manually because the row count is dynamic."""
+    form = await request.form()
+    # Find the row count by scanning name_N keys.
+    indices: set[int] = set()
+    for key in form.keys():
+        if key.startswith("name_"):
+            try:
+                indices.add(int(key.split("_", 1)[1]))
+            except ValueError:
+                pass
+    searches: list[dict[str, Any]] = []
+    for i in sorted(indices):
+        name = str(form.get(f"name_{i}", "")).strip()
+        query = str(form.get(f"query_{i}", "")).strip()
+        # Multi-checkbox: getlist returns all values for the key
+        databases = [str(v) for v in form.getlist(f"databases_{i}")]
+        # Skip rows that are entirely empty.
+        if not (name or query or databases):
+            continue
+        searches.append({"name": name, "query": query, "databases": databases})
+
+    errors = _validate_topics(searches)
+    if errors:
+        return templates.TemplateResponse(
+            request,
+            "setup/_topics_result.html",
+            {"ok": False, "errors": errors},
+        )
+
+    try:
+        save_config("topics", _merge_topics(searches))
+    except OSError as exc:
+        logger.error("save_topics: write failed: %s", exc)
+        return templates.TemplateResponse(
+            request,
+            "setup/_topics_result.html",
+            {"ok": False, "errors": [f"Could not save: {exc}"]},
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "setup/_topics_result.html",
+        {"ok": True, "errors": None},
+    )
+
+
+@router.get("/api/topics/new-row", response_class=HTMLResponse)
+def topics_new_row(request: Request, idx: int = 0) -> HTMLResponse:
+    """Return the HTML fragment for a fresh row at the given index."""
+    return templates.TemplateResponse(
+        request,
+        "setup/_topics_row.html",
+        {
+            "idx": idx,
+            "search": {"name": "", "query": "", "databases": []},
+            "all_databases": _DATABASES,
+        },
+    )
+
+
+# --- F2.8: domain ---
+
+
+@router.get("/step-5", response_class=HTMLResponse)
+def step_domain_form(request: Request) -> HTMLResponse:
+    """Step 5 form: domain_context.yaml single-textarea editor."""
+    try:
+        existing = load_config("domain_context")
+    except FileNotFoundError:
+        existing = {}
+    ctx = {
+        "current_step": 5,
+        "domain_focus": existing.get("domain_focus", "") or "",
+    }
+    return templates.TemplateResponse(request, "setup/step_domain.html", ctx)
+
+
+@router.post("/api/domain", response_class=HTMLResponse)
+def save_domain(
+    request: Request,
+    domain_focus: str = Form(""),
+) -> HTMLResponse:
+    text = domain_focus.strip()
+    errors = _validate_domain(text)
+    if errors:
+        return templates.TemplateResponse(
+            request,
+            "setup/_domain_result.html",
+            {"ok": False, "errors": errors},
+        )
+    try:
+        save_config("domain_context", {"domain_focus": text})
+    except OSError as exc:
+        logger.error("save_domain: write failed: %s", exc)
+        return templates.TemplateResponse(
+            request,
+            "setup/_domain_result.html",
+            {"ok": False, "errors": [f"Could not save: {exc}"]},
+        )
+    return templates.TemplateResponse(
+        request,
+        "setup/_domain_result.html",
+        {"ok": True, "errors": None},
     )

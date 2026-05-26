@@ -1,0 +1,28 @@
+{% extends "setup/_base.html" %}
+{% block step_content %}
+<h1>Step 5 — Domain context</h1>
+<p>A short paragraph telling the LLM what kind of papers you're studying. Stored at <code>config/domain_context.yaml</code>. Used in extractor prompts to bias <code>relevance_to_domain</code> and friends.</p>
+
+<form class="setup-form" hx-post="/setup/api/domain" hx-target="#result" hx-swap="innerHTML">
+  <label>domain_focus
+    <textarea id="domain_focus" name="domain_focus" rows="8" maxlength="6000"
+      oninput="document.getElementById('word-count').innerText = this.value.trim().split(/\s+/).filter(Boolean).length">{{ domain_focus }}</textarea>
+  </label>
+  <p class="muted">words: <span id="word-count">0</span> (soft target: under 400)</p>
+
+  <button type="submit">Save</button>
+</form>
+
+<div id="result"></div>
+
+<p><a href="/setup">← Back to setup overview</a></p>
+
+<script>
+// Initialize word count on page load.
+(function() {
+  var t = document.getElementById('domain_focus');
+  var c = document.getElementById('word-count');
+  if (t && c) c.innerText = t.value.trim().split(/\s+/).filter(Boolean).length;
+})();
+</script>
+{% endblock %}

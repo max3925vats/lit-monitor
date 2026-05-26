@@ -1,0 +1,17 @@
+{# Partial: a single topics row. Server-rendered for the HTMX add-row case.
+   The initial-render rows are inlined in step_topics.html. #}
+<fieldset class="topics-row">
+  <label>name <input type="text" name="name_{{ idx }}" value="{{ search.name }}"></label>
+  <label>query <textarea name="query_{{ idx }}" rows="2">{{ search.query }}</textarea></label>
+  <label>databases
+    {% for db in all_databases %}
+    <label class="checkbox-inline">
+      <input type="checkbox" name="databases_{{ idx }}" value="{{ db }}"
+        {% if db in search.databases %}checked{% endif %}>
+      {{ db }}
+    </label>
+    {% endfor %}
+  </label>
+  <button type="button" class="button danger"
+    onclick="this.closest('fieldset').remove()">Remove</button>
+</fieldset>

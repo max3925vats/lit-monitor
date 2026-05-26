@@ -363,3 +363,10 @@ a:hover {
 .setup-form details { margin: 0.5rem 0; border: 1px solid var(--border); border-radius: var(--radius); }
 .setup-form details summary { padding: 0.5rem 0.75rem; cursor: pointer; background: var(--card-bg); }
 .setup-form details fieldset { border: none; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+
+/* --- Topics row editor (F2.7) --- */
+.topics-row { border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0.75rem; margin-bottom: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.checkbox-inline { display: inline-flex; align-items: center; gap: 0.25rem; margin-right: 1rem; font-weight: normal; }
+.muted { color: var(--muted); font-size: 0.9em; }
+.button.danger { background: var(--danger-bg); color: var(--danger-fg); border: 1px solid var(--danger-fg); }
