@@ -40,9 +40,6 @@ dependencies = [
 
     # Progress bars (brain-build, textbook-build)
     "rich>=13.0",
-
-    # Web UI — FastAPI Form() data parsing (F2.4 setup wizard POST endpoints)
-    "python-multipart>=0.0.29",
 ]
 
 [project.scripts]
@@ -64,6 +61,8 @@ server = [
     "uvicorn[standard]>=0.30",
     "sse-starlette>=2.1",
     "tomli_w>=1.0",
+    # Web UI — FastAPI Form() data parsing (F2.4 setup wizard POST endpoints)
+    "python-multipart>=0.0.29",
 ]
 
 [build-system]

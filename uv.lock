@@ -1443,7 +1443,6 @@ dependencies = [
     { name = "habanero" },
     { name = "jinja2" },
     { name = "pydantic" },
-    { name = "python-multipart" },
     { name = "pyyaml" },
     { name = "pyzotero" },
     { name = "rapidfuzz" },
@@ -1467,6 +1466,7 @@ dev = [
 ]
 server = [
     { name = "fastapi" },
+    { name = "python-multipart" },
     { name = "sse-starlette" },
     { name = "tomli-w" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1486,7 +1486,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
-    { name = "python-multipart", specifier = ">=0.0.29" },
+    { name = "python-multipart", marker = "extra == 'server'", specifier = ">=0.0.29" },
     { name = "pyyaml" },
     { name = "pyzotero" },
     { name = "rapidfuzz" },
