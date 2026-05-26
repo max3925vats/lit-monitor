@@ -382,3 +382,13 @@ a:hover {
 
 /* --- Card variants --- */
 .card.warning { border-color: #cc6; background: #ffe; }
+
+/* --- Routes table (F2.11) --- */
+.routes-table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+.routes-table th, .routes-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); text-align: left; }
+.routes-table th { background: var(--card-bg); }
+
+/* --- Status grid (F2.12 completion checklist) --- */
+.status-grid { width: 100%; }
+.status-grid td { padding: 0.5rem; border-bottom: 1px solid var(--border); }
+.status-grid td:last-child { text-align: right; }

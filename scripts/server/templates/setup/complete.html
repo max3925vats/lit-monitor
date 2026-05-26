@@ -1,0 +1,36 @@
+{% extends "setup/_base.html" %}
+{% block step_content %}
+<h1>Setup complete</h1>
+<p>Verifying that everything's wired up correctly. Each row polls its own status endpoint.</p>
+
+<table class="status-grid">
+  <tr>
+    <td>Secrets file + required keys</td>
+    <td hx-get="/setup/api/check/secrets" hx-trigger="load, every 30s">
+      <span class="pill">checking…</span>
+    </td>
+  </tr>
+  <tr>
+    <td>Ollama reachable + configured model installed</td>
+    <td hx-get="/setup/api/check/ollama" hx-trigger="load, every 30s">
+      <span class="pill">checking…</span>
+    </td>
+  </tr>
+  <tr>
+    <td>Zotero credentials valid</td>
+    <td hx-get="/setup/api/check/zotero" hx-trigger="load, every 30s">
+      <span class="pill">checking…</span>
+    </td>
+  </tr>
+  <tr>
+    <td>Obsidian vault path exists</td>
+    <td hx-get="/setup/api/check/vault" hx-trigger="load, every 30s">
+      <span class="pill">checking…</span>
+    </td>
+  </tr>
+</table>
+
+<hr>
+<p><a href="/" class="button">Done — open dashboard</a></p>
+<p><a href="/setup">← Back to setup overview</a></p>
+{% endblock %}

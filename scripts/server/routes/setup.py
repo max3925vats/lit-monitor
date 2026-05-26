@@ -1189,3 +1189,73 @@ def save_routing(
         "setup/_routing_result.html",
         {"ok": True, "errors": []},
     )
+
+
+# --- F2.12: completion checklist ---------------------------------------
+
+
+def _check_vault() -> dict[str, tuple[bool, str]]:
+    """Synthetic check: paths.yaml exists AND vault_path is a real dir."""
+    try:
+        paths = load_config("paths")
+    except FileNotFoundError:
+        return {"paths_file": (False, "config/paths.yaml not found")}
+    vault = paths.get("obsidian", {}).get("vault_path", "")
+    if not vault:
+        return {"vault_path": (False, "vault_path not set in paths.yaml")}
+    p = Path(vault).expanduser()
+    if not p.exists():
+        return {"vault_path": (False, f"path does not exist: {vault}")}
+    if not p.is_dir():
+        return {"vault_path": (False, f"not a directory: {vault}")}
+    return {"vault_path": (True, f"OK: {vault}")}
+
+
+@router.get("/complete", response_class=HTMLResponse)
+def step_complete(request: Request) -> HTMLResponse:
+    """Setup completion landing — each row polls its own status endpoint."""
+    return templates.TemplateResponse(
+        request, "setup/complete.html", {"current_step": 8}
+    )
+
+
+@router.get("/api/check/{name}", response_class=HTMLResponse)
+def setup_check(request: Request, name: str) -> HTMLResponse:
+    """Return the inline status snippet for one of the four checks."""
+    if name == "secrets":
+        from scripts.setup.check_configured import check_configured
+        results = check_configured()
+    elif name == "ollama":
+        from scripts.setup.check_ollama import check_ollama
+        # Pass the configured brain_build model so the ollama check can probe it.
+        model = None
+        try:
+            ext = load_config("extraction")
+            model = (ext.get("brain_build") or {}).get("model")
+        except Exception:  # noqa: BLE001 — defensive: any load failure
+            pass
+        results = check_ollama(model=model)
+    elif name == "zotero":
+        from scripts.setup.check_zotero import check_zotero
+        results = check_zotero()
+    elif name == "vault":
+        results = _check_vault()
+    else:
+        return HTMLResponse(
+            f'<span class="pill danger">unknown check: {name}</span>',
+            status_code=404,
+        )
+
+    # Aggregate the sub-checks into one pill.
+    all_ok = all(ok for ok, _msg in results.values())
+    failing = [n for n, (ok, _msg) in results.items() if not ok]
+    if all_ok:
+        return HTMLResponse(
+            f'<span class="pill success">all OK ({len(results)} checks)</span>'
+        )
+    return HTMLResponse(
+        f'<span class="pill danger">{len(failing)} failing: '
+        f'{", ".join(failing[:3])}'
+        + (f' (+{len(failing) - 3} more)' if len(failing) > 3 else "")
+        + '</span>'
+    )
