@@ -32,7 +32,7 @@
     </div>
     <footer>
       <button type="button" class="button"
-        hx-on:click="document.getElementById('vault_path').value = '{{ path }}'; document.getElementById('fs-modal').innerHTML = '';">
+        hx-on:click="document.getElementById('vault_path').value = {{ path | tojson }}; document.getElementById('fs-modal').innerHTML = '';">
         Select this folder
       </button>
       <button type="button"

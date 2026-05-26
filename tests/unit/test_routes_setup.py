@@ -1,11 +1,15 @@
 """Unit tests for the helpers in scripts/server/routes/setup.py."""
+from unittest.mock import patch
+
 import pytest
 
 from scripts.server.routes.setup import (
     _build_step_descriptors,
     _key_tail,
     _merge_credentials,
+    _merge_paths,
     _validate_credentials,
+    _validate_paths,
 )
 
 
@@ -138,7 +142,8 @@ def test_build_step_descriptors_steps_3_through_8_are_todo():
     """Steps 3-8 haven't been wired yet — landing must show them as 'todo'.
 
     Step 2 is exempt: F2.5 derives its status from paths.yaml (see
-    ``test_build_step_descriptors_step2_status_*`` below).
+    ``test_build_step_descriptors_step2_ok_when_vault_exists`` and
+    ``test_build_step_descriptors_step2_missing_when_paths_yaml_absent``).
     """
     steps = _build_step_descriptors({
         "secrets_file": (True, ""),
@@ -150,3 +155,134 @@ def test_build_step_descriptors_steps_3_through_8_are_todo():
     for s in steps:
         if s["num"] not in (1, 2):
             assert s["status"] == "todo", f"step {s['num']} should be 'todo' until F2.{s['num'] + 3} lands"
+
+
+@pytest.mark.unit
+def test_merge_paths_preserves_unrelated_top_level_keys():
+    existing = {
+        "zotero": {"library_id": "1"},
+        "obsidian": {"vault_path": "/x"},
+        "state_db": {"path": "~/state.db"},
+        "logs": {"path": "./logs", "retention_days": 7},
+        "weird_section": {"x": 1},
+    }
+    merged = _merge_paths(existing, {
+        "vault_path": "/new",
+        "collection_name": "C",
+        "library_id": "2",
+        "library_type": "user",
+        "local_storage_path": "~/Zotero/storage",
+    })
+    assert merged["state_db"] == {"path": "~/state.db"}
+    assert merged["logs"] == {"path": "./logs", "retention_days": 7}
+    assert merged["weird_section"] == {"x": 1}
+
+
+@pytest.mark.unit
+def test_merge_paths_preserves_unrelated_obsidian_subkeys():
+    existing = {
+        "obsidian": {"vault_path": "/x", "papers_folder": "MyPapers", "custom_folder": "Foo"},
+    }
+    merged = _merge_paths(existing, {
+        "vault_path": "/new",
+        "collection_name": "C",
+        "library_id": "1",
+        "library_type": "user",
+        "local_storage_path": "~/Zotero/storage",
+    })
+    assert merged["obsidian"]["papers_folder"] == "MyPapers"
+    assert merged["obsidian"]["custom_folder"] == "Foo"
+    assert merged["obsidian"]["vault_path"] == "/new"
+
+
+@pytest.mark.unit
+def test_merge_paths_backfills_obsidian_defaults_when_absent():
+    """When existing obsidian has only vault_path, default sub-folders are added."""
+    merged = _merge_paths({}, {
+        "vault_path": "/new",
+        "collection_name": "C",
+        "library_id": "1",
+        "library_type": "user",
+        "local_storage_path": "~/Zotero/storage",
+    })
+    o = merged["obsidian"]
+    assert o["papers_folder"] == "Literature/Papers"
+    assert o["books_folder"] == "Literature/Books"
+    assert o["digests_folder"] == "Literature/Digests"
+    assert o["connections_folder"] == "Literature/Connections"
+
+
+@pytest.mark.unit
+def test_validate_paths_rejects_tampered_library_type():
+    errors = _validate_paths({
+        "obsidian": {"vault_path": "/tmp"},  # exists on every machine
+        "zotero": {
+            "library_id": "12345",
+            "collection_name": "C",
+            "library_type": "admin",   # not in {user, group}
+        },
+    })
+    assert any("user" in e and "group" in e for e in errors)
+
+
+@pytest.mark.unit
+def test_validate_paths_rejects_nonexistent_vault(tmp_path):
+    nonexistent = tmp_path / "does_not_exist"
+    errors = _validate_paths({
+        "obsidian": {"vault_path": str(nonexistent)},
+        "zotero": {"library_id": "12345", "collection_name": "C", "library_type": "user"},
+    })
+    assert any("does not exist" in e for e in errors)
+
+
+@pytest.mark.unit
+def test_validate_paths_rejects_non_dir_vault(tmp_path):
+    f = tmp_path / "f.txt"
+    f.write_text("x")
+    errors = _validate_paths({
+        "obsidian": {"vault_path": str(f)},
+        "zotero": {"library_id": "12345", "collection_name": "C", "library_type": "user"},
+    })
+    assert any("not a directory" in e for e in errors)
+
+
+@pytest.mark.unit
+def test_validate_paths_happy_path(tmp_path):
+    errors = _validate_paths({
+        "obsidian": {"vault_path": str(tmp_path)},
+        "zotero": {"library_id": "12345", "collection_name": "C", "library_type": "user"},
+    })
+    assert errors == []
+
+
+@pytest.mark.unit
+def test_build_step_descriptors_step2_ok_when_vault_exists(tmp_path):
+    """When paths.yaml has a vault_path pointing at a real dir, step 2 is 'ok'."""
+    fake_paths = {"obsidian": {"vault_path": str(tmp_path)}}
+    checks = {
+        "secrets_file": (True, ""),
+        "secrets_parse": (True, ""),
+        "zotero.api_key": (True, ""),
+        "zotero.library_id": (True, ""),
+        "pubmed.email": (True, ""),
+    }
+    with patch("scripts.server.routes.setup.load_config", return_value=fake_paths):
+        steps = _build_step_descriptors(checks)
+    step2 = next(s for s in steps if s["num"] == 2)
+    assert step2["status"] == "ok"
+
+
+@pytest.mark.unit
+def test_build_step_descriptors_step2_missing_when_paths_yaml_absent():
+    """When load_config raises FileNotFoundError, step 2 is 'missing'."""
+    checks = {
+        "secrets_file": (True, ""),
+        "secrets_parse": (True, ""),
+        "zotero.api_key": (True, ""),
+        "zotero.library_id": (True, ""),
+        "pubmed.email": (True, ""),
+    }
+    with patch("scripts.server.routes.setup.load_config", side_effect=FileNotFoundError):
+        steps = _build_step_descriptors(checks)
+    step2 = next(s for s in steps if s["num"] == 2)
+    assert step2["status"] == "missing"
