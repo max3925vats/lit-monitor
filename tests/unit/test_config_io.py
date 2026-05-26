@@ -151,3 +151,31 @@ def test_save_config_roundtrip(monkeypatch, tmp_path: Path) -> None:
     assert final == Path("config") / "foo.yaml"
     loaded = yaml.safe_load(final.read_text(encoding="utf-8"))
     assert loaded == data
+
+
+@pytest.mark.unit
+def test_load_config_raises_yaml_error_on_malformed_yaml(tmp_path, monkeypatch):
+    """load_config must NOT silently return {} on parse error."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "bad.yaml").write_text(":::not valid yaml: [\n", encoding="utf-8")
+    # Swap _resolve_path the same way the other tests do, so the resolver
+    # finds the tmp file rather than walking ancestors.
+    monkeypatch.setattr(config_io, "_resolve_path", _tmp_resolver(tmp_path))
+    with pytest.raises(yaml.YAMLError):
+        config_io.load_config("bad")
+
+
+@pytest.mark.unit
+def test_load_secrets_propagates_permission_error(tmp_path, monkeypatch):
+    """A secrets file with no read permission must surface, not silently return {}."""
+    secret_path = tmp_path / "config.toml"
+    secret_path.write_text('[zotero]\napi_key = "x"\n', encoding="utf-8")
+    secret_path.chmod(0o000)
+    monkeypatch.setattr(config_io, "SECRETS_PATH", secret_path)
+    try:
+        with pytest.raises(PermissionError):
+            config_io.load_secrets()
+    finally:
+        # Restore mode so tmp_path teardown can rm the file.
+        secret_path.chmod(0o600)

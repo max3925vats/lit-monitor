@@ -33,8 +33,14 @@ def load_config(name: str) -> dict[str, Any]:
     """Load ``config/{name}.yaml``.
 
     Falls back to ``config/{name}.example.yaml`` if the real file is absent,
-    mirroring :func:`scripts.llm.prompt_registry._resolve_path`.  Raises
-    ``FileNotFoundError`` if neither exists.
+    mirroring :func:`scripts.llm.prompt_registry._resolve_path`.
+
+    Raises:
+        FileNotFoundError: If neither the real nor the example file exists
+            (per the :func:`_resolve_path` contract).
+        yaml.YAMLError: If the file exists but cannot be parsed as YAML.
+            Wizard routes are expected to wrap this call and render the
+            parse error to the user rather than letting it 500.
     """
     path = _resolve_path(CONFIG_DIR / f"{name}.yaml")
     text = path.read_text(encoding="utf-8")
@@ -50,17 +56,20 @@ def save_config(name: str, data: dict[str, Any]) -> Path:
 
 
 def load_secrets() -> dict[str, Any]:
-    """Read the secrets TOML. Returns ``{}`` when absent or malformed.
+    """Read the secrets TOML. Returns ``{}`` when absent, empty, or malformed.
 
-    Never raises — wizard callers should re-validate before saving so that
-    parse errors surface inline rather than as a 500.
+    Returns ``{}`` only for the "no usable content" cases: missing file,
+    directory-where-a-file-should-be, or malformed TOML.  ``PermissionError``
+    and other ``OSError`` subclasses propagate so that the wizard's setup
+    route can distinguish "not configured yet" from "exists but unreadable"
+    and render a specific error to the user.
     """
     if not SECRETS_PATH.exists():
         return {}
     try:
         with SECRETS_PATH.open("rb") as fh:
             return tomllib.load(fh)
-    except (OSError, tomllib.TOMLDecodeError) as exc:
+    except (FileNotFoundError, IsADirectoryError, tomllib.TOMLDecodeError) as exc:
         logger.warning("Could not parse secrets TOML at %s: %s", SECRETS_PATH, exc)
         return {}
 
