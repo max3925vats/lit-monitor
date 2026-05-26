@@ -1,0 +1,21 @@
+{% extends "setup/_base.html" %}
+{% block step_content %}
+<h1>Step 6 — Vocabulary build progress</h1>
+<p>PID {{ pid or "(stopped)" }}</p>
+
+<div hx-ext="sse" sse-connect="/setup/api/build-vocabulary/stream">
+  <pre id="vocab-output"
+       sse-swap="progress"
+       hx-swap="beforeend"
+       style="max-height: 60vh; overflow-y: auto; background: #111; color: #eee;
+              padding: 1rem; border-radius: var(--radius);"></pre>
+  <div id="done-indicator" sse-swap="done" hx-swap="innerHTML"></div>
+</div>
+
+<form hx-post="/setup/api/build-vocabulary/stop" hx-target="#result" hx-swap="innerHTML">
+  <button type="submit" class="button danger">Stop build</button>
+</form>
+<div id="result"></div>
+
+<p><a href="/setup/step-6" class="button">← Back to concepts view</a></p>
+{% endblock %}

@@ -10,6 +10,7 @@ positional-dict form is rejected by Starlette 1.x (confirmed broken in F1.2).
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,14 @@ from scripts.server.config_io import load_config, load_secrets, save_config, sav
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/setup", tags=["setup"])
+
+# --- F2.9: build-vocabulary subprocess registry ---------------------------
+# TODO(F3.3): replace with the shared process registry in
+# scripts/server/runtime.py. For now we keep the running subprocess as a
+# module-level singleton so the SSE stream endpoint can reach it.
+_vocab_proc: asyncio.subprocess.Process | None = None
+_vocab_lock: asyncio.Lock = asyncio.Lock()
+_vocab_output: list[str] = []  # captured stdout lines; cleared per run
 
 # Sentinel prefix used to render masked secret tails in the form's value
 # attribute. ``_merge_credentials`` treats any submission starting with this
@@ -281,6 +290,26 @@ def _validate_domain(text: str) -> list[str]:
     return errors
 
 
+def _load_concepts() -> tuple[dict[str, Any] | None, str | None]:
+    """Try concepts.yaml first, then concepts_draft.yaml.
+
+    Returns ``(data, source)`` where ``source`` is ``"concepts"`` or
+    ``"concepts_draft"``, or ``(None, None)`` if neither file has any
+    themes/unclustered content on disk yet.
+    """
+    for source in ("concepts", "concepts_draft"):
+        try:
+            data = load_config(source)
+        except FileNotFoundError:
+            continue
+        except Exception:  # noqa: BLE001 — defensive: yaml parse, etc.
+            logger.debug("Failed to load %s", source, exc_info=True)
+            continue
+        if data and (data.get("themes") or data.get("unclustered")):
+            return data, source
+    return None, None
+
+
 def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[str, Any]]:
     """Build the wizard-landing card list.
 
@@ -336,13 +365,19 @@ def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[st
         pass
     except Exception as exc:  # noqa: BLE001 — defensive: yaml parse, etc.
         logger.debug("step5 status check failed: %s", exc)
+    step6_ok = False
+    try:
+        cdata, _csrc = _load_concepts()
+        step6_ok = bool(cdata and cdata.get("themes"))
+    except Exception as exc:  # noqa: BLE001 — defensive: yaml parse, etc.
+        logger.debug("step6 status check failed: %s", exc)
     return [
         {"num": 1, "title": "Credentials", "status": "ok" if step1_ok else "missing", "url": "/setup/step-1"},
         {"num": 2, "title": "Paths (vault + collection)", "status": "ok" if step2_ok else "missing", "url": "/setup/step-2"},
         {"num": 3, "title": "Extraction (provider + model)", "status": "ok" if step3_ok else "missing", "url": "/setup/step-3"},
         {"num": 4, "title": "Topics (weekly searches)", "status": "ok" if step4_ok else "missing", "url": "/setup/step-4"},
         {"num": 5, "title": "Domain context", "status": "ok" if step5_ok else "missing", "url": "/setup/step-5"},
-        {"num": 6, "title": "Concepts (vocabulary)", "status": "todo", "url": "/setup/step-6"},
+        {"num": 6, "title": "Concepts (vocabulary)", "status": "ok" if step6_ok else "missing", "url": "/setup/step-6"},
         {"num": 7, "title": "Researchers (optional)", "status": "todo", "url": "/setup/step-7"},
         {"num": 8, "title": "Item routing (advanced)", "status": "todo", "url": "/setup/step-8"},
     ]
@@ -854,4 +889,117 @@ def save_domain(
         request,
         "setup/_domain_result.html",
         {"ok": True, "errors": None},
+    )
+
+
+# --- F2.9: concepts (read-only view + Regenerate trigger) ---------------
+
+
+@router.get("/step-6", response_class=HTMLResponse)
+def step_concepts_form(request: Request) -> HTMLResponse:
+    """Step 6: read-only concepts view + Regenerate trigger."""
+    data, source = _load_concepts()
+    themes = (data or {}).get("themes", []) or []
+    unclustered = (data or {}).get("unclustered", []) or []
+    is_running = _vocab_proc is not None and _vocab_proc.returncode is None
+    ctx = {
+        "current_step": 6,
+        "themes": themes,
+        "unclustered": unclustered,
+        "source": source,
+        "is_running": is_running,
+    }
+    return templates.TemplateResponse(request, "setup/step_concepts.html", ctx)
+
+
+@router.post("/api/build-vocabulary/start", response_class=HTMLResponse)
+async def build_vocab_start(request: Request) -> HTMLResponse:
+    """Spawn the build-vocabulary subprocess. Returns an HTMX-swappable card."""
+    global _vocab_proc, _vocab_output
+    async with _vocab_lock:
+        if _vocab_proc is not None and _vocab_proc.returncode is None:
+            return HTMLResponse(
+                '<div class="card warning">'
+                '<p>Vocabulary build already in progress '
+                f'(pid {_vocab_proc.pid}).</p>'
+                '<p><a href="/setup/step-6/progress" class="button">'
+                'View live output →</a></p>'
+                '</div>'
+            )
+        _vocab_output = []
+        # Repo root: scripts/server/routes/setup.py → parents[3] is repo root.
+        repo_root = Path(__file__).resolve().parents[3]
+        _vocab_proc = await asyncio.create_subprocess_exec(
+            "uv", "run", "lit-monitor", "build-vocabulary",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=str(repo_root),
+        )
+    return HTMLResponse(
+        '<div class="card success">'
+        f'<p>Vocabulary build started (pid {_vocab_proc.pid}).</p>'
+        '<p><a href="/setup/step-6/progress" class="button">'
+        'View live output →</a></p>'
+        '</div>'
+    )
+
+
+@router.get("/step-6/progress", response_class=HTMLResponse)
+def step_concepts_progress(request: Request) -> HTMLResponse:
+    """Live SSE-streamed stdout viewer for the running build-vocabulary subprocess."""
+    return templates.TemplateResponse(
+        request,
+        "setup/_concepts_progress.html",
+        {
+            "current_step": 6,
+            "pid": _vocab_proc.pid if _vocab_proc else None,
+        },
+    )
+
+
+@router.get("/api/build-vocabulary/stream")
+async def build_vocab_stream(request: Request):
+    """SSE stream of the build-vocabulary subprocess stdout.
+
+    Emits ``progress`` events for each line and a final ``done`` event with
+    the exit code. If no build is running, emits a single ``error`` event.
+    """
+    from sse_starlette.sse import EventSourceResponse
+
+    async def gen():
+        proc = _vocab_proc
+        if proc is None or proc.stdout is None:
+            yield {"event": "error", "data": "no build process running"}
+            return
+        while True:
+            if await request.is_disconnected():
+                return
+            line = await proc.stdout.readline()
+            if not line:
+                break
+            text = line.decode("utf-8", errors="replace").rstrip()
+            _vocab_output.append(text)
+            yield {"event": "progress", "data": text}
+        rc = await proc.wait()
+        yield {"event": "done", "data": f"exit code: {rc}"}
+
+    return EventSourceResponse(gen())
+
+
+@router.post("/api/build-vocabulary/stop", response_class=HTMLResponse)
+async def build_vocab_stop() -> HTMLResponse:
+    """SIGTERM the build-vocabulary subprocess if running; SIGKILL on timeout."""
+    proc = _vocab_proc
+    if proc is None or proc.returncode is not None:
+        return HTMLResponse(
+            '<div class="card warning">No vocabulary build in progress.</div>'
+        )
+    proc.terminate()
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=10)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+    return HTMLResponse(
+        '<div class="card success">Vocabulary build stopped.</div>'
     )
