@@ -457,14 +457,15 @@ a:hover {
                               flex containers ignore max-height and let the
                               pane grow to fit content */
   overflow-y: auto;
+  overflow-x: auto;        /* long log lines scroll horizontally rather than
+                              wrap; the auto sizing on the last grid column
+                              lets rows extend as wide as their content */
   background: #111;
   color: #eee;
   padding: 0.5rem;
   border-radius: var(--radius);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85em;
-  white-space: pre-wrap;
-  word-break: break-all;
 }
 .live-progress-hint { color: #888; }
 
@@ -544,7 +545,7 @@ a:hover {
  * inside `.live-progress-pane` containers on /brain-build, /discovery, /dev. */
 .log-line {
   display: grid;
-  grid-template-columns: 5em 6em 14em 1fr;
+  grid-template-columns: 5em 6em 14em auto;
   gap: 0.5rem;
   padding: 0.05rem 0;
   border-bottom: 1px solid #1f1f1f;
@@ -557,7 +558,7 @@ a:hover {
   padding: 0 0.3rem;
 }
 .log-logger { color: #6ab0ff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.log-msg { white-space: pre-wrap; word-break: break-word; }
+.log-msg { white-space: nowrap; }  /* horizontal scroll inside .live-progress-pane */
 .log-INFO .log-level    { color: #6ee0a0; background: #07331c; }
 .log-DEBUG .log-level   { color: #777;    background: #1a1a1a; }
 .log-DEBUG              { color: #999; }
