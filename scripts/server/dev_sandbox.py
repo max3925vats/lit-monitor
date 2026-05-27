@@ -258,6 +258,23 @@ def clear_sandbox(*, confirm: bool = False) -> dict[str, str]:
     # at the rmtree'd path and writes would fail.
     sandbox_embeddings_db.cache_clear()
 
+    # ALSO drop chromadb's internal singleton-client cache. chromadb's
+    # PersistentClient is keyed by path inside its own process-global cache;
+    # rmtree'ing the persist dir doesn't evict the cached client, so the next
+    # `PersistentClient(path=SANDBOX_CHROMA_DIR)` returns the stale handle
+    # whose underlying sqlite file has been deleted. Subsequent writes then
+    # fail with SQLITE_READONLY_DBMOVED (code 1032). Clearing chromadb's
+    # system cache forces the next constructor call to allocate a fresh
+    # client against the recreated directory.
+    try:
+        from chromadb.api.shared_system_client import SharedSystemClient
+        SharedSystemClient.clear_system_cache()
+        actions.append("cleared chromadb system cache")
+    except Exception as exc:  # noqa: BLE001 — defensive; varies by chromadb version
+        actions.append(f"chromadb system-cache reset skipped: {exc}")
+        # Not flagged as failed — chromadb may not be installed in test env,
+        # and on fresh dirs (no prior client) the reset is a no-op anyway.
+
     # 3) Vault subfolder
     try:
         # Resolve directly (without auto-create) so we don't recreate then nuke.
