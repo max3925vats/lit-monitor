@@ -430,15 +430,25 @@ class EmbeddingsDB:
         """One Ollama /api/embed call.  Raises _EmbedContextLengthError on 400
         ``context length`` errors so the caller can decide whether to retry;
         propagates all other HTTPErrors with the response body in the log.
+
+        Reads OLLAMA_API_KEY from the env and adds a Bearer Authorization
+        header when present — required for cloud Ollama embed models (e.g.
+        ``mxbai-embed-large:cloud``). Local Ollama ignores the extra header,
+        so this is strictly additive.
         """
         import json
+        import os
         import urllib.error
         import urllib.request
         payload = json.dumps({"model": self._embed_model, "input": text}).encode()
+        headers = {"Content-Type": "application/json"}
+        api_key = os.environ.get("OLLAMA_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         req = urllib.request.Request(
             url=f"{self._ollama_host}/api/embed",
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
         try:

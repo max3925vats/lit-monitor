@@ -255,8 +255,23 @@ def _run_sandbox_ingest(*, doi: str, fulltext: str) -> str:
 
         # Stage 4 — sandbox embeddings + chunks
         edb = sandbox_embeddings_db()
-        abstract = (extraction.get("abstract") or "")[:1000]
-        embed_text = f"{extraction.get('title') or ''}\n\n{abstract}".strip()
+        # Build embed text from extracted schema fields. The schema has no
+        # 'title'/'abstract' (those normally come from Zotero metadata in the
+        # production brain-build path); rely on the LLM-extracted summaries
+        # instead. Falls back to the first 1000 chars of fulltext if every
+        # summary field is null (degenerate extraction).
+        _embed_parts = []
+        for _key in ("core_finding", "methods_summary", "results_summary",
+                     "conclusions", "background_motivation"):
+            _val = extraction.get(_key)
+            if _val and isinstance(_val, str):
+                _embed_parts.append(_val)
+        embed_text = "\n\n".join(_embed_parts).strip() or fulltext[:1000].strip()
+        if not embed_text:
+            raise ValueError(
+                "Embed input is empty: no schema summary fields populated and "
+                "fulltext is also empty."
+            )
         edb.add_paper(
             doi,
             embed_text,
