@@ -219,3 +219,118 @@ def test_dryrun_result_detects_wal_change(
     assert 'class="pill danger"' in resp.text
     assert "LEAK detected" in resp.text
     assert "state.db-wal" in resp.text
+
+
+@pytest.mark.unit
+def test_dryrun_status_idle_when_no_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no prior spawn, /api/dev/dryrun/status returns 200 + the idle pill."""
+    client = _make_dev_client(monkeypatch)
+    resp = client.get("/api/dev/dryrun/status")
+    assert resp.status_code == 200
+    assert "idle" in resp.text
+    assert 'class="pill"' in resp.text
+
+
+@pytest.mark.unit
+def test_dryrun_status_running_parses_iso_started_at(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: slot.started_at is an ISO string per runtime.py:52 convention.
+
+    The status endpoint previously assumed it was a float (from time.time())
+    and crashed with `TypeError: unsupported operand type(s) for -: 'float' and 'str'`
+    every 2 seconds during a running dry-run. This test wires a fake running
+    process with a valid ISO timestamp and asserts the endpoint returns 200
+    with the elapsed time rendered.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from scripts.server.runtime import get_runtime
+
+    client = _make_dev_client(monkeypatch)
+
+    fake_proc = MagicMock()
+    fake_proc.returncode = None  # still running
+    runtime = get_runtime()
+    slot = runtime.processes["dev_dryrun"]
+    slot.process = fake_proc
+    # ISO-formatted ~7 seconds ago — exactly the shape ProcessSlot stores.
+    started = (datetime.now(UTC) - timedelta(seconds=7)).isoformat(timespec="seconds")
+    slot.started_at = started
+
+    resp = client.get("/api/dev/dryrun/status")
+    assert resp.status_code == 200, (
+        f"Expected 200, got {resp.status_code}. Body: {resp.text[:300]!r}"
+    )
+    assert "running" in resp.text
+    # Elapsed should be ~7s; allow 5-10s window for slow CI.
+    elapsed_match = "5s" in resp.text or "6s" in resp.text or "7s" in resp.text \
+                    or "8s" in resp.text or "9s" in resp.text or "10s" in resp.text
+    assert elapsed_match, f"Expected elapsed ~7s in: {resp.text}"
+
+
+@pytest.mark.unit
+def test_dryrun_status_running_tolerates_malformed_started_at(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If slot.started_at is somehow malformed, the endpoint must still return
+    200 (degrading to "no elapsed shown") rather than 500'ing.
+    """
+    from scripts.server.runtime import get_runtime
+
+    client = _make_dev_client(monkeypatch)
+
+    fake_proc = MagicMock()
+    fake_proc.returncode = None
+    runtime = get_runtime()
+    slot = runtime.processes["dev_dryrun"]
+    slot.process = fake_proc
+    slot.started_at = "not-an-iso-timestamp"
+
+    resp = client.get("/api/dev/dryrun/status")
+    assert resp.status_code == 200
+    assert "running" in resp.text
+
+
+@pytest.mark.unit
+def test_dryrun_status_completed_when_exited_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A process that exited with returncode=0 renders the green completed pill."""
+    from scripts.server.runtime import get_runtime
+
+    client = _make_dev_client(monkeypatch)
+
+    fake_proc = MagicMock()
+    fake_proc.returncode = 0  # exited cleanly
+    runtime = get_runtime()
+    slot = runtime.processes["dev_dryrun"]
+    slot.process = fake_proc
+
+    resp = client.get("/api/dev/dryrun/status")
+    assert resp.status_code == 200
+    assert "completed" in resp.text
+    assert 'class="pill success"' in resp.text
+
+
+@pytest.mark.unit
+def test_dryrun_status_failed_when_exited_nonzero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A process that exited with non-zero returncode renders the red failed pill."""
+    from scripts.server.runtime import get_runtime
+
+    client = _make_dev_client(monkeypatch)
+
+    fake_proc = MagicMock()
+    fake_proc.returncode = -15  # SIGTERM
+    runtime = get_runtime()
+    slot = runtime.processes["dev_dryrun"]
+    slot.process = fake_proc
+
+    resp = client.get("/api/dev/dryrun/status")
+    assert resp.status_code == 200
+    assert "-15" in resp.text
+    assert 'class="pill danger"' in resp.text
