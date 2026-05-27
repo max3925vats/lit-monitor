@@ -1,18 +1,22 @@
 """Disposable sandbox for the /dev test page.
 
 The sandbox isolates ingestion runs from production state:
-  - separate sqlite DB:     ~/.config/lit-monitor/state_dev.db
-  - separate ChromaDB collections (same persist dir, different names):
-        dev-papers   /  dev-chunks
+  - separate sqlite DB:        ~/.config/lit-monitor/state_dev.db
+  - separate ChromaDB persist: ~/.config/lit-monitor/chroma_dev/
+        (collections: dev-papers / dev-chunks)
   - separate vault subfolder:  <vault_path>/Literature/_Dev/
 
 Why this shape?
 
+* ``chromadb.PersistentClient`` enforces a single client instance per persist
+  path per process. The runtime already holds a production client at
+  ``~/.config/lit-monitor/chroma``; opening a second one there with different
+  collection-name settings raises
+  ``ValueError: An instance of Chroma already exists ... with different settings``.
+  Giving the sandbox its own ``chroma_dev/`` dir sidesteps the singleton entirely.
 * ``EmbeddingsDB`` hardcodes its production collection names (``lit_monitor_v1``
-  and ``lit_monitor_chunks_v1``), so the sandbox creates its sibling
-  collections directly through ``chromadb.PersistentClient`` rather than
-  instantiating a parallel ``EmbeddingsDB``. That keeps the production class
-  unchanged.
+  and ``lit_monitor_chunks_v1``); we still override them with ``dev-*`` names so
+  the sandbox is visibly distinct even when inspected raw.
 * ``StateDB`` already takes the DB path as its first constructor arg, so the
   sandbox just hands it a different file.
 * Vault writes go into a clearly-marked ``_Dev`` subfolder so a user can
@@ -33,9 +37,13 @@ from scripts.core.state_db import StateDB
 
 logger = logging.getLogger(__name__)
 
-# Module-level constants. Tests monkeypatch SANDBOX_STATE_DB_PATH to redirect
-# the sandbox sqlite file into a tmp_path so they never touch the real one.
+# Module-level constants. Tests monkeypatch SANDBOX_STATE_DB_PATH and
+# SANDBOX_CHROMA_DIR to redirect the sandbox sqlite file + chroma persist dir
+# into a tmp_path so they never touch the real ones.
 SANDBOX_STATE_DB_PATH: Path = Path("~/.config/lit-monitor/state_dev.db").expanduser()
+# Separate persist dir from production chroma at ~/.config/lit-monitor/chroma —
+# see module docstring for the singleton-collision rationale.
+SANDBOX_CHROMA_DIR: Path = Path("~/.config/lit-monitor/chroma_dev").expanduser()
 SANDBOX_VAULT_SUBFOLDER: str = "Literature/_Dev"
 # ChromaDB rejects names that start with an underscore (must start/end with
 # [a-zA-Z0-9]). Use the ``dev-`` prefix instead so the sandbox collections
@@ -50,10 +58,14 @@ SANDBOX_CHUNKS_COLLECTION: str = "dev-chunks"
 # Path resolution helpers
 # ---------------------------------------------------------------------------
 def _chroma_persist_dir() -> str:
-    """Resolve the ChromaDB persist directory using the same convention as
-    cli._make_embeddings_db / runtime: sibling of the state DB file."""
-    cfg = get_config()
-    return str(Path(cfg.state_db.path).expanduser().parent / "chroma")
+    """Resolve the sandbox ChromaDB persist directory.
+
+    Returns the module-level ``SANDBOX_CHROMA_DIR`` (a separate path from the
+    production ``~/.config/lit-monitor/chroma``) so chromadb's single-client
+    invariant per path never collides with the production runtime client.
+    Tests monkeypatch ``SANDBOX_CHROMA_DIR`` directly.
+    """
+    return str(SANDBOX_CHROMA_DIR)
 
 
 def sandbox_state_db() -> StateDB:
@@ -158,12 +170,16 @@ def sandbox_status() -> dict[str, Any]:
         except Exception:
             pass
 
-    try:
-        papers_col, chunks_col = sandbox_collections()
-        papers_chroma = papers_col.count()
-        chunks_chroma = chunks_col.count()
-    except Exception as exc:
-        logger.warning("Sandbox chroma count failed: %s", exc)
+    # Only probe chroma if the sandbox persist dir exists — first-run flow has
+    # no dir yet, and calling PersistentClient on a missing path would
+    # silently create one, defeating the "zero counts when empty" contract.
+    if SANDBOX_CHROMA_DIR.exists():
+        try:
+            papers_col, chunks_col = sandbox_collections()
+            papers_chroma = papers_col.count()
+            chunks_chroma = chunks_col.count()
+        except Exception as exc:
+            logger.warning("Sandbox chroma count failed: %s", exc)
 
     try:
         vault_dir = sandbox_vault_subfolder()
@@ -210,19 +226,18 @@ def clear_sandbox(*, confirm: bool = False) -> dict[str, str]:
             actions.append(f"FAILED unlink state_dev.db: {exc}")
             failed = True
 
-    # 2) ChromaDB sandbox collections — delete; if absent, ignore silently.
-    try:
-        client = _sandbox_chroma_client()
-        for col in (SANDBOX_PAPERS_COLLECTION, SANDBOX_CHUNKS_COLLECTION):
-            try:
-                client.delete_collection(col)
-                actions.append(f"deleted chroma collection {col}")
-            except Exception:
-                # Collection was never created — that's fine.
-                pass
-    except Exception as exc:
-        actions.append(f"FAILED chroma cleanup: {exc}")
-        failed = True
+    # 2) Sandbox chroma persist dir — rmtree the whole thing. We use a fully
+    # separate dir from production (see SANDBOX_CHROMA_DIR), so wiping is safe.
+    # rmtree is preferred over delete_collection because chromadb's singleton
+    # may already be holding open this path; rmtree forces a clean slate on
+    # next access.
+    if SANDBOX_CHROMA_DIR.exists():
+        try:
+            shutil.rmtree(SANDBOX_CHROMA_DIR, ignore_errors=False)
+            actions.append(f"removed chroma persist dir {SANDBOX_CHROMA_DIR}")
+        except Exception as exc:
+            actions.append(f"FAILED chroma rmtree: {exc}")
+            failed = True
 
     # 3) Vault subfolder
     try:
@@ -244,6 +259,7 @@ def clear_sandbox(*, confirm: bool = False) -> dict[str, str]:
 
 __all__ = [
     "SANDBOX_STATE_DB_PATH",
+    "SANDBOX_CHROMA_DIR",
     "SANDBOX_VAULT_SUBFOLDER",
     "SANDBOX_PAPERS_COLLECTION",
     "SANDBOX_CHUNKS_COLLECTION",

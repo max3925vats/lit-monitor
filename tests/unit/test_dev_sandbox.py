@@ -54,7 +54,9 @@ def test_sandbox_status_empty_when_nothing_exists(
     # Redirect the sandbox sqlite + vault into tmp_path; chroma uses tmp too.
     sandbox_db = tmp_path / "state_dev.db"
     prod_db = tmp_path / "state.db"  # never gets written
+    sandbox_chroma = tmp_path / "chroma_dev"
     monkeypatch.setattr(dev_sandbox, "SANDBOX_STATE_DB_PATH", sandbox_db)
+    monkeypatch.setattr(dev_sandbox, "SANDBOX_CHROMA_DIR", sandbox_chroma)
     _stub_get_config(
         monkeypatch,
         vault_path=tmp_path / "vault",
@@ -81,6 +83,7 @@ def test_sandbox_state_db_separate_from_production(
     sandbox_db = tmp_path / "state_dev.db"
     prod_db = tmp_path / "state.db"
     monkeypatch.setattr(dev_sandbox, "SANDBOX_STATE_DB_PATH", sandbox_db)
+    monkeypatch.setattr(dev_sandbox, "SANDBOX_CHROMA_DIR", tmp_path / "chroma_dev")
     _stub_get_config(
         monkeypatch,
         vault_path=tmp_path / "vault",
@@ -122,6 +125,7 @@ def test_clear_sandbox_without_confirm_is_noop(
     sandbox_db = tmp_path / "state_dev.db"
     sandbox_db.write_bytes(b"dummy-sqlite-bytes-not-a-real-db")
     monkeypatch.setattr(dev_sandbox, "SANDBOX_STATE_DB_PATH", sandbox_db)
+    monkeypatch.setattr(dev_sandbox, "SANDBOX_CHROMA_DIR", tmp_path / "chroma_dev")
     _stub_get_config(
         monkeypatch,
         vault_path=tmp_path / "vault",
@@ -144,6 +148,7 @@ def test_clear_sandbox_with_confirm_removes_state_db(
     """``clear_sandbox(confirm=True)`` deletes the sandbox sqlite file."""
     sandbox_db = tmp_path / "state_dev.db"
     monkeypatch.setattr(dev_sandbox, "SANDBOX_STATE_DB_PATH", sandbox_db)
+    monkeypatch.setattr(dev_sandbox, "SANDBOX_CHROMA_DIR", tmp_path / "chroma_dev")
     _stub_get_config(
         monkeypatch,
         vault_path=tmp_path / "vault",
@@ -171,16 +176,47 @@ def test_clear_sandbox_with_confirm_removes_state_db(
 def test_clear_sandbox_returns_partial_on_failure(monkeypatch, tmp_path):
     """If any cleanup step raises, status should be 'partial', not 'cleared'."""
     from scripts.server import dev_sandbox
-    # Point sandbox at a non-existent path so state-db unlink path returns 'no-op'
-    # but make chromadb cleanup raise.
     sandbox_db = tmp_path / "state_dev.db"
     sandbox_db.touch()
+    sandbox_chroma = tmp_path / "chroma_dev"
+    sandbox_chroma.mkdir()
+    (sandbox_chroma / "dummy").write_text("x")
     monkeypatch.setattr(dev_sandbox, "SANDBOX_STATE_DB_PATH", sandbox_db)
-    # Force chromadb cleanup to raise:
-    import chromadb
-    def _bad_client(path):
-        raise RuntimeError("chromadb unreachable")
-    monkeypatch.setattr(chromadb, "PersistentClient", _bad_client)
+    monkeypatch.setattr(dev_sandbox, "SANDBOX_CHROMA_DIR", sandbox_chroma)
+    _stub_get_config(
+        monkeypatch,
+        vault_path=tmp_path / "vault",
+        state_db_path=tmp_path / "state.db",
+    )
+    # Force shutil.rmtree on the chroma dir to raise to exercise the partial path.
+    import shutil
+
+    def _bad_rmtree(path, ignore_errors=False):
+        raise RuntimeError("chroma rmtree boom")
+
+    monkeypatch.setattr(dev_sandbox.shutil, "rmtree", _bad_rmtree)
+    # Also need to preserve shutil for vault rmtree branch — but the vault dir
+    # doesn't exist here, so that branch is skipped. Restore shutil after.
+    _ = shutil  # silence unused-import
     result = dev_sandbox.clear_sandbox(confirm=True)
     assert result["status"] == "partial", f"expected partial, got {result}"
     assert "FAILED" in result["actions"]
+
+
+# ---------------------------------------------------------------------------
+# 6) Sandbox chroma persist dir must differ from production chroma dir
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_sandbox_chroma_dir_is_separate_from_production() -> None:
+    """The sandbox chroma persist dir must NOT equal the production chroma dir.
+
+    Production resolves to ``Path(cfg.state_db.path).parent / "chroma"`` (see
+    ``scripts/server/runtime.py::ServerRuntime.embeddings_db``). The sandbox
+    constant must be a different path to dodge chromadb's per-path singleton.
+    """
+    from scripts.core.config import get_config
+
+    cfg = get_config()
+    prod_dir = Path(cfg.state_db.path).expanduser().parent / "chroma"
+    assert dev_sandbox.SANDBOX_CHROMA_DIR != prod_dir
+    assert str(dev_sandbox.SANDBOX_CHROMA_DIR) != str(prod_dir)

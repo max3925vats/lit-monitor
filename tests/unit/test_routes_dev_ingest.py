@@ -129,7 +129,8 @@ def test_ingest_doi_no_match(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _make_dev_client(monkeypatch)
 
     fake_client = MagicMock()
-    fake_client._zot.items.return_value = []  # empty search result
+    # New flow uses everything(items(...)) iteration; return an empty iterator.
+    fake_client._zot.everything.return_value = iter([])
 
     with patch(
         "scripts.server.routes.dev._build_zotero_client_for_dev",
@@ -141,6 +142,139 @@ def test_ingest_doi_no_match(monkeypatch: pytest.MonkeyPatch) -> None:
     assert 'class="pill danger"' in resp.text
     assert "No Zotero item matches" in resp.text
     assert "10.0/nope" in resp.text
+
+
+@pytest.mark.unit
+def test_ingest_zotero_attachment_key_reads_directly(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+) -> None:
+    """Mode B with an attachment key: read .md directly, pull DOI from parent.
+
+    Regression test for Bug B — pyzotero's ``children()`` 400s on markdown
+    attachments, so the route must detect ``itemType == 'attachment'`` and
+    read the local file directly instead of routing through
+    ``get_markdown_attachment``.
+    """
+    client = _make_dev_client(monkeypatch)
+
+    md_file = tmp_path / "paper.md"
+    md_file.write_text("# Hello\n\nBody.")
+
+    fake_client = MagicMock()
+
+    def _fake_item(key):
+        if key == "ATT123":
+            return {
+                "key": "ATT123",
+                "data": {
+                    "itemType": "attachment",
+                    "contentType": "text/markdown",
+                    "filename": "paper.md",
+                    "parentItem": "PAR456",
+                },
+            }
+        if key == "PAR456":
+            return {
+                "key": "PAR456",
+                "data": {"itemType": "journalArticle", "DOI": "10.0/parent"},
+            }
+        raise AssertionError(f"unexpected item() call with {key}")
+
+    fake_client._zot.item.side_effect = _fake_item
+    fake_client.get_attachment_local_path.return_value = md_file
+
+    captured = {}
+
+    def _capture(*, doi, fulltext):
+        captured["doi"] = doi
+        captured["fulltext"] = fulltext
+        return "<div>ok</div>"
+
+    with patch(
+        "scripts.server.routes.dev._build_zotero_client_for_dev",
+        return_value=fake_client,
+    ), patch(
+        "scripts.server.routes.dev._run_sandbox_ingest",
+        side_effect=_capture,
+    ):
+        resp = client.post(
+            "/api/dev/ingest/zotero-key", data={"zotero_key": "ATT123"}
+        )
+
+    assert resp.status_code == 200
+    # children() must NOT be called — that's the whole point of the fix.
+    assert not fake_client.get_markdown_attachment.called
+    assert captured["doi"] == "10.0/parent"
+    assert "Hello" in captured["fulltext"]
+
+
+@pytest.mark.unit
+def test_ingest_zotero_attachment_key_rejects_non_markdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mode B with a PDF attachment key short-circuits with a clear error."""
+    client = _make_dev_client(monkeypatch)
+
+    fake_client = MagicMock()
+    fake_client._zot.item.return_value = {
+        "key": "ATT999",
+        "data": {
+            "itemType": "attachment",
+            "contentType": "application/pdf",
+            "filename": "paper.pdf",
+            "parentItem": "PAR111",
+        },
+    }
+
+    with patch(
+        "scripts.server.routes.dev._build_zotero_client_for_dev",
+        return_value=fake_client,
+    ):
+        resp = client.post(
+            "/api/dev/ingest/zotero-key", data={"zotero_key": "ATT999"}
+        )
+
+    assert resp.status_code == 200
+    assert 'class="pill danger"' in resp.text
+    assert "not a markdown file" in resp.text
+
+
+@pytest.mark.unit
+def test_ingest_doi_paginates_full_match_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mode C: the target DOI may be past position 10 — everything() must scan all."""
+    client = _make_dev_client(monkeypatch)
+
+    # Build 25 items, only the 22nd has the matching DOI.
+    items = []
+    for i in range(25):
+        if i == 21:
+            items.append({"key": f"K{i}", "data": {"DOI": "10.0/target"}})
+        else:
+            items.append({"key": f"K{i}", "data": {"DOI": f"10.0/other-{i}"}})
+
+    fake_client = MagicMock()
+    fake_client._zot.everything.return_value = iter(items)
+    fake_client.get_markdown_attachment.return_value = "# md body"
+
+    captured = {}
+
+    def _capture(*, doi, fulltext):
+        captured["doi"] = doi
+        return "<div>ok</div>"
+
+    with patch(
+        "scripts.server.routes.dev._build_zotero_client_for_dev",
+        return_value=fake_client,
+    ), patch(
+        "scripts.server.routes.dev._run_sandbox_ingest",
+        side_effect=_capture,
+    ):
+        resp = client.post("/api/dev/ingest/doi", data={"doi": "10.0/target"})
+
+    assert resp.status_code == 200
+    assert captured["doi"] == "10.0/target"
 
 
 @pytest.mark.unit

@@ -60,6 +60,27 @@ class TestCheckConfigured:
         # wos.api_key removed (WoS not supported by findpapers 0.6.x); only scopus remains optional
         assert "wos.api_key" not in results
         assert results["scopus.api_key"][0] is True
+
+    def test_check_configured_absent_scopus_returns_warn_severity(self, tmp_path):
+        """Optional-absent key must be ok=True severity='warn' (Bug D fix).
+
+        Before the 3-state model, optional-absent rendered green ✓ because the
+        boolean alone couldn't distinguish "configured" from "skipped". Now
+        the severity attr surfaces it as yellow ⚠.
+        """
+        from scripts.setup.check_configured import check_configured
+        secrets = tmp_path / "config.toml"
+        secrets.write_text(
+            '[zotero]\napi_key = "x"\nlibrary_id = "1"\n'
+            '[pubmed]\nemail = "a@b.com"\n'
+        )
+        with patch("scripts.setup.check_configured._SECRETS_PATH", secrets):
+            results = check_configured()
+        scopus = results["scopus.api_key"]
+        assert scopus.ok is True
+        assert scopus.severity == "warn"
+        # Required configured keys stay severity='ok'.
+        assert results["zotero.api_key"].severity == "ok"
 # ---------------------------------------------------------------------------
 # check_ollama tests
 # ---------------------------------------------------------------------------

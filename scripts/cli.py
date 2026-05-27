@@ -189,10 +189,23 @@ def _make_llm(config, mode: str, model_override: str | None = None, think: bool 
 # Result printer helpers
 # ---------------------------------------------------------------------------
 def _print_check_results(results: dict[str, tuple[bool, str]]) -> bool:
-    """Print check results, return True if all passed."""
+    """Print check results, return True if all passed.
+
+    Severity-aware: when a result is a ``CheckResult`` with ``severity="warn"``
+    (optional source absent), render a yellow ⚠ rather than green ✓. The
+    boolean return still reflects strict ok-ness — warns don't fail the run.
+    """
     all_ok = True
-    for name, (ok, msg) in results.items():
-        icon = click.style("✓", fg="green") if ok else click.style("✗", fg="red")
+    for name, result in results.items():
+        ok = result[0]
+        msg = result[1]
+        sev = getattr(result, "severity", None)
+        if sev == "warn":
+            icon = click.style("⚠", fg="yellow")
+        elif ok:
+            icon = click.style("✓", fg="green")
+        else:
+            icon = click.style("✗", fg="red")
         click.echo(f"  {icon}  {name}: {msg}")
         if not ok:
             all_ok = False

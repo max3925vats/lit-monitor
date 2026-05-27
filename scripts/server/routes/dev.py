@@ -71,27 +71,42 @@ def _render_checks_panel(results: dict) -> str:
 
     Handles both flat ``dict[name, (ok, msg)]`` (e.g. ``run_diagnose()``) and
     nested ``dict[section, dict[name, (ok, msg)]]`` (e.g. ``run_health_check()``).
+
+    Severity-aware: when the result is a ``CheckResult`` NamedTuple with
+    ``severity="warn"``, render a yellow warning pill instead of green
+    success or red danger.
     """
     if not results:
         return '<table class="dev-checks-table"><tbody></tbody></table>'
+
+    def _pill_for(result):
+        sev = getattr(result, "severity", None)
+        if sev == "warn":
+            return "warning", "⚠"
+        if sev == "ok":
+            return "success", "✓"
+        if sev == "fail":
+            return "danger", "✗"
+        # Backward-compat fallback for raw (ok, msg) tuples.
+        return ("success", "✓") if result[0] else ("danger", "✗")
 
     rows: list[str] = []
     first_val = next(iter(results.values()))
     if isinstance(first_val, dict):
         # Nested shape (health_check)
         for section, checks in results.items():
-            for check_name, (ok, msg) in checks.items():
-                pill = "success" if ok else "danger"
-                glyph = "✓" if ok else "✗"
+            for check_name, result in checks.items():
+                msg = result[1]
+                pill, glyph = _pill_for(result)
                 rows.append(
                     f"<tr><td>{escape(section)}.{escape(check_name)}</td>"
                     f'<td><span class="pill {pill}">{glyph} {escape(str(msg))}</span></td></tr>'
                 )
     else:
         # Flat shape (diagnose)
-        for check_name, (ok, msg) in results.items():
-            pill = "success" if ok else "danger"
-            glyph = "✓" if ok else "✗"
+        for check_name, result in results.items():
+            msg = result[1]
+            pill, glyph = _pill_for(result)
             rows.append(
                 f"<tr><td>{escape(check_name)}</td>"
                 f'<td><span class="pill {pill}">{glyph} {escape(str(msg))}</span></td></tr>'
@@ -328,6 +343,49 @@ async def dev_ingest_zotero_key(request: Request) -> str:
     try:
         client = _build_zotero_client_for_dev()
         item = client._zot.item(zotero_key)  # noqa: SLF001 — pyzotero direct call
+        item_data = (item.get("data", {}) or {})
+        item_type = item_data.get("itemType", "")
+
+        if item_type == "attachment":
+            # User pasted a markdown ATTACHMENT key directly. The
+            # ``parent``-key path used by ``get_markdown_attachment`` is
+            # wrong here — pyzotero's ``children()`` 400s when called on
+            # a markdown attachment ("only PDF/EPUB/snapshot attachments
+            # support /children"). Read the file directly instead.
+            content_type = item_data.get("contentType", "")
+            filename = item_data.get("filename", "")
+            if (
+                not filename.lower().endswith((".md", ".markdown"))
+                and content_type not in ("text/markdown", "text/plain")
+            ):
+                return _danger(
+                    f"Attachment {zotero_key} is not a markdown file "
+                    f"(contentType={content_type!r}, filename={filename!r})."
+                )
+            local_path = client.get_attachment_local_path(zotero_key, filename)
+            if not local_path.exists():
+                return _danger(
+                    f"Markdown attachment {zotero_key} is not synced "
+                    f"locally at {local_path}."
+                )
+            md = local_path.read_text(encoding="utf-8", errors="replace")
+            # Attachment items carry no DOI — fetch the parent paper if any.
+            parent_key = item_data.get("parentItem")
+            doi = ""
+            if parent_key:
+                try:
+                    parent = client._zot.item(parent_key)  # noqa: SLF001
+                    doi = (
+                        (parent.get("data", {}) or {}).get("DOI")
+                        or f"zotero/{parent_key}"
+                    )
+                except Exception:
+                    doi = f"zotero/{parent_key}"
+            else:
+                doi = f"zotero/{zotero_key}"
+            return _run_sandbox_ingest(doi=doi, fulltext=md)
+
+        # Default branch — parent paper key, use the existing children-scan flow.
         md = client.get_markdown_attachment(zotero_key)
         if md is None:
             return (
@@ -335,7 +393,7 @@ async def dev_ingest_zotero_key(request: Request) -> str:
                 f"✗ No .md attachment locally synced for {escape(zotero_key)}"
                 "</span></div>"
             )
-        doi = (item.get("data", {}) or {}).get("DOI") or f"zotero/{zotero_key}"
+        doi = item_data.get("DOI") or f"zotero/{zotero_key}"
         return _run_sandbox_ingest(doi=doi, fulltext=md)
     except Exception as exc:
         return (
@@ -356,19 +414,29 @@ async def dev_ingest_doi(request: Request) -> str:
         )
     try:
         client = _build_zotero_client_for_dev()
-        matches = client._zot.items(q=doi, qmode="everything", limit=10)  # noqa: SLF001
-        target = next(
-            (
-                m
-                for m in (matches or [])
-                if ((m.get("data", {}) or {}).get("DOI") or "").lower() == doi.lower()
-            ),
-            None,
+        # Use everything() to paginate ALL search hits, not just the first 10.
+        # qmode="everything" can fuzzy-match many items on a DOI substring
+        # and push the real exact-DOI hit past position 10. everything()
+        # iterates 100-per-page and we break on the first exact match, so the
+        # worst case is the full library — still bounded.
+        matches_iter = client._zot.everything(  # noqa: SLF001
+            client._zot.items(q=doi, qmode="everything")  # noqa: SLF001
         )
+        target = None
+        doi_norm = doi.strip().lower()
+        for m in matches_iter:
+            if (
+                ((m.get("data", {}) or {}).get("DOI") or "").strip().lower()
+                == doi_norm
+            ):
+                target = m
+                break
         if target is None:
             return (
                 '<div class="dev-result"><span class="pill danger">'
-                f"✗ No Zotero item matches DOI {escape(doi)}</span></div>"
+                f"✗ No Zotero item matches DOI {escape(doi)} "
+                "(searched entire library — confirm DOI is exact, "
+                "e.g. case + punctuation).</span></div>"
             )
         md = client.get_markdown_attachment(target["key"])
         if md is None:
