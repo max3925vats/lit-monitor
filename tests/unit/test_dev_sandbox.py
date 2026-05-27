@@ -222,18 +222,23 @@ def test_clear_sandbox_returns_partial_on_failure(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 def test_sandbox_chroma_dir_is_separate_from_production() -> None:
-    """The sandbox chroma persist dir must NOT equal the production chroma dir.
+    """The sandbox chroma persist dir must NOT collide with production.
 
     Production resolves to ``Path(cfg.state_db.path).parent / "chroma"`` (see
     ``scripts/server/runtime.py::ServerRuntime.embeddings_db``). The sandbox
-    constant must be a different path to dodge chromadb's per-path singleton.
-    """
-    from scripts.core.config import get_config
+    constant must use a different directory name so chromadb's per-path
+    singleton cache can hold both clients simultaneously without conflict.
 
-    cfg = get_config()
-    prod_dir = Path(cfg.state_db.path).expanduser().parent / "chroma"
-    assert dev_sandbox.SANDBOX_CHROMA_DIR != prod_dir
-    assert str(dev_sandbox.SANDBOX_CHROMA_DIR) != str(prod_dir)
+    Hermetic check: assert the sandbox dir's basename is NOT ``"chroma"`` —
+    that's the production sibling. (Avoids loading real config so this test
+    runs cleanly in CI where config/paths.yaml is unseeded.)
+    """
+    assert dev_sandbox.SANDBOX_CHROMA_DIR.name != "chroma", (
+        f"sandbox dir basename collides with production: "
+        f"{dev_sandbox.SANDBOX_CHROMA_DIR}"
+    )
+    # And it should match the documented `chroma_dev` convention.
+    assert dev_sandbox.SANDBOX_CHROMA_DIR.name == "chroma_dev"
 
 
 # ---------------------------------------------------------------------------
