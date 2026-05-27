@@ -450,7 +450,12 @@ a:hover {
 /* --- Live progress panel (brain-build SSE stream) --- */
 .live-progress { margin: 1rem 0; }
 .live-progress-pane {
+  height: 30vh;            /* fixed height so the pane stops growing and the
+                              browser HAS something to scroll inside */
   max-height: 30vh;
+  min-height: 0;           /* flex/grid escape hatch — without this, parent
+                              flex containers ignore max-height and let the
+                              pane grow to fit content */
   overflow-y: auto;
   background: #111;
   color: #eee;
@@ -539,7 +544,7 @@ a:hover {
  * inside `.live-progress-pane` containers on /brain-build, /discovery, /dev. */
 .log-line {
   display: grid;
-  grid-template-columns: 5em 4em 12em 1fr;
+  grid-template-columns: 5em 6em 14em 1fr;
   gap: 0.5rem;
   padding: 0.05rem 0;
   border-bottom: 1px solid #1f1f1f;
