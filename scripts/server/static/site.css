@@ -535,19 +535,8 @@ a:hover {
   color: var(--muted);
 }
 
-/* Prettified SSE log stream — used by /dev Panel 5 (dryrun). */
-.log-stream-pane {
-  max-height: 30vh;
-  overflow-y: auto;
-  background: #111;
-  color: #ddd;
-  padding: 0.4rem 0.6rem;
-  margin-top: 0.5rem;
-  border-radius: var(--radius, 4px);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.78em;
-  line-height: 1.45;
-}
+/* Prettified SSE log rows — emitted by sse._prettify_jsonl_line and rendered
+ * inside `.live-progress-pane` containers on /brain-build, /discovery, /dev. */
 .log-line {
   display: grid;
   grid-template-columns: 5em 4em 12em 1fr;

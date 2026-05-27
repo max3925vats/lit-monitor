@@ -137,11 +137,16 @@
        hx-swap="innerHTML">
     <span class="pill" style="background:#eee;">checking…</span>
   </div>
-  <div hx-ext="sse" sse-connect="/api/dev/dryrun/stream">
+  <div hx-ext="sse" sse-connect="/api/dev/dryrun/stream" class="live-progress">
     <div id="panel-5-stream"
          sse-swap="progress"
          hx-swap="beforeend show:bottom"
-         class="log-stream-pane"></div>
+         class="live-progress-pane">
+      <div class="field-note live-progress-hint">
+        Streaming from <code>logs/{date}_discovery.jsonl</code>. New lines appear here
+        as the dry-run runs.
+      </div>
+    </div>
   </div>
   <button hx-get="/api/dev/dryrun/result" hx-target="#panel-5-result" hx-swap="innerHTML">Show result</button>
   <div id="panel-5-result"></div>

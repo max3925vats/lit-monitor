@@ -60,6 +60,54 @@ def _read_line(fh: IO[str]) -> str:
     return fh.readline()
 
 
+def _prettify_jsonl_line(stripped: str) -> str:
+    """Convert one JSONL log record into a single-line HTML fragment.
+
+    Output shape (consumed by HTMX ``sse-swap="progress"``+
+    ``hx-swap="beforeend"``)::
+
+        <div class="log-line log-INFO">
+          <span class="log-ts">02:15:01</span>
+          <span class="log-level">INFO</span>
+          <span class="log-logger">search.search_runner</span>
+          <span class="log-msg">Searching topic: …</span>
+        </div>
+
+    Non-JSON or malformed lines fall back to ``<div class="log-line log-raw">``
+    so the stream stays usable when a non-JSON message slips into the log.
+    All interpolated fields go through ``html.escape``.
+    """
+    import json
+    from html import escape
+
+    try:
+        rec = json.loads(stripped)
+    except (ValueError, TypeError):
+        return f'<div class="log-line log-raw">{escape(stripped)}</div>'
+
+    ts = rec.get("ts", "") if isinstance(rec, dict) else ""
+    # ISO timestamps are "YYYY-MM-DDTHH:MM:SS+00:00" — slice to HH:MM:SS.
+    ts_short = ts[11:19] if len(ts) >= 19 and ts[10:11] == "T" else ts
+
+    level = (rec.get("level") or "INFO").upper() if isinstance(rec, dict) else "INFO"
+
+    lg = rec.get("logger", "") if isinstance(rec, dict) else ""
+    # Drop the "scripts." prefix so the logger column stays narrow.
+    if lg.startswith("scripts."):
+        lg = lg[len("scripts."):]
+
+    msg = rec.get("msg", "") if isinstance(rec, dict) else ""
+
+    return (
+        f'<div class="log-line log-{escape(level)}">'
+        f'<span class="log-ts">{escape(ts_short)}</span>'
+        f'<span class="log-level">{escape(level)}</span>'
+        f'<span class="log-logger">{escape(lg)}</span>'
+        f'<span class="log-msg">{escape(msg)}</span>'
+        f'</div>'
+    )
+
+
 async def _tail(log_path: Path, request: Request) -> AsyncIterator[dict]:
     """Async generator yielding sse-starlette event dicts.
 
@@ -67,6 +115,11 @@ async def _tail(log_path: Path, request: Request) -> AsyncIterator[dict]:
     the historical content is not replayed. Polls for new data every
     ``_POLL_INTERVAL_S`` seconds. Exits cleanly when the client
     disconnects.
+
+    Each new JSONL line is prettified into a one-line HTML fragment via
+    ``_prettify_jsonl_line`` before being emitted as the ``progress`` event
+    data, so HTMX consumers (Panel 5, Discovery, brain-build) can render
+    columnar, level-coloured rows instead of raw JSON.
     """
 
     try:
@@ -85,7 +138,7 @@ async def _tail(log_path: Path, request: Request) -> AsyncIterator[dict]:
             if line:
                 stripped = line.rstrip()
                 if stripped:
-                    yield {"event": "progress", "data": stripped}
+                    yield {"event": "progress", "data": _prettify_jsonl_line(stripped)}
             else:
                 await asyncio.sleep(_POLL_INTERVAL_S)
     finally:
