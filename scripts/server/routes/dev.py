@@ -936,7 +936,7 @@ async def dev_dryrun_status() -> str:
                 elapsed = ""
         return (
             f'<span class="pill warning">⟳ running{escape(elapsed)} — '
-            'streaming log below</span>'
+            'live log on <a href="/discovery">/discovery</a></span>'
         )
     # Process has exited. asyncio.subprocess.Process.returncode is set on exit;
     # plain subprocess.Popen exposes it the same way. None means still running.
