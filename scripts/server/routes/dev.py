@@ -884,17 +884,91 @@ async def dev_dryrun_stop() -> str:
     )
 
 
+async def _tail_pretty(log_path, request: Request):
+    """Tail a JSONL log, parse each line, emit a pretty HTML fragment as SSE.
+
+    Mirrors the structure of ``scripts.server.routes.sse._tail`` but transforms
+    each ``{ts, level, logger, msg}`` JSON record into a single-line
+    ``<div class="log-line log-LEVEL"> … </div>`` HTML fragment. SSE's ``data:``
+    field can't contain raw newlines, so each emitted record is a single
+    rendered line.
+    """
+    import asyncio
+    import json
+    from html import escape as _escape
+    from scripts.server.routes.sse import _read_line
+
+    _POLL = 0.5
+    try:
+        fh = open(log_path, encoding="utf-8", errors="replace")
+        fh.seek(0, 2)  # seek to EOF — only stream new lines
+    except OSError as exc:
+        yield {"event": "error", "data": f"could not open log: {exc}"}
+        return
+
+    try:
+        while True:
+            if await request.is_disconnected():
+                return
+            line = await asyncio.to_thread(_read_line, fh)
+            if not line:
+                await asyncio.sleep(_POLL)
+                continue
+            stripped = line.rstrip()
+            if not stripped:
+                continue
+            # Parse JSON. If parsing fails (e.g. partial line, log spit
+            # something non-JSON), fall back to raw.
+            try:
+                rec = json.loads(stripped)
+                ts = rec.get("ts", "")
+                # Render just HH:MM:SS from the ISO timestamp.
+                ts_short = ts[11:19] if len(ts) >= 19 and ts[10] == "T" else ts
+                level = (rec.get("level") or "INFO").upper()
+                # Short logger name — drop the "scripts." prefix if present
+                # so the column stays readable.
+                lg = rec.get("logger", "")
+                if lg.startswith("scripts."):
+                    lg = lg[len("scripts."):]
+                msg = rec.get("msg", "")
+                html_fragment = (
+                    f'<div class="log-line log-{_escape(level)}">'
+                    f'<span class="log-ts">{_escape(ts_short)}</span>'
+                    f'<span class="log-level">{_escape(level)}</span>'
+                    f'<span class="log-logger">{_escape(lg)}</span>'
+                    f'<span class="log-msg">{_escape(msg)}</span>'
+                    f'</div>'
+                )
+            except (ValueError, KeyError):
+                # Non-JSON line — render verbatim inside a generic .log-line.
+                html_fragment = (
+                    f'<div class="log-line log-raw">{_escape(stripped)}</div>'
+                )
+            yield {"event": "progress", "data": html_fragment}
+    finally:
+        fh.close()
+
+
 @router.get("/api/dev/dryrun/stream")
 async def dev_dryrun_stream(request: Request):
-    """SSE stream of the newest discovery JSONL log (shared with prod discovery).
+    """SSE stream of the newest discovery JSONL log — prettified.
 
     ``lit-monitor run --dry-run`` writes its log under
-    ``logs/{date}_discovery.jsonl`` just like a normal run, so we re-use the
-    existing log-tail helper.
+    ``logs/{date}_discovery.jsonl`` (same file shape as production discovery).
+    Unlike the production /api/discovery/stream which forwards raw JSONL,
+    this endpoint parses each record server-side and emits formatted HTML
+    so Panel 5's stream div renders readable rows instead of raw curly braces.
     """
-    from scripts.server.routes.sse import stream_log
+    from sse_starlette.sse import EventSourceResponse
 
-    return stream_log(request, "discovery")
+    from scripts.server.routes.sse import _newest_log
+
+    log_path = _newest_log("discovery")
+    if log_path is None:
+        async def _empty():
+            yield {"event": "error", "data": "no discovery log file found"}
+        return EventSourceResponse(_empty(), ping=15)
+    return EventSourceResponse(_tail_pretty(log_path, request), ping=15)
 
 
 @router.get("/api/dev/dryrun/status", response_class=HTMLResponse)
@@ -936,7 +1010,7 @@ async def dev_dryrun_status() -> str:
                 elapsed = ""
         return (
             f'<span class="pill warning">⟳ running{escape(elapsed)} — '
-            'live log on <a href="/discovery">/discovery</a></span>'
+            'live log streaming below</span>'
         )
     # Process has exited. asyncio.subprocess.Process.returncode is set on exit;
     # plain subprocess.Popen exposes it the same way. None means still running.

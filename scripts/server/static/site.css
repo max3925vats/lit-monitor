@@ -534,3 +534,42 @@ a:hover {
 .footer-sep {
   color: var(--muted);
 }
+
+/* Prettified SSE log stream — used by /dev Panel 5 (dryrun). */
+.log-stream-pane {
+  max-height: 30vh;
+  overflow-y: auto;
+  background: #111;
+  color: #ddd;
+  padding: 0.4rem 0.6rem;
+  margin-top: 0.5rem;
+  border-radius: var(--radius, 4px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78em;
+  line-height: 1.45;
+}
+.log-line {
+  display: grid;
+  grid-template-columns: 5em 4em 12em 1fr;
+  gap: 0.5rem;
+  padding: 0.05rem 0;
+  border-bottom: 1px solid #1f1f1f;
+}
+.log-ts { color: #888; }
+.log-level {
+  text-align: center;
+  font-weight: 600;
+  border-radius: 3px;
+  padding: 0 0.3rem;
+}
+.log-logger { color: #6ab0ff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-msg { white-space: pre-wrap; word-break: break-word; }
+.log-INFO .log-level    { color: #6ee0a0; background: #07331c; }
+.log-DEBUG .log-level   { color: #777;    background: #1a1a1a; }
+.log-DEBUG              { color: #999; }
+.log-WARNING .log-level { color: #ffcc66; background: #3a2c00; }
+.log-WARNING            { color: #f0d08a; }
+.log-ERROR .log-level   { color: #ff8888; background: #3a0e0e; }
+.log-ERROR              { color: #ffa0a0; }
+.log-CRITICAL .log-level { color: #fff; background: #aa1010; }
+.log-raw { color: #aaa; font-style: italic; grid-template-columns: 1fr; }
