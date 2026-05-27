@@ -84,7 +84,7 @@
     <label>Pick a sandbox DOI:
       <select id="sandbox-doi-picker" name="doi"
               hx-get="/api/dev/sandbox-dois"
-              hx-trigger="load"
+              hx-trigger="load, click"
               hx-swap="innerHTML">
         <option value="">(loading…)</option>
       </select>
