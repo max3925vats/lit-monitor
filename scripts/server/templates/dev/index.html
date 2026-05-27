@@ -129,7 +129,12 @@
   <p class="muted">Runs <code>lit-monitor run --dry-run</code> against the live search APIs but writes nothing to state.db. Verifies the discovery side of the pipeline is healthy.</p>
   <p class="muted">⚠ Don't start this while a real <code>discovery</code> run is active — their logs would interleave.</p>
   <button hx-post="/api/dev/dryrun/start" hx-target="#panel-5-status" hx-swap="innerHTML">Start dry-run</button>
-  <div id="panel-5-status"></div>
+  <div id="panel-5-status"
+       hx-get="/api/dev/dryrun/status"
+       hx-trigger="load, every 2s"
+       hx-swap="innerHTML">
+    <span class="pill" style="background:#eee;">checking…</span>
+  </div>
   <div id="panel-5-stream" hx-ext="sse" sse-connect="/api/dev/dryrun/stream" sse-swap="message"
        style="max-height: 200px; overflow-y: auto; background: #fafafa; padding: 0.5rem; margin-top: 0.5rem; font-family: monospace; font-size: 0.85em;"></div>
   <button hx-get="/api/dev/dryrun/result" hx-target="#panel-5-result" hx-swap="innerHTML">Show result</button>

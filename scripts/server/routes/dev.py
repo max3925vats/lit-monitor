@@ -872,6 +872,49 @@ async def dev_dryrun_stream(request: Request):
     return stream_log(request, "discovery")
 
 
+@router.get("/api/dev/dryrun/status", response_class=HTMLResponse)
+async def dev_dryrun_status() -> str:
+    """Return a status pill: idle / running (elapsed) / completed / failed.
+
+    Polled by Panel 5 every ~2s so the user sees when the subprocess finishes
+    without having to watch the SSE stream go quiet. Reads from the
+    ``dev_dryrun`` ProcessSlot directly — no extra spawn-tracking needed.
+    """
+    import time as _time
+
+    from scripts.server.runtime import get_runtime
+
+    runtime = get_runtime()
+    slot = runtime.processes["dev_dryrun"]
+    proc = slot.process
+    if proc is None:
+        return (
+            '<span class="pill" style="background:#eee;color:#555;border:1px solid #ccc;">'
+            'idle — click "Start dry-run" to begin</span>'
+        )
+    if slot.is_running():
+        elapsed = ""
+        if slot.started_at:
+            secs = int(_time.time() - slot.started_at)
+            elapsed = f" ({secs}s)"
+        return (
+            f'<span class="pill warning">⟳ running{escape(elapsed)} — '
+            'streaming log below</span>'
+        )
+    # Process has exited. asyncio.subprocess.Process.returncode is set on exit;
+    # plain subprocess.Popen exposes it the same way. None means still running.
+    exit_code = getattr(proc, "returncode", None)
+    if exit_code == 0:
+        return (
+            '<span class="pill success">✓ completed (exit 0) — '
+            'click "Show result" for the leak check + digest pointer</span>'
+        )
+    return (
+        f'<span class="pill danger">✗ exited with code {escape(str(exit_code))} — '
+        'click "Show result" for details</span>'
+    )
+
+
 @router.get("/api/dev/dryrun/result", response_class=HTMLResponse)
 async def dev_dryrun_result() -> str:
     """Render the dry-run's outputs + the state.db leak-check pill.
