@@ -905,7 +905,7 @@ async def dev_dryrun_status() -> str:
     without having to watch the SSE stream go quiet. Reads from the
     ``dev_dryrun`` ProcessSlot directly — no extra spawn-tracking needed.
     """
-    import time as _time
+    from datetime import UTC, datetime
 
     from scripts.server.runtime import get_runtime
 
@@ -919,9 +919,21 @@ async def dev_dryrun_status() -> str:
         )
     if slot.is_running():
         elapsed = ""
+        # slot.started_at is an ISO string by convention (runtime.py:52
+        # — `str | None  # ISO-format`); parse it before computing delta.
         if slot.started_at:
-            secs = int(_time.time() - slot.started_at)
-            elapsed = f" ({secs}s)"
+            try:
+                start_dt = datetime.fromisoformat(slot.started_at)
+                # Treat naive datetimes as UTC since ProcessSlot stores
+                # ``datetime.now(UTC).isoformat(...)`` everywhere.
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=UTC)
+                secs = int((datetime.now(UTC) - start_dt).total_seconds())
+                elapsed = f" ({secs}s)"
+            except (TypeError, ValueError):
+                # If started_at is somehow malformed, skip elapsed display
+                # rather than 500'ing on every 2s poll.
+                elapsed = ""
         return (
             f'<span class="pill warning">⟳ running{escape(elapsed)} — '
             'streaming log below</span>'
