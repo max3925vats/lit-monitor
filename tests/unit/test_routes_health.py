@@ -53,12 +53,13 @@ def test_health_badge_healthy_when_all_pass(client: TestClient) -> None:
 
 
 @pytest.mark.unit
-def test_health_badge_misconfigured_when_one_fails(client: TestClient) -> None:
-    """Any failing check -> misconfigured (Bug D 3-state model).
+def test_health_badge_degraded_when_one_section_fails(client: TestClient) -> None:
+    """Exactly one section with a fail → degraded (yellow).
 
-    Note: under the new severity model, even a single fail rolls up to
-    misconfigured (red). Yellow (degraded) is reserved for warn-only
-    states — i.e. optional sources absent.
+    Under the "fail drives, warn informs" model:
+      - 0 fails → healthy (green)
+      - 1 fail  → degraded (yellow)
+      - ≥2 fails → misconfigured (red)
     """
     ok = {"probe": (True, "ok")}
     bad = {"probe": (False, "down")}
@@ -68,12 +69,12 @@ def test_health_badge_misconfigured_when_one_fails(client: TestClient) -> None:
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
-    assert "status-badge misconfigured" in r.text
+    assert "status-badge degraded" in r.text
 
 
 @pytest.mark.unit
 def test_health_badge_misconfigured_when_two_fail(client: TestClient) -> None:
-    """Two or more failing sections -> still misconfigured (red)."""
+    """Two or more failing sections → misconfigured (red)."""
     ok = {"probe": (True, "ok")}
     bad = {"probe": (False, "down")}
     fake_results = {"config": ok, "ollama": bad, "zotero": bad, "vault": ok}
@@ -102,8 +103,14 @@ def test_health_badge_detail_returns_table(client: TestClient) -> None:
 
 
 @pytest.mark.unit
-def test_badge_degraded_when_only_warn_severity(client: TestClient) -> None:
-    """A section containing a severity='warn' check (no fails) → degraded."""
+def test_badge_healthy_when_only_warn_severity(client: TestClient) -> None:
+    """Warns alone never bump the badge above green.
+
+    The detail panel still renders the warn row in yellow (see
+    ``test_badge_detail_renders_warning_pill_for_warn_severity``), but the
+    overall badge stays healthy. Warn = "look at the detail panel", not
+    "something is broken".
+    """
     from scripts.setup.check_configured import CheckResult
 
     ok = {"probe": CheckResult(True, "ok", severity="ok")}
@@ -114,12 +121,48 @@ def test_badge_degraded_when_only_warn_severity(client: TestClient) -> None:
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
-    assert "status-badge degraded" in r.text
+    assert "status-badge healthy" in r.text
 
 
 @pytest.mark.unit
-def test_badge_misconfigured_when_any_fail(client: TestClient) -> None:
-    """severity='fail' wins over 'warn' — even a single fail → misconfigured."""
+def test_badge_healthy_when_optional_scopus_missing_only(client: TestClient) -> None:
+    """A live setup with only ``scopus.api_key`` absent must stay green.
+
+    Regression test for the user-reported "yellow badge with only optional
+    scopus missing" bug. The warn row still renders in the detail panel,
+    but the rolled-up badge colour reflects "nothing is broken".
+    """
+    from scripts.setup.check_configured import CheckResult
+
+    fake_results = {
+        "config": {"secrets_file": CheckResult(True, "ok", severity="ok")},
+        "ollama": {"reachable": CheckResult(True, "ok", severity="ok")},
+        "zotero": {"reachable": CheckResult(True, "ok", severity="ok")},
+        "vault": {"vault_exists": CheckResult(True, "ok", severity="ok")},
+        "sources": {
+            "scopus.api_key": CheckResult(
+                True,
+                "scopus.api_key not set — database will be skipped",
+                severity="warn",
+            ),
+        },
+    }
+    with patch(
+        "scripts.setup.health_check.run_health_check", return_value=fake_results
+    ):
+        r = client.get("/api/health/badge")
+    assert r.status_code == 200
+    assert "status-badge healthy" in r.text
+
+
+@pytest.mark.unit
+def test_badge_degraded_when_single_fail_with_warn(client: TestClient) -> None:
+    """One fail + one warn → degraded (the fail drives, the warn doesn't add).
+
+    This is the "fail drives, warn informs" model — the warn doesn't escalate
+    the badge to misconfigured because misconfigured requires ≥2 *failing*
+    sections.
+    """
     from scripts.setup.check_configured import CheckResult
 
     ok = {"probe": CheckResult(True, "ok", severity="ok")}
@@ -131,7 +174,7 @@ def test_badge_misconfigured_when_any_fail(client: TestClient) -> None:
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
-    assert "status-badge misconfigured" in r.text
+    assert "status-badge degraded" in r.text
 
 
 @pytest.mark.unit

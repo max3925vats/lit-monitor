@@ -26,6 +26,7 @@ Clear via ``clear_sandbox(confirm=True)`` — destructive, requires explicit fla
 """
 from __future__ import annotations
 
+import functools
 import logging
 import shutil
 from datetime import datetime
@@ -85,24 +86,32 @@ def sandbox_vault_subfolder() -> Path:
 # ---------------------------------------------------------------------------
 # ChromaDB collection helpers (sandbox-only)
 # ---------------------------------------------------------------------------
-def _sandbox_chroma_client():
-    """Return a chromadb PersistentClient at the shared persist dir.
-
-    Imported lazily so the module load cost stays cheap and so tests that
-    monkeypatch chromadb don't have to patch at module-import time.
-    """
-    import chromadb  # local import — keeps boot fast and side-effects minimal
-
-    return chromadb.PersistentClient(path=_chroma_persist_dir())
-
-
+@functools.lru_cache(maxsize=1)
 def sandbox_embeddings_db():
-    """Return an ``EmbeddingsDB`` bound to the sandbox ``dev-*`` collections.
+    """Singleton ``EmbeddingsDB`` bound to the sandbox ``dev-*`` collections.
 
-    Reuses the production class so chunk/paper add+embed logic stays in one
-    place; the new ``papers_collection`` / ``chunks_collection`` kwargs route
-    its writes to the ``dev-*`` sandbox collections instead of
-    ``lit_monitor_v1`` / ``lit_monitor_chunks_v1``.
+    Cached as a module-level singleton because chromadb's ``PersistentClient``
+    rejects a second client on the same persist path when its ``Settings``
+    object isn't identical to the first one. ``sandbox_status()`` (Panel 7,
+    polled every 5s) and ``_run_sandbox_ingest()`` (Mode A/B/C) both construct
+    an ``EmbeddingsDB`` on ``SANDBOX_CHROMA_DIR``; without caching, the second
+    construction crashes with::
+
+        ValueError: An instance of Chroma already exists for <path> with
+        different settings
+
+    The cache is invalidated by ``clear_sandbox(confirm=True)`` after the
+    persist dir is removed, so the next access constructs a fresh client
+    against the recreated (empty) dir.
+
+    Reuses the production ``EmbeddingsDB`` class so chunk/paper add+embed
+    logic stays in one place; the ``papers_collection`` /
+    ``chunks_collection`` kwargs route writes to the ``dev-*`` sandbox
+    collections instead of ``lit_monitor_v1`` / ``lit_monitor_chunks_v1``.
+
+    Note: ``sandbox_status()`` re-reads counts via ``col.count()`` on each
+    call, which queries chromadb live — so the cached client doesn't cause
+    stale counts. Only the client *handle* is cached.
     """
     from scripts.output.embeddings import EmbeddingsDB
 
@@ -123,20 +132,22 @@ def sandbox_embeddings_db():
 def sandbox_collections() -> tuple[Any, Any]:
     """Return (papers_collection, chunks_collection) for the sandbox.
 
-    Thin wrapper for callers that need raw ChromaDB collection access (e.g.
-    ``sandbox_status()`` counts). Ingestion paths should use
-    ``sandbox_embeddings_db()`` instead so they share the production embed
-    logic.
+    Routes through ``sandbox_embeddings_db()`` so every chromadb client at
+    SANDBOX_CHROMA_DIR is the same one — otherwise chromadb's "instance
+    already exists with different settings" guard fires when raw-count callers
+    (sandbox_status / Panel 7) and EmbeddingsDB-using callers (Mode A/B/C
+    ingest) both run in the same process.
     """
-    client = _sandbox_chroma_client()
-    papers = client.get_or_create_collection(
-        name=SANDBOX_PAPERS_COLLECTION,
-        metadata={"hnsw:space": "cosine"},
-    )
-    chunks = client.get_or_create_collection(
-        name=SANDBOX_CHUNKS_COLLECTION,
-        metadata={"hnsw:space": "cosine"},
-    )
+    emb = sandbox_embeddings_db()
+    papers = getattr(emb, "_papers", None) or getattr(emb, "papers", None)
+    chunks = getattr(emb, "_chunks", None) or getattr(emb, "chunks", None)
+    if papers is None or chunks is None:
+        # Defensive: if EmbeddingsDB's internal attribute names ever change,
+        # surface a clear error rather than crashing deeper in chromadb.
+        raise AttributeError(
+            "EmbeddingsDB does not expose papers/chunks collection attributes; "
+            "sandbox_collections() needs an update to match the new shape."
+        )
     return papers, chunks
 
 
@@ -238,6 +249,12 @@ def clear_sandbox(*, confirm: bool = False) -> dict[str, str]:
         except Exception as exc:
             actions.append(f"FAILED chroma rmtree: {exc}")
             failed = True
+
+    # Drop the cached EmbeddingsDB so the next caller constructs a fresh client
+    # against the freshly-empty (or recreated) sandbox dir. Without this the
+    # next sandbox_embeddings_db() call would hand back a client still pointing
+    # at the rmtree'd path and writes would fail.
+    sandbox_embeddings_db.cache_clear()
 
     # 3) Vault subfolder
     try:

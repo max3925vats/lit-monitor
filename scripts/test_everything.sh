@@ -30,7 +30,7 @@ cd "$REPO_ROOT"
 
 REFERENCE_DOI="${REFERENCE_DOI:-}"           # fill in before first use
 REFERENCE_DOIS="${REFERENCE_DOIS:-}"          # comma-separated
-EXPECTED_MIN_TESTS="${EXPECTED_MIN_TESTS:-810}"
+EXPECTED_MIN_TESTS="${EXPECTED_MIN_TESTS:-815}"
 REPORT_PATH="${REPORT_PATH:-/tmp/lit-monitor-release-quality-report.md}"
 
 # Leakage patterns are defined in scripts/check_leakage.sh (called from Tier 1

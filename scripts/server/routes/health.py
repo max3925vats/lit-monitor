@@ -35,14 +35,21 @@ def _severity_of(result) -> str:
 def _aggregate_state(results: dict[str, dict[str, tuple[bool, str]]]) -> str:
     """Roll up the per-section dict into one of four badge states.
 
+    Rule: fails drive the badge, warns only inform the detail panel.
+
     States:
       ``unconfigured`` — secrets file missing (gray)
-      ``misconfigured`` — any section contains a severity="fail" check (red)
-      ``degraded`` — any section contains a severity="warn" check, no fails (yellow)
-      ``healthy`` — every check is severity="ok" (green)
+      ``misconfigured`` — ≥2 sections contain a severity="fail" check (red)
+      ``degraded`` — exactly 1 section contains a severity="fail" check (yellow)
+      ``healthy`` — zero fails; warns are fine and never bump the badge (green)
 
     Severity is read from the new ``CheckResult`` NamedTuple; legacy
     ``(ok, msg)`` results still work via ``_severity_of``.
+
+    Note: warn-severity rows still render with class="pill warning" in the
+    detail panel — they signal "look at the detail" without dragging the
+    overall health colour down. This means a setup where only an optional
+    service (e.g. ``scopus.api_key``) is absent stays green.
     """
     # When the secrets file itself is missing, the config section comes back
     # with secrets_file=(False, ...). Treat that as the "not started" state.
@@ -53,18 +60,18 @@ def _aggregate_state(results: dict[str, dict[str, tuple[bool, str]]]) -> str:
     ):
         return "unconfigured"
 
-    has_fail = False
-    has_warn = False
+    # Count *sections* that contain at least one fail. Multiple fails inside a
+    # single section still count as one section — we care about breadth of
+    # breakage, not depth.
+    sections_with_fail = 0
     for section in results.values():
         for result in section.values():
-            sev = _severity_of(result)
-            if sev == "fail":
-                has_fail = True
-            elif sev == "warn":
-                has_warn = True
-    if has_fail:
+            if _severity_of(result) == "fail":
+                sections_with_fail += 1
+                break  # next section
+    if sections_with_fail >= 2:
         return "misconfigured"
-    if has_warn:
+    if sections_with_fail == 1:
         return "degraded"
     return "healthy"
 

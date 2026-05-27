@@ -22,6 +22,20 @@ import pytest
 from scripts.server import dev_sandbox
 
 
+@pytest.fixture(autouse=True)
+def _reset_sandbox_embeddings_cache() -> None:
+    """Clear the sandbox_embeddings_db singleton between tests.
+
+    The singleton (added to dodge chromadb's per-path client invariant) leaks
+    across tests if not reset — e.g. a tmp_path-bound client from test A would
+    survive into test B's fresh tmp_path. Force-reset before AND after each
+    test so monkeypatched SANDBOX_CHROMA_DIR is honoured.
+    """
+    dev_sandbox.sandbox_embeddings_db.cache_clear()
+    yield
+    dev_sandbox.sandbox_embeddings_db.cache_clear()
+
+
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
@@ -220,3 +234,92 @@ def test_sandbox_chroma_dir_is_separate_from_production() -> None:
     prod_dir = Path(cfg.state_db.path).expanduser().parent / "chroma"
     assert dev_sandbox.SANDBOX_CHROMA_DIR != prod_dir
     assert str(dev_sandbox.SANDBOX_CHROMA_DIR) != str(prod_dir)
+
+
+# ---------------------------------------------------------------------------
+# 7) sandbox_embeddings_db is a singleton (dodges chromadb's per-path lock)
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_sandbox_embeddings_db_is_singleton(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two back-to-back calls must return the same instance.
+
+    Without caching, chromadb refuses the second ``PersistentClient`` on the
+    same persist dir with "An instance of Chroma already exists ... with
+    different settings". The cache is the fix; this test pins it.
+    """
+    monkeypatch.setattr(dev_sandbox, "SANDBOX_CHROMA_DIR", tmp_path / "chroma_dev")
+    # sandbox_embeddings_db touches cfg.embeddings/cfg.brain_build for host/model
+    # config; the bare _stub_get_config doesn't include those, so build the
+    # SimpleNamespace inline with the extra fields.
+    fake_cfg = SimpleNamespace(
+        state_db=SimpleNamespace(path=str(tmp_path / "state.db")),
+        obsidian=SimpleNamespace(vault_path=tmp_path / "vault"),
+        embeddings=SimpleNamespace(ollama_host="http://localhost:11434", model="m"),
+        brain_build=SimpleNamespace(ollama_host="http://localhost:11434"),
+    )
+    monkeypatch.setattr(dev_sandbox, "get_config", lambda: fake_cfg)
+
+    # Stub EmbeddingsDB so we don't have to spin up real chromadb. A unique
+    # object per call would prove the cache is broken; the cache should fold
+    # repeated calls to a single invocation of the constructor.
+    construction_count = {"n": 0}
+
+    class _FakeEmbDB:
+        def __init__(self, **kwargs):
+            construction_count["n"] += 1
+
+    monkeypatch.setattr(
+        "scripts.output.embeddings.EmbeddingsDB", _FakeEmbDB
+    )
+
+    first = dev_sandbox.sandbox_embeddings_db()
+    second = dev_sandbox.sandbox_embeddings_db()
+
+    assert first is second, "sandbox_embeddings_db must be cached as a singleton"
+    assert construction_count["n"] == 1, (
+        f"EmbeddingsDB constructor ran {construction_count['n']} times; "
+        "cache is not folding repeated calls"
+    )
+
+
+@pytest.mark.unit
+def test_clear_sandbox_invalidates_embeddings_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``clear_sandbox(confirm=True)`` must drop the cached EmbeddingsDB.
+
+    Otherwise the next caller gets a stale client pointing at the rmtree'd
+    persist dir and writes silently fail (or worse, succeed against a
+    recreated dir with no schema).
+    """
+    sandbox_chroma = tmp_path / "chroma_dev"
+    sandbox_chroma.mkdir()
+    monkeypatch.setattr(dev_sandbox, "SANDBOX_STATE_DB_PATH", tmp_path / "state_dev.db")
+    monkeypatch.setattr(dev_sandbox, "SANDBOX_CHROMA_DIR", sandbox_chroma)
+    fake_cfg = SimpleNamespace(
+        state_db=SimpleNamespace(path=str(tmp_path / "state.db")),
+        obsidian=SimpleNamespace(vault_path=tmp_path / "vault"),
+        embeddings=SimpleNamespace(ollama_host="http://localhost:11434", model="m"),
+        brain_build=SimpleNamespace(ollama_host="http://localhost:11434"),
+    )
+    monkeypatch.setattr(dev_sandbox, "get_config", lambda: fake_cfg)
+
+    class _FakeEmbDB:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(
+        "scripts.output.embeddings.EmbeddingsDB", _FakeEmbDB
+    )
+
+    first = dev_sandbox.sandbox_embeddings_db()
+    # Clear invalidates the cache (and rmtree's the dir along the way).
+    dev_sandbox.clear_sandbox(confirm=True)
+    second = dev_sandbox.sandbox_embeddings_db()
+
+    assert id(first) != id(second), (
+        "Post-clear sandbox_embeddings_db() returned the cached pre-clear "
+        "instance — clear_sandbox didn't invalidate the cache"
+    )

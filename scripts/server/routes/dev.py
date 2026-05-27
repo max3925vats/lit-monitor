@@ -402,54 +402,85 @@ async def dev_ingest_zotero_key(request: Request) -> str:
         )
 
 
+def _extra_field_contains_doi(extra: str, doi_lower: str) -> bool:
+    """Return True iff a Zotero ``data.extra`` free-text block holds the DOI.
+
+    Older Zotero items (and some import flows) store the DOI as a line in the
+    free-text ``extra`` field rather than the structured ``data.DOI`` slot.
+    The convention is one ``key: value`` line per entry, e.g.::
+
+        DOI: 10.1016/j.biomaterials.2006.09.036
+        PMID: 17029015
+
+    Match is case-insensitive and tolerates an optional space after the colon.
+    """
+    if not extra:
+        return False
+    needles = (f"doi: {doi_lower}", f"doi:{doi_lower}")
+    for line in extra.splitlines():
+        stripped = line.strip().lower()
+        if stripped.startswith(needles):
+            return True
+    return False
+
+
 @router.post("/api/dev/ingest/doi", response_class=HTMLResponse)
 async def dev_ingest_doi(request: Request) -> str:
-    """Mode C — resolve a DOI to a Zotero item then ingest its markdown."""
+    """Mode C — resolve a DOI to a Zotero item then ingest its markdown.
+
+    Walks the entire library via ``_zot.everything(_zot.items())`` and matches
+    against BOTH ``data.DOI`` (structured slot) and ``data.extra`` (free-text
+    block where older Zotero items keep their DOI). The earlier search-based
+    flow used ``items(q=doi, qmode="everything")``, which silently misses
+    items whose DOI lives only in ``data.extra`` because qmode="everything"
+    does not reliably index that field.
+    """
     form = await request.form()
     doi = (form.get("doi") or "").strip()
     if not doi:
-        return (
-            '<div class="dev-result"><span class="pill danger">'
-            "✗ DOI required</span></div>"
-        )
+        return _danger("DOI required")
+    doi_lower = doi.lower()
+
     try:
         client = _build_zotero_client_for_dev()
-        # Use everything() to paginate ALL search hits, not just the first 10.
-        # qmode="everything" can fuzzy-match many items on a DOI substring
-        # and push the real exact-DOI hit past position 10. everything()
-        # iterates 100-per-page and we break on the first exact match, so the
-        # worst case is the full library — still bounded.
-        matches_iter = client._zot.everything(  # noqa: SLF001
-            client._zot.items(q=doi, qmode="everything")  # noqa: SLF001
-        )
-        target = None
-        doi_norm = doi.strip().lower()
-        for m in matches_iter:
-            if (
-                ((m.get("data", {}) or {}).get("DOI") or "").strip().lower()
-                == doi_norm
-            ):
+    except Exception as exc:
+        return _danger(f"Zotero client init failed: {exc}")
+
+    target = None
+    try:
+        # everything() paginates the full library 100 items at a time.
+        # Bounded worst case = library size; we break on first match.
+        for m in client._zot.everything(client._zot.items()):  # noqa: SLF001
+            data = m.get("data", {}) or {}
+            # 1. Structured DOI field — the common case.
+            item_doi = (data.get("DOI") or "").strip().lower()
+            if item_doi == doi_lower:
                 target = m
                 break
-        if target is None:
-            return (
-                '<div class="dev-result"><span class="pill danger">'
-                f"✗ No Zotero item matches DOI {escape(doi)} "
-                "(searched entire library — confirm DOI is exact, "
-                "e.g. case + punctuation).</span></div>"
-            )
-        md = client.get_markdown_attachment(target["key"])
-        if md is None:
-            return (
-                '<div class="dev-result"><span class="pill danger">'
-                "✗ Matched item has no local .md attachment</span></div>"
-            )
-        return _run_sandbox_ingest(doi=doi, fulltext=md)
+            # 2. Free-text 'extra' field — Zotero stores DOI here when the
+            # item type has no structured DOI slot, or for legacy imports.
+            if _extra_field_contains_doi(data.get("extra") or "", doi_lower):
+                target = m
+                break
     except Exception as exc:
-        return (
-            '<div class="dev-result"><span class="pill danger">'
-            f"✗ Zotero DOI lookup failed: {escape(str(exc))}</span></div>"
+        return _danger(f"Zotero library walk failed: {exc}")
+
+    if target is None:
+        return _danger(
+            f"No Zotero item matches DOI {doi} — checked data.DOI and "
+            "data.extra across the entire library. Confirm the DOI is in "
+            "either field exactly (case-insensitive, no extra punctuation)."
         )
+
+    md = client.get_markdown_attachment(target["key"])
+    if md is None:
+        zotero_key = target.get("key", "?")
+        return _danger(
+            f"Found item {zotero_key} matching DOI {doi}, but no markdown "
+            "attachment is locally synced. Sync the Zotero attachment or "
+            "try Mode B with the attachment key directly."
+        )
+    return _run_sandbox_ingest(doi=doi, fulltext=md)
 
 
 # ---------------------------------------------------------------------------
