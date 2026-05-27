@@ -505,10 +505,12 @@ a:hover {
 .dev-banner a { color: #6b4f00; font-weight: 600; }
 
 /* /dev page panels (Task #67). */
-.dev-panel { padding: 1rem 1.25rem; border: 1px solid var(--border); border-radius: 4px; margin: 1rem 0; }
-.dev-panel.dev-panel-placeholder { opacity: 0.5; border-style: dashed; }
-.dev-panel h2 { margin-top: 0; }
-.dev-panel .button-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+/* Inline checkbox+label group (used by the dev page Panel 4 Re-extract form). */
+.inline-check { display: inline-flex; align-items: center; gap: 0.3em; margin-right: 0.75rem; font-weight: normal; }
+.inline-check input { margin: 0; }
+
+/* Make .button-row work as a sibling of dashboard h2s, not only inside dev-panel. */
+.dashboard .button-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0; align-items: center; }
 .dev-result { margin-top: 0.75rem; }
 .dev-output { background: #f8f8f8; padding: 0.5rem; border-radius: 3px; font-size: 0.85em;
               max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
