@@ -896,6 +896,7 @@ async def _tail_pretty(log_path, request: Request):
     import asyncio
     import json
     from html import escape as _escape
+
     from scripts.server.routes.sse import _read_line
 
     _POLL = 0.5
