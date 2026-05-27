@@ -139,13 +139,15 @@ def sandbox_collections() -> tuple[Any, Any]:
     ingest) both run in the same process.
     """
     emb = sandbox_embeddings_db()
-    papers = getattr(emb, "_papers", None) or getattr(emb, "papers", None)
-    chunks = getattr(emb, "_chunks", None) or getattr(emb, "chunks", None)
+    # EmbeddingsDB stores the papers collection at `_collection` and the
+    # chunks collection at `_chunks_collection` (scripts/output/embeddings.py:64-76).
+    papers = getattr(emb, "_collection", None)
+    chunks = getattr(emb, "_chunks_collection", None)
     if papers is None or chunks is None:
         # Defensive: if EmbeddingsDB's internal attribute names ever change,
         # surface a clear error rather than crashing deeper in chromadb.
         raise AttributeError(
-            "EmbeddingsDB does not expose papers/chunks collection attributes; "
+            "EmbeddingsDB does not expose _collection/_chunks_collection attributes; "
             "sandbox_collections() needs an update to match the new shape."
         )
     return papers, chunks

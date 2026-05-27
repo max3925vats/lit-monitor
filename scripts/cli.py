@@ -418,6 +418,12 @@ def serve(
     from scripts.server.config_io import load_server_config
 
     _setup_logging("serve", verbose=ctx.obj.get("verbose", False))
+    # Propagate OLLAMA_API_KEY into the process env so embedding/LLM calls
+    # made from FastAPI request handlers (dev page ingest, brain-build via
+    # /api/control, etc.) authenticate against cloud Ollama. CLI subcommands
+    # already do this; serve() needs it too for the spawned uvicorn worker
+    # (same process, factory mode).
+    _maybe_set_ollama_key(_load_secrets())
     server_cfg = load_server_config()
     final_host = host if host is not None else server_cfg.get("host", "127.0.0.1")
     final_port = port if port is not None else int(server_cfg.get("port", 8765))
