@@ -114,11 +114,21 @@ tier_2() {
     source .venv/bin/activate
 
     info "lit-monitor check"
-    if ! lit-monitor check >/dev/null 2>&1; then
-        lit-monitor check  # re-run to show details
-        fail "lit-monitor check failed (Ollama/Zotero/config issue)"
-    fi
+    local check_out
+    check_out="$(lit-monitor check 2>&1)" || { echo "$check_out"; fail "lit-monitor check failed (Ollama/Zotero/config issue)"; }
     pass "check passed"
+
+    # Optional-key severity regression — if scopus.api_key is absent, the row must
+    # render yellow (⚠), not green (✓). If user has scopus configured, skip.
+    if echo "$check_out" | grep -q "scopus.api_key not set"; then
+        if ! echo "$check_out" | grep -qE '⚠.*scopus\.api_key'; then
+            echo "$check_out"
+            fail "scopus.api_key row should render yellow (⚠) when absent, not green"
+        fi
+        pass "optional-key severity (scopus = yellow)"
+    else
+        info "scopus.api_key appears configured — skipping yellow-row check"
+    fi
 
     info "lit-monitor status — assert paper/embedding counts > 0"
     local status_out
@@ -177,6 +187,42 @@ tier_2() {
         fi
         pass "rerender OK"
     fi
+
+    info "web UI boot + /api/health/badge probe"
+    local probe_port=18997
+    # Defensive: clean up any leftover process on the probe port.
+    pkill -f "lit-monitor serve --port $probe_port" 2>/dev/null || true
+    sleep 0.5
+    lit-monitor serve --port $probe_port --no-browser >/tmp/lit-monitor-tier2-probe.log 2>&1 &
+    local serve_pid=$!
+    # Wait up to 5 sec for the server to bind.
+    local boot_ok=0
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$probe_port/api/health" 2>/dev/null | grep -q '^200$'; then
+            boot_ok=1
+            break
+        fi
+        sleep 0.5
+    done
+    if (( boot_ok != 1 )); then
+        kill "$serve_pid" 2>/dev/null || true
+        echo "--- /tmp/lit-monitor-tier2-probe.log (tail) ---"
+        tail -30 /tmp/lit-monitor-tier2-probe.log 2>/dev/null || true
+        fail "lit-monitor serve did not become reachable on port $probe_port within 5s"
+    fi
+    local badge_body
+    badge_body="$(curl -s "http://127.0.0.1:$probe_port/api/health/badge" 2>/dev/null || true)"
+    kill "$serve_pid" 2>/dev/null || true
+    wait "$serve_pid" 2>/dev/null || true
+    if ! echo "$badge_body" | grep -q 'class="status-badge '; then
+        echo "$badge_body"
+        fail "/api/health/badge did not return a status-badge HTML fragment"
+    fi
+    if ! echo "$badge_body" | grep -qE 'status-badge (healthy|degraded|misconfigured|unconfigured)'; then
+        echo "$badge_body"
+        fail "/api/health/badge state is not one of {healthy,degraded,misconfigured,unconfigured}"
+    fi
+    pass "web UI boot + badge probe OK"
 
     pass "Tier 2 OK"
 }
