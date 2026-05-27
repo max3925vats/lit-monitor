@@ -859,6 +859,31 @@ async def dev_dryrun_start(request: Request) -> str:
     )
 
 
+@router.post("/api/dev/dryrun/stop", response_class=HTMLResponse)
+async def dev_dryrun_stop() -> str:
+    """SIGTERM the running dry-run subprocess (escalates to SIGKILL after 30s).
+
+    No-op-with-pill if nothing is running. Returns a status fragment that
+    replaces the start-button's response area; the panel's polling status
+    pill will then catch the actual exit code on the next 2s tick.
+    """
+    from scripts.server.runtime import get_runtime
+
+    runtime = get_runtime()
+    slot = runtime.processes["dev_dryrun"]
+    if not slot.is_running():
+        return (
+            '<div class="dev-result"><span class="pill" '
+            'style="background:#eee;color:#555;">'
+            'nothing to stop — no dry-run is currently running</span></div>'
+        )
+    await slot.stop(timeout=30.0)
+    return (
+        '<div class="dev-result"><span class="pill warning">'
+        '⊠ stop requested (SIGTERM → SIGKILL after 30s)</span></div>'
+    )
+
+
 @router.get("/api/dev/dryrun/stream")
 async def dev_dryrun_stream(request: Request):
     """SSE stream of the newest discovery JSONL log (shared with prod discovery).

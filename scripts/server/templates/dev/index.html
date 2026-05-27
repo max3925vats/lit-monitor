@@ -129,6 +129,8 @@
   <p class="muted">Runs <code>lit-monitor run --dry-run</code> against the live search APIs but writes nothing to state.db. Verifies the discovery side of the pipeline is healthy.</p>
   <p class="muted">⚠ Don't start this while a real <code>discovery</code> run is active — their logs would interleave.</p>
   <button hx-post="/api/dev/dryrun/start" hx-target="#panel-5-status" hx-swap="innerHTML">Start dry-run</button>
+  <button hx-post="/api/dev/dryrun/stop" hx-target="#panel-5-status" hx-swap="innerHTML"
+          hx-confirm="Stop the running dry-run? It will receive SIGTERM (graceful) then SIGKILL after 30s.">Stop</button>
   <div id="panel-5-status"
        hx-get="/api/dev/dryrun/status"
        hx-trigger="load, every 2s"
