@@ -323,3 +323,48 @@ def test_clear_sandbox_invalidates_embeddings_cache(
         "Post-clear sandbox_embeddings_db() returned the cached pre-clear "
         "instance — clear_sandbox didn't invalidate the cache"
     )
+
+
+# ---------------------------------------------------------------------------
+# 9) sandbox_collections returns real chromadb collections from EmbeddingsDB
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_sandbox_collections_returns_real_chroma_collections(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """sandbox_collections() must return objects with a callable .count().
+
+    This catches a recurrent class of bug: someone renames EmbeddingsDB's
+    private collection attribute (today: _collection and _chunks_collection)
+    and the getattr lookups in sandbox_collections silently fall back to
+    None, surfacing later as a vague "EmbeddingsDB does not expose ..."
+    warning from sandbox_status. With the real EmbeddingsDB constructed
+    against a real-but-empty chromadb dir, this asserts the contract end
+    to end — no mocks at the EmbeddingsDB level.
+    """
+    monkeypatch.setattr(dev_sandbox, "SANDBOX_CHROMA_DIR", tmp_path / "chroma_dev")
+    fake_cfg = SimpleNamespace(
+        state_db=SimpleNamespace(path=str(tmp_path / "state.db")),
+        obsidian=SimpleNamespace(vault_path=tmp_path / "vault"),
+        embeddings=SimpleNamespace(
+            ollama_host="http://localhost:11434", model="mxbai-embed-large"
+        ),
+        brain_build=SimpleNamespace(ollama_host="http://localhost:11434"),
+    )
+    monkeypatch.setattr(dev_sandbox, "get_config", lambda: fake_cfg)
+
+    papers, chunks = dev_sandbox.sandbox_collections()
+
+    # The two returned objects must be real chromadb collections — they
+    # expose a `.count()` method and live behind the same chromadb client
+    # the cached EmbeddingsDB holds (i.e. no parallel client construction).
+    assert callable(getattr(papers, "count", None)), (
+        f"papers collection has no callable .count(); got {type(papers)!r}"
+    )
+    assert callable(getattr(chunks, "count", None)), (
+        f"chunks collection has no callable .count(); got {type(chunks)!r}"
+    )
+    # Counts should be 0 on a freshly-created persist dir — proves the
+    # collections are queryable, not just placeholder objects.
+    assert papers.count() == 0
+    assert chunks.count() == 0
