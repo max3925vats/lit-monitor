@@ -63,7 +63,7 @@ class TestRunDiagnose:
         """
         with patch(
             "scripts.setup.diagnose.run_health_check",
-            return_value={"config": {"x": (True, "y")}},
+            return_value={"config": {"x": CheckResult(True, "y", "ok")}},
         ) as mock_health:
             result = run_diagnose(config_only=False)
         mock_health.assert_called_once()

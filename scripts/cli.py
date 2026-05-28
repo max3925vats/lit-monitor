@@ -21,6 +21,7 @@ import os
 import sys
 import tomllib
 import traceback
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -188,7 +189,7 @@ def _make_llm(config, mode: str, model_override: str | None = None, think: bool 
 # ---------------------------------------------------------------------------
 # Result printer helpers
 # ---------------------------------------------------------------------------
-def _print_check_results(results: dict[str, tuple[bool, str]]) -> bool:
+def _print_check_results(results: dict[str, Sequence[Any]]) -> bool:
     """Print check results, return True if all passed.
 
     Severity-aware: when a result is a ``CheckResult`` with ``severity="warn"``
