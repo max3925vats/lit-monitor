@@ -126,7 +126,11 @@ class Config:
         self.ingestion = _Namespace(validated_extraction.ingestion.model_dump())
         self.build_vocabulary = _Namespace(validated_extraction.build_vocabulary.model_dump())
         self.embeddings = _Namespace(validated_extraction.embeddings.model_dump())
-        self.comparison_models: list[dict] = validated_extraction.comparison_models
+        # Dump back to dicts so downstream code (model_compare.py) can keep
+        # using ``m.get('provider', ...)`` / ``m.get('model', ...)`` patterns.
+        self.comparison_models: list[dict] = [
+            m.model_dump() for m in validated_extraction.comparison_models
+        ]
         # --- Optional configs (loaded lazily if files exist) ---
         self._topics: list[dict] | None = None
         self._discovery_top_k: int = 20

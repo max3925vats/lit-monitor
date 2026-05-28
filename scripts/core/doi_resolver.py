@@ -110,7 +110,17 @@ def resolve_doi(
         return None
 
     top = items[0]
-    score = float(top.get("score", 0.0))
+    # Distinguish "no score field" (CrossRef API shape regression) from
+    # "score below threshold" (legitimate low-confidence match).  Silently
+    # defaulting to 0.0 would hide the former as the latter.
+    score_raw = top.get("score")
+    if score_raw is None:
+        logger.warning(
+            "CrossRef response missing 'score' field for query: %s",
+            title[:80],
+        )
+        return None
+    score = float(score_raw)
     doi = (top.get("DOI") or "").strip()
 
     if score < min_score:

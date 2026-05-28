@@ -86,6 +86,23 @@ def test_doi_resolver_returns_none_on_empty_items():
     assert result is None
 
 
+def test_resolve_doi_no_score_field_logs_warning(caplog):
+    """Missing 'score' key → distinct WARNING and None (not silent low-score)."""
+    import logging
+
+    mock_cr = MagicMock()
+    # Top item lacks the 'score' field entirely (API shape regression).
+    mock_cr.works.return_value = {"message": {"items": [{"DOI": "10.1/x"}]}}
+    with patch("scripts.core.doi_resolver.Crossref", return_value=mock_cr):
+        with caplog.at_level(logging.WARNING, logger="scripts.core.doi_resolver"):
+            result = resolve_doi("Some Title", ["Author, X"])
+    assert result is None
+    assert any(
+        "missing 'score' field" in rec.message and rec.levelno == logging.WARNING
+        for rec in caplog.records
+    ), "Expected distinct WARNING for missing score field"
+
+
 def test_doi_resolver_returns_none_when_top_item_has_no_doi():
     """Top result has score above threshold but empty DOI field → None."""
     mock_cr = MagicMock()

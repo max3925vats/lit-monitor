@@ -188,6 +188,21 @@ def test_llm_provider_accepts_litellm_provider():
 
 
 @pytest.mark.unit
+def test_config_comparison_models_malformed_entry_raises():
+    """Malformed comparison_models entry (missing provider/model) raises ValidationError.
+
+    A typo or missing key in one of the entries — e.g. ``[{"foo": "bar"}]`` —
+    must fail validation rather than silently passing as a free-form dict and
+    blowing up later in the model-comparison pipeline.
+    """
+    from scripts.core.config_schema import ExtractionConfig
+    with pytest.raises(ValidationError):
+        ExtractionConfig.model_validate({
+            "comparison_models": [{"foo": "bar"}],
+        })
+
+
+@pytest.mark.unit
 def test_extraction_config_allows_extra_keys():
     """Per-pass model keys (pass1_model etc.) are extra keys — should not raise."""
     from scripts.core.config_schema import ExtractionConfig

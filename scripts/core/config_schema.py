@@ -121,6 +121,21 @@ class EmbeddingsConfig(BaseModel):
     ollama_host: str = "http://localhost:11434"
 
 
+class ComparisonModelEntry(BaseModel):
+    """Schema for one entry in extraction.yaml → comparison_models.
+
+    Catches typos in the entry shape (missing ``provider`` or ``model`` key)
+    at config-load time instead of surfacing as a confusing KeyError later
+    inside the model-comparison pipeline.  ``extra="allow"`` lets each entry
+    carry provider-specific extras (e.g. ``litellm_model``, ``timeout``).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    provider: str
+    model: str
+
+
 class ExtractionConfig(BaseModel):
     """Top-level schema for config/extraction.yaml."""
 
@@ -130,5 +145,5 @@ class ExtractionConfig(BaseModel):
     ingestion: LLMProviderConfig = Field(default_factory=LLMProviderConfig)
     build_vocabulary: LLMProviderConfig = Field(default_factory=LLMProviderConfig)
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
-    # comparison_models entries are free-form dicts (multiple providers allowed)
-    comparison_models: list[dict] = Field(default_factory=list)
+    # Each comparison_models entry must declare provider + model; extras allowed.
+    comparison_models: list[ComparisonModelEntry] = Field(default_factory=list)
