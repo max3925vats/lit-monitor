@@ -493,7 +493,8 @@ def first_run(ctx: click.Context) -> None:
     """Interactive first-time setup. Credentials are write-once (skipped if
     `~/.config/lit-monitor/config.toml` already exists). The `[server]`
     block (host/port/open_browser) is re-prompted every run so the user
-    can change defaults.
+    can change defaults. If the chosen port is already in use, launch is
+    skipped (no duplicate serve).
     """
     import socket
     import subprocess

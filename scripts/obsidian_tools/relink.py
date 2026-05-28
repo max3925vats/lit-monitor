@@ -163,7 +163,8 @@ def relink_note(
     Pass 2 (E2): citation-graph via citation_edges table:
         - outgoing (this paper cites) → Related Work zone (📖 entries)
         - incoming (papers that cite this) → Referenced By zone
-    Persist zone markers are always preserved.
+    Persist zones (`related_work`, `referenced_by`) are preserved across
+    re-runs because both are now defined in `paper_note.md.j2` (M2).
     config: optional — used to read reranker settings for N19.
     """
     note_path = Path(note_path)

@@ -83,8 +83,9 @@ def chunk_markdown(
     doi:
         Paper DOI — embedded in chunk_id and metadata.
     target_tokens:
-        Approximate token budget per chunk (1 token ≈ 4 chars).
-        Default 500 ≈ 2000 chars.
+        Approximate token budget per chunk (1 token ≈ 3.5 chars for scientific
+        text; see ``_CHARS_PER_TOKEN``).
+        Default 320 tokens ≈ 1120 chars.
 
     Returns
     -------

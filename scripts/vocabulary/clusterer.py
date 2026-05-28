@@ -400,11 +400,12 @@ def _refine_clustering(
     llm:
         LLMClient instance to use for the refinement call.
     max_tokens:
-        Max output tokens for the refinement LLM call.  Defaults to -1 (unlimited
-        within the model's context window) because the additions JSON for large
-        vocabularies (150+ themes) can easily exceed 16 000 tokens.  Pass an
-        explicit positive value only when the calling context has a hard ceiling
-        and you want a graceful truncation + partial-recovery path.
+        Max output tokens for the refinement LLM call.  Defaults to 32768 —
+        a cloud-Ollama-safe positive cap that still accommodates the additions
+        JSON for large vocabularies (150+ themes), which can easily exceed
+        16 000 tokens.  Pass an explicit smaller value only when the calling
+        context has a hard ceiling and you want a graceful truncation +
+        partial-recovery path.
     debug_output_path:
         If provided, the raw LLM response is written to this path unconditionally
         (before any parsing attempt) so the caller can inspect truncation or

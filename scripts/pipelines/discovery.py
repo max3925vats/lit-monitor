@@ -17,7 +17,8 @@ INGESTION BLOCK:
        - get_markdown_attachment → extract_paper (simple + complex phases)
        - write_paper_note → add_paper to ChromaDB → relink (new note only)
   10. Persist updated Zotero library version to state DB
-dry_run=True: Discovery block only, no state DB writes, no notes written.
+dry_run=True: discovery block runs (search + rank + digest); NO state DB writes,
+  NO notes written, NO `last_run_date` update.
 screen_all=True: Send all new results to LLM rationale (not just top-K).
 """
 from __future__ import annotations
