@@ -1133,3 +1133,58 @@ def test_brain_build_enrich_paper_failure_is_non_fatal(tmp_path, caplog):
         f"Expected WARNING log about S2 enrichment failure; got: "
         f"{[(r.levelname, r.getMessage()) for r in caplog.records]}"
     )
+
+
+@pytest.mark.unit
+def test_discovery_enrich_paper_failure_is_non_fatal(tmp_path, caplog):
+    """H1 (review fix): the discovery ingestion path must also treat a transient
+    S2 outage as non-fatal — same contract as brain_build.  Pre-fix, discovery
+    called enrich_paper bare and any exception bubbled up to the outer except,
+    marking the paper status='error' on what is really an optional enrichment.
+    """
+    import logging
+
+    config = _make_config(tmp_path)
+    state_db = _make_state_db(tmp_path)
+    state_db.set_kv("zotero_library_version", "100")
+    embeddings_db = MagicMock()
+    llm = MagicMock()
+    llm.complete.return_value = json.dumps({"core_finding": "ok", "core_finding_confidence": "explicit"})
+    llm.model = "gemma4:e4b"
+    llm.provider = "ollama"
+
+    item = _make_zotero_item_for_ingestion("10.1000/s2fail", key="DISCS2FAIL01")
+    zotero_client = MagicMock()
+    zotero_client.get_items_since.return_value = [item]
+    zotero_client.get_current_version.return_value = 101
+    zotero_client.get_markdown_attachment.return_value = "Paper text."
+
+    note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Smith2021.md")
+    with caplog.at_level(logging.WARNING, logger="scripts.pipelines.discovery"), \
+         patch("scripts.pipelines.discovery.run_searches", return_value=[]), \
+         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]), \
+         patch("scripts.pipelines.discovery.rank_papers", return_value=[]), \
+         patch("scripts.pipelines.discovery.enrich_paper",
+               side_effect=ConnectionError("S2 timeout")), \
+         patch("scripts.pipelines.discovery.extract_paper",
+               return_value={"core_finding": "ok", "core_finding_confidence": "explicit"}), \
+         patch("scripts.pipelines.discovery.write_paper_note", return_value=note_path), \
+         patch("scripts.pipelines.discovery.relink_note"):
+        from scripts.pipelines.discovery import run_discovery
+        summary = run_discovery(
+            config, state_db, zotero_client, embeddings_db, llm, dry_run=False
+        )
+
+    # The paper completes successfully — S2 failure is non-fatal.
+    assert summary.papers_ingested == 1
+    record = state_db.get_paper("10.1000/s2fail")
+    assert record is not None
+    assert record["status"] == "extraction_complete"
+    # And there should be a WARNING about the S2 enrichment failure.
+    assert any(
+        "S2 enrichment failed" in r.getMessage() for r in caplog.records
+    ), (
+        f"Expected WARNING log about S2 enrichment failure; got: "
+        f"{[(r.levelname, r.getMessage()) for r in caplog.records]}"
+    )

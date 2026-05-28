@@ -19,6 +19,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+import requests
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -410,9 +411,18 @@ def _process_paper(
     # H3: pre-extraction S2 enrichment — fetched now so publicationTypes is
     # available for H4 detect_review() schema routing before extraction starts.
     # H1: wrap in try/except so a transient S2 outage does not abort the paper.
+    # Narrowed to the realistic failure modes for an HTTP API call + JSON
+    # parsing + strict_fallback re-raise (RuntimeError).  Programmer errors
+    # (NameError, AttributeError, etc.) intentionally still surface.
     try:
         s2_data = enrich_paper(doi)
-    except Exception as exc:
+    except (
+        requests.exceptions.RequestException,
+        ConnectionError,
+        TimeoutError,
+        json.JSONDecodeError,
+        RuntimeError,
+    ) as exc:
         logger.warning("S2 enrichment failed for %s (non-fatal): %s", doi, exc)
         s2_data = {}
     # H4: review detection — override source_type before extraction so the
@@ -528,11 +538,14 @@ def _process_paper(
     }
     # H1: mirror discovery's broad protection around note writing so a vault
     # I/O failure or template bug surfaces as a single 'error' write from the
-    # outer handler rather than crashing mid-pipeline.
+    # outer handler rather than crashing mid-pipeline.  Narrowed to the
+    # realistic failure modes from Jinja2 template rendering + filesystem
+    # writes; outer handler logs the full traceback, so we only add the
+    # 'write_paper_note failed' context label here.
     try:
         note_path = write_paper_note_fn(paper_record, extraction, config)
-    except Exception as exc:
-        logger.error("write_paper_note failed for %s: %s", doi, exc, exc_info=True)
+    except (OSError, RuntimeError, ValueError) as exc:
+        logger.error("write_paper_note failed for %s: %s", doi, exc)
         raise
     note_title = Path(note_path).stem
     # Index in ChromaDB — paper-level and chunk-level

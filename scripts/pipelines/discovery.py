@@ -31,6 +31,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+import requests
+
 from scripts.core.doi_resolver import resolve_doi
 from scripts.core.item_router import detect_review
 from scripts.core.strict_mode import strict_fallback
@@ -429,7 +431,20 @@ def _run_ingestion(
             # L1: pre-extraction S2 enrichment (mirrors brain_build H3/H4).
             # Enrichment happens before extract_paper so detect_review() can
             # set the correct source_type on the first DB write.
-            s2_data = enrich_paper(doi)
+            # H1: wrap so a transient S2 outage doesn't waste LLM tokens by
+            # marking the paper failed; narrow exception list mirrors
+            # brain_build for cross-pipeline consistency.
+            try:
+                s2_data = enrich_paper(doi)
+            except (
+                requests.exceptions.RequestException,
+                ConnectionError,
+                TimeoutError,
+                json.JSONDecodeError,
+                RuntimeError,
+            ) as exc:
+                logger.warning("S2 enrichment failed for %s (non-fatal): %s", doi, exc)
+                s2_data = {}
             s2_pub_types = s2_data.get("s2_publication_types") if s2_data else None
             source_type = "paper"
             if detect_review(s2_pub_types, title=title, abstract=abstract, journal=journal):
