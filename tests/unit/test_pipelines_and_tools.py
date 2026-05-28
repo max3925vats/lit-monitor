@@ -399,6 +399,50 @@ def test_ranker_llm_failure_returns_empty_rationale():
     llm.complete.side_effect = RuntimeError("Ollama down")
     ranked = rank_papers(candidates, embeddings_db, llm)
     assert ranked[0]["llm_rationale"] == ""
+
+
+@pytest.mark.unit
+def test_ranker_propagates_chromadb_connection_error():
+    """L3: a chromadb backend error must surface, not silently default to 0.0.
+
+    Previously every exception was swallowed and the paper was scored 0.0 —
+    meaning a broken Chroma collection looked identical to "no neighbours".
+    """
+    from chromadb.errors import ChromaError
+
+    from scripts.llm.ranker import rank_papers
+
+    candidates = [{"doi": "10.1/p1", "title": "Paper", "abstract": ""}]
+    embeddings_db = MagicMock()
+    embeddings_db.find_similar_to_text.side_effect = ChromaError("backend down")
+    llm = MagicMock()
+    with pytest.raises(ChromaError):
+        rank_papers(candidates, embeddings_db, llm)
+
+
+@pytest.mark.unit
+def test_ranker_non_chroma_exception_logged_and_continues(caplog):
+    """L3: per-paper non-Chroma exceptions log WARNING with traceback, score=0.0."""
+    import logging
+
+    from scripts.llm.ranker import rank_papers
+
+    candidates = [{"doi": "10.1/p1", "title": "Paper", "abstract": ""}]
+    embeddings_db = MagicMock()
+    # Generic ValueError — represents a malformed embed input, not a backend
+    # outage. Should be tolerated.
+    embeddings_db.find_similar_to_text.side_effect = ValueError("bad embed text")
+    llm = MagicMock()
+    llm.complete.return_value = json.dumps({"10.1/p1": "ok"})
+
+    with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        ranked = rank_papers(candidates, embeddings_db, llm)
+
+    assert ranked[0]["similarity_score"] == 0.0
+    assert any(
+        "Similarity lookup failed" in rec.getMessage() and rec.levelno == logging.WARNING
+        for rec in caplog.records
+    )
 # ===========================================================================
 # Obsidian tools tests
 # ===========================================================================

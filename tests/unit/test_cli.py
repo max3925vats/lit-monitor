@@ -1079,7 +1079,14 @@ class TestLoadSecretsStrictMode:
     """Tests that _load_secrets respects strict mode."""
 
     def test_load_secrets_raises_in_strict_mode(self, tmp_path) -> None:
-        """With strict mode on, a malformed TOML file must raise RuntimeError."""
+        """With strict mode on, a malformed TOML file must raise.
+
+        L3: strict_fallback now preserves the original exception *type* when
+        possible. TOMLDecodeError is 1-arg-constructible (it subclasses
+        ValueError) so the strict-mode re-raise will be a TOMLDecodeError,
+        not RuntimeError. Both are acceptable to callers — we assert on the
+        base Exception plus the cause-chain message.
+        """
         import scripts.core.strict_mode as _sm
         from scripts.cli import _load_secrets
 
@@ -1089,7 +1096,7 @@ class TestLoadSecretsStrictMode:
         _sm.set_strict(True)
         try:
             with patch("scripts.cli._SECRETS_PATH", bad_toml):
-                with pytest.raises(RuntimeError, match="Could not parse secrets file"):
+                with pytest.raises(Exception, match="Could not parse secrets file"):
                     _load_secrets()
         finally:
             _sm.set_strict(False)

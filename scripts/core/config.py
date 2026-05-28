@@ -199,8 +199,20 @@ _config_logger = logging.getLogger(__name__)
 def _load_yaml(path: Path) -> dict:
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
-    with path.open(encoding="utf-8") as fh:
-        data = yaml.safe_load(fh)
+    try:
+        with path.open(encoding="utf-8") as fh:
+            data = yaml.safe_load(fh)
+    except yaml.YAMLError as exc:
+        # Parse failures are operator-actionable: log ERROR (not WARNING)
+        # so they show up in standard log filters, then route through
+        # strict_fallback so strict mode raises instead of swallowing.
+        _config_logger.error("YAML parse failed in %s: %s", path, exc)
+        strict_fallback(
+            _config_logger,
+            f"YAML parse failed in {path}: {exc} — treating as empty dict.",
+            exc,
+        )
+        return {}
     if not isinstance(data, dict):
         strict_fallback(
             _config_logger,

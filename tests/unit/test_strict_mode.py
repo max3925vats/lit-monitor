@@ -79,11 +79,17 @@ class TestStrictFallback:
             _sm.strict_fallback(log, "something went wrong", None)
 
     def test_strict_fallback_chains_cause(self, monkeypatch) -> None:
-        """Original exception is chained as __cause__ in strict mode."""
+        """Original exception is chained as __cause__ in strict mode.
+
+        L3: when the original exception type is 1-arg-constructible, it is
+        re-raised as the same type rather than wrapped in RuntimeError. Use
+        the base ``Exception`` here to assert chaining regardless of which
+        concrete type the wrapper picks.
+        """
         monkeypatch.setenv("LIT_MONITOR_STRICT", "1")
         log = logging.getLogger("test_strict_cause")
         original = ValueError("original cause")
-        with pytest.raises(RuntimeError) as exc_info:
+        with pytest.raises(Exception) as exc_info:
             _sm.strict_fallback(log, "wrapper message", original)
         assert exc_info.value.__cause__ is original
 
@@ -93,3 +99,42 @@ class TestStrictFallback:
         log = logging.getLogger("test_strict_no_cause")
         with pytest.raises(RuntimeError, match="no exc"):
             _sm.strict_fallback(log, "no exc", None)
+
+    def test_strict_fallback_preserves_exception_type(self, monkeypatch) -> None:
+        """In strict mode, the original exception type is re-raised (not RuntimeError).
+
+        L3: a JSONDecodeError-style downstream exception should still be
+        catchable as ValueError so callers can write specific except clauses
+        rather than catching the umbrella RuntimeError wrapper.
+        """
+        monkeypatch.setenv("LIT_MONITOR_STRICT", "1")
+        log = logging.getLogger("test_strict_preserve_type")
+        original = ValueError("original cause")
+        with pytest.raises(ValueError) as exc_info:
+            _sm.strict_fallback(log, "wrapped message", original)
+        # Type is preserved, message is rewritten, cause is chained.
+        assert type(exc_info.value) is ValueError
+        assert "wrapped message" in str(exc_info.value)
+        assert exc_info.value.__cause__ is original
+
+    def test_strict_fallback_falls_back_to_runtimeerror_when_type_not_constructible(
+        self, monkeypatch,
+    ) -> None:
+        """Exception types that don't accept a single string arg fall back to RuntimeError.
+
+        Some stdlib exceptions (OSError subclasses, custom multi-arg exceptions)
+        cannot be reconstructed from a single message; strict_fallback must
+        degrade gracefully to RuntimeError rather than raising TypeError.
+        """
+        class _MultiArgError(Exception):
+            def __init__(self, a: str, b: str) -> None:
+                super().__init__(f"{a}/{b}")
+                self.a = a
+                self.b = b
+
+        monkeypatch.setenv("LIT_MONITOR_STRICT", "1")
+        log = logging.getLogger("test_strict_multiarg_fallback")
+        original = _MultiArgError("x", "y")
+        with pytest.raises(RuntimeError) as exc_info:
+            _sm.strict_fallback(log, "wrap msg", original)
+        assert exc_info.value.__cause__ is original

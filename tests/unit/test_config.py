@@ -254,3 +254,58 @@ def test_config_init_accepts_valid_yaml(tmp_path):
     assert cfg.brain_build.provider == "ollama"
     assert cfg.brain_build.model == "phi4-mini"
     assert cfg.embeddings.model == "nomic-embed-text"
+
+
+# ---------------------------------------------------------------------------
+# L3 — _load_yaml error-handling hygiene
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_config_load_yaml_logs_error_on_parse_fail(tmp_path, caplog, monkeypatch):
+    """A malformed YAML file logs at ERROR level (not WARNING) before fallback.
+
+    L3: parse failures are operator-actionable. They must appear at ERROR so
+    they show up in default log filters; previously they slipped through at
+    WARNING and could be missed.
+    """
+    import logging
+
+    from scripts.core.config import _load_yaml
+
+    # Make sure strict mode is off so we exercise the fallback-to-{} path.
+    monkeypatch.delenv("LIT_MONITOR_STRICT", raising=False)
+    import scripts.core.strict_mode as _sm
+    _sm._strict_override = None
+
+    bad = tmp_path / "bad.yaml"
+    # Unterminated mapping value → yaml.YAMLError on parse.
+    bad.write_text("key: : :\n  - [unterminated\n", encoding="utf-8")
+
+    with caplog.at_level(logging.ERROR, logger="scripts.core.config"):
+        result = _load_yaml(bad)
+
+    assert result == {}
+    assert any(
+        rec.levelno == logging.ERROR and "YAML parse failed" in rec.getMessage()
+        for rec in caplog.records
+    ), f"Expected ERROR-level YAML parse log; got: {[(r.levelname, r.getMessage()) for r in caplog.records]}"
+
+
+@pytest.mark.unit
+def test_config_load_yaml_strict_mode_raises_on_parse_fail(tmp_path, monkeypatch):
+    """In strict mode a malformed YAML file raises (does not silently return {})."""
+    from scripts.core.config import _load_yaml
+
+    monkeypatch.setenv("LIT_MONITOR_STRICT", "1")
+    import scripts.core.strict_mode as _sm
+    _sm._strict_override = None  # let env var be the source of truth
+
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("key: : :\n  - [unterminated\n", encoding="utf-8")
+
+    # L3 strict_fallback preserves the original yaml.YAMLError type when
+    # reconstructible; YAMLError accepts a single message string, so the
+    # raised exception should still be a YAMLError (or subclass).
+    import yaml as _yaml
+    with pytest.raises(_yaml.YAMLError):
+        _load_yaml(bad)

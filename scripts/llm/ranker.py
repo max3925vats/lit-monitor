@@ -11,6 +11,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+try:
+    # Base class for chromadb client/connection errors. Imported lazily-safe
+    # at module level so we can `except ChromaError` below without surprising
+    # ImportError at call-time.
+    from chromadb.errors import ChromaError
+except Exception:  # pragma: no cover - chromadb missing in some envs
+    ChromaError = ()  # type: ignore[assignment,misc]
+
 from scripts.llm.prompt_registry import load_prompt
 from scripts.llm.prompt_safety import sanitize_for_prompt
 
@@ -58,8 +66,17 @@ def rank_papers(
                 embed_text, top_k=1, exclude_id=doi
             )
             score = results[0]["score"] if results else 0.0
+        except ChromaError:
+            # Real DB / connection problem — do NOT silently degrade to 0.0,
+            # otherwise every paper would be ranked as "no match" and the
+            # caller would never learn the backend is broken.
+            raise
         except Exception as exc:
-            logger.debug("Similarity lookup failed for %s: %s", doi, exc)
+            # Per-paper failures (e.g. bad embed text) are non-fatal: log a
+            # warning with traceback and continue with score 0.0.
+            logger.warning(
+                "Similarity lookup failed for %s: %s", doi, exc, exc_info=True
+            )
             score = 0.0
         scored.append({**paper, "similarity_score": score})
     # 2. Sort descending by score

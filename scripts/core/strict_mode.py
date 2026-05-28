@@ -59,6 +59,14 @@ def strict_fallback(
     """
     if is_strict():
         if exc is not None:
-            raise RuntimeError(message) from exc
+            # Preserve the original exception *type* when possible so callers
+            # can `except JSONDecodeError`, `except FileNotFoundError`, etc.
+            # in strict mode. Some exception types aren't 1-arg-constructible
+            # (e.g. OSError subclasses need errno+strerror) — fall back to
+            # RuntimeError in that case.
+            try:
+                raise type(exc)(message) from exc
+            except TypeError:
+                raise RuntimeError(message) from exc
         raise RuntimeError(message)
     logger.warning(message)
