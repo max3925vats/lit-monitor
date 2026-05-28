@@ -10,6 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from scripts.pipelines.discovery import run_discovery
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -1252,8 +1254,6 @@ def test_discovery_aborts_after_three_consecutive_rate_limits(tmp_path):
          patch("scripts.pipelines.discovery.extract_paper",
                side_effect=RateLimitError("429 Too Many Requests")), \
          patch("scripts.pipelines.discovery._time.sleep"):  # skip actual back-off
-        from scripts.pipelines.discovery import run_discovery
-
         with pytest.raises(SystemExit) as exc_info:
             run_discovery(
                 config, state_db, zotero_client, embeddings_db, llm,

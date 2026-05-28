@@ -339,7 +339,7 @@ def _run_ingestion(
     embeddings_db,
     llm,
     summary: _RunSummary,
-    run_id: str | None = None,
+    run_id: str,
 ) -> None:
     """
     Poll Zotero for new items and ingest papers with PDFs.
@@ -596,14 +596,13 @@ def _run_ingestion(
                 # M1: mirror brain_build — record rate_limited status and exit
                 # with non-zero code so cron logs are honest. Paper is NOT
                 # marked error; next run will retry via Zotero poll.
-                if run_id is not None:
-                    state_db.finish_run(
-                        run_id,
-                        status="rate_limited",
-                        processed=summary.papers_ingested,
-                        failed=summary.papers_failed,
-                        errors=summary.errors,
-                    )
+                state_db.finish_run(
+                    run_id,
+                    status="rate_limited",
+                    processed=summary.papers_ingested,
+                    failed=summary.papers_failed,
+                    errors=summary.errors,
+                )
                 raise SystemExit(2)
             wait = 60 * (2 ** (consecutive_429 - 1))
             logger.warning("Sleeping %ds before next paper", wait)
