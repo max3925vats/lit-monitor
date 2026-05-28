@@ -560,6 +560,30 @@ def check_embed_model_change(
         logger.info("Embedding model recorded for the first time: %s", configured_model)
         return False
     if prior_model == configured_model:
+        # Idempotency / crash-recovery guard: kv_store says we're already on the
+        # configured model, but the ChromaDB collection is empty. That can only
+        # happen if a previous run completed clear() but crashed before
+        # reset_embeddings_indexed() + set_kv() — except set_kv is now LAST, so
+        # an interrupted prior run will leave kv_store at the OLD model and we
+        # would enter the reset branch instead. The case we recover here is the
+        # narrower one where the collection is independently empty (manual wipe,
+        # fresh chromadb dir) while state_db still flags papers as indexed —
+        # bring state_db back in sync so the next run re-embeds.
+        try:
+            collection_empty = embed_db.count() == 0
+        except Exception as exc:
+            logger.debug("embed_db.count() raised during idempotency check: %s", exc)
+            return False
+        if collection_empty:
+            logger.warning(
+                "Embed model unchanged ('%s') but ChromaDB collection is empty. "
+                "Resetting embeddings_indexed so papers are re-embedded.",
+                configured_model,
+            )
+            state_db.reset_embeddings_indexed()
+            # set_kv last so a crash here is re-runnable (still no-op next time).
+            state_db.set_kv("embed_model", configured_model)
+            return True
         return False
     # Model has changed — full reset required so old vectors don't pollute the index.
     logger.warning(
@@ -570,5 +594,9 @@ def check_embed_model_change(
     )
     embed_db.clear()
     state_db.reset_embeddings_indexed()
+    # set_kv LAST: if a crash interrupts us before this point, kv_store still
+    # holds the old model name so the next run re-enters this branch and
+    # completes the work. The clear() step is idempotent (deleting an
+    # already-empty collection is a no-op).
     state_db.set_kv("embed_model", configured_model)
     return True

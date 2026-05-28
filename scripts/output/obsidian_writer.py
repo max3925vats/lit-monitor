@@ -237,7 +237,10 @@ def update_note_preserve_persist_zones(path: str | Path, new_content: str) -> No
         zones = _extract_persist_zones(existing)
         new_content = _apply_persist_zones(new_content, zones)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(new_content, encoding="utf-8")
+    # Atomic write so a crash mid-write cannot truncate or corrupt the note —
+    # the previous file content (if any) survives until os.replace flips it.
+    from scripts.core.atomic_write import atomic_write_text
+    atomic_write_text(path, new_content)
 # ---------------------------------------------------------------------------
 # Note writers
 # ---------------------------------------------------------------------------

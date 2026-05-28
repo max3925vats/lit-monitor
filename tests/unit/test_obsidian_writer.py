@@ -193,6 +193,48 @@ def test_persist_zones_created_fresh_if_no_existing_note(tmp_path):
     result = note_path.read_text(encoding="utf-8")
     assert "## Synthesis" in result
     assert "*(empty)*" in result
+
+
+@pytest.mark.unit
+def test_note_write_survives_replace_failure(tmp_path, monkeypatch):
+    """H4 — Atomic-write parity. If os.replace fails partway through, the
+    original note content must remain untouched and no .tmp sibling must leak.
+    """
+    from scripts.core import atomic_write as atomic_write_mod
+    from scripts.output.obsidian_writer import update_note_preserve_persist_zones
+
+    note_path = tmp_path / "Atomic.md"
+    original = (
+        "# Original\n"
+        '{% persist "notes" %}\n'
+        "user-authored content that must survive crashes\n"
+        "{% endpersist %}\n"
+    )
+    note_path.write_text(original, encoding="utf-8")
+
+    # Inject a crash at the os.replace boundary used by atomic_write_text.
+    def boom(_src, _dst):  # noqa: ANN001 — match os.replace signature
+        raise OSError("simulated rename crash")
+
+    monkeypatch.setattr(atomic_write_mod.os, "replace", boom)
+
+    new_content = (
+        "# Updated\n"
+        '{% persist "notes" %}\n'
+        "freshly rendered placeholder\n"
+        "{% endpersist %}\n"
+    )
+
+    with pytest.raises(OSError, match="simulated rename crash"):
+        update_note_preserve_persist_zones(note_path, new_content)
+
+    # Original file content is unchanged.
+    assert note_path.read_text(encoding="utf-8") == original
+    # No temp-file droppings left behind.
+    leftovers = [p for p in note_path.parent.iterdir() if p.name.startswith(".") and p.name.endswith(".tmp")]
+    assert leftovers == [], f"leaked temp files: {leftovers}"
+
+
 # ---------------------------------------------------------------------------
 # Collision handling tests
 # ---------------------------------------------------------------------------

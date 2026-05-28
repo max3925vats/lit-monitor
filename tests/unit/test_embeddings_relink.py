@@ -565,6 +565,93 @@ def test_embed_model_change_resets_all_rows(tmp_path):
     assert all(p["embeddings_indexed"] == 0 for p in papers)
 
 
+@pytest.mark.unit
+def test_check_embed_model_change_recovers_from_partial_application(tmp_path):
+    """H4 — Atomic-write parity for the embed-model reset path.
+
+    If reset_embeddings_indexed() raises after clear() succeeds, kv_store must
+    still hold the OLD model name so a re-run completes the work cleanly. With
+    set_kv("embed_model", ...) as the LAST step this happens naturally: a crash
+    between clear() and set_kv leaves the function re-runnable.
+    """
+    from scripts.output.embeddings import check_embed_model_change
+
+    state_db = _make_state_db(tmp_path)
+    embed_db = _make_embeddings_db(tmp_path)
+
+    # Seed: one embedded paper, OLD model stored in kv_store.
+    state_db.upsert_paper({
+        "doi": "10.1234/test",
+        "title": "Test",
+        "source_type": "paper",
+        "note_title": "Test2024",
+        "embeddings_indexed": 1,
+    })
+    embed_db.add_paper("10.1234/test", "test text", {"note_title": "Test2024"})
+    state_db.set_kv("embed_model", "nomic-embed-text")
+
+    # Inject a transient failure: first reset_embeddings_indexed() raises,
+    # subsequent calls run normally. We monkeypatch the bound method.
+    real_reset = state_db.reset_embeddings_indexed
+    calls = {"n": 0}
+
+    def flaky_reset() -> None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("simulated crash mid-reset")
+        real_reset()
+
+    state_db.reset_embeddings_indexed = flaky_reset  # type: ignore[method-assign]
+
+    # First call: clear() succeeds, reset() raises, set_kv NOT called.
+    with pytest.raises(RuntimeError, match="simulated crash"):
+        check_embed_model_change(state_db, embed_db, "mxbai-embed-large")
+
+    # Invariant: kv_store still holds OLD model — a re-run must redo the work.
+    assert state_db.get_kv("embed_model") == "nomic-embed-text"
+    # Collection is empty (clear() ran before the crash).
+    assert embed_db.count() == 0
+
+    # Second call: completes cleanly. Either the change-branch path
+    # (prior != configured) or the idempotency-guard path
+    # (prior == configured, collection empty) is acceptable — both end in a
+    # consistent post-state.
+    changed = check_embed_model_change(state_db, embed_db, "mxbai-embed-large")
+    assert changed is True
+    assert state_db.get_kv("embed_model") == "mxbai-embed-large"
+    paper = state_db.get_paper("10.1234/test")
+    assert paper["embeddings_indexed"] == 0
+    assert calls["n"] >= 2  # reset was retried
+
+
+@pytest.mark.unit
+def test_check_embed_model_change_idempotent_when_collection_empty(tmp_path):
+    """Idempotency guard: kv_store matches but collection is empty -> reset only."""
+    from scripts.output.embeddings import check_embed_model_change
+
+    state_db = _make_state_db(tmp_path)
+    embed_db = _make_embeddings_db(tmp_path)
+
+    # Pretend a prior run finished but ChromaDB was wiped externally.
+    state_db.upsert_paper({
+        "doi": "10.1234/test",
+        "title": "Test",
+        "source_type": "paper",
+        "note_title": "Test2024",
+        "embeddings_indexed": 1,
+    })
+    state_db.set_kv("embed_model", "mxbai-embed-large")
+
+    # clear() must NOT be called — the collection is already empty.
+    embed_db.clear = MagicMock(side_effect=AssertionError("clear() must not run"))
+
+    changed = check_embed_model_change(state_db, embed_db, "mxbai-embed-large")
+
+    assert changed is True
+    paper = state_db.get_paper("10.1234/test")
+    assert paper["embeddings_indexed"] == 0
+
+
 # ---------------------------------------------------------------------------
 # Audit R28 regression — _embed truncate-and-retry path
 # ---------------------------------------------------------------------------
