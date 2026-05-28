@@ -1096,7 +1096,7 @@ class TestLoadSecretsStrictMode:
         _sm.set_strict(True)
         try:
             with patch("scripts.cli._SECRETS_PATH", bad_toml):
-                with pytest.raises(Exception, match="Could not parse secrets file"):
+                with pytest.raises((ValueError, RuntimeError), match="Could not parse secrets file"):
                     _load_secrets()
         finally:
             _sm.set_strict(False)

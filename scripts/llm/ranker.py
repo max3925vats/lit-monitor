@@ -16,7 +16,9 @@ try:
     # at module level so we can `except ChromaError` below without surprising
     # ImportError at call-time.
     from chromadb.errors import ChromaError
-except Exception:  # pragma: no cover - chromadb missing in some envs
+except ImportError:  # chromadb optional in some test envs
+    # Empty tuple = "match no exception" when used with `except`.
+    # Do NOT change to `Exception` — that would re-mask backend outages.
     ChromaError = ()  # type: ignore[assignment,misc]
 
 from scripts.llm.prompt_registry import load_prompt

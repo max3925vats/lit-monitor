@@ -64,9 +64,16 @@ def strict_fallback(
             # in strict mode. Some exception types aren't 1-arg-constructible
             # (e.g. OSError subclasses need errno+strerror) — fall back to
             # RuntimeError in that case.
+            # Construct the replacement exception *outside* of `raise` so that
+            # only constructor failures (TypeError for unusual ``__init__``
+            # signatures, or exotic third-party ctors that raise something
+            # else) are caught here — not the re-raise itself.
             try:
-                raise type(exc)(message) from exc
+                new_exc = type(exc)(message)
             except TypeError:
                 raise RuntimeError(message) from exc
+            except Exception:  # exotic exception ctor — degrade safely
+                raise RuntimeError(message) from exc
+            raise new_exc from exc
         raise RuntimeError(message)
     logger.warning(message)

@@ -89,7 +89,7 @@ class TestStrictFallback:
         monkeypatch.setenv("LIT_MONITOR_STRICT", "1")
         log = logging.getLogger("test_strict_cause")
         original = ValueError("original cause")
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises((ValueError, RuntimeError)) as exc_info:
             _sm.strict_fallback(log, "wrapper message", original)
         assert exc_info.value.__cause__ is original
 
