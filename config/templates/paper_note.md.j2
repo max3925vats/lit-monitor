@@ -47,6 +47,11 @@ extraction_provider: "{{ extraction_provider | default('') }}"
 *(populated by `lit-monitor obsidian relink`)*
 {% endpersist %}
 
+{% persist "referenced_by" %}
+## Referenced By
+*(populated by `lit-monitor obsidian relink`)*
+{% endpersist %}
+
 {% persist "synthesis" %}
 ## Synthesis
 *(populated by `lit-monitor obsidian synthesize`)*
