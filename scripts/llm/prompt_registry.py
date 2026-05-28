@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +75,7 @@ def _render(
     text: str,
     values: dict[str, Any] | None = None,
     prompt_name: str | None = None,
+    allowed_extra: Iterable[str] = (),
 ) -> str:
     """Substitute {name}-style placeholders in prompt text.
 
@@ -87,16 +89,24 @@ def _render(
         values: Substitution dict. Defaults to domain_context_values().
         prompt_name: Optional source identifier used in the warning message
             when unrendered placeholders are found.
+        allowed_extra: Placeholders intentionally left for downstream
+            ``.format(...)`` calls (e.g. ``{doi}``, ``{title}`` in
+            ``paper_card_template``). These pass through silently and are
+            NOT reported as unrendered.
     """
     if values is None:
         values = domain_context_values()
 
+    allowed = set(allowed_extra)
     unmatched: list[str] = []
 
     def _replace(match: re.Match) -> str:
         key = match.group(1)
         if key in values:
             return str(values[key])
+        if key in allowed:
+            # Downstream-render placeholder; preserve verbatim, no warning.
+            return match.group(0)
         unmatched.append(key)
         return match.group(0)  # leave unknown placeholders as-is
 
@@ -104,8 +114,8 @@ def _render(
     if unmatched:
         logger.warning(
             "Unrendered placeholders in prompt %r: %s",
-            prompt_name,
-            unmatched,
+            prompt_name or "<unknown>",
+            sorted(set(unmatched)),
         )
     return rendered
 
@@ -207,8 +217,12 @@ def load_prompt(name: str) -> Prompt:
         raw["system"] = _render(raw.get("system", ""), prompt_name=name)
         raw["user_template"] = raw.get("user_template", "")
         if raw.get("paper_card_template") is not None:
+            # {doi}, {title}, {abstract} are downstream .format(...) args
+            # rendered per-paper by ranker._get_rationales — not typos.
             raw["paper_card_template"] = _render(
-                raw["paper_card_template"], prompt_name=name
+                raw["paper_card_template"],
+                prompt_name=name,
+                allowed_extra={"doi", "title", "abstract"},
             )
         if raw.get("paper_card_separator") is not None:
             raw["paper_card_separator"] = _render(
@@ -261,9 +275,22 @@ def load_extraction_prompts() -> ExtractionPrompts:
     key = "extraction"
     if key not in _cache:
         raw = _load_yaml("extraction")
-        # Render domain-context variables into all string fields.
+        # Per-field downstream placeholders that should pass through _render
+        # untouched (they are later rendered by extractor.py at use time).
+        downstream_extras: dict[str, set[str]] = {
+            "confidence_footer": {"conf_vals"},
+            "pass_label_prefix": {"pass_label"},
+        }
         rendered = {
-            k: _render(v, prompt_name=f"extraction.{k}") if isinstance(v, str) else v
+            k: (
+                _render(
+                    v,
+                    prompt_name=f"extraction.{k}",
+                    allowed_extra=downstream_extras.get(k, set()),
+                )
+                if isinstance(v, str)
+                else v
+            )
             for k, v in raw.items()
         }
         _cache[key] = ExtractionPrompts.model_validate(rendered)

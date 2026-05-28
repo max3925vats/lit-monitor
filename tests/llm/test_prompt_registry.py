@@ -9,6 +9,7 @@ import pytest
 from scripts.llm.prompt_registry import (
     _reset_prompt_cache,
     load_clustering_prompts,
+    load_extraction_prompts,
     load_prompt,
 )
 
@@ -279,4 +280,29 @@ def test_loaded_rationale_prompt_has_rendered_domain_focus():
     # The JSON example must have survived intact.
     assert '"<doi>"' in prompt.system, (
         f"JSON example was mangled by the renderer: {prompt.system!r}"
+    )
+
+
+@pytest.mark.unit
+def test_load_prompt_emits_no_false_positive_warnings(caplog):
+    """L4 follow-up: shipped YAML files must not trigger 'unrendered placeholder'
+    warnings when loaded. Tokens like {doi}, {title}, {abstract}, {conf_vals},
+    and {pass_label} are downstream-format placeholders rendered later by
+    ranker/extractor code paths — they are NOT typos in domain_context.yaml.
+
+    Regression for the false-positive WARNING spam on every CLI startup.
+    """
+    import logging
+
+    _reset_prompt_cache()
+    with caplog.at_level(logging.WARNING, logger="scripts.llm.prompt_registry"):
+        load_prompt("rationale")
+        load_extraction_prompts()
+
+    noise = [
+        r for r in caplog.records if "Unrendered placeholders" in r.getMessage()
+    ]
+    assert noise == [], (
+        f"False-positive WARNINGs on prompt load: "
+        f"{[r.getMessage() for r in noise]}"
     )
