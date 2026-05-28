@@ -688,6 +688,63 @@ class TestMaybeSetOllamaKey:
             assert "OLLAMA_API_KEY" not in os.environ
 
 
+class TestMaybeSetS2Key:
+    """Unit tests for _maybe_set_s2_key (M3 — S2 credential parity with OLLAMA)."""
+
+    def test_sets_key_from_config_when_env_absent(self):
+        from scripts.cli import _maybe_set_s2_key
+        secrets = {"semantic_scholar": {"api_key": "toml-s2-key-123"}}
+        with patch.dict("os.environ", {}, clear=False):
+            os.environ.pop("S2_API_KEY", None)
+            _maybe_set_s2_key(secrets)
+            assert os.environ.get("S2_API_KEY") == "toml-s2-key-123"
+        os.environ.pop("S2_API_KEY", None)
+
+    def test_env_var_wins_over_config(self):
+        from scripts.cli import _maybe_set_s2_key
+        secrets = {"semantic_scholar": {"api_key": "toml-key"}}
+        with patch.dict("os.environ", {"S2_API_KEY": "env-key"}, clear=False):
+            _maybe_set_s2_key(secrets)
+            assert os.environ["S2_API_KEY"] == "env-key"
+
+    def test_no_key_no_side_effect(self):
+        from scripts.cli import _maybe_set_s2_key
+        with patch.dict("os.environ", {}, clear=False):
+            os.environ.pop("S2_API_KEY", None)
+            _maybe_set_s2_key({})
+            assert "S2_API_KEY" not in os.environ
+
+    def test_missing_section_no_crash(self):
+        """Helper must tolerate config.toml without a [semantic_scholar] section."""
+        from scripts.cli import _maybe_set_s2_key
+        with patch.dict("os.environ", {}, clear=False):
+            os.environ.pop("S2_API_KEY", None)
+            # Realistic config.toml has zotero/pubmed/ollama but no semantic_scholar.
+            _maybe_set_s2_key({"zotero": {"api_key": "z"}, "ollama": {"api_key": "o"}})
+            assert "S2_API_KEY" not in os.environ
+
+    def test_obsidian_build_citation_graph_sets_s2_key_from_secrets(self, runner):
+        """build-citation-graph must call _maybe_set_s2_key with loaded secrets."""
+        mock_state_db = MagicMock()
+        mock_state_db.get_all_by_source_type.return_value = []
+        with (
+            patch("scripts.cli._load_secrets", return_value={"semantic_scholar": {"api_key": "k"}}),
+            patch("scripts.cli._maybe_set_s2_key") as mock_set_s2,
+            patch("scripts.core.config.Config", return_value=MagicMock()),
+            patch("scripts.core.state_db.StateDB", return_value=mock_state_db),
+            patch("scripts.search.citation_graph.build_citation_graph"),
+        ):
+            result = runner.invoke(
+                main,
+                ["obsidian", "build-citation-graph", "--scope", "all"],
+            )
+        assert result.exit_code == 0, result.output
+        mock_set_s2.assert_called_once()
+        # Confirm it was called with the secrets dict, not an empty fallback.
+        args, _kwargs = mock_set_s2.call_args
+        assert args[0] == {"semantic_scholar": {"api_key": "k"}}
+
+
 class TestCliSetupLogging:
     def test_jsonl_handler_emits_valid_json(self, tmp_path):
         import logging

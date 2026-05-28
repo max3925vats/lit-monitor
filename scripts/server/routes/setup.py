@@ -59,6 +59,7 @@ def _merge_credentials(existing: dict[str, Any], form: dict[str, str]) -> dict[s
     z = dict(out.get("zotero", {}))
     p = dict(out.get("pubmed", {}))
     o = dict(out.get("ollama", {}))
+    s = dict(out.get("semantic_scholar", {}))
 
     def _maybe_set(section: dict, key: str, value: str) -> None:
         if not value or value.startswith(_MASK_PREFIX):
@@ -69,6 +70,9 @@ def _merge_credentials(existing: dict[str, Any], form: dict[str, str]) -> dict[s
     _maybe_set(z, "library_id", form["zotero_library_id"])
     _maybe_set(p, "email", form["pubmed_email"])
     _maybe_set(o, "api_key", form["ollama_api_key"])
+    # M3: optional Semantic Scholar API key (raises S2 rate limit from 100/5m → 5000/5m).
+    # Form may omit this field for back-compat with older tests; default to "".
+    _maybe_set(s, "api_key", form.get("s2_api_key", ""))
 
     if z:
         out["zotero"] = z
@@ -76,6 +80,8 @@ def _merge_credentials(existing: dict[str, Any], form: dict[str, str]) -> dict[s
         out["pubmed"] = p
     if o:
         out["ollama"] = o
+    if s:
+        out["semantic_scholar"] = s
     return out
 
 
@@ -435,12 +441,14 @@ def step_credentials_form(request: Request) -> HTMLResponse:
     zotero = secrets.get("zotero", {}) if isinstance(secrets, dict) else {}
     pubmed = secrets.get("pubmed", {}) if isinstance(secrets, dict) else {}
     ollama = secrets.get("ollama", {}) if isinstance(secrets, dict) else {}
+    s2 = secrets.get("semantic_scholar", {}) if isinstance(secrets, dict) else {}
 
     ctx = {
         "z_api_key_tail": _key_tail(zotero.get("api_key", "")),
         "z_library_id": zotero.get("library_id", ""),
         "pubmed_email": pubmed.get("email", ""),
         "ollama_api_key_tail": _key_tail(ollama.get("api_key", "")),
+        "s2_api_key_tail": _key_tail(s2.get("api_key", "")),
         "secrets_error": secrets_error,
         "current_step": 1,
     }
@@ -454,6 +462,7 @@ def save_credentials(
     zotero_library_id: str = Form(""),
     pubmed_email: str = Form(""),
     ollama_api_key: str = Form(""),
+    s2_api_key: str = Form(""),
 ) -> HTMLResponse:
     """Save credentials TOML, then live-test against Zotero. Returns a partial."""
     try:
@@ -469,6 +478,7 @@ def save_credentials(
             "zotero_library_id": zotero_library_id.strip(),
             "pubmed_email": pubmed_email.strip(),
             "ollama_api_key": ollama_api_key.strip(),
+            "s2_api_key": s2_api_key.strip(),
         },
     )
 

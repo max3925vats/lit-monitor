@@ -128,6 +128,20 @@ def _maybe_set_ollama_key(secrets: dict[str, Any]) -> None:
     toml_key = secrets.get("ollama", {}).get("api_key", "")
     if toml_key:
         os.environ["OLLAMA_API_KEY"] = toml_key
+def _maybe_set_s2_key(secrets: dict[str, Any]) -> None:
+    """Inject S2_API_KEY from config.toml into the environment if not already set.
+
+    Precedence: shell env var wins over config.toml — same convention as
+    _maybe_set_ollama_key. Must be called BEFORE importing modules under
+    scripts.search.* (semantic_scholar / citation_graph), because those
+    modules capture os.environ["S2_API_KEY"] at import time into a module-level
+    _DEFAULT_S2_API_KEY constant.
+    """
+    if os.environ.get("S2_API_KEY"):
+        return  # env var already set — leave it unchanged
+    toml_key = secrets.get("semantic_scholar", {}).get("api_key", "")
+    if toml_key:
+        os.environ["S2_API_KEY"] = toml_key
 # ---------------------------------------------------------------------------
 # Shared object factory helpers
 # ---------------------------------------------------------------------------
@@ -1033,6 +1047,9 @@ def brain_build_cmd(
 ) -> None:
     """Process all papers in Zotero 'lit-monitor' collection."""
     _setup_logging("brain_build", verbose=ctx.obj.get("verbose", False))
+    # M3: hydrate S2_API_KEY before importing brain_build (which transitively
+    # imports scripts.search.semantic_scholar at module-load time).
+    _maybe_set_s2_key(_load_secrets())
     from scripts.core.state_db import CURRENT_SCHEMA_VERSION
     from scripts.output.embeddings import check_embed_model_change
     from scripts.pipelines.brain_build import (
@@ -1185,6 +1202,9 @@ def run_cmd(
 ) -> None:
     """Run the discovery pipeline: search + ranking + ingest new Zotero items."""
     _setup_logging("discovery", verbose=ctx.obj.get("verbose", False))
+    # M3: hydrate S2_API_KEY before importing discovery (which transitively
+    # imports scripts.search.semantic_scholar at module-load time).
+    _maybe_set_s2_key(_load_secrets())
     from scripts.output.embeddings import check_embed_model_change
     from scripts.pipelines.discovery import run_discovery
     try:
@@ -1611,9 +1631,13 @@ def obsidian_build_citation_graph(
     """
     from scripts.core.config import Config
     from scripts.core.state_db import StateDB
-    from scripts.search.citation_graph import build_citation_graph
 
     _setup_logging("build_citation_graph", verbose=ctx.obj.get("verbose", False))
+
+    # M3: hydrate S2_API_KEY from config.toml before importing search modules,
+    # which capture the env var at import time into _DEFAULT_S2_API_KEY.
+    _maybe_set_s2_key(_load_secrets())
+    from scripts.search.citation_graph import build_citation_graph
 
     config = Config()
     state_db = StateDB(config.paths.state_db)
@@ -1712,6 +1736,9 @@ def obsidian_rebuild_citations(
     Use 'failed' to catch papers where S2 resolution produced no edges.
     """
     _setup_logging("rebuild_citations", verbose=ctx.obj.get("verbose", False))
+    # M3: hydrate S2_API_KEY from config.toml before importing search modules,
+    # which capture the env var at import time into _DEFAULT_S2_API_KEY.
+    _maybe_set_s2_key(_load_secrets())
     from scripts.obsidian_tools.relink import relink_note
     from scripts.search.citation_graph import build_citation_graph
 
