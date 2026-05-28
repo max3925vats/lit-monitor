@@ -409,7 +409,12 @@ def _process_paper(
     ocr_heavy = False  # markdown attachments are never OCR-heavy
     # H3: pre-extraction S2 enrichment — fetched now so publicationTypes is
     # available for H4 detect_review() schema routing before extraction starts.
-    s2_data = enrich_paper(doi)
+    # H1: wrap in try/except so a transient S2 outage does not abort the paper.
+    try:
+        s2_data = enrich_paper(doi)
+    except Exception as exc:
+        logger.warning("S2 enrichment failed for %s (non-fatal): %s", doi, exc)
+        s2_data = {}
     # H4: review detection — override source_type before extraction so the
     # correct type is written on the first DB upsert.
     s2_pub_types = s2_data.get("s2_publication_types") if s2_data else None
@@ -477,7 +482,12 @@ def _process_paper(
     # I3: flag degraded extraction quality when any pass required >3 chunks
     if extraction.get("_max_n_chunks", 1) > 3:
         extraction["_extraction_quality"] = "degraded_high_chunking"
-    # Upsert paper record (persist keywords so rerender can recover them)
+    # H1: Persist the extraction payload BUT do not flip status to
+    # 'extraction_complete' yet — that happens after the embed step succeeds.
+    # Leaving status untouched here (COALESCE on the StateDB side preserves
+    # the prior value) means a downstream embed failure cleanly leaves the
+    # paper marked 'error' by the outer handler instead of producing two
+    # conflicting writes (extraction_complete then error).
     state_db.upsert_paper({
         "doi": doi,
         "title": title,
@@ -486,7 +496,6 @@ def _process_paper(
         "journal": journal,
         "zotero_key": zotero_key,
         "first_seen_date": str(date.today()),
-        "status": "extraction_complete",
         "source_type": source_type,
         "extraction_json": json.dumps(extraction),
         "extraction_provider": _llm_provider_str(llm),
@@ -517,7 +526,14 @@ def _process_paper(
         "extraction_provider": _llm_provider_str(llm),
         "extraction_model": _llm_model_str(llm),
     }
-    note_path = write_paper_note_fn(paper_record, extraction, config)
+    # H1: mirror discovery's broad protection around note writing so a vault
+    # I/O failure or template bug surfaces as a single 'error' write from the
+    # outer handler rather than crashing mid-pipeline.
+    try:
+        note_path = write_paper_note_fn(paper_record, extraction, config)
+    except Exception as exc:
+        logger.error("write_paper_note failed for %s: %s", doi, exc, exc_info=True)
+        raise
     note_title = Path(note_path).stem
     # Index in ChromaDB — paper-level and chunk-level
     embed_text = _paper_embed_text(title, abstract, extraction)
@@ -545,9 +561,15 @@ def _process_paper(
     if not embed_ok:
         # Propagate embed failure to caller so the paper isn't marked complete.
         raise RuntimeError(embed_err)
-    # Update state with note info + embeddings flag
+    # H1: single authoritative status flip — now that the embed step has
+    # succeeded, mark the paper extraction_complete in the same write that
+    # records the note path + embeddings flag.  Pre-fix, status was set to
+    # 'extraction_complete' before the embed call; an embed failure then
+    # caused the outer handler to overwrite it with 'error', leaving two
+    # conflicting writes and embeddings_indexed=0.
     state_db.upsert_paper({
         "doi": doi,
+        "status": "extraction_complete",
         "note_title": note_title,
         "note_path": note_path,
         "embeddings_indexed": 1,

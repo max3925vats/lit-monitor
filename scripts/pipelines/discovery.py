@@ -142,9 +142,12 @@ def run_discovery(
     try:
         raw_papers, search_errors = _run_discovery(config, since_days=since_days)
         summary.errors.extend(search_errors)
-        # A4: advance date after successful discovery so subsequent runs (including
-        # dry runs) compute the correct search window.
-        state_db.set_kv("last_run_date", str(date.today()))
+        # A4: advance date after successful discovery so subsequent runs compute
+        # the correct search window.
+        # H1: dry_run is supposed to be DB-read-only (per module docstring) — gate
+        # the write so dry runs do not silently mutate kv_store.
+        if not dry_run:
+            state_db.set_kv("last_run_date", str(date.today()))
     except Exception as exc:
         logger.error("Discovery searches failed: %s", exc, exc_info=True)
         summary.errors.append(f"discovery: {exc}")
@@ -466,6 +469,10 @@ def _run_ingestion(
                 if f"_{phase}_error" not in extraction
             ]
 
+            # H1: persist the extraction payload but defer the status flip until
+            # after the embed step succeeds.  Pre-fix, status='extraction_complete'
+            # was written here and an add_paper failure would leave the row in a
+            # 'looks done but has zero embeddings' state that --resume skipped.
             state_db.upsert_paper({
                 "doi": doi,
                 "title": title,
@@ -473,7 +480,6 @@ def _run_ingestion(
                 "year": year,
                 "journal": journal,
                 "zotero_key": zotero_key,
-                "status": "extraction_complete",
                 "source_type": source_type,
                 "extraction_json": json.dumps(extraction),
                 "extraction_provider": _llm_provider_str(llm),
@@ -531,8 +537,11 @@ def _run_ingestion(
                 # Skip downstream work (state flag, relink) so the paper isn't
                 # falsely marked complete; outer except will mark it failed.
                 raise RuntimeError(embed_err)
+            # H1: single authoritative status flip now that the embed step
+            # succeeded — combined with the note path + embeddings flag write.
             state_db.upsert_paper({
                 "doi": doi,
+                "status": "extraction_complete",
                 "note_title": note_title,
                 "note_path": note_path,
                 "embeddings_indexed": 1,

@@ -81,6 +81,11 @@ def test_full_discovery_dry_run_no_writes(tmp_path):
     known = state_db.known_dois()
     assert known == set()
     assert summary.new_papers_found == 2
+    # H1 regression: dry_run must not mutate kv_store with last_run_date.
+    # Pre-fix, set_kv was called unconditionally after a successful search,
+    # which violated the dry_run read-only contract documented at the top of
+    # scripts/pipelines/discovery.py.
+    assert state_db.get_kv("last_run_date") is None
 @pytest.mark.unit
 def test_discovery_digest_written(tmp_path):
     """Non-dry-run: digest file created in digests_folder."""
@@ -987,3 +992,144 @@ def test_rebuild_citations_no_rerender_skips_relink(tmp_path):
 
     assert result.exit_code == 0, result.output
     assert relink_calls == [], "relink_note must not be called when --no-rerender is set"
+
+
+# ===========================================================================
+# H1 — state-machine cleanup regression tests
+# ===========================================================================
+
+@pytest.mark.unit
+def test_brain_build_embed_failure_does_not_mark_extraction_complete(tmp_path):
+    """H1: when embeddings_db.add_paper raises, state_db.upsert_paper must
+    NEVER be called with status='extraction_complete'.  Pre-fix, status was
+    written BEFORE the embed step (line ~481), so an embed failure produced
+    two conflicting writes (extraction_complete then error) and left
+    embeddings_indexed=0 — the paper looked done but wasn't, and --resume
+    silently skipped it.
+
+    Uses a real StateDB to satisfy SELECT-side reads, but wraps upsert_paper
+    in a spy so we can assert no extraction_complete payload was written.
+    Checking the final row status alone does NOT catch the regression: the
+    outer Exception handler overwrites with 'error' in BOTH pre- and post-fix
+    code, so the end state looks identical.
+    """
+    from scripts.pipelines.brain_build import run_brain_build
+
+    config = _make_config(tmp_path)
+    state_db = _make_state_db(tmp_path)
+    embeddings_db = MagicMock()
+    # Simulate ChromaDB outage — the R28 helper returns (False, err) and
+    # _process_paper raises RuntimeError on the embed failure path.
+    embeddings_db.add_paper.side_effect = RuntimeError("chroma unavailable")
+    llm = MagicMock()
+    llm.model = "gemma4:e4b"
+    llm.provider = "ollama"
+
+    item = {
+        "key": "EMBFAIL01",
+        "data": {
+            "DOI": "10.1000/embfail",
+            "title": "Paper That Fails To Embed",
+            "date": "2024",
+            "publicationTitle": "J. Membranes",
+            "abstractNote": "We studied filtration.",
+            "tags": [],
+            "creators": [{"creatorType": "author", "lastName": "Smith", "firstName": "A"}],
+        },
+    }
+    zotero_client = MagicMock()
+    zotero_client.get_collection_items.return_value = [item]
+    zotero_client.get_markdown_attachment.return_value = "Paper text."
+
+    # Spy on upsert_paper so we can inspect every status payload written.
+    upsert_payloads: list[dict] = []
+    original_upsert = state_db.upsert_paper
+
+    def _spy_upsert(payload: dict) -> None:
+        upsert_payloads.append(dict(payload))
+        return original_upsert(payload)
+
+    state_db.upsert_paper = _spy_upsert  # type: ignore[method-assign]
+
+    note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Smith2024.md")
+    with patch("scripts.pipelines.brain_build.enrich_paper", return_value={}), \
+         patch("scripts.pipelines.brain_build.extract_paper",
+               return_value={"core_finding": "ok", "core_finding_confidence": "explicit"}), \
+         patch("scripts.pipelines.brain_build.write_paper_note", return_value=note_path):
+        summary = run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
+
+    # Pipeline counts: embed failure -> failed=1
+    assert summary.papers_failed == 1
+    assert summary.papers_processed == 0
+
+    # H1 core assertion: no upsert ever carried status='extraction_complete'.
+    # Pre-fix this would be the upsert just before the embed call.
+    statuses_written = [p.get("status") for p in upsert_payloads if "status" in p]
+    assert "extraction_complete" not in statuses_written, (
+        "Pre-H1 regression: status='extraction_complete' was written before "
+        f"the embed step succeeded. Statuses written: {statuses_written}; "
+        f"full payloads: {upsert_payloads}"
+    )
+    # And embeddings_indexed must be 0 — embed never succeeded.
+    record = state_db.get_paper("10.1000/embfail")
+    assert record is not None
+    assert record["embeddings_indexed"] == 0
+
+
+@pytest.mark.unit
+def test_brain_build_enrich_paper_failure_is_non_fatal(tmp_path, caplog):
+    """H1: a transient Semantic Scholar outage (enrich_paper raises) must NOT
+    abort or fail the paper.  The pipeline should log a WARNING, treat S2 data
+    as empty, and continue end-to-end.  Pre-fix, enrich_paper() was called
+    bare and any exception bubbled up to the outer handler, which marked the
+    paper status='error' on what is really a transient external dependency.
+    """
+    import logging
+
+    from scripts.pipelines.brain_build import run_brain_build
+
+    config = _make_config(tmp_path)
+    state_db = _make_state_db(tmp_path)
+    embeddings_db = MagicMock()
+    llm = MagicMock()
+    llm.model = "gemma4:e4b"
+    llm.provider = "ollama"
+
+    item = {
+        "key": "S2FAIL01",
+        "data": {
+            "DOI": "10.1000/s2fail",
+            "title": "Paper Whose S2 Lookup Fails",
+            "date": "2024",
+            "publicationTitle": "J. Membranes",
+            "abstractNote": "We studied filtration.",
+            "tags": [],
+            "creators": [{"creatorType": "author", "lastName": "Smith", "firstName": "A"}],
+        },
+    }
+    zotero_client = MagicMock()
+    zotero_client.get_collection_items.return_value = [item]
+    zotero_client.get_markdown_attachment.return_value = "Paper text."
+
+    note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Smith2024.md")
+    with caplog.at_level(logging.WARNING, logger="scripts.pipelines.brain_build"), \
+         patch("scripts.pipelines.brain_build.enrich_paper",
+               side_effect=ConnectionError("S2 timeout")), \
+         patch("scripts.pipelines.brain_build.extract_paper",
+               return_value={"core_finding": "ok", "core_finding_confidence": "explicit"}), \
+         patch("scripts.pipelines.brain_build.write_paper_note", return_value=note_path):
+        summary = run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
+
+    # The paper completes successfully — S2 failure is non-fatal.
+    assert summary.papers_processed == 1
+    assert summary.papers_failed == 0
+    record = state_db.get_paper("10.1000/s2fail")
+    assert record is not None
+    assert record["status"] == "extraction_complete"
+    # And there should be a WARNING about the S2 enrichment failure.
+    assert any(
+        "S2 enrichment failed" in r.getMessage() for r in caplog.records
+    ), (
+        f"Expected WARNING log about S2 enrichment failure; got: "
+        f"{[(r.levelname, r.getMessage()) for r in caplog.records]}"
+    )
