@@ -15,6 +15,7 @@ Expected researchers.yaml format:
 """
 from __future__ import annotations
 
+import concurrent.futures
 import datetime
 import logging
 import os
@@ -31,6 +32,10 @@ except ImportError:  # pragma: no cover
 logger = logging.getLogger(__name__)
 _OPENALEX_AUTHOR_URL = "https://api.openalex.org/works"
 _DEFAULT_DATABASES = ["pubmed", "arxiv", "scopus"]
+# H3: overall cap for a single _findpapers.search() call so a stuck DB mirror
+# cannot hang the whole researcher tracking run. The underlying thread keeps
+# running until findpapers internally completes (no cooperative cancellation).
+FINDPAPERS_TIMEOUT_SECONDS = 180
 
 
 def run_researcher_searches(
@@ -94,23 +99,38 @@ def run_researcher_searches(
         logger.info("Searching for researcher: %r (query: %r)", name, au_query)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as _tmp_fh:
             tmp = _tmp_fh.name
+        timed_out = False
         try:
-            _findpapers.search(
-                outputpath=tmp,
-                query=au_query,
-                since=since,
-                databases=databases,
-                limit_per_database=limit_per_author,
-                scopus_api_token=scopus_key,
-                ieee_api_token=ieee_key,
-            )
-            search_result = _fp_load(tmp)
-            papers = _convert_findpapers_results(search_result.papers, tracked_author=True)
-            for paper in papers:
-                doi = paper.get("doi", "").strip().lower()
-                if doi and doi not in all_papers:
-                    all_papers[doi] = paper
-            logger.info("Researcher %r: %d results", name, len(papers))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    _findpapers.search,
+                    outputpath=tmp,
+                    query=au_query,
+                    since=since,
+                    databases=databases,
+                    limit_per_database=limit_per_author,
+                    scopus_api_token=scopus_key,
+                    ieee_api_token=ieee_key,
+                )
+                try:
+                    future.result(timeout=FINDPAPERS_TIMEOUT_SECONDS)
+                except concurrent.futures.TimeoutError:
+                    # Note: future.cancel() returns False here because the
+                    # thread is already running; findpapers will keep going
+                    # until it finishes on its own. We just stop waiting.
+                    logger.warning(
+                        "findpapers search for researcher %r timed out after %ds; skipping",
+                        name, FINDPAPERS_TIMEOUT_SECONDS,
+                    )
+                    timed_out = True
+            if not timed_out:
+                search_result = _fp_load(tmp)
+                papers = _convert_findpapers_results(search_result.papers, tracked_author=True)
+                for paper in papers:
+                    doi = paper.get("doi", "").strip().lower()
+                    if doi and doi not in all_papers:
+                        all_papers[doi] = paper
+                logger.info("Researcher %r: %d results", name, len(papers))
         except Exception as exc:
             logger.error("Search failed for researcher %r: %s", name, exc)
         finally:

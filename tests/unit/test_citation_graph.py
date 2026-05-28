@@ -8,7 +8,7 @@ import json
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -306,6 +306,19 @@ def test_fetch_s2_references_rate_limit_retry_then_success():
 
     assert len(refs) == 1
     assert call_count == 2
+
+
+@pytest.mark.unit
+def test_fetch_s2_references_passes_timeout_to_constructor():
+    """H3: SemanticScholar must be instantiated with timeout=30 to bound network calls."""
+    mock_sch = MagicMock()
+    mock_sch.get_paper.return_value = None
+    with patch(
+        "scripts.search.citation_graph._SemanticScholar", return_value=mock_sch
+    ) as mock_cls, \
+         patch("scripts.search.citation_graph._S2_AVAILABLE", True):
+        _fetch_s2_references("10.1/test", api_key="my-s2-key")
+    mock_cls.assert_called_once_with(api_key="my-s2-key", timeout=30)
 
 
 @pytest.mark.unit

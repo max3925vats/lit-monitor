@@ -28,8 +28,16 @@ _RETRY_DECORATOR = retry(
     reraise=True,
 )
 @_RETRY_DECORATOR
-def get_json(url: str, params: dict[str, Any] | None = None, timeout: int = 15) -> dict:
-    """GET a URL, return parsed JSON."""
+def get_json(
+    url: str,
+    params: dict[str, Any] | None = None,
+    timeout: float = 15.0,
+) -> dict:
+    """GET a URL, return parsed JSON.
+
+    ``timeout`` is the per-request socket timeout in seconds and can be
+    overridden per call (H3: previously hardcoded).
+    """
     resp = _SESSION.get(url, params=params, timeout=timeout)
     resp.raise_for_status()
     return resp.json()

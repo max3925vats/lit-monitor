@@ -177,7 +177,7 @@ def _fetch_s2_references(
         logger.debug("semanticscholar not available — citation graph disabled")
         return []
 
-    sch = _SemanticScholar(api_key=api_key)
+    sch = _SemanticScholar(api_key=api_key, timeout=30)
     for attempt in range(max_retries + 1):
         try:
             paper = sch.get_paper(f"DOI:{doi.strip()}", fields=["references"])

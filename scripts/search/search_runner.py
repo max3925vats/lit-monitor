@@ -8,6 +8,7 @@ WoS, CrossRef, and OpenAlex are NOT supported by findpapers 0.6.x.
 """
 from __future__ import annotations
 
+import concurrent.futures
 import datetime
 import logging
 import os
@@ -40,6 +41,11 @@ logger = logging.getLogger(__name__)
 # Databases available in findpapers 0.6.x (lowercase, as accepted by databases= param)
 DEFAULT_DATABASES = ["pubmed", "arxiv", "scopus"]
 _SECRETS_PATH = Path.home() / ".config" / "lit-monitor" / "config.toml"
+# H3: overall cap for a single _findpapers.search() call so a stuck DB mirror
+# cannot hang the whole discovery run. The underlying thread continues until
+# findpapers internally completes (no cooperative cancellation), but the
+# pipeline moves on to the next topic.
+FINDPAPERS_TIMEOUT_SECONDS = 180
 
 
 def _load_api_secrets() -> dict[str, str | None]:
@@ -119,15 +125,28 @@ def run_searches(
         with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as _tmp_fh:
             tmp = _tmp_fh.name
         try:
-            _findpapers.search(
-                outputpath=tmp,
-                query=_format_query(topic),
-                since=since,
-                databases=databases,
-                limit_per_database=limit,
-                scopus_api_token=scopus_key,
-                ieee_api_token=ieee_key,
-            )
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    _findpapers.search,
+                    outputpath=tmp,
+                    query=_format_query(topic),
+                    since=since,
+                    databases=databases,
+                    limit_per_database=limit,
+                    scopus_api_token=scopus_key,
+                    ieee_api_token=ieee_key,
+                )
+                try:
+                    future.result(timeout=FINDPAPERS_TIMEOUT_SECONDS)
+                except concurrent.futures.TimeoutError:
+                    # Note: future.cancel() returns False here because the
+                    # thread is already running; findpapers will keep going
+                    # until it finishes on its own. We just stop waiting.
+                    logger.warning(
+                        "findpapers search for topic %r timed out after %ds; skipping",
+                        topic, FINDPAPERS_TIMEOUT_SECONDS,
+                    )
+                    continue
             search_result = _fp_load(tmp)
             papers = _convert_findpapers_results(search_result.papers, tracked_author=False)
             for paper in papers:
