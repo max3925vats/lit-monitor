@@ -29,13 +29,11 @@ except ImportError:  # pragma: no cover
     _findpapers = None  # type: ignore[assignment]
     _fp_load = None  # type: ignore[assignment]
 
+from scripts.search._constants import FINDPAPERS_TIMEOUT_SECONDS
+
 logger = logging.getLogger(__name__)
 _OPENALEX_AUTHOR_URL = "https://api.openalex.org/works"
 _DEFAULT_DATABASES = ["pubmed", "arxiv", "scopus"]
-# H3: overall cap for a single _findpapers.search() call so a stuck DB mirror
-# cannot hang the whole researcher tracking run. The underlying thread keeps
-# running until findpapers internally completes (no cooperative cancellation).
-FINDPAPERS_TIMEOUT_SECONDS = 180
 
 
 def run_researcher_searches(
@@ -123,6 +121,9 @@ def run_researcher_searches(
                         name, FINDPAPERS_TIMEOUT_SECONDS,
                     )
                     timed_out = True
+            # Skip result-loading if findpapers timed out: the tempfile may be empty or
+            # half-written, and _fp_load() would raise — which would mis-attribute the
+            # failure to "Search failed" rather than the actual timeout.
             if not timed_out:
                 search_result = _fp_load(tmp)
                 papers = _convert_findpapers_results(search_result.papers, tracked_author=True)

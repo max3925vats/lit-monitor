@@ -35,17 +35,13 @@ except ImportError:  # pragma: no cover
     search_semantic_scholar = None  # type: ignore[assignment]
 
 from scripts.core.strict_mode import strict_fallback
+from scripts.search._constants import FINDPAPERS_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
 # Databases available in findpapers 0.6.x (lowercase, as accepted by databases= param)
 DEFAULT_DATABASES = ["pubmed", "arxiv", "scopus"]
 _SECRETS_PATH = Path.home() / ".config" / "lit-monitor" / "config.toml"
-# H3: overall cap for a single _findpapers.search() call so a stuck DB mirror
-# cannot hang the whole discovery run. The underlying thread continues until
-# findpapers internally completes (no cooperative cancellation), but the
-# pipeline moves on to the next topic.
-FINDPAPERS_TIMEOUT_SECONDS = 180
 
 
 def _load_api_secrets() -> dict[str, str | None]:

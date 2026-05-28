@@ -26,6 +26,8 @@ from typing import TYPE_CHECKING, Any
 
 from rapidfuzz import fuzz
 
+from scripts.search._constants import S2_TIMEOUT_SECONDS
+
 if TYPE_CHECKING:
     from scripts.core.state_db import StateDB
 
@@ -177,7 +179,7 @@ def _fetch_s2_references(
         logger.debug("semanticscholar not available — citation graph disabled")
         return []
 
-    sch = _SemanticScholar(api_key=api_key, timeout=30)
+    sch = _SemanticScholar(api_key=api_key, timeout=S2_TIMEOUT_SECONDS)
     for attempt in range(max_retries + 1):
         try:
             paper = sch.get_paper(f"DOI:{doi.strip()}", fields=["references"])
