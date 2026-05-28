@@ -947,3 +947,30 @@ def test_ollama_client_no_warn_on_neg1_max_tokens_for_localhost(caplog):
     assert not any("num_predict=-1" in r.message for r in caplog.records), (
         "No warning expected for localhost Ollama with num_predict=-1"
     )
+
+
+@pytest.mark.unit
+def test_ollama_client_no_warn_on_neg1_max_tokens_for_custom_local_host(caplog):
+    """L4: num_predict=-1 with a custom local hostname (not localhost/127.0.0.1)
+    should NOT warn — the previous substring check incorrectly flagged these.
+    """
+    import logging
+
+    from scripts.llm.llm_client import OllamaClient
+
+    client = OllamaClient(
+        model="test-model",
+        host="http://my-pi:11434",
+        num_ctx_override=4096,
+    )
+    ok_response = {"message": {"content": '{"result": "ok"}'}}
+
+    with patch("requests.post") as mock_post:
+        mock_post.return_value = MagicMock(status_code=200, json=lambda: ok_response)
+        mock_post.return_value.raise_for_status = MagicMock()
+        with caplog.at_level(logging.WARNING, logger="scripts.llm.llm_client"):
+            client.complete("sys", "usr", max_tokens=-1)
+
+    assert not any("num_predict=-1" in r.message for r in caplog.records), (
+        "No warning expected for a custom local host like http://my-pi:11434"
+    )

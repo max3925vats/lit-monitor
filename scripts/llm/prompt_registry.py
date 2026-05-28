@@ -70,27 +70,44 @@ def _load_yaml(name: str) -> dict[str, Any]:
 _VAR_PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
-def _render(text: str, values: dict[str, Any] | None = None) -> str:
+def _render(
+    text: str,
+    values: dict[str, Any] | None = None,
+    prompt_name: str | None = None,
+) -> str:
     """Substitute {name}-style placeholders in prompt text.
 
     Only Python-identifier patterns match (e.g. {domain_focus}), so literal
     JSON blocks like {"<doi>": "<rationale>"} pass through untouched.
-    Unknown placeholder names are left intact rather than raising.
+    Unknown placeholder names are left intact rather than raising, but a
+    WARNING is logged so typos in domain_context.yaml are visible.
 
     Args:
         text: Raw prompt text that may contain {placeholder} tokens.
         values: Substitution dict. Defaults to domain_context_values().
+        prompt_name: Optional source identifier used in the warning message
+            when unrendered placeholders are found.
     """
     if values is None:
         values = domain_context_values()
+
+    unmatched: list[str] = []
 
     def _replace(match: re.Match) -> str:
         key = match.group(1)
         if key in values:
             return str(values[key])
+        unmatched.append(key)
         return match.group(0)  # leave unknown placeholders as-is
 
-    return _VAR_PLACEHOLDER.sub(_replace, text)
+    rendered = _VAR_PLACEHOLDER.sub(_replace, text)
+    if unmatched:
+        logger.warning(
+            "Unrendered placeholders in prompt %r: %s",
+            prompt_name,
+            unmatched,
+        )
+    return rendered
 
 
 # ---------------------------------------------------------------------------
@@ -187,12 +204,16 @@ def load_prompt(name: str) -> Prompt:
     if cache_key not in _cache:
         raw = _load_yaml(name)
         # Render domain context into all string fields that may reference it
-        raw["system"] = _render(raw.get("system", ""))
+        raw["system"] = _render(raw.get("system", ""), prompt_name=name)
         raw["user_template"] = raw.get("user_template", "")
         if raw.get("paper_card_template") is not None:
-            raw["paper_card_template"] = _render(raw["paper_card_template"])
+            raw["paper_card_template"] = _render(
+                raw["paper_card_template"], prompt_name=name
+            )
         if raw.get("paper_card_separator") is not None:
-            raw["paper_card_separator"] = _render(raw["paper_card_separator"])
+            raw["paper_card_separator"] = _render(
+                raw["paper_card_separator"], prompt_name=name
+            )
         _cache[cache_key] = Prompt.model_validate(raw)
         logger.debug("Loaded prompt: %s", name)
     return _cache[cache_key]
@@ -206,7 +227,7 @@ def load_clustering_prompts() -> ClusteringPrompts:
         # Render domain context into all system prompts
         for key in ("system", "remediation_system", "refinement_system"):
             if key in raw:
-                raw[key] = _render(raw[key])
+                raw[key] = _render(raw[key], prompt_name=f"clustering.{key}")
         _cache[cache_key] = ClusteringPrompts.model_validate(raw)
         logger.debug("Loaded clustering prompts")
     return _cache[cache_key]
@@ -242,7 +263,7 @@ def load_extraction_prompts() -> ExtractionPrompts:
         raw = _load_yaml("extraction")
         # Render domain-context variables into all string fields.
         rendered = {
-            k: _render(v) if isinstance(v, str) else v
+            k: _render(v, prompt_name=f"extraction.{k}") if isinstance(v, str) else v
             for k, v in raw.items()
         }
         _cache[key] = ExtractionPrompts.model_validate(rendered)

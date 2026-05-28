@@ -28,6 +28,9 @@ def sanitize_for_prompt(text: str | None) -> str:
     Removes triple-backtick fences, ChatML / Llama role markers, and
     collapses runs of newlines. Returns "" for None or empty input.
     Does NOT strip leading/trailing whitespace from normal content.
+
+    Note: removes ALL triple-backticks, including legitimate code fences.
+    Caller must accept that source code in paper text is stripped.
     """
     if not text:
         return ""

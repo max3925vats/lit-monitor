@@ -43,6 +43,15 @@ class RateLimitError(RuntimeError):
     """
 
 
+# Known cloud-Ollama host strings.  Inverted from the older
+# "not localhost / not 127.0.0.1" test so custom local hostnames
+# (e.g. http://my-pi:11434) are correctly treated as local.
+_CLOUD_OLLAMA_HOSTS: set[str] = {
+    "https://ollama.com",
+    "http://ollama.com",
+}
+
+
 # ---------------------------------------------------------------------------
 # Base interface
 # ---------------------------------------------------------------------------
@@ -177,10 +186,9 @@ class OllamaClient(LLMClient):
             "think": self.think,
         }
         # N13: cloud Ollama returns 400 for num_predict=-1; warn before the call.
-        if options.get("num_predict") == -1 and not (
-            self.host.startswith("http://localhost")
-            or self.host.startswith("http://127.0.0.1")
-        ):
+        # L4: invert detection — only warn for known cloud hosts, so custom
+        # local hostnames (e.g. http://my-pi:11434) don't trip the warning.
+        if options.get("num_predict") == -1 and self.host in _CLOUD_OLLAMA_HOSTS:
             logger.warning(
                 "OllamaClient: num_predict=-1 is local-Ollama only; "
                 "cloud Ollama (%s) will return 400 — pass a positive max_tokens",

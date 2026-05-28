@@ -241,6 +241,34 @@ def test_render_unknown_placeholder_left_intact():
 
 
 @pytest.mark.unit
+def test_render_warns_on_unrendered_placeholder(caplog):
+    """L4: unrendered placeholders should log a WARNING listing the typos so
+    domain_context.yaml mistakes are visible instead of silently leaking
+    {placeholder} tokens into the live prompt.
+    """
+    import logging
+
+    from scripts.llm.prompt_registry import _render
+
+    with caplog.at_level(logging.WARNING, logger="scripts.llm.prompt_registry"):
+        out = _render(
+            "text with {typo_field} and {known}",
+            {"known": "value"},
+            prompt_name="rationale",
+        )
+
+    # Unmatched placeholder is preserved in the rendered string.
+    assert "{typo_field}" in out
+    assert "value" in out
+    # And a WARNING was emitted naming both the prompt and the typo.
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert warning_records, "Expected a WARNING about unrendered placeholders"
+    msg = warning_records[-1].getMessage()
+    assert "typo_field" in msg, f"placeholder name missing from warning: {msg!r}"
+    assert "rationale" in msg, f"prompt name missing from warning: {msg!r}"
+
+
+@pytest.mark.unit
 def test_loaded_rationale_prompt_has_rendered_domain_focus():
     """End-to-end: domain_focus must be rendered in the loaded rationale prompt."""
     prompt = load_prompt("rationale")
