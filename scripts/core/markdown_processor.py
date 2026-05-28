@@ -16,6 +16,13 @@ import re as _re
 
 logger = logging.getLogger(__name__)
 
+# Fraction of the document (counted from the start) that is *skipped* when
+# searching for end-matter / references headings.  Searching only the final
+# 1 - _END_MATTER_SEARCH_WINDOW fraction avoids false positives on inline
+# phrases like "see references above" that appear in the body of the paper.
+# 0.30 means "search the last 30% of the document" (search_start = 70% mark).
+_END_MATTER_SEARCH_WINDOW = 0.30
+
 # ---------------------------------------------------------------------------
 # Heading patterns
 # ---------------------------------------------------------------------------
@@ -56,15 +63,16 @@ def strip_end_matter(text: str) -> str:
     conflict-of-interest, author contributions, data availability,
     code availability, and supplementary information headings.
 
-    Applies to the final 30% of the document only to avoid false positives
-    on inline phrases. Used exclusively before the simple extraction phase;
-    the complex phase keeps the full text (bibliography needed for key_citations).
+    Applies to the final ``_END_MATTER_SEARCH_WINDOW`` fraction of the
+    document only (currently the last 30%) to avoid false positives on inline
+    phrases. Used exclusively before the simple extraction phase; the complex
+    phase keeps the full text (bibliography needed for key_citations).
 
     Returns the original text unchanged if no end-matter heading is found.
     """
     if not text:
         return text
-    search_start = int(len(text) * 0.70)
+    search_start = int(len(text) * (1.0 - _END_MATTER_SEARCH_WINDOW))
     match = _END_MATTER_HEADING.search(text, pos=search_start)
     if match is None:
         return text
@@ -74,8 +82,9 @@ def strip_end_matter(text: str) -> str:
 def strip_references_section(text: str) -> str:
     """Remove the references/bibliography section from extracted paper text.
 
-    Searches only the final 30% of the document to avoid false positives on
-    inline phrases like 'see references above' or 'as cited in the references'.
+    Searches only the final ``_END_MATTER_SEARCH_WINDOW`` fraction of the
+    document (currently the last 30%) to avoid false positives on inline
+    phrases like 'see references above' or 'as cited in the references'.
     Returns the original text unchanged if no reference-section heading is found.
 
     Handles both plain-text headings (REFERENCES, Bibliography) and markdown
@@ -83,7 +92,7 @@ def strip_references_section(text: str) -> str:
     """
     if not text:
         return text
-    search_start = int(len(text) * 0.70)
+    search_start = int(len(text) * (1.0 - _END_MATTER_SEARCH_WINDOW))
     match = _REFERENCE_HEADING.search(text, pos=search_start)
     if match is None:
         return text

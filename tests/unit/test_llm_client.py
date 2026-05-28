@@ -677,6 +677,7 @@ def test_get_clients_for_passes_litellm_returns_dict():
         assert isinstance(client, LiteLLMClient)
 
 
+@pytest.mark.unit
 def test_get_clients_for_passes_rejects_unknown_provider():
     """Unknown provider raises ValueError up front, before any per-pass work."""
     from types import SimpleNamespace

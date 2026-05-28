@@ -45,6 +45,8 @@ paper_pass3:
   funding_conflicts_confidence: "absent"
   data_availability: null
   data_availability_confidence: "absent"
+  discovered_topics: ["topic 1", "topic 2", "topic 3"]
+  discovered_topics_confidence: "explicit"
 
 paper_pass4:
   key_citations:

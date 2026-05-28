@@ -935,22 +935,44 @@ def test_assign_themes_matches_exact_keyword(tmp_path):
 
 @pytest.mark.unit
 def test_assign_themes_fuzzy_match(tmp_path):
-    """Near-duplicate keywords (e.g. 'ProteinA' vs 'mab') still match."""
+    """L5: paper keyword that differs in punctuation from the vocab entry still
+    matches via rapidfuzz when ratio >= 85.
+
+    Fixture chosen so the fuzzy path (not the exact-match short-circuit) is
+    actually exercised:
+      paper kw:  'protein A purification'   (normalised → 'protein a purification')
+      vocab kw:  'protein-a-purification'   (normalised → 'protein-a-purification')
+      fuzz.ratio ≈ 90.9, which is above the default threshold of 85.
+    The two strings are NOT equal post-normalisation, so a match here
+    proves the fuzzy comparison path fired.
+    """
+    from rapidfuzz import fuzz
+
     from scripts.vocabulary.normalizer import assign_themes
+
+    paper_kw = "protein A purification"
+    vocab_kw = "protein-a-purification"
+    # Sanity-check the fixture so future edits can't quietly turn this back
+    # into an exact-match test: the strings must differ post-normalisation
+    # AND clear the 85 fuzzy threshold.
+    assert paper_kw.strip().lower() != vocab_kw.strip().lower()
+    assert fuzz.ratio(paper_kw.strip().lower(), vocab_kw.strip().lower()) >= 85
+
     vocab = tmp_path / "concepts.yaml"
     vocab.write_text(
         "themes:\n"
-        "  - name: Biologics\n"
+        "  - name: Downstream Processing\n"
         "    keywords:\n"
-        "      - mab\n"
-        "      - model protein\n"
+        f"      - {vocab_kw}\n"
+        "  - name: Unrelated\n"
+        "    keywords:\n"
+        "      - electrophoresis\n"
     )
-    # paper keyword "proteina" would match vocab "proteina" if passed directly
-    assign_themes(["proteina purification"], vocab_path=vocab)
-    # "proteina purification" vs "proteina" → fuzz.ratio is too low to match
-    # Pass "proteina" directly to verify the exact-match path
-    result2 = assign_themes(["mab", "flux"], vocab_path=vocab)
-    assert "Biologics" in result2
+
+    result = assign_themes([paper_kw], vocab_path=vocab)
+    # The fuzzy match should pull in 'Downstream Processing' and nothing else.
+    assert "Downstream Processing" in result
+    assert "Unrelated" not in result
 
 
 @pytest.mark.unit

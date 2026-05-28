@@ -490,11 +490,10 @@ def serve(
 @main.command("first-run")
 @click.pass_context
 def first_run(ctx: click.Context) -> None:
-    """Interactive onboarding: write credentials, configure server, launch it.
-
-    Idempotent — re-running after a previous setup will NOT re-prompt for
-    credentials and will NOT spawn a second `serve` instance if the chosen
-    port is already in use.
+    """Interactive first-time setup. Credentials are write-once (skipped if
+    `~/.config/lit-monitor/config.toml` already exists). The `[server]`
+    block (host/port/open_browser) is re-prompted every run so the user
+    can change defaults.
     """
     import socket
     import subprocess
@@ -1401,6 +1400,11 @@ def obsidian_synthesize(
     # Build topic list
     if topics_file:
         import yaml
+        # L5: cap topics-file size at 1 MB to avoid loading pathological
+        # YAML into memory and to surface obvious user error early.
+        if Path(topics_file).stat().st_size > 1_048_576:
+            click.echo("Topics file >1 MB cap; aborting", err=True)
+            sys.exit(1)
         with open(topics_file, encoding="utf-8") as fh:
             raw = yaml.safe_load(fh)
         topics_list: list[str] = raw.get("topics", []) if isinstance(raw, dict) else []

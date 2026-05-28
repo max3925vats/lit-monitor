@@ -575,6 +575,43 @@ def test_strip_end_matter_no_end_matter_unchanged():
     assert strip_end_matter(text) == text
 
 
+@pytest.mark.unit
+def test_strip_end_matter_long_review_window_constant(monkeypatch):
+    """L5: the 30% search window is a named constant; long reviews still strip.
+
+    Construct a long synthetic review whose end-matter heading sits at ~60%
+    of the document (i.e. *outside* the default last-30% search window but
+    *inside* a hypothetical 50% window). With the default
+    ``_END_MATTER_SEARCH_WINDOW = 0.30`` the heading is missed (limitation
+    documented). Bumping the constant to 0.50 catches it — proving the
+    threshold is the single knob controlling this behaviour and that the
+    long-review end-matter path still works when widened.
+    """
+    from scripts.core import markdown_processor
+    from scripts.core.markdown_processor import strip_end_matter
+
+    # Build a long doc: 60% body, then the end-matter heading + tail, then
+    # 40% of trailing references-like junk. Heading position ≈ 60% of total.
+    head_chunk = "Review body paragraph with citations [1].\n" * 600
+    tail_chunk = "Smith 2020. J Foo.\nJones 2018. Nature.\n" * 400
+    end_matter = "\n## Acknowledgements\n\nWe thank the funders.\n"
+    text = head_chunk + end_matter + tail_chunk
+
+    # Sanity-check heading position: must sit between 50% and 70%.
+    heading_pos = text.index("## Acknowledgements") / len(text)
+    assert 0.50 < heading_pos < 0.70, f"fixture drift: heading at {heading_pos:.2%}"
+
+    # Default (30%) window: heading is in the first 70% → NOT stripped.
+    assert "We thank the funders." in strip_end_matter(text)
+
+    # Widen the constant to 50% → heading is now within the search window
+    # and the long review's end-matter gets stripped as expected.
+    monkeypatch.setattr(markdown_processor, "_END_MATTER_SEARCH_WINDOW", 0.50)
+    stripped = strip_end_matter(text)
+    assert "We thank the funders." not in stripped
+    assert "Review body paragraph with citations [1]." in stripped
+
+
 # ---------------------------------------------------------------------------
 # N13 — StateDB: N7 cleanup logs WARNING on failure instead of silently passing
 # ---------------------------------------------------------------------------
