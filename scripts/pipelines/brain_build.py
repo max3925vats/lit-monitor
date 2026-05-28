@@ -133,7 +133,9 @@ def run_brain_build(
     summary.run_id = run_id
     summary.started_at = datetime.now(UTC).isoformat()
     state_db.start_run(run_id, "brain_build")
-    _topics_batch: list[tuple[str, list[str]]] = []  # M4: (doi, discovered_topics) pairs
+    # M4: (doi, discovered_topics) pairs — mirrors discovery.py:_run_ingestion
+    # (parallel collection pattern; same name reused intentionally).
+    _topics_batch: list[tuple[str, list[str]]] = []
     # K1: read pass_strategy; warn if per-pass models are configured alongside "all"
     _bb_cfg = getattr(config, "brain_build", None)
     pass_strategy = getattr(_bb_cfg, "pass_strategy", "individual")
@@ -270,6 +272,7 @@ def run_brain_build(
                         papers_processed_this_run += 1
                         if _topics:
                             _topics_batch.append((doi, _topics))
+                        consecutive_429 = 0  # reset on successful paper (symmetric with non-429 failure path)
                         # N4: cap counts successfully processed items, not attempts.
                         if max_papers is not None and papers_processed_this_run >= max_papers:
                             _limit_reached = True
@@ -278,7 +281,6 @@ def run_brain_build(
                         # N4 bonus: items skipped inside _process_paper (no .md attachment)
                         # were not previously counted — fix the undercount here.
                         summary.papers_skipped += 1
-                    consecutive_429 = 0
                 except RateLimitError as exc:
                     # V-9: exponential back-off; abort after 3 consecutive hits.
                     consecutive_429 += 1

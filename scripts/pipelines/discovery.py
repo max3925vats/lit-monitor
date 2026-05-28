@@ -370,7 +370,9 @@ def _run_ingestion(
         return
     logger.warning("Zotero poll: %d new items since version %d", len(new_items), last_version)
     consecutive_429 = 0  # V-9: abort after 3 consecutive rate-limit hits
-    _topics_batch: list[tuple[str, list[str]]] = []  # M4: (doi, discovered_topics) pairs
+    # M4: (doi, discovered_topics) pairs — mirrors brain_build.py:run_brain_build
+    # (parallel collection pattern; same name reused intentionally).
+    _topics_batch: list[tuple[str, list[str]]] = []
     for item in new_items:
         data = item.get("data", {})
         doi = (data.get("DOI") or "").strip() or None

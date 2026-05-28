@@ -21,10 +21,16 @@ confidence_header: "And these confidence fields:"
 # Footer appended after the confidence list. {conf_vals} is substituted at
 # render time with the comma-separated set of valid confidence strings
 # sourced from extraction_schema.yaml.
+# Note: {conf_vals} passes through the load-time _render() step silently because
+# it is listed in scripts/llm/prompt_registry.py::load_extraction_prompts as
+# downstream_extras["confidence_footer"]; add new placeholders there too or the
+# registry will warn them as "unrendered" at load time.
 confidence_footer: >-
   Confidence values must be one of: {conf_vals}.
   If a field value is null, its confidence must be 'absent'.
 
 # Label prefix used when multi-pass extraction names its current pass.
 # {pass_label} is substituted at render time with e.g. "Simple" or "Complex".
+# Note: {pass_label} is whitelisted in load_extraction_prompts's downstream_extras
+# alongside {conf_vals} — keep that mapping in sync when adding new placeholders.
 pass_label_prefix: "Pass: {pass_label}."

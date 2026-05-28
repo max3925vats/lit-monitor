@@ -29,35 +29,12 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field
 
+from scripts.core.path_utils import resolve_path as _resolve_path
 from scripts.llm.extraction_schema import domain_context_values
 
 logger = logging.getLogger(__name__)
 
 _PROMPTS_DIR = Path("config/prompts")
-
-
-def _resolve_path(path: Path) -> Path:
-    """Resolve a config path relative to cwd, then ancestor directories.
-
-    Falls back to a sibling `*.example.yaml` if the real file is missing.
-    This keeps the package working on a fresh clone (CI, new contributors)
-    before install.sh has seeded the personal configs.
-    """
-    candidates = [path]
-    if path.suffix == ".yaml" and not path.name.endswith(".example.yaml"):
-        candidates.append(path.with_suffix(".example.yaml"))
-
-    if path.exists():
-        return path
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        for cand in candidates:
-            full = parent / cand
-            if full.exists():
-                return full
-    raise FileNotFoundError(
-        f"Cannot find {path} — searched cwd and ancestors of {here}"
-    )
 
 
 def _load_yaml(name: str) -> dict[str, Any]:

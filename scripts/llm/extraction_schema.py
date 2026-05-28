@@ -34,6 +34,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from scripts.core.path_utils import resolve_path as _resolve_path
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -42,30 +44,6 @@ logger = logging.getLogger(__name__)
 _PAPER_SCHEMA_PATH = Path("config/extraction_schema.yaml")
 _REVIEW_SCHEMA_PATH = Path("config/review_schema.yaml")          # H4
 _DOMAIN_CONTEXT_PATH = Path("config/domain_context.yaml")
-
-
-def _resolve_path(path: Path) -> Path:
-    """Resolve a config path relative to cwd, then ancestor directories.
-
-    Falls back to a sibling `*.example.yaml` if the real file is missing.
-    This keeps the package working on a fresh clone (CI, new contributors)
-    before install.sh has seeded the personal configs.
-    """
-    candidates = [path]
-    if path.suffix == ".yaml" and not path.name.endswith(".example.yaml"):
-        candidates.append(path.with_suffix(".example.yaml"))
-
-    if path.exists():
-        return path
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        for cand in candidates:
-            full = parent / cand
-            if full.exists():
-                return full
-    raise FileNotFoundError(
-        f"Cannot find {path} — searched cwd and ancestors of {here}"
-    )
 
 
 # ---------------------------------------------------------------------------

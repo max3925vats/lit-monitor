@@ -10,7 +10,11 @@ system: >
   If a paper is clearly not relevant, write "Not relevant: <brief reason>".
 
 # Template for one paper card. Inserted into {papers} in user_template.
-# Variables: doi, title, abstract.
+# Downstream-render placeholders (filled by ranker._get_rationales): {doi}, {title}, {abstract}.
+# These pass through the load-time _render() step silently because they are listed
+# in scripts/llm/prompt_registry.py::load_prompt as allowed_extra={"doi","title","abstract"}.
+# To add a new placeholder, also update that allowed_extra set or the registry will
+# log it as an "unrendered placeholder" warning at load time.
 paper_card_template: |
   DOI: {doi}
   Title: {title}

@@ -20,7 +20,7 @@ import tomli_w
 import yaml
 
 from scripts.core.atomic_write import atomic_write_text
-from scripts.llm.prompt_registry import _resolve_path
+from scripts.core.path_utils import resolve_path as _resolve_path
 from scripts.setup._paths import SECRETS_PATH
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ def load_config(name: str) -> dict[str, Any]:
     """Load ``config/{name}.yaml``.
 
     Falls back to ``config/{name}.example.yaml`` if the real file is absent,
-    mirroring :func:`scripts.llm.prompt_registry._resolve_path`.
+    via :func:`scripts.core.path_utils.resolve_path`.
 
     Raises:
         FileNotFoundError: If neither the real nor the example file exists

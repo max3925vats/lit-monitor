@@ -23,8 +23,8 @@ import yaml as _yaml
 # affect every read inside the section helpers below. Binding the name
 # at import time would freeze the path before the patch applies.
 from scripts.core import config as _config_mod
+from scripts.core.path_utils import resolve_path as _resolve_path
 from scripts.core.strict_mode import set_strict
-from scripts.llm.extraction_schema import _resolve_path
 from scripts.setup.health_check import run_health_check
 
 logger = logging.getLogger(__name__)

@@ -25,7 +25,7 @@ from scripts.server import config_io
 def _tmp_resolver(tmp_path: Path):
     """Build a _resolve_path replacement that searches under tmp_path only.
 
-    Mirrors prompt_registry._resolve_path semantics: try the real file first,
+    Mirrors scripts.core.path_utils.resolve_path semantics: try the real file first,
     then fall back to a sibling *.example.yaml.  Restricting the search to
     tmp_path keeps tests independent of whatever sits in the real repo.
     """
