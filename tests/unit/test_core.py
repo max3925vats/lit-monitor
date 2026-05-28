@@ -346,6 +346,32 @@ def test_zotero_create_note_reads_first_successful_value(tmp_path):
 
 
 @pytest.mark.unit
+def test_zotero_create_note_raises_on_empty_successful(tmp_path):
+    """L2 review: create_note raises a clear RuntimeError when pyzotero
+    returns an empty ``successful`` dict (e.g. the create silently failed
+    and pyzotero populated ``failed`` instead). Without this guard,
+    ``next(iter(...))`` would raise StopIteration, which surfaces as a
+    confusing error for the caller.
+    """
+    from scripts.core.zotero_client import ZoteroClient
+
+    with patch("pyzotero.zotero.Zotero.__init__", return_value=None):
+        client = ZoteroClient(library_id="12345", api_key="fake_key")
+
+    client._zot.item_template = MagicMock(return_value={"itemType": "note", "note": ""})
+    client._zot.create_items = MagicMock(
+        return_value={
+            "successful": {},
+            "failed": {"0": {"code": 400, "message": "Bad Request"}},
+            "unchanged": {},
+            "success": {},
+        }
+    )
+    with pytest.raises(RuntimeError, match="no successful item"):
+        client.create_note("PARENTKEY", "<p>hi</p>")
+
+
+@pytest.mark.unit
 def test_zotero_init_rejects_old_pyzotero(tmp_path):
     """L2: __init__ raises a clear RuntimeError if last_modified_version is missing.
 

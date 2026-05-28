@@ -31,7 +31,11 @@ class ZoteroClient:
         # Surface a clear upgrade message at construction time rather than a
         # cryptic AttributeError/TypeError later in get_current_version().
         if not callable(getattr(self._zot, "last_modified_version", None)):
-            raise RuntimeError("pyzotero too old; please upgrade")
+            raise RuntimeError(
+                "pyzotero too old: ZoteroClient requires pyzotero >=1.11 "
+                "(last_modified_version() must be callable). "
+                "Try: pip install --upgrade 'pyzotero>=1.11'"
+            )
         self._local_storage = Path(os.path.expanduser(str(local_storage_path)))
     # ------------------------------------------------------------------ #
     # Collection helpers
@@ -240,8 +244,16 @@ class ZoteroClient:
         # pyzotero keys the "successful" dict by the original index of the input
         # item (as a string, e.g. "0"). Reading "0" assumes a single create
         # call always succeeds and that pyzotero never renumbers; iterate the
-        # values instead so we don't break if either changes.
-        return next(iter(result["successful"].values()))["key"]
+        # values instead so we don't break if either changes. Guard against an
+        # empty "successful" dict (e.g. when the create failed and pyzotero
+        # populated "failed" instead) — otherwise next(iter(...)) raises
+        # StopIteration, which is a confusing error to surface.
+        successful = result.get("successful") or {}
+        if not successful:
+            raise RuntimeError(
+                f"Zotero create_items returned no successful item; full result: {result!r}"
+            )
+        return next(iter(successful.values()))["key"]
     # ------------------------------------------------------------------ #
     # Author extraction helper
     # ------------------------------------------------------------------ #
