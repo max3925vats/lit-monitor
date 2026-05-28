@@ -1188,3 +1188,109 @@ def test_discovery_enrich_paper_failure_is_non_fatal(tmp_path, caplog):
         f"Expected WARNING log about S2 enrichment failure; got: "
         f"{[(r.levelname, r.getMessage()) for r in caplog.records]}"
     )
+
+# ---------------------------------------------------------------------------
+# M1 — discovery rate-limit abort after 3 consecutive 429s
+# (Mirrors test_brain_build.py::test_rate_limit_abort_after_three_consecutive_429s)
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_discovery_aborts_after_three_consecutive_rate_limits(tmp_path):
+    """
+    M1: when 3 consecutive RateLimitErrors are raised during discovery
+    ingestion, run_discovery must call state_db.finish_run with
+    status='rate_limited' and raise SystemExit(2). Mirrors the V-9 contract
+    already enforced in brain_build so cron sees a non-zero exit code instead
+    of a silent success.
+    """
+    from scripts.llm.llm_client import RateLimitError
+
+    config = _make_config(tmp_path)
+    state_db = _make_state_db(tmp_path)
+    embeddings_db = MagicMock()
+    llm = MagicMock()
+    llm.complete.return_value = "{}"
+
+    # Pre-seed baseline Zotero version so the ingestion loop runs (skipping
+    # the first-run baseline-only branch in _run_ingestion).
+    state_db.set_kv("zotero_library_version", "100")
+
+    zotero_client = MagicMock()
+    zotero_client.get_current_version.return_value = 101
+    new_items = [
+        {
+            "key": f"RLKEY{i}",
+            "data": {
+                "DOI": f"10.1000/rl{i}",
+                "title": f"Rate-Limited Paper {i}",
+                "date": "2024",
+                "publicationTitle": "J Sci",
+                "abstractNote": "Abstract.",
+                "tags": [],
+                "creators": [
+                    {"creatorType": "author", "lastName": "Smith", "firstName": "J"}
+                ],
+            },
+        }
+        for i in range(1, 4)
+    ]
+    zotero_client.get_items_since.return_value = new_items
+    zotero_client.get_markdown_attachment.return_value = "Full paper text."
+
+    # Wrap finish_run so we can assert it was called with status='rate_limited'
+    # while still letting the real DB UPDATE happen for downstream inspection.
+    real_finish_run = state_db.finish_run
+    finish_run_spy = MagicMock(side_effect=real_finish_run)
+    state_db.finish_run = finish_run_spy  # type: ignore[method-assign]
+
+    # extract_paper raises RateLimitError on every call — simulates the LLM
+    # being throttled across 3 consecutive papers.
+    with patch("scripts.pipelines.discovery.run_searches", return_value=[]), \
+         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]), \
+         patch("scripts.pipelines.discovery.rank_papers", return_value=[]), \
+         patch("scripts.pipelines.discovery.enrich_paper", return_value={}), \
+         patch("scripts.pipelines.discovery.extract_paper",
+               side_effect=RateLimitError("429 Too Many Requests")), \
+         patch("scripts.pipelines.discovery._time.sleep"):  # skip actual back-off
+        from scripts.pipelines.discovery import run_discovery
+
+        with pytest.raises(SystemExit) as exc_info:
+            run_discovery(
+                config, state_db, zotero_client, embeddings_db, llm,
+                dry_run=False,
+            )
+
+    assert exc_info.value.code == 2, (
+        f"Expected SystemExit(2) after 3 consecutive RateLimitErrors; "
+        f"got code={exc_info.value.code}"
+    )
+
+    # finish_run must have been called with status='rate_limited' (not 'complete')
+    rate_limited_calls = [
+        call for call in finish_run_spy.call_args_list
+        if call.kwargs.get("status") == "rate_limited"
+    ]
+    assert rate_limited_calls, (
+        f"Expected finish_run(status='rate_limited'); got calls: "
+        f"{finish_run_spy.call_args_list}"
+    )
+
+    # And SystemExit must have short-circuited the trailing
+    # finish_run(status='complete') call in run_discovery.
+    complete_calls = [
+        call for call in finish_run_spy.call_args_list
+        if call.kwargs.get("status") == "complete"
+    ]
+    assert not complete_calls, (
+        f"Expected no finish_run(status='complete') after rate-limit abort; "
+        f"got: {complete_calls}"
+    )
+
+    # Run log should record status='rate_limited' (mirrors brain_build test).
+    import sqlite3
+    with sqlite3.connect(tmp_path / "state.db") as conn:
+        rows = conn.execute("SELECT status FROM run_log").fetchall()
+    statuses = [r[0] for r in rows]
+    assert "rate_limited" in statuses, (
+        f"Expected 'rate_limited' in run_log.status; got: {statuses}"
+    )
