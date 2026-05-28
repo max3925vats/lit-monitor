@@ -183,6 +183,38 @@ def test_mark_brain_build_pass_paper_flips_fully_complete_at_pass_3(tmp_path):
     prog = db.get_brain_build_progress("ZKEY_I4A")
     assert prog["fully_complete"] == 1
 # ---------------------------------------------------------------------------
+# M4 — state_db SQL/migration robustness
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_mark_brain_build_pass_rejects_invalid_pass_num(tmp_path):
+    """M4: pass_num outside the static column map must raise ValueError.
+
+    Defends against a regression where upstream validation might be dropped:
+    the static `_PASS_COMPLETE_COLUMNS` lookup must still refuse unknown
+    pass numbers instead of building a column name from the integer.
+    """
+    from scripts.core.state_db import StateDB
+    db = StateDB(tmp_path / "test.db")
+    db.upsert_brain_build_progress("ZKEY_M4", "10.1/m4")
+    with pytest.raises(ValueError):
+        db.mark_brain_build_pass("ZKEY_M4", 99)
+
+
+@pytest.mark.unit
+def test_state_db_init_is_idempotent(tmp_path):
+    """M4: instantiating StateDB twice on the same path must not raise.
+
+    The PRAGMA-based migration pre-check must skip ALTERs whose columns
+    already exist on a second init, replacing the older catch-and-suppress
+    pattern that relied on SQLite error-message string-matching.
+    """
+    from scripts.core.state_db import StateDB
+    db_path = tmp_path / "test.db"
+    StateDB(db_path)
+    # Second init on the same file — would previously have hit ALTER TABLE
+    # "duplicate column" errors; with PRAGMA pre-check it is a no-op.
+    StateDB(db_path)
+# ---------------------------------------------------------------------------
 # Zotero client path construction
 # ---------------------------------------------------------------------------
 @pytest.mark.unit

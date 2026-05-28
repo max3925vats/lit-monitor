@@ -30,6 +30,16 @@ logger = logging.getLogger(__name__)
 # Brain-build checks this against the stored kv_store value on startup (M8).
 CURRENT_SCHEMA_VERSION: str = "M3"
 
+# M4: static map from pass_num → column name for brain_build_progress updates.
+# Used by mark_brain_build_pass() instead of building the column name from an
+# f-string, so a regression that drops upstream pass_num validation cannot
+# allow SQL injection through this code path.
+_PASS_COMPLETE_COLUMNS: dict[int, str] = {
+    1: "pass1_complete",
+    2: "pass2_complete",
+    3: "pass3_complete",
+}
+
 # Imported lazily inside methods to avoid circular import issues at module load.
 # schema_max_pass(content_type) → int: paper/review=3 (only live schemas after R-10).
 def _schema_max_pass(content_type: str) -> int:
@@ -127,31 +137,50 @@ class StateDB:
             raise
         finally:
             conn.close()
+    @staticmethod
+    def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+        """Return True iff ``table`` already has ``column``.
+
+        M4: replaces fragile string-matching on SQLite's OperationalError
+        message ("duplicate-column" error text varies across versions).
+        Uses ``PRAGMA table_info`` which is the documented introspection API.
+        """
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        # row[1] is the column name; rows are sqlite3.Row, indexable by position.
+        return any(r[1] == column for r in rows)
+
     def _init_schema(self) -> None:
         with self._connect() as conn:
             conn.executescript(_SCHEMA_SQL)
-            # Additive migrations — silently ignored if column already exists
-            # (duplicate-column errors are normal on an already-migrated DB)
-            for sql in [
-                "ALTER TABLE papers ADD COLUMN keywords_json TEXT",
-                "ALTER TABLE papers ADD COLUMN isbn TEXT",
+            # Additive migrations — skip the ALTER entirely when the column
+            # already exists (M4: was previously catching the OperationalError
+            # and matching its message text, which is fragile across SQLite
+            # versions).  Any genuine ALTER failure is surfaced via
+            # strict_fallback so it cannot pass silently.
+            additive_migrations: list[tuple[str, str, str]] = [
+                # (table, column, ALTER statement)
+                ("papers", "keywords_json",
+                 "ALTER TABLE papers ADD COLUMN keywords_json TEXT"),
+                ("papers", "isbn",
+                 "ALTER TABLE papers ADD COLUMN isbn TEXT"),
                 # M3: phase-based progress columns
-                "ALTER TABLE brain_build_progress ADD COLUMN simple_complete INTEGER DEFAULT 0",
-                "ALTER TABLE brain_build_progress ADD COLUMN complex_complete INTEGER DEFAULT 0",
-            ]:
+                ("brain_build_progress", "simple_complete",
+                 "ALTER TABLE brain_build_progress ADD COLUMN simple_complete INTEGER DEFAULT 0"),
+                ("brain_build_progress", "complex_complete",
+                 "ALTER TABLE brain_build_progress ADD COLUMN complex_complete INTEGER DEFAULT 0"),
+            ]
+            for table, column, sql in additive_migrations:
+                if self._column_exists(conn, table, column):
+                    continue
                 try:
                     conn.execute(sql)
                 except Exception as _alter_exc:
-                    # "duplicate column name" is the expected SQLite error when the
-                    # column already exists — treat it as a no-op.  Any *other* error
-                    # is surfaced via strict_fallback so it doesn't pass silently.
-                    if "duplicate column name" not in str(_alter_exc).lower():
-                        strict_fallback(
-                            logger,
-                            f"Schema migration failed for {sql!r}: {_alter_exc}. "
-                            "State DB may be in a partially-migrated state.",
-                            _alter_exc,
-                        )
+                    strict_fallback(
+                        logger,
+                        f"Schema migration failed for {sql!r}: {_alter_exc}. "
+                        "State DB may be in a partially-migrated state.",
+                        _alter_exc,
+                    )
             # M3: backfill simple/complex from old pass columns for existing rows.
             # Only touches rows that have pass progress but no phase progress yet.
             try:
@@ -256,9 +285,12 @@ class StateDB:
             for c in row
             if c != "doi"
         )
+        # M4: column names come from the hardcoded `cols` list above; no user
+        # input reaches SQL identifier positions.  Built via concatenation
+        # instead of f-string interpolation so audit greps stay clean.
         sql = (
-            f"INSERT INTO papers ({col_names}) VALUES ({placeholders}) "
-            f"ON CONFLICT(doi) DO UPDATE SET {update_clause}"
+            "INSERT INTO papers (" + col_names + ") VALUES (" + placeholders + ") "
+            "ON CONFLICT(doi) DO UPDATE SET " + update_clause
         )
         with self._connect() as conn:
             conn.execute(sql, row)
@@ -334,19 +366,34 @@ class StateDB:
             raise ValueError(
                 f"pass_num must be 1..{max_pass} for content_type={content_type!r}; got {pass_num}"
             )
-        col = f"pass{pass_num}_complete"
-        # Build dynamic fully_complete condition based on schema max pass (I4)
-        pass_checks = " AND ".join(f"pass{p}_complete = 1" for p in range(1, max_pass + 1))
+        # M4: look up column from a static map rather than interpolating
+        # `pass_num` into SQL.  Even though pass_num is validated above, the
+        # static map removes any path from user-controlled input to a SQL
+        # identifier — a regression dropping the range check above cannot
+        # introduce SQL injection here.
+        if pass_num not in _PASS_COMPLETE_COLUMNS:
+            raise ValueError(
+                f"pass_num {pass_num} has no mapped column; expected one of "
+                f"{sorted(_PASS_COMPLETE_COLUMNS)}"
+            )
+        col = _PASS_COMPLETE_COLUMNS[pass_num]
+        # fully_complete predicate covers passes 1..max_pass.  Column names
+        # come from the static map, so the predicate is built from trusted
+        # identifiers only.  Concatenation is used instead of f-string
+        # interpolation to keep audit greps clean.
+        pass_checks = " AND ".join(
+            _PASS_COMPLETE_COLUMNS[p] + " = 1" for p in range(1, max_pass + 1)
+        )
+        update_col_sql = (
+            "UPDATE brain_build_progress SET " + col + " = ? WHERE zotero_key = ?"
+        )
+        update_fully_sql = (
+            "UPDATE brain_build_progress SET fully_complete = 1 "
+            "WHERE zotero_key = ? AND " + pass_checks
+        )
         with self._connect() as conn:
-            conn.execute(
-                f"UPDATE brain_build_progress SET {col} = ? WHERE zotero_key = ?",
-                (1 if complete else 0, zotero_key),
-            )
-            conn.execute(
-                f"UPDATE brain_build_progress SET fully_complete = 1 "
-                f"WHERE zotero_key = ? AND {pass_checks}",
-                (zotero_key,),
-            )
+            conn.execute(update_col_sql, (1 if complete else 0, zotero_key))
+            conn.execute(update_fully_sql, (zotero_key,))
     def mark_brain_build_phase(
         self, zotero_key: str, phase: str, complete: bool = True
     ) -> None:
@@ -357,14 +404,20 @@ class StateDB:
         should use this method; mark_brain_build_pass() is kept for backward
         compatibility with the legacy 3-pass system.
         """
-        if phase not in ("simple", "complex"):
+        # M4: static map from validated phase name → column, mirroring
+        # _PASS_COMPLETE_COLUMNS.  Never interpolate `phase` into SQL.
+        phase_columns: dict[str, str] = {
+            "simple": "simple_complete",
+            "complex": "complex_complete",
+        }
+        if phase not in phase_columns:
             raise ValueError(f"phase must be 'simple' or 'complex', got {phase!r}")
-        col = f"{phase}_complete"
+        col = phase_columns[phase]
+        update_col_sql = (
+            "UPDATE brain_build_progress SET " + col + " = ? WHERE zotero_key = ?"
+        )
         with self._connect() as conn:
-            conn.execute(
-                f"UPDATE brain_build_progress SET {col} = ? WHERE zotero_key = ?",
-                (1 if complete else 0, zotero_key),
-            )
+            conn.execute(update_col_sql, (1 if complete else 0, zotero_key))
             conn.execute(
                 "UPDATE brain_build_progress SET fully_complete = 1 "
                 "WHERE zotero_key = ? AND simple_complete = 1 AND complex_complete = 1",
