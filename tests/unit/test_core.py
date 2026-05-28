@@ -286,6 +286,83 @@ def test_zotero_get_current_version_raises_on_non_int(tmp_path):
     client._zot.last_modified_version = MagicMock(return_value="not-an-int")
     with pytest.raises(RuntimeError, match="pyzotero last_modified_version\\(\\) returned"):
         client.get_current_version()
+
+
+@pytest.mark.unit
+def test_zotero_paginate_early_exit(tmp_path):
+    """L2: _paginate stops fetching once `limit` items have been collected.
+
+    Against a 50k-item library, the previous "fetch everything then slice"
+    pattern made hundreds of unnecessary round-trips when the caller only
+    wanted, say, 10 items. The fix plumbs ``limit`` into ``_paginate`` so
+    pagination breaks early.
+    """
+    from scripts.core.zotero_client import ZoteroClient
+
+    with patch("pyzotero.zotero.Zotero.__init__", return_value=None):
+        client = ZoteroClient(library_id="12345", api_key="fake_key")
+
+    # fetch_fn returns a full 100-item page every call. Without the limit
+    # plumbing, this loop would only stop on an empty page (never, in this
+    # test) — so the early-exit branch is what bounds the call count.
+    call_count = {"n": 0}
+
+    def fake_fetch(start, page_size):
+        call_count["n"] += 1
+        return [{"key": f"K{start + i}"} for i in range(page_size)]
+
+    items = client._paginate(fake_fetch, page_size=100, limit=10)
+    # Pagination must stop after the first full page (>= limit collected).
+    assert call_count["n"] == 1
+    # The returned list may contain >= limit; slicing is the caller's job.
+    assert len(items) >= 10
+
+
+@pytest.mark.unit
+def test_zotero_create_note_reads_first_successful_value(tmp_path):
+    """L2: create_note iterates result["successful"].values() instead of "0".
+
+    pyzotero's create_items result is keyed by the input item's index as a
+    string. Hardcoding "0" is fragile if pyzotero ever changes the keying
+    scheme; reading the first value is robust.
+    """
+    from scripts.core.zotero_client import ZoteroClient
+
+    with patch("pyzotero.zotero.Zotero.__init__", return_value=None):
+        client = ZoteroClient(library_id="12345", api_key="fake_key")
+
+    client._zot.item_template = MagicMock(return_value={"itemType": "note", "note": ""})
+    client._zot.create_items = MagicMock(
+        return_value={
+            # Use a non-"0" key to prove we are no longer indexing by "0".
+            "successful": {"7": {"key": "NEWNOTEKEY"}},
+            "failed": {},
+            "unchanged": {},
+            "success": {"7": "NEWNOTEKEY"},
+        }
+    )
+    new_key = client.create_note("PARENTKEY", "<p>hi</p>")
+    assert new_key == "NEWNOTEKEY"
+
+
+@pytest.mark.unit
+def test_zotero_init_rejects_old_pyzotero(tmp_path):
+    """L2: __init__ raises a clear RuntimeError if last_modified_version is missing.
+
+    Discovery polling depends on ``last_modified_version()``; if a user has
+    pyzotero <1.11 installed, we want a loud upgrade prompt at construction
+    time rather than a cryptic AttributeError deep in the polling loop.
+    """
+    from scripts.core.zotero_client import ZoteroClient
+
+    class FakeOldZotero:
+        def __init__(self, *_args, **_kwargs):
+            # Intentionally no last_modified_version attribute.
+            pass
+
+    with patch("scripts.core.zotero_client.zotero.Zotero", FakeOldZotero):
+        with pytest.raises(RuntimeError, match="pyzotero too old"):
+            ZoteroClient(library_id="12345", api_key="fake_key")
 # ---------------------------------------------------------------------------
 # strip_references_section (A5) / strip_end_matter (M2)
 # ---------------------------------------------------------------------------

@@ -26,6 +26,12 @@ class ZoteroClient:
         local_storage_path: str | Path = "~/Zotero/storage",
     ) -> None:
         self._zot = zotero.Zotero(library_id, library_type, api_key)
+        # Guard: discovery polling relies on last_modified_version() being a
+        # callable method on the pyzotero client (added in pyzotero >=1.11).
+        # Surface a clear upgrade message at construction time rather than a
+        # cryptic AttributeError/TypeError later in get_current_version().
+        if not callable(getattr(self._zot, "last_modified_version", None)):
+            raise RuntimeError("pyzotero too old; please upgrade")
         self._local_storage = Path(os.path.expanduser(str(local_storage_path)))
     # ------------------------------------------------------------------ #
     # Collection helpers
@@ -65,14 +71,18 @@ class ZoteroClient:
     def get_collection_items(self, collection_name: str, limit: int | None = None) -> list[dict]:
         """Return all items in a Zotero collection (paginated)."""
         key = self.get_collection_key(collection_name)
-        items = self._paginate(lambda start, lim: self._zot.collection_items(key, start=start, limit=lim))
+        items = self._paginate(
+            lambda start, lim: self._zot.collection_items(key, start=start, limit=lim),
+            limit=limit,
+        )
         return items[:limit] if limit is not None else items
 
     def get_book_collection_items(self, collection_name: str, limit: int | None = None) -> list[dict]:
         """Return book-type items from a Zotero collection."""
         key = self.get_collection_key(collection_name)
         items = self._paginate(
-            lambda start, lim: self._zot.collection_items(key, itemType="book", start=start, limit=lim)
+            lambda start, lim: self._zot.collection_items(key, itemType="book", start=start, limit=lim),
+            limit=limit,
         )
         return items[:limit] if limit is not None else items
 
@@ -82,15 +92,31 @@ class ZoteroClient:
         Use this when you want everything in the library rather than a specific
         collection. Fetches via GET /users/<id>/items with 100-item pages.
         """
-        items = self._paginate(lambda start, lim: self._zot.items(start=start, limit=lim))
+        items = self._paginate(
+            lambda start, lim: self._zot.items(start=start, limit=lim),
+            limit=limit,
+        )
         logger.info("get_all_library_items: fetched %d total items", len(items))
         return items[:limit] if limit is not None else items
 
     # ------------------------------------------------------------------ #
     # Internal pagination helper
     # ------------------------------------------------------------------ #
-    def _paginate(self, fetch_fn, page_size: int = 100) -> list[dict]:
-        """Walk through Zotero API pages until an empty page is returned."""
+    def _paginate(
+        self,
+        fetch_fn,
+        page_size: int = 100,
+        limit: int | None = None,
+    ) -> list[dict]:
+        """Walk through Zotero API pages until an empty page is returned.
+
+        If ``limit`` is provided, pagination stops once at least ``limit`` items
+        have been collected. The returned list may still contain slightly more
+        than ``limit`` (callers should slice if exact cardinality matters), but
+        no further network round-trips are made — important for libraries with
+        tens of thousands of items where the previous "fetch everything, then
+        slice" path was wasteful.
+        """
         all_items: list[dict] = []
         start = 0
         while True:
@@ -98,6 +124,8 @@ class ZoteroClient:
             if not batch:
                 break
             all_items.extend(batch)
+            if limit is not None and len(all_items) >= limit:
+                break
             if len(batch) < page_size:
                 break
             start += page_size
@@ -209,7 +237,11 @@ class ZoteroClient:
         template = self._zot.item_template("note")
         template["note"] = note_html
         result = self._zot.create_items([template], parent_key)
-        return result["successful"]["0"]["key"]
+        # pyzotero keys the "successful" dict by the original index of the input
+        # item (as a string, e.g. "0"). Reading "0" assumes a single create
+        # call always succeeds and that pyzotero never renumbers; iterate the
+        # values instead so we don't break if either changes.
+        return next(iter(result["successful"].values()))["key"]
     # ------------------------------------------------------------------ #
     # Author extraction helper
     # ------------------------------------------------------------------ #
