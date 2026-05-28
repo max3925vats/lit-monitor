@@ -18,6 +18,7 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
+from scripts.core import atomic_write as _atomic_write_mod
 from scripts.server import config_io
 
 
@@ -77,7 +78,9 @@ def test_save_config_atomic_replace(monkeypatch, tmp_path: Path) -> None:
     (tmp_path / "config").mkdir()
 
     replace_mock = MagicMock()
-    monkeypatch.setattr(config_io.os, "replace", replace_mock)
+    # os.replace now fires from scripts.core.atomic_write (config_io delegates
+    # to atomic_write_text), so patch the helper module's os, not config_io's.
+    monkeypatch.setattr(_atomic_write_mod.os, "replace", replace_mock)
 
     config_io.save_config("foo", {"a": 1})
 

@@ -22,6 +22,7 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, nodes
 from jinja2.ext import Extension
 
+from scripts.core.atomic_write import atomic_write_text
 from scripts.llm.extractor import compute_confidence_score
 
 
@@ -239,7 +240,6 @@ def update_note_preserve_persist_zones(path: str | Path, new_content: str) -> No
     path.parent.mkdir(parents=True, exist_ok=True)
     # Atomic write so a crash mid-write cannot truncate or corrupt the note —
     # the previous file content (if any) survives until os.replace flips it.
-    from scripts.core.atomic_write import atomic_write_text
     atomic_write_text(path, new_content)
 # ---------------------------------------------------------------------------
 # Note writers

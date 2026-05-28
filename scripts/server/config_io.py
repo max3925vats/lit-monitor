@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 import os
-import tempfile
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -20,6 +19,7 @@ from typing import Any
 import tomli_w
 import yaml
 
+from scripts.core.atomic_write import atomic_write_text
 from scripts.llm.prompt_registry import _resolve_path
 from scripts.setup._paths import SECRETS_PATH
 
@@ -115,25 +115,12 @@ def save_server_config(host: str, port: int, open_browser: bool) -> None:
 
 
 def _atomic_write(target: Path, content: str) -> Path:
-    """Write ``content`` to ``target`` via a same-directory temp file + os.replace.
+    """Atomically write text to ``target`` (delegates to scripts.core.atomic_write).
 
-    The temp file is created in the target's parent so the eventual rename is
-    a same-filesystem operation (atomic on POSIX).  If the rename fails we
-    do our best to unlink the leftover temp file before re-raising.
+    Kept as a thin wrapper so existing callers (save_config / save_secrets) keep
+    working unchanged.  The canonical implementation lives in
+    :func:`scripts.core.atomic_write.atomic_write_text`, which additionally
+    fsyncs before the rename — closing the power-loss window that this
+    function's previous local copy had.
     """
-    fd, tmp = tempfile.mkstemp(
-        dir=str(target.parent),
-        prefix=f".{target.name}.",
-        suffix=".tmp",
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(content)
-        os.replace(tmp, target)
-    except Exception:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
-    return target
+    return atomic_write_text(target, content)
