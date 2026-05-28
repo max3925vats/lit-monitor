@@ -6,7 +6,9 @@ lazy-loads a per-check detail panel below the topnav.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from html import escape
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
@@ -32,7 +34,7 @@ def _severity_of(result) -> str:
     return "fail"
 
 
-def _aggregate_state(results: dict[str, dict[str, tuple[bool, str]]]) -> str:
+def _aggregate_state(results: dict[str, dict[str, Sequence[Any]]]) -> str:
     """Roll up the per-section dict into one of four badge states.
 
     Rule: fails drive the badge, warns only inform the detail panel.

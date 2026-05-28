@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from scripts.setup.check_configured import CheckResult
 from scripts.setup.diagnose import run_diagnose
 from scripts.setup.health_check import run_health_check
 
@@ -10,9 +11,10 @@ from scripts.setup.health_check import run_health_check
 class TestRunHealthCheck:
     def test_run_health_check_returns_four_keys(self) -> None:
         """The structured result must group probes by service domain."""
+        cfg = {"probe": CheckResult(True, "ok", "ok")}
         ok = {"probe": (True, "ok")}
         with (
-            patch("scripts.setup.check_configured.check_configured", return_value=ok),
+            patch("scripts.setup.check_configured.check_configured", return_value=cfg),
             patch("scripts.setup.check_ollama.check_ollama", return_value=ok),
             patch("scripts.setup.check_zotero.check_zotero", return_value=ok),
             patch("scripts.setup.check_vault.check_vault", return_value=ok),
@@ -25,8 +27,10 @@ class TestRunHealthCheck:
         assert set(result.keys()) == {"config", "ollama", "zotero", "vault"}
 
     def test_run_health_check_preserves_check_tuples(self) -> None:
-        """Probe results must pass through unchanged — same tuple, same message."""
-        fake = {"foo": (False, "bar")}
+        """Probe results must pass through unchanged — same shape, same message."""
+        # check_configured returns CheckResult NamedTuples; the
+        # service-probe mocks return plain 2-tuples (their real contract).
+        fake = {"foo": CheckResult(False, "bar", "fail")}
         ok = {"ok": (True, "ok")}
         with (
             patch("scripts.setup.check_configured.check_configured", return_value=fake),
@@ -39,7 +43,7 @@ class TestRunHealthCheck:
             ),
         ):
             result = run_health_check()
-        assert result["config"]["foo"] == (False, "bar")
+        assert result["config"]["foo"] == CheckResult(False, "bar", "fail")
 
 
 class TestRunDiagnose:
@@ -66,3 +70,37 @@ class TestRunDiagnose:
         # Service-check rows are namespaced with the section prefix so
         # they cannot collide with config-file keys.
         assert result["config.x"] == (True, "y")
+
+    def test_run_diagnose_handles_3_tuple_check_results(self) -> None:
+        """Regression for Audit_28_May_2026 H2: run_diagnose must accept
+        ``CheckResult`` 3-tuples in the ``config`` sub-dict without raising
+        ``ValueError: too many values to unpack``.
+
+        Pre-H2 ``diagnose.py:146`` did ``(ok, msg) = value``, which broke
+        on real ``CheckResult`` NamedTuples (3-tuples) — the bug was only
+        masked by test mocks that returned plain 2-tuples.
+        """
+        hc = {
+            "config": {
+                "secrets_file": CheckResult(True, "found", "ok"),
+                "zotero.api_key": CheckResult(False, "missing", "fail"),
+                "scopus.api_key": CheckResult(True, "skipped", "warn"),
+            },
+            # Service probes still return 2-tuples — must not regress.
+            "ollama": {"reachable": (True, "ok")},
+            "zotero": {"reachable": (False, "down")},
+            "vault": {"vault_exists": (True, "ok")},
+        }
+        with patch(
+            "scripts.setup.diagnose.run_health_check",
+            return_value=hc,
+        ):
+            # Pre-H2 this line raised ValueError.
+            result = run_diagnose(config_only=False)
+        # Both shapes must have been merged into the flat result dict.
+        assert result["config.secrets_file"] == (True, "found")
+        assert result["config.zotero.api_key"] == (False, "missing")
+        assert result["config.scopus.api_key"] == (True, "skipped")
+        assert result["ollama.reachable"] == (True, "ok")
+        assert result["zotero.reachable"] == (False, "down")
+        assert result["vault.vault_exists"] == (True, "ok")

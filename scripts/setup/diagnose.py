@@ -12,6 +12,7 @@ the validation logic with the web UI.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -141,9 +142,15 @@ def run_diagnose(*, config_only: bool = False) -> dict[str, tuple[bool, str]]:
     results.update(check_prompts())
 
     if not config_only:
-        hc: dict[str, dict[str, tuple[bool, str]]] = run_health_check()
+        # The "config" sub-dict contains CheckResult NamedTuples (3-tuples
+        # of ok/message/severity), while the ollama/zotero/vault sub-dicts
+        # contain plain (ok, msg) 2-tuples. Use indexed access so both
+        # shapes pass through without ValueError. See Audit_28_May_2026.md
+        # bundle H2 for the regression that motivated this.
+        hc: dict[str, dict[str, Sequence[Any]]] = run_health_check()
         for section, sub in hc.items():
-            for check_name, (ok, msg) in sub.items():
+            for check_name, value in sub.items():
+                ok, msg = value[0], value[1]
                 # Namespace service-check keys so they don't collide with
                 # config-file keys in the flat dict.
                 results[f"{section}.{check_name}"] = (ok, msg)

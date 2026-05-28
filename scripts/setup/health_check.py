@@ -7,6 +7,8 @@ server (no Click side-effects, no exit codes — caller decides what to do).
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
+from typing import Any
 
 # Import the modules (not the functions) so monkeypatching at the source
 # module path — e.g. ``patch("scripts.setup.check_configured.check_configured")``
@@ -34,16 +36,21 @@ def _get_configured_ollama_model() -> str | None:
         return None
 
 
-def run_health_check() -> dict[str, dict[str, tuple[bool, str]]]:
+def run_health_check() -> dict[str, dict[str, Sequence[Any]]]:
     """Run every health probe and return structured results.
 
     Returns:
         ``{"config": {...}, "ollama": {...}, "zotero": {...}, "vault": {...}}``
 
-    Each sub-dict is the same ``{check_name: (ok, message)}`` shape the
-    underlying probes already return. The grouping preserves per-check
-    granularity so callers can render any subset (e.g., a 4-state badge
-    rollup vs. a full diagnostic table).
+    The ``config`` sub-dict's values are :class:`CheckResult` NamedTuples
+    (3-tuples of ok/message/severity). The ``ollama``/``zotero``/``vault``
+    sub-dicts return plain ``(ok, msg)`` 2-tuples. Consumers must use
+    indexed access (``value[0]``/``value[1]``) to handle both shapes —
+    tuple unpacking via ``(ok, msg) = value`` will raise ``ValueError`` on
+    the 3-tuple ``CheckResult`` rows.
+
+    The grouping preserves per-check granularity so callers can render any
+    subset (e.g., a 4-state badge rollup vs. a full diagnostic table).
     """
     model = _get_configured_ollama_model()
     return {

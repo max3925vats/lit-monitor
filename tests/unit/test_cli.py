@@ -179,7 +179,8 @@ class TestCliStatus:
         assert "extraction_complete" in result.output
 class TestCliCheck:
     def test_check_all_pass(self, runner):
-        all_ok = {"key": (True, "all good")}
+        from scripts.setup.check_configured import CheckResult
+        all_ok = {"key": CheckResult(True, "all good", "ok")}
         with (
             patch("scripts.cli._make_config", return_value=MagicMock()),
             patch("scripts.cli._load_secrets", return_value={}),
@@ -191,8 +192,9 @@ class TestCliCheck:
         assert result.exit_code == 0
         assert "Tesseract" not in result.output
     def test_check_fails_on_bad_config(self, runner):
-        bad = {"zotero.api_key": (False, "Missing")}
-        ok = {"x": (True, "ok")}
+        from scripts.setup.check_configured import CheckResult
+        bad = {"zotero.api_key": CheckResult(False, "Missing", "fail")}
+        ok = {"x": CheckResult(True, "ok", "ok")}
         with (
             patch("scripts.cli._make_config", return_value=MagicMock()),
             patch("scripts.cli._load_secrets", return_value={}),
@@ -203,7 +205,8 @@ class TestCliCheck:
             result = runner.invoke(main, ["check"])
         assert result.exit_code == 1
     def test_check_shows_api_key_from_config_toml(self, runner):
-        all_ok = {"key": (True, "all good")}
+        from scripts.setup.check_configured import CheckResult
+        all_ok = {"key": CheckResult(True, "all good", "ok")}
         mock_cfg = MagicMock()
         mock_cfg.brain_build.ollama_host = "https://ollama.com"
         secrets = {"ollama": {"api_key": "secret-from-toml"}}
@@ -219,7 +222,8 @@ class TestCliCheck:
             result = runner.invoke(main, ["check"])
         assert "config.toml" in result.output
     def test_check_shows_api_key_from_env_var(self, runner):
-        all_ok = {"key": (True, "all good")}
+        from scripts.setup.check_configured import CheckResult
+        all_ok = {"key": CheckResult(True, "all good", "ok")}
         mock_cfg = MagicMock()
         mock_cfg.brain_build.ollama_host = "https://ollama.com"
         env = {"OLLAMA_API_KEY": "env-key-value"}
@@ -234,7 +238,8 @@ class TestCliCheck:
             result = runner.invoke(main, ["check"])
         assert "env var" in result.output
     def test_check_local_ollama_no_key_is_ok(self, runner):
-        all_ok = {"key": (True, "all good")}
+        from scripts.setup.check_configured import CheckResult
+        all_ok = {"key": CheckResult(True, "all good", "ok")}
         mock_cfg = MagicMock()
         mock_cfg.brain_build.ollama_host = "http://localhost:11434"
         env = {}
@@ -967,19 +972,24 @@ class TestStrictModeFlag:
     def test_strict_flag_sets_strict_mode(self, runner) -> None:
         """--strict must activate is_strict() during the subcommand run."""
         import scripts.core.strict_mode as _sm
+        from scripts.setup.check_configured import CheckResult
 
         captured: list[bool] = []
 
         def _fake_check_configured():
             captured.append(_sm.is_strict())
-            return {"key": (True, "ok")}
+            return {"key": CheckResult(True, "ok", "ok")}
 
+        # check_ollama / check_zotero return plain 2-tuples (their real
+        # contract); only check_configured returns CheckResult.
+        ollama_ok = {"key": (True, "ok")}
+        zotero_ok = {"key": (True, "ok")}
         with (
             patch("scripts.cli._make_config", return_value=MagicMock()),
             patch("scripts.cli._load_secrets", return_value={}),
             patch("scripts.setup.check_configured.check_configured", side_effect=_fake_check_configured),
-            patch("scripts.setup.check_ollama.check_ollama", return_value={"key": (True, "ok")}),
-            patch("scripts.setup.check_zotero.check_zotero", return_value={"key": (True, "ok")}),
+            patch("scripts.setup.check_ollama.check_ollama", return_value=ollama_ok),
+            patch("scripts.setup.check_zotero.check_zotero", return_value=zotero_ok),
         ):
             result = runner.invoke(main, ["--strict", "check"])
 
@@ -991,13 +1001,15 @@ class TestStrictModeFlag:
 
     def test_verbose_and_strict_combine(self, runner) -> None:
         """--verbose --strict together must not conflict."""
-        all_ok = {"key": (True, "all good")}
+        from scripts.setup.check_configured import CheckResult
+        cfg_ok = {"key": CheckResult(True, "all good", "ok")}
+        svc_ok = {"key": (True, "all good")}
         with (
             patch("scripts.cli._make_config", return_value=MagicMock()),
             patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.setup.check_configured.check_configured", return_value=all_ok),
-            patch("scripts.setup.check_ollama.check_ollama", return_value=all_ok),
-            patch("scripts.setup.check_zotero.check_zotero", return_value=all_ok),
+            patch("scripts.setup.check_configured.check_configured", return_value=cfg_ok),
+            patch("scripts.setup.check_ollama.check_ollama", return_value=svc_ok),
+            patch("scripts.setup.check_zotero.check_zotero", return_value=svc_ok),
         ):
             result = runner.invoke(main, ["--strict", "--verbose", "check"])
         assert result.exit_code == 0, result.output

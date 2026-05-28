@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from scripts.server.app import create_app
+from scripts.setup.check_configured import CheckResult
 
 
 @pytest.fixture
@@ -26,10 +27,10 @@ def test_health_badge_returns_html_fragment(client: TestClient) -> None:
 def test_health_badge_unconfigured_when_secrets_missing(client: TestClient) -> None:
     """When the secrets file is missing, the badge must roll up to 'unconfigured'."""
     fake_results = {
-        "config": {"secrets_file": (False, "missing")},
-        "ollama": {"reachable": (True, "ok")},
-        "zotero": {"reachable": (True, "ok")},
-        "vault": {"vault_exists": (True, "ok")},
+        "config": {"secrets_file": CheckResult(False, "missing", "fail")},
+        "ollama": {"reachable": CheckResult(True, "ok", "ok")},
+        "zotero": {"reachable": CheckResult(True, "ok", "ok")},
+        "vault": {"vault_exists": CheckResult(True, "ok", "ok")},
     }
     with patch(
         "scripts.setup.health_check.run_health_check", return_value=fake_results
@@ -42,7 +43,7 @@ def test_health_badge_unconfigured_when_secrets_missing(client: TestClient) -> N
 @pytest.mark.unit
 def test_health_badge_healthy_when_all_pass(client: TestClient) -> None:
     """All-True probes should produce a healthy badge."""
-    ok = {"probe": (True, "ok")}
+    ok = {"probe": CheckResult(True, "ok", "ok")}
     fake_results = {"config": ok, "ollama": ok, "zotero": ok, "vault": ok}
     with patch(
         "scripts.setup.health_check.run_health_check", return_value=fake_results
@@ -61,8 +62,8 @@ def test_health_badge_degraded_when_one_section_fails(client: TestClient) -> Non
       - 1 fail  → degraded (yellow)
       - ≥2 fails → misconfigured (red)
     """
-    ok = {"probe": (True, "ok")}
-    bad = {"probe": (False, "down")}
+    ok = {"probe": CheckResult(True, "ok", "ok")}
+    bad = {"probe": CheckResult(False, "down", "fail")}
     fake_results = {"config": ok, "ollama": bad, "zotero": ok, "vault": ok}
     with patch(
         "scripts.setup.health_check.run_health_check", return_value=fake_results
@@ -75,8 +76,8 @@ def test_health_badge_degraded_when_one_section_fails(client: TestClient) -> Non
 @pytest.mark.unit
 def test_health_badge_misconfigured_when_two_fail(client: TestClient) -> None:
     """Two or more failing sections → misconfigured (red)."""
-    ok = {"probe": (True, "ok")}
-    bad = {"probe": (False, "down")}
+    ok = {"probe": CheckResult(True, "ok", "ok")}
+    bad = {"probe": CheckResult(False, "down", "fail")}
     fake_results = {"config": ok, "ollama": bad, "zotero": bad, "vault": ok}
     with patch(
         "scripts.setup.health_check.run_health_check", return_value=fake_results
@@ -89,8 +90,8 @@ def test_health_badge_misconfigured_when_two_fail(client: TestClient) -> None:
 @pytest.mark.unit
 def test_health_badge_detail_returns_table(client: TestClient) -> None:
     """Detail endpoint must render a per-check table with at least one pill."""
-    ok = {"probe": (True, "ok")}
-    bad = {"probe": (False, "down")}
+    ok = {"probe": CheckResult(True, "ok", "ok")}
+    bad = {"probe": CheckResult(False, "down", "fail")}
     fake_results = {"config": ok, "ollama": bad, "zotero": ok, "vault": ok}
     with patch(
         "scripts.setup.health_check.run_health_check", return_value=fake_results
@@ -208,10 +209,14 @@ def test_health_badge_detail_escapes_html_in_messages():
     """If a check returns a message containing <, >, &, the detail panel must escape them."""
     def fake_check():
         return {
-            "config": {"secrets_file": (True, "ok")},
-            "ollama": {"ollama": (False, "<script>alert('xss')</script>")},
-            "zotero": {"zotero": (True, "ok & fine")},
-            "vault": {"vault_path_set": (True, "ok")},
+            "config": {"secrets_file": CheckResult(True, "ok", "ok")},
+            "ollama": {
+                "ollama": CheckResult(
+                    False, "<script>alert('xss')</script>", "fail"
+                )
+            },
+            "zotero": {"zotero": CheckResult(True, "ok & fine", "ok")},
+            "vault": {"vault_path_set": CheckResult(True, "ok", "ok")},
         }
     with patch("scripts.setup.health_check.run_health_check", side_effect=fake_check):
         client = TestClient(create_app())
