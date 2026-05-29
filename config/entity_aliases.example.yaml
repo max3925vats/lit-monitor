@@ -1,0 +1,35 @@
+# G2: curated pharma/bio entity aliases. Copy to entity_aliases.yaml to enable.
+# Surface forms map to canonical forms within the same type. Case-insensitive
+# matching: the normalizer lowercases keys at load time.
+
+material:
+  mAb: monoclonal antibody
+  mAbs: monoclonal antibody
+  HCP: host cell protein
+  HCPs: host cell protein
+  Protein A: protein A
+  ProtA: protein A
+  IgG: immunoglobulin G
+
+method:
+  IEX: ion exchange chromatography
+  AEX: anion exchange chromatography
+  CEX: cation exchange chromatography
+  HIC: hydrophobic interaction chromatography
+  UF: ultrafiltration
+  DF: diafiltration
+  UFDF: ultrafiltration-diafiltration
+  TFF: tangential flow filtration
+  SEC: size exclusion chromatography
+  HPLC: high-performance liquid chromatography
+
+topic:
+  DSP: downstream processing
+  USP: upstream processing
+  CMC: chemistry manufacturing and controls
+  PD: process development
+  FFP: fill and finish
+
+journal:
+  Biotechnol Bioeng: Biotechnology and Bioengineering
+  J Chromatogr A: Journal of Chromatography A
