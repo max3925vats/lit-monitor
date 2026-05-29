@@ -2233,6 +2233,117 @@ def reset_all(ctx: click.Context) -> None:
 
 
 # ---------------------------------------------------------------------------
+# graph — knowledge graph operator commands (G10)
+# ---------------------------------------------------------------------------
+@main.group("graph")
+def graph_cmd() -> None:
+    """Knowledge graph operator commands."""
+
+
+@graph_cmd.command("backfill")
+@click.option(
+    "--all", "all_papers",
+    is_flag=True, default=False,
+    help="Process every paper where graph_indexed=0.",
+)
+@click.option("--doi", default=None, help="Process this single DOI.")
+@click.option(
+    "--since", default=None,
+    help="Only process papers updated since YYYY-MM-DD.",
+)
+def graph_backfill(all_papers: bool, doi: str | None, since: str | None) -> None:
+    """Backfill the knowledge graph from existing state.db papers."""
+    from datetime import datetime as dt
+
+    from rich.progress import Progress
+
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+    from scripts.graph import safe_graph_db
+    from scripts.graph.backfill import backfill_papers
+
+    if not (all_papers or doi or since):
+        raise click.UsageError("Must specify --all, --doi, or --since.")
+
+    config = get_config()
+    state_db = StateDB(config.state_db.path)
+    graph_db = safe_graph_db()
+    if graph_db is None:
+        raise click.UsageError(
+            "[graph] extra not installed. Install with: uv sync --extra graph"
+        )
+
+    since_dt = dt.fromisoformat(since) if since else None
+    filter_doi = doi if not all_papers else None
+
+    try:
+        with Progress() as progress:
+            task = progress.add_task("Backfilling...", total=None)
+
+            def _cb(d: str, done: int, total: int) -> None:  # noqa: ANN001
+                progress.update(task, completed=done, total=total)
+
+            count = backfill_papers(
+                state_db, graph_db,
+                filter_doi=filter_doi,
+                since=since_dt,
+                progress_callback=_cb,
+            )
+        click.echo(f"Backfilled {count} papers.")
+    finally:
+        try:
+            graph_db.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@graph_cmd.command("rebuild")
+@click.option(
+    "--all", "all_data",
+    is_flag=True, default=False,
+    help="Drop all graph data and re-backfill from state.db.",
+)
+@click.option(
+    "--aliases-only",
+    is_flag=True, default=False,
+    help="Re-normalize existing Entity nodes against the current alias YAML.",
+)
+@click.confirmation_option(prompt="This is destructive — continue?")
+def graph_rebuild(all_data: bool, aliases_only: bool) -> None:
+    """Rebuild the knowledge graph (destructive)."""
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+    from scripts.graph import safe_graph_db
+    from scripts.graph.backfill import rebuild_aliases_only, rebuild_all
+
+    if not (all_data or aliases_only):
+        raise click.UsageError("Must specify --all or --aliases-only.")
+    if all_data and aliases_only:
+        raise click.UsageError("--all and --aliases-only are mutually exclusive.")
+
+    config = get_config()
+    state_db = StateDB(config.state_db.path)
+    graph_db = safe_graph_db()
+    if graph_db is None:
+        raise click.UsageError(
+            "[graph] extra not installed. Install with: uv sync --extra graph"
+        )
+
+    try:
+        if all_data:
+            count = rebuild_all(state_db, graph_db)
+            click.echo(f"Rebuilt graph from scratch; {count} papers re-indexed.")
+        else:
+            count = rebuild_aliases_only(graph_db)
+            click.echo(f"Re-normalized {count} Entity nodes.")
+    finally:
+        try:
+            graph_db.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
