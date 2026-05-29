@@ -248,14 +248,15 @@ def _delete_file(path: Path) -> None:
 
 
 def _delete_directory(path: Path) -> None:
-    """Remove a directory tree. Missing → no-op.
+    """Recursively delete a directory, logging failures via an onerror callback.
 
-    Uses ``ignore_errors=True`` because a half-deleted directory is the worst
-    possible end state for the chroma persist dir: chromadb will reopen it
-    and crash with ``SQLITE_READONLY_DBMOVED``. Untouched works (we'll just
-    report partial success); fully deleted works (next run rebuilds it);
-    half-deleted does not. Surface any errors via a warning before swallowing
-    them so the failure is at least visible in the logs.
+    Uses an onerror callback rather than ignore_errors=True (which would hide
+    all failures) or the default raise-on-first-failure (which would leave the
+    dir half-deleted). Both untouched and fully-deleted are valid post-states;
+    half-deleted is not — for the chroma persist dir in particular, a
+    half-deleted tree causes chromadb to reopen it and crash with
+    ``SQLITE_READONLY_DBMOVED``. Surface any per-entry failures via a warning
+    so they are visible in the logs.
     """
     if not path.exists():
         return
@@ -264,6 +265,8 @@ def _delete_directory(path: Path) -> None:
     def _onerror(_func: Any, target: str, exc_info: Any) -> None:
         errors.append((target, exc_info[1]))
 
+    # shutil.rmtree onerror is deprecated in Python 3.12+ in favor of onexc; revisit
+    # when min Python >= 3.12 (currently 3.11).
     shutil.rmtree(path, onerror=_onerror)
     if errors:
         for target, exc in errors:

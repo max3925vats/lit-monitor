@@ -1967,7 +1967,7 @@ def _run_state_reset(ctx: click.Context) -> None:
     """
     try:
         config = _make_config()
-    except (FileNotFoundError, KeyError) as exc:
+    except (FileNotFoundError, KeyError, ValueError, RuntimeError) as exc:
         click.echo(f"Error loading config: {exc}", err=True)
         click.echo(
             "Run 'lit-monitor first-run' or 'lit-monitor diagnose' first.",
@@ -2002,7 +2002,7 @@ def _run_vault_reset(ctx: click.Context) -> None:
     """
     try:
         config = _make_config()
-    except (FileNotFoundError, KeyError) as exc:
+    except (FileNotFoundError, KeyError, ValueError, RuntimeError) as exc:
         click.echo(f"Error loading config: {exc}", err=True)
         click.echo(
             "Run 'lit-monitor first-run' or 'lit-monitor diagnose' first.",
