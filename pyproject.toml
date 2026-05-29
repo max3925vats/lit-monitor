@@ -64,6 +64,10 @@ server = [
     # Web UI — FastAPI Form() data parsing (F2.4 setup wizard POST endpoints)
     "python-multipart>=0.0.29",
 ]
+graph = [
+    "kuzu>=0.6",
+    "inflect>=7",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

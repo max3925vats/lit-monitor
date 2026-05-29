@@ -1,0 +1,13 @@
+# extraction.example.yaml — reference template for extraction.yaml.
+#
+# Copy to extraction.yaml and edit for your local setup.
+# See extraction.yaml for the full brain_build / embeddings / reranker options.
+
+# ---------------------------------------------------------------------------
+# G1 — Graph RAG retrieval settings (Phase 1)
+# Install the [graph] extra first: uv sync --extra graph
+# ---------------------------------------------------------------------------
+retrieval:
+  default_mode: vector          # "vector" | "graph" | "hybrid"
+  graph_db:
+    persist_dir: "~/.config/lit-monitor/graph.kuzu"

@@ -168,6 +168,9 @@ class StateDB:
                  "ALTER TABLE brain_build_progress ADD COLUMN simple_complete INTEGER DEFAULT 0"),
                 ("brain_build_progress", "complex_complete",
                  "ALTER TABLE brain_build_progress ADD COLUMN complex_complete INTEGER DEFAULT 0"),
+                # G1: per-paper flag toggled by the R28 dual-write path (Graph RAG phase 1).
+                ("papers", "graph_indexed",
+                 "ALTER TABLE papers ADD COLUMN graph_indexed INTEGER DEFAULT 0"),
             ]
             for table, column, sql in additive_migrations:
                 if self._column_exists(conn, table, column):

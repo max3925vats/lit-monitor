@@ -96,3 +96,12 @@ comparison_models:
     model: "llama3.2:3b"                # fast baseline (~1.9GB Q4)
 # All four Ollama models fit safely on 8GB M2.
 # qwen2.5:7b (~4.5GB) risks memory pressure during long runs — skip on 8GB.
+
+# ---------------------------------------------------------------------------
+# G1 — Graph RAG retrieval settings (Phase 1)
+# Requires the [graph] extra: uv sync --extra graph
+# ---------------------------------------------------------------------------
+# retrieval:
+#   default_mode: vector          # "vector" | "graph" | "hybrid"
+#   graph_db:
+#     persist_dir: "~/.config/lit-monitor/graph.kuzu"
