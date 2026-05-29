@@ -95,6 +95,7 @@ def run_discovery(
     screen_all: bool = False,
     top_k: int = 20,
     sim_threshold: float = 0.3,
+    rag_mode: str | None = None,
 ) -> _RunSummary:
     """
     Run the discovery + ingestion pipeline.
@@ -118,10 +119,20 @@ def run_discovery(
         Number of top results for LLM rationale (when screen_all is False).
     sim_threshold:
         Minimum similarity score for a result to be highlighted.
+    rag_mode:
+        One of "vector", "graph", "hybrid". Default reads from
+        config.retrieval.default_mode; falls back to "vector".
+        When "graph" or "hybrid", graph proximity is used for paper ranking.
     Returns
     -------
     _RunSummary
     """
+    # G9: resolve rag_mode once for the whole run.
+    _cfg_mode = (
+        getattr(getattr(config, "retrieval", None), "default_mode", "vector")
+        if config is not None else "vector"
+    )
+    _rag_mode = rag_mode or _cfg_mode or "vector"
     summary = _RunSummary()
     run_id = str(uuid.uuid4())
     if not dry_run:
@@ -162,13 +173,25 @@ def run_discovery(
     new_papers = filter_known_dois(raw_papers, state_db)
     summary.new_papers_found = len(new_papers)
     logger.warning("Discovery: %d new results after dedup", len(new_papers))
-    # Rank by similarity
-    ranked = rank_papers(
-        new_papers,
-        embeddings_db,
-        llm,
-        top_k=len(new_papers) if screen_all else top_k,
-    )
+    # G9: rank by similarity — vector path is unchanged; graph/hybrid path uses
+    # the branch helper to score candidates by knowledge-graph proximity.
+    if _rag_mode == "vector":
+        ranked = rank_papers(
+            new_papers,
+            embeddings_db,
+            llm,
+            top_k=len(new_papers) if screen_all else top_k,
+        )
+    else:
+        # graph or hybrid: score each new paper against the knowledge graph,
+        # then add LLM rationale for the top results.
+        ranked = _rank_papers_graph(
+            new_papers,
+            embeddings_db=embeddings_db,
+            llm=llm,
+            top_k=len(new_papers) if screen_all else top_k,
+            rag_mode=_rag_mode,
+        )
     # L2: fetch recent runs for Pipeline Run Summary prepended to digest
     recent_runs = state_db.get_recent_runs(limit=5) if not dry_run else []
     # Write digest
@@ -214,6 +237,77 @@ def run_discovery(
             errors=summary.errors,
         )
     return summary
+
+# ---------------------------------------------------------------------------
+# G9: graph/hybrid ranking helper
+# ---------------------------------------------------------------------------
+
+def _rank_papers_graph(
+    candidates: list[dict],
+    *,
+    embeddings_db,
+    llm,
+    top_k: int,
+    rag_mode: str,
+) -> list[dict]:
+    """G9: rank candidates using graph or hybrid retrieval for the discovery loop.
+
+    For each candidate paper, we use retrieve_doi_candidates to ask the graph
+    (or vector+graph fused via RRF) how many papers in the existing knowledge
+    base are adjacent. The count / score becomes the similarity_score, and the
+    LLM rationale is generated for the top-K as in the vector path.
+
+    Falls back to the standard rank_papers() if graph_db is unavailable.
+    """
+    from scripts.retrieval.branch import retrieve_doi_candidates
+    graph_db = safe_graph_db()
+    try:
+        if graph_db is None:
+            logger.warning(
+                "G9: graph_db unavailable for rag_mode=%r — falling back to vector ranking",
+                rag_mode,
+            )
+            return rank_papers(candidates, embeddings_db, llm, top_k=top_k)
+
+        scored: list[dict] = []
+        for paper in candidates:
+            doi = paper.get("doi", "")
+            embed_text = (paper.get("title", "") + " " + paper.get("abstract", "")).strip()
+            # Retrieve and score by number of graph neighbours.
+            pairs = retrieve_doi_candidates(
+                rag_mode,
+                seed_doi=doi if doi else None,
+                query_text=embed_text or None,
+                embeddings_db=embeddings_db,
+                graph_db=graph_db,
+                k=1,  # we only need the top score as the relevance signal
+            )
+            score = pairs[0][1] if pairs else 0.0
+            scored.append({**paper, "similarity_score": score})
+
+        # Sort descending by score.
+        scored.sort(key=lambda p: p.get("similarity_score", 0.0), reverse=True)
+
+        # Add LLM rationale for top-K (mirrors rank_papers behaviour).
+        _top = scored[:top_k]
+        try:
+            from scripts.llm.ranker import _get_rationales  # type: ignore[attr-defined]
+            rationales = _get_rationales(_top, llm)
+            for p in _top:
+                p["llm_rationale"] = rationales.get(p.get("doi", ""), "")
+        except Exception as exc:
+            logger.warning("LLM rationale generation failed in graph ranking: %s", exc)
+            for p in _top:
+                p.setdefault("llm_rationale", "")
+
+        return scored
+    finally:
+        if graph_db is not None:
+            try:
+                graph_db.close()
+            except Exception:  # pragma: no cover
+                pass
+
 
 # ---------------------------------------------------------------------------
 # Discovery helpers

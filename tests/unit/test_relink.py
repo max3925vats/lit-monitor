@@ -4,6 +4,8 @@ V-6 test backfill — E2 (relink citation graph).
 Tests for relink.py Pass 2b: incoming citations from citation_edges table
 populating the ## Referenced By persist zone.
 
+G9 additions: rag-mode dispatch (vector/graph/hybrid) tests.
+
 All I/O uses tmp_path; no Zotero or LLM calls needed.
 """
 from __future__ import annotations
@@ -318,3 +320,136 @@ def test_referenced_by_persist_zone_round_trip(tmp_path, caplog):
     # Content was replaced, not appended: B is present, A is gone.
     assert "Beta2024_SourceB" in after_b
     assert "Alpha2023_SourceA" not in after_b
+
+
+# ===========================================================================
+# G9 — rag-mode dispatch for relink_note
+# ===========================================================================
+
+def _make_note_g9(tmp_path: Path, doi: str = "10.0/g9") -> Path:
+    """Minimal note with both persist zones for G9 rag-mode tests."""
+    content = (
+        f'---\ndoi: "{doi}"\ntitle: "G9 Test"\nsource_type: "paper"\n---\n\n'
+        '{% persist "related_work" %}\n## Related Work\n{% endpersist %}\n\n'
+        '{% persist "referenced_by" %}\n## Referenced By\n{% endpersist %}\n'
+    )
+    path = tmp_path / f"{doi.replace('/', '_')}.md"
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+@pytest.mark.unit
+def test_relink_vector_mode_calls_embeddings_only(tmp_path):
+    """G9: rag_mode='vector' calls embeddings_db.find_similar_to_text, not graph."""
+    from scripts.obsidian_tools.relink import relink_note
+
+    state_db = _make_state_db(tmp_path)
+    state_db.upsert_paper({
+        "doi": "10.0/g9", "title": "G9 Paper", "source_type": "paper",
+        "note_title": "G9_Paper",
+    })
+    embeddings_db = MagicMock()
+    embeddings_db.find_similar_to_text.return_value = []
+    graph_db = MagicMock()
+
+    note_path = _make_note_g9(tmp_path, "10.0/g9")
+    relink_note(note_path, embeddings_db, state_db, rag_mode="vector", graph_db=graph_db)
+
+    embeddings_db.find_similar_to_text.assert_called()
+    graph_db.find_similar_papers.assert_not_called()
+    graph_db.find_papers_by_entities.assert_not_called()
+
+
+@pytest.mark.unit
+def test_relink_graph_mode_calls_graph_only(tmp_path):
+    """G9: rag_mode='graph' calls graph_db.find_similar_papers, not embeddings."""
+    from scripts.obsidian_tools.relink import relink_note
+
+    state_db = _make_state_db(tmp_path)
+    state_db.upsert_paper({
+        "doi": "10.0/g9g", "title": "G9 Graph", "source_type": "paper",
+        "note_title": "G9_Graph",
+    })
+    embeddings_db = MagicMock()
+    embeddings_db.find_similar_to_text.return_value = []
+    graph_db = MagicMock()
+    graph_db.find_similar_papers.return_value = [("10.0/other", 3.0)]
+
+    # Register the other paper so the note_title can be resolved.
+    state_db.upsert_paper({
+        "doi": "10.0/other", "title": "Other", "source_type": "paper",
+        "note_title": "Other_Paper",
+    })
+
+    note_path = _make_note_g9(tmp_path, "10.0/g9g")
+    relink_note(note_path, embeddings_db, state_db, rag_mode="graph", graph_db=graph_db)
+
+    graph_db.find_similar_papers.assert_called()
+    embeddings_db.find_similar_to_text.assert_not_called()
+
+
+@pytest.mark.unit
+def test_relink_hybrid_mode_calls_both_and_fuses(tmp_path):
+    """G9: rag_mode='hybrid' calls both embeddings and graph_db; both DOIs appear."""
+    from scripts.obsidian_tools.relink import relink_note
+
+    state_db = _make_state_db(tmp_path)
+    doi_seed = "10.0/g9h"
+    doi_vec = "10.0/vec"
+    doi_graph = "10.0/graph"
+    for d, title in [(doi_seed, "Seed"), (doi_vec, "Vec"), (doi_graph, "Graph")]:
+        state_db.upsert_paper({
+            "doi": d, "title": title, "source_type": "paper",
+            "note_title": f"{title.replace(' ', '_')}_Note",
+        })
+
+    embeddings_db = MagicMock()
+    embeddings_db.find_similar_to_text.return_value = [
+        {"id": doi_vec, "score": 0.9, "document": "", "metadata": {"note_title": "Vec_Note"}},
+    ]
+    graph_db = MagicMock()
+    graph_db.find_similar_papers.return_value = [(doi_graph, 5.0)]
+
+    note_path = _make_note_g9(tmp_path, doi_seed)
+    relink_note(note_path, embeddings_db, state_db, rag_mode="hybrid", graph_db=graph_db)
+
+    embeddings_db.find_similar_to_text.assert_called()
+    graph_db.find_similar_papers.assert_called()
+
+    content = note_path.read_text(encoding="utf-8")
+    # Both candidates should appear somewhere in the note (Related Work zone).
+    assert "Vec_Note" in content or "Graph_Note" in content, (
+        "Hybrid mode must surface at least one fused result in the note."
+    )
+
+
+@pytest.mark.unit
+def test_relink_default_rag_mode_reads_from_config(tmp_path):
+    """G9: when rag_mode is None, default is read from config.retrieval.default_mode."""
+    from scripts.obsidian_tools.relink import relink_note
+
+    state_db = _make_state_db(tmp_path)
+    state_db.upsert_paper({
+        "doi": "10.0/cfg", "title": "Cfg Paper", "source_type": "paper",
+        "note_title": "Cfg_Paper",
+    })
+    embeddings_db = MagicMock()
+    embeddings_db.find_similar_to_text.return_value = []
+    graph_db = MagicMock()
+    graph_db.find_similar_papers.return_value = []
+
+    # Config that sets default_mode to "graph".
+    config = SimpleNamespace(
+        retrieval=SimpleNamespace(default_mode="graph"),
+        reranker=None,
+    )
+
+    note_path = _make_note_g9(tmp_path, "10.0/cfg")
+    relink_note(
+        note_path, embeddings_db, state_db,
+        rag_mode=None, graph_db=graph_db, config=config,
+    )
+
+    # graph mode should have been used.
+    graph_db.find_similar_papers.assert_called()
+    embeddings_db.find_similar_to_text.assert_not_called()

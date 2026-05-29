@@ -156,16 +156,24 @@ def relink_note(
     state_db: StateDB,
     top_k: int = 10,
     config=None,
+    rag_mode: str | None = None,
+    graph_db=None,
 ) -> None:
     """
     Run two-pass relink on a single note file.
-    Pass 1: similarity search via ChromaDB embeddings → Related Work zone.
+    Pass 1: similarity search → Related Work zone.
+      rag_mode='vector' (default): ChromaDB embed search (existing path).
+      rag_mode='graph':            graph_db.find_similar_papers().
+      rag_mode='hybrid':           both sources fused via RRF, then reranked.
     Pass 2 (E2): citation-graph via citation_edges table:
         - outgoing (this paper cites) → Related Work zone (📖 entries)
         - incoming (papers that cite this) → Referenced By zone
     Persist zones (`related_work`, `referenced_by`) are preserved across
     re-runs because both are now defined in `paper_note.md.j2` (M2).
-    config: optional — used to read reranker settings for N19.
+    config: optional — used to read reranker settings and default rag_mode.
+    rag_mode: optional — overrides config.retrieval.default_mode; falls back
+        to "vector" when neither is set.
+    graph_db: optional GraphDB instance required for graph/hybrid modes.
     """
     note_path = Path(note_path)
     if not note_path.exists():
@@ -189,13 +197,39 @@ def relink_note(
     #       scoring, which IS where richer query content helps.
     focused_query = _focused_embed_query(state_db, doi, note_text)
     _reranker_cfg = getattr(config, "reranker", None) if config is not None else None
-    similar = embeddings_db.find_similar_to_text(
-        focused_query,
-        top_k=top_k,
-        exclude_id=doi,
-        rerank_with_query=sanitize_for_prompt(note_text),  # reranker can use the full note
-        reranker_config=_reranker_cfg,
+    # G9: resolve rag_mode; default from config, fallback "vector".
+    _cfg_mode = (
+        getattr(getattr(config, "retrieval", None), "default_mode", "vector")
+        if config is not None else "vector"
     )
+    _rag_mode = rag_mode or _cfg_mode or "vector"
+    if _rag_mode == "vector":
+        # Existing path — fully preserved (bit-for-bit v0.3.3 behaviour).
+        similar = embeddings_db.find_similar_to_text(
+            focused_query,
+            top_k=top_k,
+            exclude_id=doi,
+            rerank_with_query=sanitize_for_prompt(note_text),
+            reranker_config=_reranker_cfg,
+        )
+    else:
+        # G9: graph or hybrid — use branch helper, then rerank if configured.
+        from scripts.retrieval.branch import retrieve_doi_candidates
+        doi_candidates = retrieve_doi_candidates(
+            _rag_mode,
+            seed_doi=doi,
+            query_text=focused_query,
+            embeddings_db=embeddings_db,
+            graph_db=graph_db,
+            k=top_k,
+        )
+        # Convert (doi, score) pairs → ChromaDB-style result dicts so the
+        # downstream build_related_work_block receives the expected shape.
+        # Resolve note_title for each candidate DOI via state_db.
+        _reranker_query = sanitize_for_prompt(note_text)
+        similar = _doi_pairs_to_similar(doi_candidates, state_db, top_k,
+                                        reranker_cfg=_reranker_cfg,
+                                        reranker_query=_reranker_query)
     # Pass 2a: outgoing citations — papers this note cites (E2)
     cited = _resolve_cited_notes(doi, state_db) if doi else []
     related_work = build_related_work_block(similar, cited)
@@ -275,3 +309,39 @@ def _focused_embed_query(
         return fallback_text[:_FOCUSED_EMBED_QUERY_MAX_CHARS]
     text = " ".join(parts)
     return text[:_FOCUSED_EMBED_QUERY_MAX_CHARS]
+
+
+def _doi_pairs_to_similar(
+    doi_candidates: list[tuple[str, float]],
+    state_db: StateDB,
+    top_k: int,
+    *,
+    reranker_cfg=None,
+    reranker_query: str = "",
+) -> list[dict]:
+    """G9: convert (doi, score) pairs from branch helper to similar-result dicts.
+
+    The returned list matches the shape expected by build_related_work_block:
+    each entry has 'score' and 'metadata': {'note_title': <str>}.
+
+    When a reranker_cfg is present the results are re-ranked via the embeddings
+    reranker after conversion (preserves the N19 reranker chain for hybrid).
+    """
+    results: list[dict] = []
+    for doi_val, score in doi_candidates[:top_k]:
+        record = state_db.get_paper(doi_val) if hasattr(state_db, "get_paper") else None
+        note_title = (record or {}).get("note_title", "")
+        results.append({
+            "id": doi_val,
+            "score": score,
+            "document": "",
+            "metadata": {"note_title": note_title, "doi": doi_val},
+        })
+    # Re-rank when the reranker chain is configured — same as the vector path.
+    if reranker_cfg is not None and reranker_query and results:
+        try:
+            from scripts.output.reranker import rerank
+            results = rerank(results, reranker_query, reranker_cfg)
+        except Exception as exc:
+            logger.warning("Reranker failed in rag-mode path (non-fatal): %s", exc)
+    return results

@@ -131,6 +131,22 @@ class Config:
         self.comparison_models: list[dict] = [
             m.model_dump() for m in validated_extraction.comparison_models
         ]
+        # --- G9: Retrieval config (default_mode + graph_db location) ---
+        raw_retrieval = raw_extraction.get("retrieval", {})
+        _ret_mode = raw_retrieval.get("default_mode", "vector")
+        if _ret_mode not in {"vector", "graph", "hybrid"}:
+            import warnings
+            warnings.warn(
+                f"retrieval.default_mode {_ret_mode!r} is not one of "
+                "vector/graph/hybrid — falling back to 'vector'.",
+                stacklevel=2,
+            )
+            _ret_mode = "vector"
+        _ret_graph = raw_retrieval.get("graph_db", {}) or {}
+        self.retrieval = _Namespace({
+            "default_mode": _ret_mode,
+            "graph_db": _Namespace(_ret_graph) if isinstance(_ret_graph, dict) else _ret_graph,
+        })
         # --- Optional configs (loaded lazily if files exist) ---
         self._topics: list[dict] | None = None
         self._discovery_top_k: int = 20

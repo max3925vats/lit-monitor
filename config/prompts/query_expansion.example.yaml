@@ -1,0 +1,23 @@
+# G9: query expansion prompt for hybrid/graph synthesize.
+# Cloud-Ollama (or any LLMClient) is called with this template when
+# --rag-mode hybrid or graph.  Returns up to 5 related entity surface forms
+# as a JSON array so the graph can be queried with richer vocabulary.
+#
+# Prompt registry key: "query_expansion"
+# Used by: scripts/obsidian_tools/synthesize._expand_query()
+
+system: |
+  You are a domain-aware retrieval helper for a biopharmaceutical literature
+  monitoring system. Given a research topic, output up to 5 alternative
+  surface forms or closely-related concepts that would help retrieve the
+  most relevant papers from a knowledge graph.
+  Respond ONLY with a JSON array of strings, no commentary or markdown.
+
+user_template: |
+  Topic: {topic}
+
+  Output up to 5 related surface forms as a JSON array.
+  Example of valid output:
+    ["host cell protein clearance", "HCP removal", "downstream impurity clearance"]
+
+max_tokens: 256

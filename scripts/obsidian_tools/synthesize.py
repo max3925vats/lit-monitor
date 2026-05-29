@@ -46,9 +46,10 @@ def synthesize(
     state_db,
     embeddings_db,
     llm,
-
     top_k: int = 15,
     connections_folder: str | None = None,
+    rag_mode: str | None = None,
+    graph_db=None,
 ) -> str:
     """
     Generate and write a synthesis note for the given topic.
@@ -68,30 +69,75 @@ def synthesize(
         Number of similar notes to synthesize across.
     connections_folder:
         Override for the vault connections folder path.
+    rag_mode:
+        One of "vector", "graph", "hybrid". Default reads from
+        config.retrieval.default_mode; falls back to "vector".
+    graph_db:
+        Optional GraphDB instance; required for graph/hybrid modes.
     Returns
     -------
     str: Path to the written synthesis note.
     """
-    # 1. Find similar passages — chunk-level first, paper-level fallback
-    _reranker_cfg = getattr(config, "reranker", None)
-    chunk_results = embeddings_db.find_similar_chunks(
-        topic,
-        top_k=top_k * 2,
-        dedupe_by_paper=True,
-        rerank_with_query=topic,
-        reranker_config=_reranker_cfg,
+    # G9: resolve rag_mode; default from config, fallback "vector".
+    _cfg_mode = (
+        getattr(getattr(config, "retrieval", None), "default_mode", "vector")
+        if config is not None else "vector"
     )
-    use_chunks = bool(chunk_results)
-    if use_chunks:
-        similar = chunk_results
-    else:
-        logger.debug("No chunks indexed yet — falling back to paper-level similarity for topic %r", topic)
-        similar = embeddings_db.find_similar_to_text(
+    _rag_mode = rag_mode or _cfg_mode or "vector"
+
+    _reranker_cfg = getattr(config, "reranker", None)
+
+    if _rag_mode == "vector":
+        # 1. Find similar passages — chunk-level first, paper-level fallback.
+        # Existing path unchanged (preserves v0.3.3 behaviour).
+        chunk_results = embeddings_db.find_similar_chunks(
             topic,
-            top_k=top_k,
+            top_k=top_k * 2,
+            dedupe_by_paper=True,
             rerank_with_query=topic,
             reranker_config=_reranker_cfg,
         )
+        use_chunks = bool(chunk_results)
+        if use_chunks:
+            similar = chunk_results
+        else:
+            logger.debug(
+                "No chunks indexed yet — falling back to paper-level similarity for topic %r",
+                topic,
+            )
+            similar = embeddings_db.find_similar_to_text(
+                topic,
+                top_k=top_k,
+                rerank_with_query=topic,
+                reranker_config=_reranker_cfg,
+            )
+    else:
+        # G9: graph or hybrid — query expansion + graph/hybrid retrieval.
+        expanded_terms = _expand_query(topic, llm)
+        # Build entity_ids from expanded surface forms via graph resolve, if possible.
+        entity_ids = _resolve_entity_ids(expanded_terms, graph_db)
+        from scripts.retrieval.branch import retrieve_doi_candidates
+        doi_candidates = retrieve_doi_candidates(
+            _rag_mode,
+            query_text=topic,          # vector leg uses the raw topic
+            entity_ids=entity_ids,     # graph leg uses resolved entity IDs
+            embeddings_db=embeddings_db,
+            graph_db=graph_db,
+            k=top_k * 2,
+        )
+        # Convert (doi, score) pairs → ChromaDB-style result dicts.
+        similar = [
+            {"id": d, "score": s, "document": "", "metadata": {}}
+            for d, s in doi_candidates[:top_k]
+        ]
+        # Reranker chain at the END — preserves N19 contract.
+        if _reranker_cfg and similar:
+            try:
+                from scripts.output.reranker import rerank
+                similar = rerank(similar, topic, _reranker_cfg)
+            except Exception as exc:
+                logger.warning("Reranker failed in rag-mode path (non-fatal): %s", exc)
+        use_chunks = False  # no chunk-level passages in graph/hybrid mode
     if not similar:
         logger.warning("No similar notes found for topic %r", topic)
         return ""
@@ -229,3 +275,87 @@ def _slugify(text: str) -> str:
     slug = re.sub(r"[^\w\s-]", "", text)
     slug = re.sub(r"[\s_]+", "_", slug.strip())
     return slug[:60]
+
+
+# ---------------------------------------------------------------------------
+# G9: Query expansion helpers
+# ---------------------------------------------------------------------------
+
+def _expand_query(topic: str, llm) -> list[str]:
+    """G9: expand a topic string into up to 5 related surface forms.
+
+    Calls the LLM with the prompt loaded from config/prompts/query_expansion.yaml.
+    On any failure (LLM unavailable, bad JSON, etc.) logs a WARN and falls back
+    to returning [topic] so the graph retrieval can still proceed with the
+    original topic string.
+
+    Args:
+        topic: The raw topic string from the user.
+        llm:   Any LLMClient instance (or None).
+
+    Returns:
+        List of up to 5 string surface forms (always non-empty).
+    """
+    if llm is None:
+        logger.warning(
+            "Query expansion skipped: no LLM client available. Using topic-only: %r", topic
+        )
+        return [topic]
+    try:
+        prompt = load_prompt("query_expansion")
+        user_msg = prompt.render_user(topic=topic)
+        raw_response = llm.complete(prompt.system, user_msg, max_tokens=prompt.max_tokens)
+        expanded = json.loads(raw_response)
+        if isinstance(expanded, list) and expanded:
+            terms = [str(s) for s in expanded[:5] if s]
+            logger.info("G9 query expansion for %r: %r", topic, terms)
+            return terms if terms else [topic]
+    except Exception as exc:
+        logger.warning(
+            "Query expansion failed; falling back to topic-only: %s", exc
+        )
+    return [topic]
+
+
+def _resolve_entity_ids(surface_forms: list[str], graph_db) -> list[str]:
+    """G9: resolve surface form strings to canonical entity IDs via graph_db.
+
+    Uses graph_db.resolve_query_entity() when available (G7).  Falls back to
+    returning the surface forms as-is when graph_db is None or the method
+    raises, so callers always get a usable list.
+
+    Args:
+        surface_forms: List of term strings (output of _expand_query).
+        graph_db:      GraphDB instance or None.
+
+    Returns:
+        List of canonical entity ID strings (may be empty).
+    """
+    if graph_db is None or not surface_forms:
+        return surface_forms  # pass through for find_papers_by_entities
+    canonical: list[str] = []
+    for term in surface_forms:
+        try:
+            result = graph_db.resolve_query_entity(term)
+            if result:
+                # resolve_query_entity returns (entity_id, canonical_name, score)
+                # or a list thereof — handle both shapes.
+                if isinstance(result, (list, tuple)) and result:
+                    first = result[0]
+                    if isinstance(first, (list, tuple)) and first:
+                        canonical.append(str(first[0]))
+                    else:
+                        canonical.append(str(first))
+                else:
+                    canonical.append(str(result))
+        except Exception as exc:
+            logger.debug("Entity resolution failed for %r: %s", term, exc)
+    # De-duplicate while preserving order.
+    seen: set[str] = set()
+    unique: list[str] = []
+    for c in canonical:
+        if c not in seen:
+            seen.add(c)
+            unique.append(c)
+    # Fall back to raw surface forms when resolution yields nothing.
+    return unique if unique else surface_forms

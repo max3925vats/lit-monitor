@@ -1201,6 +1201,15 @@ def brain_build_cmd(
               help="Number of papers to include in LLM rationale.")
 @click.option("--sim-threshold", default=0.3, show_default=True,
               help="Similarity score threshold for digest inclusion.")
+@click.option(
+    "--rag-mode",
+    type=click.Choice(["vector", "graph", "hybrid"]),
+    default=None,
+    help=(
+        "Retrieval mode for paper ranking. Default reads from "
+        "extraction.yaml retrieval.default_mode (falls back to 'vector')."
+    ),
+)
 @click.pass_context
 def run_cmd(
     ctx: click.Context,
@@ -1208,6 +1217,7 @@ def run_cmd(
     screen_all: bool,
     top_k: int,
     sim_threshold: float,
+    rag_mode: str | None,
 ) -> None:
     """Run the discovery pipeline: search + ranking + ingest new Zotero items."""
     _setup_logging("discovery", verbose=ctx.obj.get("verbose", False))
@@ -1228,19 +1238,23 @@ def run_cmd(
     except Exception as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
+    # G9: resolve rag_mode — CLI flag overrides config; config falls back to "vector".
+    _effective_rag = rag_mode or getattr(
+        getattr(config, "retrieval", None), "default_mode", "vector"
+    ) or "vector"
     mode_label = "[DRY RUN] " if dry_run else ""
-    click.echo(f"{mode_label}Starting discovery pipeline…")
+    click.echo(f"{mode_label}Starting discovery pipeline… (rag-mode: {_effective_rag})")
     summary = run_discovery(
         config=config,
         state_db=state_db,
         zotero_client=zotero_client,
         embeddings_db=embeddings_db,
-
         llm=llm,
         dry_run=dry_run,
         screen_all=screen_all,
         top_k=top_k,
         sim_threshold=sim_threshold,
+        rag_mode=_effective_rag,
     )
     click.echo(click.style("\n── Discovery Run Summary ──", bold=True))
     click.echo(f"  New papers found: {summary.new_papers_found}")
@@ -1261,8 +1275,17 @@ def obsidian() -> None:
 @obsidian.command("relink")
 @click.option("--doi", default=None,
               help="Relink a single note by DOI (default: all notes).")
+@click.option(
+    "--rag-mode",
+    type=click.Choice(["vector", "graph", "hybrid"]),
+    default=None,
+    help=(
+        "Retrieval mode for similarity expansion. Default reads from "
+        "extraction.yaml retrieval.default_mode (falls back to 'vector')."
+    ),
+)
 @click.pass_context
-def obsidian_relink(ctx: click.Context, doi: str | None) -> None:
+def obsidian_relink(ctx: click.Context, doi: str | None, rag_mode: str | None) -> None:
     """Update ## Related Work and ## Referenced By sections across notes."""
     _setup_logging("relink", verbose=ctx.obj.get("verbose", False))
     from scripts.obsidian_tools.relink import relink_note
@@ -1273,49 +1296,67 @@ def obsidian_relink(ctx: click.Context, doi: str | None) -> None:
     except Exception as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
-    def _relink_by_doi(d: str, *, silent_missing: bool = False) -> str | None:
-        record = state_db.get_paper(d)
-        if not record:
-            if not silent_missing:
-                logging.getLogger(__name__).warning("No DB record for doi: %s", d)
-            return None
-        note_path = record.get("note_path")
-        if not note_path:
-            if not silent_missing:
-                logging.getLogger(__name__).warning("No note_path in DB for doi: %s", d)
-            return None
-        relink_note(note_path, embeddings_db, state_db, config=config)
-        return note_path
-
-    if doi:
-        click.echo(f"Relinking {doi}…")
-        result = _relink_by_doi(doi)
-        click.echo(f"Done: {result}")
-    else:
-        click.echo("Relinking all notes…")
-        # Audit R29: pre-filter to records that actually have a note + embeddings
-        # before iterating.  This silences the "No note_path in DB" warnings for
-        # items that legitimately have no note (e.g. no_markdown skips) and
-        # surfaces the actual relink count cleanly.
-        all_records = [
-            r for r in (
-                state_db.get_all_by_source_type("paper")
-                + state_db.get_all_by_source_type("review")
+    # G9: open graph_db once for the whole relink pass (None when [graph] extra absent).
+    from scripts.graph import safe_graph_db as _safe_graph_db
+    _graph_db = _safe_graph_db() if rag_mode in ("graph", "hybrid") else None
+    try:
+        # G9: resolve rag_mode — CLI flag overrides config default.
+        _effective_rag = rag_mode or getattr(
+            getattr(config, "retrieval", None), "default_mode", "vector"
+        ) or "vector"
+        def _relink_by_doi(d: str, *, silent_missing: bool = False) -> str | None:
+            record = state_db.get_paper(d)
+            if not record:
+                if not silent_missing:
+                    logging.getLogger(__name__).warning("No DB record for doi: %s", d)
+                return None
+            note_path = record.get("note_path")
+            if not note_path:
+                if not silent_missing:
+                    logging.getLogger(__name__).warning("No note_path in DB for doi: %s", d)
+                return None
+            relink_note(
+                note_path, embeddings_db, state_db, config=config,
+                rag_mode=_effective_rag, graph_db=_graph_db,
             )
-            if r.get("note_path") and r.get("embeddings_indexed") == 1
-        ]
-        ok = failed = 0
-        for record in all_records:
-            d = record.get("doi", "")
-            if not d:
-                continue
+            return note_path
+
+        if doi:
+            click.echo(f"Relinking {doi}…")
+            result = _relink_by_doi(doi)
+            click.echo(f"Done: {result}")
+        else:
+            click.echo("Relinking all notes…")
+            # Audit R29: pre-filter to records that actually have a note + embeddings
+            # before iterating.  This silences the "No note_path in DB" warnings for
+            # items that legitimately have no note (e.g. no_markdown skips) and
+            # surfaces the actual relink count cleanly.
+            all_records = [
+                r for r in (
+                    state_db.get_all_by_source_type("paper")
+                    + state_db.get_all_by_source_type("review")
+                )
+                if r.get("note_path") and r.get("embeddings_indexed") == 1
+            ]
+            ok = failed = 0
+            for record in all_records:
+                d = record.get("doi", "")
+                if not d:
+                    continue
+                try:
+                    _relink_by_doi(d, silent_missing=True)
+                    ok += 1
+                except Exception as exc:
+                    logging.getLogger(__name__).error("Relink failed for %s: %s", d, exc)
+                    failed += 1
+            click.echo(f"Relink complete: {ok} ok, {failed} failed.")
+    finally:
+        # G9: release graph_db connection when it was opened for this command.
+        if _graph_db is not None:
             try:
-                _relink_by_doi(d, silent_missing=True)
-                ok += 1
-            except Exception as exc:
-                logging.getLogger(__name__).error("Relink failed for %s: %s", d, exc)
-                failed += 1
-        click.echo(f"Relink complete: {ok} ok, {failed} failed.")
+                _graph_db.close()
+            except Exception:  # pragma: no cover
+                pass
 @obsidian.command("retheme")
 @click.option("--old", required=True, help="Old theme name.")
 @click.option("--new", "new_theme", required=True, help="New theme name.")
@@ -1384,12 +1425,23 @@ def obsidian_rerender(
 )
 @click.option("--top-k", default=15, show_default=True,
               help="Number of related notes to include.")
+@click.option(
+    "--rag-mode",
+    type=click.Choice(["vector", "graph", "hybrid"]),
+    default=None,
+    help=(
+        "Retrieval mode for synthesis. Default reads from "
+        "extraction.yaml retrieval.default_mode (falls back to 'vector'). "
+        "Non-vector modes trigger cloud-Ollama query expansion."
+    ),
+)
 @click.pass_context
 def obsidian_synthesize(
     ctx: click.Context,
     topic: str | None,
     topics_file: str | None,
     top_k: int,
+    rag_mode: str | None,
 ) -> None:
     """Generate a synthesis note across related notes for a topic or list of topics."""
     _setup_logging("synthesize", verbose=ctx.obj.get("verbose", False))
@@ -1407,47 +1459,64 @@ def obsidian_synthesize(
     except Exception as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
-    # Build topic list
-    if topics_file:
-        import yaml
-        # L5: cap topics-file size at 1 MB to avoid loading pathological
-        # YAML into memory and to surface obvious user error early.
-        if Path(topics_file).stat().st_size > 1_048_576:
-            click.echo("Topics file >1 MB cap; aborting", err=True)
-            sys.exit(1)
-        with open(topics_file, encoding="utf-8") as fh:
-            raw = yaml.safe_load(fh)
-        topics_list: list[str] = raw.get("topics", []) if isinstance(raw, dict) else []
-        if not topics_list:
-            click.echo("No 'topics:' entries found in the file.", err=True)
-            sys.exit(1)
-    else:
-        topics_list = [topic]
+    # G9: resolve rag_mode — CLI flag overrides config default.
+    _effective_rag = rag_mode or getattr(
+        getattr(config, "retrieval", None), "default_mode", "vector"
+    ) or "vector"
+    # G9: open graph_db once for the whole synthesize batch (None when [graph] extra absent).
+    from scripts.graph import safe_graph_db as _safe_graph_db
+    _graph_db = _safe_graph_db() if _effective_rag in ("graph", "hybrid") else None
+    try:
+        # Build topic list
+        if topics_file:
+            import yaml
+            # L5: cap topics-file size at 1 MB to avoid loading pathological
+            # YAML into memory and to surface obvious user error early.
+            if Path(topics_file).stat().st_size > 1_048_576:
+                click.echo("Topics file >1 MB cap; aborting", err=True)
+                sys.exit(1)
+            with open(topics_file, encoding="utf-8") as fh:
+                raw = yaml.safe_load(fh)
+            topics_list: list[str] = raw.get("topics", []) if isinstance(raw, dict) else []
+            if not topics_list:
+                click.echo("No 'topics:' entries found in the file.", err=True)
+                sys.exit(1)
+        else:
+            topics_list = [topic]
 
-    ok = failed = 0
-    for t in topics_list:
-        click.echo(f"Synthesizing: '{t}' (top_k={top_k})…")
-        try:
-            note_path = synthesize(
-                topic=t,
-                config=config,
-                state_db=state_db,
-                embeddings_db=embeddings_db,
-                llm=llm,
-                top_k=top_k,
-            )
-            if note_path:
-                click.echo(f"  → {note_path}")
-                ok += 1
-            else:
-                click.echo("  No relevant notes found.")
+        ok = failed = 0
+        for t in topics_list:
+            click.echo(f"Synthesizing: '{t}' (top_k={top_k}, rag-mode: {_effective_rag})…")
+            try:
+                note_path = synthesize(
+                    topic=t,
+                    config=config,
+                    state_db=state_db,
+                    embeddings_db=embeddings_db,
+                    llm=llm,
+                    top_k=top_k,
+                    rag_mode=_effective_rag,
+                    graph_db=_graph_db,
+                )
+                if note_path:
+                    click.echo(f"  → {note_path}")
+                    ok += 1
+                else:
+                    click.echo("  No relevant notes found.")
+                    failed += 1
+            except Exception as exc:
+                click.echo(click.style(f"  Error: {exc}", fg="red"), err=True)
                 failed += 1
-        except Exception as exc:
-            click.echo(click.style(f"  Error: {exc}", fg="red"), err=True)
-            failed += 1
 
-    if len(topics_list) > 1:
-        click.echo(f"\nSynthesis complete: {ok} written, {failed} skipped/failed.")
+        if len(topics_list) > 1:
+            click.echo(f"\nSynthesis complete: {ok} written, {failed} skipped/failed.")
+    finally:
+        # G9: release graph_db connection when it was opened for this command.
+        if _graph_db is not None:
+            try:
+                _graph_db.close()
+            except Exception:  # pragma: no cover
+                pass
 @obsidian.command("rechunk-all")
 @click.option("--doi", default=None, help="Rechunk a single paper by DOI (default: all papers).")
 @click.option("--all", "rechunk_all", is_flag=True, default=False,

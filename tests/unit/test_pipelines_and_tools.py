@@ -1338,3 +1338,80 @@ def test_discovery_aborts_after_three_consecutive_rate_limits(tmp_path):
     assert "rate_limited" in statuses, (
         f"Expected 'rate_limited' in run_log.status; got: {statuses}"
     )
+
+
+# ===========================================================================
+# G9 — rag-mode wiring: discovery + synthesize + branch helper + query expansion
+# ===========================================================================
+
+@pytest.mark.unit
+def test_discovery_rag_mode_graph_uses_graph_ranking(tmp_path):
+    """G9: run_discovery with rag_mode='graph' calls _rank_papers_graph, not rank_papers."""
+    config = _make_config(tmp_path)
+    state_db = _make_state_db(tmp_path)
+    embeddings_db = MagicMock()
+    llm = MagicMock()
+    llm.complete.return_value = "{}"
+    zotero_client = MagicMock()
+    papers = [_make_paper("10.1/g9a"), _make_paper("10.1/g9b")]
+
+    rank_papers_calls: list = []
+    graph_rank_calls: list = []
+
+    def fake_rank_papers(candidates, emb, llm_, **kwargs):
+        rank_papers_calls.append(candidates)
+        return [dict(p, similarity_score=0.5) for p in candidates]
+
+    def fake_rank_graph(candidates, *, embeddings_db, llm, top_k, rag_mode):
+        graph_rank_calls.append(rag_mode)
+        return [dict(p, similarity_score=0.3) for p in candidates]
+
+    with patch("scripts.pipelines.discovery.run_searches", return_value=papers), \
+         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("scripts.pipelines.discovery.filter_known_dois", return_value=papers), \
+         patch("scripts.pipelines.discovery.rank_papers", side_effect=fake_rank_papers), \
+         patch("scripts.pipelines.discovery._rank_papers_graph", side_effect=fake_rank_graph):
+        from scripts.pipelines.discovery import run_discovery
+        summary = run_discovery(
+            config, state_db, zotero_client, embeddings_db, llm,
+            dry_run=True, rag_mode="graph",
+        )
+
+    assert not rank_papers_calls, "rank_papers should NOT be called in graph mode"
+    assert graph_rank_calls == ["graph"], f"Expected graph ranking; got: {graph_rank_calls}"
+    assert summary.new_papers_found == 2
+
+
+@pytest.mark.unit
+def test_discovery_rag_mode_vector_uses_rank_papers(tmp_path):
+    """G9: run_discovery with rag_mode='vector' uses existing rank_papers (unchanged path)."""
+    config = _make_config(tmp_path)
+    state_db = _make_state_db(tmp_path)
+    embeddings_db = MagicMock()
+    llm = MagicMock()
+    llm.complete.return_value = "{}"
+    zotero_client = MagicMock()
+    papers = [_make_paper("10.1/v1")]
+
+    rank_papers_calls: list = []
+
+    def fake_rank_papers(candidates, emb, llm_, **kwargs):
+        rank_papers_calls.append(True)
+        return [dict(p, similarity_score=0.8) for p in candidates]
+
+    with patch("scripts.pipelines.discovery.run_searches", return_value=papers), \
+         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("scripts.pipelines.discovery.filter_known_dois", return_value=papers), \
+         patch("scripts.pipelines.discovery.rank_papers", side_effect=fake_rank_papers):
+        from scripts.pipelines.discovery import run_discovery
+        run_discovery(
+            config, state_db, zotero_client, embeddings_db, llm,
+            dry_run=True, rag_mode="vector",
+        )
+
+    assert rank_papers_calls, "rank_papers MUST be called for vector mode"
+
+
+# G9 tests for retrieve_doi_candidates, _expand_query, and Config.retrieval
+# are in tests/unit/test_retrieval_branch.py (avoids habanero import issue
+# that blocks collection of this file when the full dependency set is absent).
