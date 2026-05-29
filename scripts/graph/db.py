@@ -31,6 +31,7 @@ when kuzu is not installed.  Only calling ``GraphDB(...)`` will raise an
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,9 @@ from scripts.graph.migrations import apply_migrations, apply_schema
 from scripts.graph.relationship_validator import VALID_PREDICATES
 
 logger = logging.getLogger(__name__)
+
+# Queries slower than this threshold emit a WARN-level "slow query" line.
+_SLOW_QUERY_THRESHOLD_S: float = 0.5
 
 # Sentinel value written into NOT-NULL-ish STRING and INT columns when the
 # caller's tuple has Python None (Kuzu CREATE does not accept NULL bindings on
@@ -405,3 +409,188 @@ class GraphDB:
                 "pv": prompt_version,
             },
         )
+
+    # ------------------------------------------------------------------
+    # G7 — slow-query helper
+    # ------------------------------------------------------------------
+
+    def _slow_log(self, method: str, elapsed: float) -> None:
+        """Emit WARN if a read query exceeded the 500 ms threshold."""
+        if elapsed > _SLOW_QUERY_THRESHOLD_S:
+            logger.warning(
+                "GraphDB.%s: slow query (%.3fs > %.3fs)",
+                method,
+                elapsed,
+                _SLOW_QUERY_THRESHOLD_S,
+            )
+
+    # ------------------------------------------------------------------
+    # G7 — read-side query API
+    # ------------------------------------------------------------------
+
+    def find_similar_papers(
+        self,
+        doi: str,
+        k: int = 20,
+    ) -> list[tuple[str, float]]:
+        """G7: papers sharing the most MENTIONS with the given paper.
+
+        Traverses Entity nodes shared between the source paper and every
+        other paper, groups by neighbour paper and counts shared entities,
+        then returns the top-k by count descending.
+
+        Returns
+        -------
+        list[tuple[str, float]]
+            ``[(doi, score), ...]`` ranked by shared-entity count desc.
+            Self is always excluded.  Empty list when the source DOI has no
+            entities or does not exist in the graph.
+        """
+        cypher = (
+            "MATCH (a:Paper {doi: $doi})-[:MENTIONS]->(e:Entity)<-[:MENTIONS]-(b:Paper) "
+            "WHERE a.doi <> b.doi "
+            "RETURN b.doi AS doi, count(e) AS score "
+            "ORDER BY score DESC LIMIT $k"
+        )
+        t0 = time.perf_counter()
+        res = self._conn.execute(cypher, {"doi": doi, "k": int(k)})
+        elapsed = time.perf_counter() - t0
+        self._slow_log("find_similar_papers", elapsed)
+
+        out: list[tuple[str, float]] = []
+        while res.has_next():
+            row = res.get_next()
+            out.append((str(row[0]), float(row[1])))
+        return out
+
+    def resolve_query_entity(
+        self,
+        text: str,
+        type_: str | None = None,
+    ) -> str | None:
+        """G7: normalize a query string through G2's EntityNormalizer + per-type vocab.
+
+        Uses the query-time fuzzy threshold (``EntityNormalizer.DEFAULT_QUERY_RATIO``
+        = 85), which is looser than the ingest threshold (90).  This lets user
+        typos and minor spelling variations resolve to an existing canonical ID.
+
+        The per-type vocabulary is seeded from the live Entity nodes on the first
+        call and then cached on the ``GraphDB`` instance in ``_query_normalizer``.
+
+        .. note::
+            Phase 1 limitation: ``_query_normalizer`` is a snapshot of the Entity
+            table at first call.  Entities added via ``add_paper`` after the first
+            resolve call will NOT be visible to the fuzzy matcher until the process
+            is restarted (or ``_query_normalizer`` is manually set to ``None``).
+            Phase 2 should add a cache-invalidation hook in ``add_paper``.
+
+        Parameters
+        ----------
+        text:
+            Raw query string (surface form) to resolve.
+        type_:
+            Restrict resolution to this entity type.  ``None`` tries all known
+            types (slower; not recommended for hot paths).
+
+        Returns
+        -------
+        str | None
+            The matched canonical_id, or ``None`` if no match found within scope.
+        """
+        from scripts.graph.aliases import load_aliases
+        from scripts.graph.normalizer import EntityNormalizer
+
+        t0 = time.perf_counter()
+
+        # Build (and cache) the normalizer seeded with live Entity nodes.
+        # Reset by setting self._query_normalizer = None when new entities arrive.
+        if not hasattr(self, "_query_normalizer") or self._query_normalizer is None:
+            normalizer: EntityNormalizer = EntityNormalizer(aliases=load_aliases())
+            res = self._conn.execute(
+                "MATCH (e:Entity) RETURN e.canonical_id, e.type"
+            )
+            while res.has_next():
+                row = res.get_next()
+                # add_to_vocab(type_, canonical) — row order: [canonical_id, type]
+                normalizer.add_to_vocab(str(row[1]), str(row[0]))
+            self._query_normalizer: EntityNormalizer | None = normalizer
+
+        normalizer = self._query_normalizer
+
+        if type_ is not None:
+            canonical, _via = normalizer.normalize(
+                text,
+                type_=type_,
+                min_ratio=EntityNormalizer.DEFAULT_QUERY_RATIO,
+            )
+            elapsed = time.perf_counter() - t0
+            self._slow_log("resolve_query_entity", elapsed)
+            # Only return when the result is actually in the vocab for this type —
+            # identity passthrough (no alias/fuzzy hit) still returns the basic-
+            # normalized form, but that form may not exist in the graph.
+            existing = normalizer._vocab.get(type_, set())
+            return canonical if canonical in existing else None
+
+        # type_=None: try all known types in a fixed priority order, return first hit.
+        for t in ("topic", "method", "material", "author", "journal", "keyword"):
+            canonical, _via = normalizer.normalize(
+                text,
+                type_=t,
+                min_ratio=EntityNormalizer.DEFAULT_QUERY_RATIO,
+            )
+            existing = normalizer._vocab.get(t, set())
+            if canonical in existing:
+                elapsed = time.perf_counter() - t0
+                self._slow_log("resolve_query_entity", elapsed)
+                return canonical
+
+        elapsed = time.perf_counter() - t0
+        self._slow_log("resolve_query_entity", elapsed)
+        return None
+
+    def find_papers_by_entities(
+        self,
+        canonical_ids: list[str],
+        k: int = 20,
+    ) -> list[tuple[str, float]]:
+        """G7: papers ranked by MENTIONS overlap into a given entity set.
+
+        For each paper, counts how many of its MENTIONS edges point into the
+        provided ``canonical_ids`` set, then returns the top-k by count desc.
+        Designed to accept the output of :meth:`resolve_query_entity` calls and
+        feed the RRF scorer in G8.
+
+        Parameters
+        ----------
+        canonical_ids:
+            List of canonical entity IDs to match against.  Empty list returns
+            ``[]`` without touching the database.
+        k:
+            Maximum number of results.
+
+        Returns
+        -------
+        list[tuple[str, float]]
+            ``[(doi, score), ...]`` ranked by overlap count desc.
+        """
+        if not canonical_ids:
+            return []
+
+        cypher = (
+            "MATCH (p:Paper)-[:MENTIONS]->(e:Entity) "
+            "WHERE e.canonical_id IN $ids "
+            "RETURN p.doi AS doi, count(e) AS score "
+            "ORDER BY score DESC LIMIT $k"
+        )
+        t0 = time.perf_counter()
+        res = self._conn.execute(
+            cypher, {"ids": list(canonical_ids), "k": int(k)}
+        )
+        elapsed = time.perf_counter() - t0
+        self._slow_log("find_papers_by_entities", elapsed)
+
+        out: list[tuple[str, float]] = []
+        while res.has_next():
+            row = res.get_next()
+            out.append((str(row[0]), float(row[1])))
+        return out
