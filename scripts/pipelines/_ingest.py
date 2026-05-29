@@ -106,7 +106,7 @@ def index_embeddings_and_mark_phases(
     Parameters
     ----------
     graph_db:
-        GraphDB instance from ``_safe_graph_db()``, or ``None`` when the
+        GraphDB instance from ``safe_graph_db()``, or ``None`` when the
         ``[graph]`` extra isn't installed.  Vector-only behaviour is
         identical to v0.3.x when ``None``.
     graph_entities:

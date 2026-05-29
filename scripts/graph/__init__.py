@@ -14,5 +14,6 @@ from __future__ import annotations
 # regardless of whether kuzu is installed; the lazy kuzu import inside GraphDB
 # ensures that non-graph users see no errors at import time.
 from scripts.graph.db import GraphDB
+from scripts.graph.import_citations import safe_graph_db
 
-__all__ = ["GraphDB"]
+__all__ = ["GraphDB", "safe_graph_db"]

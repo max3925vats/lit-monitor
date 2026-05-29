@@ -1,6 +1,6 @@
 """G5: CITES mirror tests.
 
-Covers mirror_citations() and _safe_graph_db() from
+Covers mirror_citations() and safe_graph_db() from
 scripts/graph/import_citations.py.
 """
 from __future__ import annotations
@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from scripts.graph import GraphDB
-from scripts.graph.import_citations import _safe_graph_db, mirror_citations
+from scripts.graph.import_citations import mirror_citations, safe_graph_db
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -145,15 +145,15 @@ class TestMirrorCitations:
 
 
 # ---------------------------------------------------------------------------
-# _safe_graph_db tests
+# safe_graph_db tests
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestSafeGraphDB:
     def test_returns_graphdb_when_extra_installed(self, tmp_path):
-        """G5: when [graph] is installed, _safe_graph_db returns a GraphDB."""
-        db = _safe_graph_db(persist_dir=str(tmp_path / "safe.kuzu"))
+        """G5: when [graph] is installed, safe_graph_db returns a GraphDB."""
+        db = safe_graph_db(persist_dir=str(tmp_path / "safe.kuzu"))
         assert db is not None
         assert isinstance(db, GraphDB)
         db.close()

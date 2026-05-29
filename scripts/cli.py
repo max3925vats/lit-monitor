@@ -1711,8 +1711,8 @@ def obsidian_build_citation_graph(
 
     # G5: mirror resolved citation_edges into Kuzu after E1 work, unless opted out.
     if not no_graph:
-        from scripts.graph.import_citations import _safe_graph_db, mirror_citations
-        graph_db = _safe_graph_db()
+        from scripts.graph.import_citations import mirror_citations, safe_graph_db
+        graph_db = safe_graph_db()
         if graph_db is not None:
             try:
                 added = mirror_citations(graph_db, state_db)
@@ -1861,8 +1861,8 @@ def obsidian_rebuild_citations(
 
     # G5: mirror resolved citation_edges into Kuzu after E1 work, unless opted out.
     if not no_graph:
-        from scripts.graph.import_citations import _safe_graph_db, mirror_citations
-        graph_db = _safe_graph_db()
+        from scripts.graph.import_citations import mirror_citations, safe_graph_db
+        graph_db = safe_graph_db()
         if graph_db is not None:
             try:
                 added = mirror_citations(graph_db, state_db)

@@ -15,7 +15,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def _safe_graph_db(persist_dir: str | None = None) -> Any | None:
+def safe_graph_db(persist_dir: str | None = None) -> Any | None:
     """Construct a GraphDB if the [graph] extra is installed; else log + return None.
 
     Used by CLI integration so commands don't hard-fail on installs without

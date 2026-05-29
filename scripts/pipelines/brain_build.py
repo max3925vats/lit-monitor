@@ -33,6 +33,7 @@ from scripts.core.doi_resolver import resolve_doi
 from scripts.core.item_router import detect_review, get_route
 from scripts.core.strict_mode import strict_fallback
 from scripts.core.zotero_client import ZoteroClient
+from scripts.graph import safe_graph_db
 from scripts.llm.extraction_schema import all_fields_for_schema
 from scripts.llm.extractor import extract_fields, extract_paper
 from scripts.llm.llm_client import RateLimitError
@@ -138,233 +139,234 @@ def run_brain_build(
     state_db.start_run(run_id, "brain_build")
     # G6: resolve GraphDB once per run.  None when [graph] extra absent or
     # the Kuzu DB can't be opened — vector-only behaviour is unaffected.
-    from scripts.graph.import_citations import _safe_graph_db
-    graph_db = _safe_graph_db()
-    # M4: (doi, discovered_topics) pairs — mirrors discovery.py:_run_ingestion
-    # (parallel collection pattern; same name reused intentionally).
-    _topics_batch: list[tuple[str, list[str]]] = []
-    # K1: read pass_strategy; warn if per-pass models are configured alongside "all"
-    _bb_cfg = getattr(config, "brain_build", None)
-    pass_strategy = getattr(_bb_cfg, "pass_strategy", "individual")
-    if pass_strategy == "all":
-        _per_pass_keys = [k for k in ("pass1_model", "pass2_model", "pass3_model")
-                          if getattr(_bb_cfg, k, None)]
-        if _per_pass_keys:
-            logger.warning(
-                "K1: pass_strategy='all' ignores per-pass model keys %s — "
-                "set pass_all_model instead or switch to pass_strategy='individual'",
-                _per_pass_keys,
-            )
-    # N22: --all-library bypasses the configured collection and iterates the entire library.
-    if all_library:
-        items = zotero_client.get_all_library_items()
-        scope_label = "entire Zotero library"
-    else:
-        collection_name = getattr(config.zotero, "collection_name", "lit-monitor")
-        items = zotero_client.get_collection_items(collection_name)
-        scope_label = f"collection {collection_name!r}"
-    # N3: filter out Zotero child items (attachments, notes) — they have no DOI
-    # and inflate the denominator while burning CrossRef quota on garbage queries.
-    items = [it for it in items if it.get("data", {}).get("itemType") not in ("attachment", "note")]
-    logger.warning(
-        "Found %d parent items in %s (attachments/notes filtered)",
-        len(items), scope_label,
-    )
-    papers_processed_this_run = 0  # N4: count successfully processed, not attempted
-    _limit_reached = False
-    consecutive_429 = 0  # V-9: abort after 3 consecutive rate-limit hits
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TimeElapsedColumn(),
-        disable=not show_progress,
-        transient=False,  # keep final state visible after completion
-    ) as progress:
-        task = progress.add_task("[cyan]Brain build[/cyan]", total=len(items))
-        for i in range(0, len(items), batch_size):
-            if _limit_reached:
-                break
-            batch = items[i : i + batch_size]
-            for item in batch:
+    graph_db = safe_graph_db()
+    try:
+        # M4: (doi, discovered_topics) pairs — mirrors discovery.py:_run_ingestion
+        # (parallel collection pattern; same name reused intentionally).
+        _topics_batch: list[tuple[str, list[str]]] = []
+        # K1: read pass_strategy; warn if per-pass models are configured alongside "all"
+        _bb_cfg = getattr(config, "brain_build", None)
+        pass_strategy = getattr(_bb_cfg, "pass_strategy", "individual")
+        if pass_strategy == "all":
+            _per_pass_keys = [k for k in ("pass1_model", "pass2_model", "pass3_model")
+                              if getattr(_bb_cfg, k, None)]
+            if _per_pass_keys:
+                logger.warning(
+                    "K1: pass_strategy='all' ignores per-pass model keys %s — "
+                    "set pass_all_model instead or switch to pass_strategy='individual'",
+                    _per_pass_keys,
+                )
+        # N22: --all-library bypasses the configured collection and iterates the entire library.
+        if all_library:
+            items = zotero_client.get_all_library_items()
+            scope_label = "entire Zotero library"
+        else:
+            collection_name = getattr(config.zotero, "collection_name", "lit-monitor")
+            items = zotero_client.get_collection_items(collection_name)
+            scope_label = f"collection {collection_name!r}"
+        # N3: filter out Zotero child items (attachments, notes) — they have no DOI
+        # and inflate the denominator while burning CrossRef quota on garbage queries.
+        items = [it for it in items if it.get("data", {}).get("itemType") not in ("attachment", "note")]
+        logger.warning(
+            "Found %d parent items in %s (attachments/notes filtered)",
+            len(items), scope_label,
+        )
+        papers_processed_this_run = 0  # N4: count successfully processed, not attempted
+        _limit_reached = False
+        consecutive_429 = 0  # V-9: abort after 3 consecutive rate-limit hits
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            disable=not show_progress,
+            transient=False,  # keep final state visible after completion
+        ) as progress:
+            task = progress.add_task("[cyan]Brain build[/cyan]", total=len(items))
+            for i in range(0, len(items), batch_size):
                 if _limit_reached:
                     break
-                data = item.get("data", {})
-                doi = (data.get("DOI") or "").strip() or None
-                zotero_key = item.get("key", "")
-                title = data.get("title", "")
-                # Update progress description with current paper title (truncated)
-                short_title = title[:55] if title else doi or "unknown"
-                progress.update(task, description=f"[dim]{short_title}[/dim]")
-                if not doi:
-                    # D2: try CrossRef before giving up — uses title + up to 3
-                    # author last names; min_score=70 keeps false-positive rate low.
-                    _authors = ZoteroClient.extract_authors(data)
-                    doi = resolve_doi(
-                        title, _authors, _parse_year(data.get("date", ""))
-                    ) or None
+                batch = items[i : i + batch_size]
+                for item in batch:
+                    if _limit_reached:
+                        break
+                    data = item.get("data", {})
+                    doi = (data.get("DOI") or "").strip() or None
+                    zotero_key = item.get("key", "")
+                    title = data.get("title", "")
+                    # Update progress description with current paper title (truncated)
+                    short_title = title[:55] if title else doi or "unknown"
+                    progress.update(task, description=f"[dim]{short_title}[/dim]")
                     if not doi:
+                        # D2: try CrossRef before giving up — uses title + up to 3
+                        # author last names; min_score=70 keeps false-positive rate low.
+                        _authors = ZoteroClient.extract_authors(data)
+                        doi = resolve_doi(
+                            title, _authors, _parse_year(data.get("date", ""))
+                        ) or None
+                        if not doi:
+                            logger.debug(
+                                "No DOI for item %s (%s) — skipping", zotero_key, title
+                            )
+                            # I2: accumulate for --resolve-no-doi deferred batch
+                            summary.no_doi_items.append({
+                                "zotero_key": zotero_key,
+                                "title": title,
+                                "authors": ZoteroClient.extract_authors(data),
+                                "year": _parse_year(data.get("date", "")),
+                                "_item": item,  # full Zotero dict for re-processing
+                            })
+                            progress.advance(task)
+                            continue
                         logger.debug(
-                            "No DOI for item %s (%s) — skipping", zotero_key, title
+                            "CrossRef resolved DOI for %s (%s): %s", zotero_key, title[:60], doi
                         )
-                        # I2: accumulate for --resolve-no-doi deferred batch
-                        summary.no_doi_items.append({
-                            "zotero_key": zotero_key,
-                            "title": title,
-                            "authors": ZoteroClient.extract_authors(data),
-                            "year": _parse_year(data.get("date", "")),
-                            "_item": item,  # full Zotero dict for re-processing
-                        })
-                        progress.advance(task)
-                        continue
-                    logger.debug(
-                        "CrossRef resolved DOI for %s (%s): %s", zotero_key, title[:60], doi
-                    )
-                    summary.crossref_resolved.append(doi)
-                # A2: metadata quality filter
-                ok, reason = _check_item_quality(data)
-                if not ok:
-                    logger.debug(
-                        "Quality filter: skipping %s (%r) — %s", zotero_key, title[:60], reason
-                    )
-                    summary.papers_skipped += 1
-                    progress.advance(task)
-                    continue
-                # I1: item-type routing — skip items that belong to another pipeline
-                item_type = data.get("itemType", "journalArticle")
-                try:
-                    route = get_route(item_type)
-                except KeyError:
-                    logger.warning(
-                        "Unknown Zotero item type %r for %s (%s) — skipping",
-                        item_type, zotero_key, title[:60],
-                    )
-                    summary.papers_skipped += 1
-                    progress.advance(task)
-                    continue
-                if route.pipeline != "brain_build":
-                    logger.debug(
-                        "Item type %r routes to pipeline %r — skipping %s (%s)",
-                        item_type, route.pipeline, zotero_key, title[:60],
-                    )
-                    summary.papers_skipped += 1
-                    progress.advance(task)
-                    continue
-                # Resume
-                if resume:
-                    item_progress = state_db.get_brain_build_progress(zotero_key)
-                    if item_progress and item_progress.get("fully_complete"):
-                        logger.debug("Skipping completed paper: %s", doi)
+                        summary.crossref_resolved.append(doi)
+                    # A2: metadata quality filter
+                    ok, reason = _check_item_quality(data)
+                    if not ok:
+                        logger.debug(
+                            "Quality filter: skipping %s (%r) — %s", zotero_key, title[:60], reason
+                        )
                         summary.papers_skipped += 1
                         progress.advance(task)
                         continue
-                try:
-                    processed, _topics = _process_paper(
-                        doi=doi,
-                        zotero_key=zotero_key,
-                        item=item,
-                        config=config,
-                        state_db=state_db,
-                        zotero_client=zotero_client,
-                        embeddings_db=embeddings_db,
-                        llm=llm,
-                        source_type=route.source_type,
-                        pass_strategy=pass_strategy,
-                        extract_paper_fn=extract_paper,
-                        write_paper_note_fn=write_paper_note,
-                        graph_db=graph_db,  # G6
-                    )
-                    if processed:
-                        summary.papers_processed += 1
-                        papers_processed_this_run += 1
-                        if _topics:
-                            _topics_batch.append((doi, _topics))
-                        consecutive_429 = 0  # reset on successful paper (symmetric with non-429 failure path)
-                        # N4: cap counts successfully processed items, not attempts.
-                        if max_papers is not None and papers_processed_this_run >= max_papers:
-                            _limit_reached = True
-                            break
-                    else:
-                        # N4 bonus: items skipped inside _process_paper (no .md attachment)
-                        # were not previously counted — fix the undercount here.
+                    # I1: item-type routing — skip items that belong to another pipeline
+                    item_type = data.get("itemType", "journalArticle")
+                    try:
+                        route = get_route(item_type)
+                    except KeyError:
+                        logger.warning(
+                            "Unknown Zotero item type %r for %s (%s) — skipping",
+                            item_type, zotero_key, title[:60],
+                        )
                         summary.papers_skipped += 1
-                except RateLimitError as exc:
-                    # V-9: exponential back-off; abort after 3 consecutive hits.
-                    consecutive_429 += 1
-                    logger.warning(
-                        "Rate limit hit on %s (consecutive: %d): %s",
-                        doi, consecutive_429, exc,
-                    )
-                    if consecutive_429 >= 3:
-                        logger.error(
-                            "Rate limit persists after %d consecutive hits — "
-                            "aborting brain-build cleanly. "
-                            "Resume with `lit-monitor brain-build --resume` once quota resets.",
-                            consecutive_429,
+                        progress.advance(task)
+                        continue
+                    if route.pipeline != "brain_build":
+                        logger.debug(
+                            "Item type %r routes to pipeline %r — skipping %s (%s)",
+                            item_type, route.pipeline, zotero_key, title[:60],
                         )
-                        state_db.finish_run(
-                            run_id,
-                            status="rate_limited",
-                            processed=summary.papers_processed,
-                            skipped=summary.papers_skipped,
-                            failed=summary.papers_failed,
-                            errors=summary.errors,
+                        summary.papers_skipped += 1
+                        progress.advance(task)
+                        continue
+                    # Resume
+                    if resume:
+                        item_progress = state_db.get_brain_build_progress(zotero_key)
+                        if item_progress and item_progress.get("fully_complete"):
+                            logger.debug("Skipping completed paper: %s", doi)
+                            summary.papers_skipped += 1
+                            progress.advance(task)
+                            continue
+                    try:
+                        processed, _topics = _process_paper(
+                            doi=doi,
+                            zotero_key=zotero_key,
+                            item=item,
+                            config=config,
+                            state_db=state_db,
+                            zotero_client=zotero_client,
+                            embeddings_db=embeddings_db,
+                            llm=llm,
+                            source_type=route.source_type,
+                            pass_strategy=pass_strategy,
+                            extract_paper_fn=extract_paper,
+                            write_paper_note_fn=write_paper_note,
+                            graph_db=graph_db,  # G6
                         )
-                        raise SystemExit(2)
-                    wait = 60 * (2 ** (consecutive_429 - 1))  # 60 s, 120 s
-                    logger.warning("Sleeping %ds before next paper", wait)
-                    time.sleep(wait)
-                    # Paper not marked error — --resume will retry it next run.
-                except Exception as exc:
-                    consecutive_429 = 0  # reset on non-429 failures
-                    logger.error("Paper %s failed: %s", doi, exc, exc_info=True)
-                    summary.papers_failed += 1
-                    summary.errors.append(f"{doi}: {exc}")
-                    state_db.mark_status(doi, "error")
-                finally:
-                    progress.advance(task)
-    state_db.finish_run(
-        run_id,
-        status="complete",
-        processed=summary.papers_processed,
-        skipped=summary.papers_skipped,
-        failed=summary.papers_failed,
-        errors=summary.errors,
-    )
+                        if processed:
+                            summary.papers_processed += 1
+                            papers_processed_this_run += 1
+                            if _topics:
+                                _topics_batch.append((doi, _topics))
+                            consecutive_429 = 0  # reset on successful paper (symmetric with non-429 failure path)
+                            # N4: cap counts successfully processed items, not attempts.
+                            if max_papers is not None and papers_processed_this_run >= max_papers:
+                                _limit_reached = True
+                                break
+                        else:
+                            # N4 bonus: items skipped inside _process_paper (no .md attachment)
+                            # were not previously counted — fix the undercount here.
+                            summary.papers_skipped += 1
+                    except RateLimitError as exc:
+                        # V-9: exponential back-off; abort after 3 consecutive hits.
+                        consecutive_429 += 1
+                        logger.warning(
+                            "Rate limit hit on %s (consecutive: %d): %s",
+                            doi, consecutive_429, exc,
+                        )
+                        if consecutive_429 >= 3:
+                            logger.error(
+                                "Rate limit persists after %d consecutive hits — "
+                                "aborting brain-build cleanly. "
+                                "Resume with `lit-monitor brain-build --resume` once quota resets.",
+                                consecutive_429,
+                            )
+                            state_db.finish_run(
+                                run_id,
+                                status="rate_limited",
+                                processed=summary.papers_processed,
+                                skipped=summary.papers_skipped,
+                                failed=summary.papers_failed,
+                                errors=summary.errors,
+                            )
+                            raise SystemExit(2)
+                        wait = 60 * (2 ** (consecutive_429 - 1))  # 60 s, 120 s
+                        logger.warning("Sleeping %ds before next paper", wait)
+                        time.sleep(wait)
+                        # Paper not marked error — --resume will retry it next run.
+                    except Exception as exc:
+                        consecutive_429 = 0  # reset on non-429 failures
+                        logger.error("Paper %s failed: %s", doi, exc, exc_info=True)
+                        summary.papers_failed += 1
+                        summary.errors.append(f"{doi}: {exc}")
+                        state_db.mark_status(doi, "error")
+                    finally:
+                        progress.advance(task)
+        state_db.finish_run(
+            run_id,
+            status="complete",
+            processed=summary.papers_processed,
+            skipped=summary.papers_skipped,
+            failed=summary.papers_failed,
+            errors=summary.errors,
+        )
 
-    # M4: append novel discovered_topics to topics.yaml and concepts.yaml.
-    if _topics_batch:
-        try:
-            from scripts.vocabulary.topic_merger import merge_discovered_topics
-            merged = merge_discovered_topics(_topics_batch)
-            if merged:
-                logger.warning(
-                    "M4 vocabulary merge: %d novel topic(s) appended — %s",
-                    len(merged), merged,
+        # M4: append novel discovered_topics to topics.yaml and concepts.yaml.
+        if _topics_batch:
+            try:
+                from scripts.vocabulary.topic_merger import merge_discovered_topics
+                merged = merge_discovered_topics(_topics_batch)
+                if merged:
+                    logger.warning(
+                        "M4 vocabulary merge: %d novel topic(s) appended — %s",
+                        len(merged), merged,
+                    )
+            except Exception as exc:
+                strict_fallback(
+                    logger,
+                    f"M4 vocabulary merge failed: {exc}. "
+                    "discovered_topics from this run were not appended to topics.yaml.",
+                    exc,
                 )
-        except Exception as exc:
-            strict_fallback(
-                logger,
-                f"M4 vocabulary merge failed: {exc}. "
-                "discovered_topics from this run were not appended to topics.yaml.",
-                exc,
-            )
 
-    logger.warning(
-        "Brain build complete: %d processed, %d skipped, %d failed",
-        summary.papers_processed,
-        summary.papers_skipped,
-        summary.papers_failed,
-    )
-    # G6: release the KuzuDB connection at pipeline end.  ``close()`` is safe
-    # to call multiple times and is a no-op when graph_db is None.
-    if graph_db is not None:
-        try:
-            graph_db.close()
-        except Exception as exc:  # pragma: no cover — defensive
-            logger.warning("G6: graph_db.close() failed (non-fatal): %s", exc)
-    return summary
+        logger.warning(
+            "Brain build complete: %d processed, %d skipped, %d failed",
+            summary.papers_processed,
+            summary.papers_skipped,
+            summary.papers_failed,
+        )
+        return summary
+    finally:
+        # G6: release the KuzuDB connection at pipeline end.  ``close()`` is
+        # safe to call multiple times and is a no-op when graph_db is None.
+        if graph_db is not None:
+            try:
+                graph_db.close()
+            except Exception as exc:  # pragma: no cover — defensive
+                logger.warning("G6: graph_db.close() failed (non-fatal): %s", exc)
 # ---------------------------------------------------------------------------
 # Per-paper processing
 # ---------------------------------------------------------------------------

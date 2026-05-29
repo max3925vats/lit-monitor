@@ -37,6 +37,7 @@ import requests
 from scripts.core.doi_resolver import resolve_doi
 from scripts.core.item_router import detect_review
 from scripts.core.strict_mode import strict_fallback
+from scripts.graph import safe_graph_db
 from scripts.llm.extractor import extract_paper
 from scripts.llm.llm_client import RateLimitError
 from scripts.llm.ranker import rank_papers
@@ -378,301 +379,302 @@ def _run_ingestion(
     _topics_batch: list[tuple[str, list[str]]] = []
     # G6: open the GraphDB once for this ingestion pass.  None when the
     # [graph] extra is absent — vector-only behaviour is unchanged.
-    from scripts.graph.import_citations import _safe_graph_db
-    graph_db = _safe_graph_db()
-    for item in new_items:
-        data = item.get("data", {})
-        doi = (data.get("DOI") or "").strip() or None
-        zotero_key = item.get("key", "")
-        title = data.get("title", "")
-        if not doi:
-            # D2: try CrossRef before giving up — ZoteroClient is already
-            # imported at the top of this function (line: from scripts.core…).
-            _authors = ZoteroClient.extract_authors(data)
-            doi = resolve_doi(
-                title, _authors, _parse_year(data.get("date", ""))
-            ) or None
-            if not doi:
-                logger.debug("New Zotero item %s has no DOI — skipping", zotero_key)
-                continue
-            logger.debug(
-                "CrossRef resolved DOI for new item %s (%s): %s",
-                zotero_key, title[:60], doi,
-            )
-
-        # A2: metadata quality gate — skip items with empty titles (and warn on
-        # absent authors / abstracts) before doing any expensive work.
-        ok, reason = _check_item_quality(data)
-        if not ok:
-            logger.debug("Quality filter: skipping new item %s (%r) — %s", zotero_key, title[:60], reason)
-            continue
-
-        # A3: resume check — if a previous run fully processed this item (e.g.
-        # ingestion partially completed then was restarted), skip it now.
-        progress = state_db.get_brain_build_progress(zotero_key)
-        if progress and progress.get("fully_complete"):
-            logger.debug("Ingestion resume: %s already fully complete — skipping", doi)
-            continue
-
-        # Paper-status dedup: skip items already processed by brain-build or a
-        # prior complete ingestion run.
-        existing = state_db.get_paper(doi)
-        if existing and existing.get("status") not in (None, "discovered"):
-            continue
-
-        # A3: register this item in the progress table before doing any work
-        # so a crash mid-item is recoverable on the next run.
-        state_db.upsert_brain_build_progress(zotero_key, doi)
-
-        try:
-            # M1: read markdown attachment from Zotero local storage.
-            fulltext = zotero_client.get_markdown_attachment(zotero_key)
-            if fulltext is None:
-                logger.debug(
-                    "No markdown attachment for new item %s — skipping "
-                    "(attach a .md file in Zotero to enable extraction)",
-                    doi,
-                )
-                continue
-            ocr_heavy = False  # markdown attachments are never OCR-heavy
-            authors = ZoteroClient.extract_authors(data)
-            year = _parse_year(data.get("date", ""))
-            journal = data.get("publicationTitle", "")
-            abstract = data.get("abstractNote", "") or ""
-            keywords = _extract_keywords(data)
-            # L1: pre-extraction S2 enrichment (mirrors brain_build H3/H4).
-            # Enrichment happens before extract_paper so detect_review() can
-            # set the correct source_type on the first DB write.
-            # H1: wrap so a transient S2 outage doesn't waste LLM tokens by
-            # marking the paper failed; narrow exception list mirrors
-            # brain_build for cross-pipeline consistency.
-            try:
-                s2_data = enrich_paper(doi)
-            except (
-                requests.exceptions.RequestException,
-                ConnectionError,
-                TimeoutError,
-                json.JSONDecodeError,
-                RuntimeError,
-            ) as exc:
-                logger.warning("S2 enrichment failed for %s (non-fatal): %s", doi, exc)
-                s2_data = {}
-            s2_pub_types = s2_data.get("s2_publication_types") if s2_data else None
-            source_type = "paper"
-            if detect_review(s2_pub_types, title=title, abstract=abstract, journal=journal):
-                logger.debug("detect_review: classifying %s as review article", doi)
-                source_type = "review"
-            existing_extraction = state_db.get_extraction_json(doi) or {}
-            # M3: determine which phases still need running based on progress row.
-            _prog = state_db.get_brain_build_progress(zotero_key) or {}
-            phases_needed: list[str] = []
-            if not _prog.get("simple_complete"):
-                phases_needed.append("simple")
-            if not _prog.get("complex_complete"):
-                phases_needed.append("complex")
-            if not phases_needed:
-                phases_needed = ["simple", "complex"]
-            # M5: forward per-mode chunk_chars from extraction.yaml to simple phase.
-            _ing_cfg = getattr(config, "ingestion", None)
-            _chunk_chars = getattr(_ing_cfg, "chunk_chars", None)
-            extraction = extract_paper(
-                fulltext,
-                llm,
-                content_type=source_type,
-                ocr_heavy=ocr_heavy,
-                phases=tuple(phases_needed),
-                existing_extraction=existing_extraction if existing_extraction else None,
-                chunk_chars_override=int(_chunk_chars) if isinstance(_chunk_chars, (int, float)) else None,
-            )
-            # Merge S2 data into extraction so it's persisted in the same upsert.
-            if s2_data:
-                extraction.update(s2_data)
-            # Audit R28 fix: defer phase marking until AFTER the paper-level
-            # embed has succeeded.  Marking here would leave the paper stuck
-            # at fully_complete=1 + status='error' if add_paper raises, and a
-            # subsequent --resume would silently skip the retry.
-            _phases_to_mark = [
-                phase for phase in phases_needed
-                if f"_{phase}_error" not in extraction
-            ]
-
-            # H1: persist the extraction payload but defer the status flip until
-            # after the embed step succeeds.  Pre-fix, status='extraction_complete'
-            # was written here and an add_paper failure would leave the row in a
-            # 'looks done but has zero embeddings' state that --resume skipped.
-            state_db.upsert_paper({
-                "doi": doi,
-                "title": title,
-                "authors": authors,
-                "year": year,
-                "journal": journal,
-                "zotero_key": zotero_key,
-                "source_type": source_type,
-                "extraction_json": json.dumps(extraction),
-                "extraction_provider": _llm_provider_str(llm),
-                "extraction_model": _llm_model_str(llm),
-                "keywords_json": keywords,
-                "first_seen_date": str(date.today()),
-                "last_updated": _now(),
-            })
-            # Assign vocabulary themes from Zotero tags (B2).
-            from scripts.vocabulary.normalizer import assign_themes
-            themes = assign_themes(keywords)
-            paper_record = {
-                "doi": doi,
-                "title": title,
-                "authors": authors,
-                "year": year,
-                "journal": journal,
-                "zotero_key": zotero_key,
-                "first_seen_date": str(date.today()),
-                "keywords": keywords,
-                "themes": themes,
-                "tracked_author": item.get("tracked_author", False),
-                "fulltext_analyzed": True,
-                # N8d: pass actual provider/model so the template doesn't fall
-                # back to the (incorrect) global config attribute.
-                "extraction_provider": _llm_provider_str(llm),
-                "extraction_model": _llm_model_str(llm),
-            }
-            note_path = write_paper_note(paper_record, extraction, config)
-            note_title = Path(note_path).stem
-            embed_text = _paper_embed_text(title, abstract, extraction)
-            # Each ingested item embeds into ChromaDB here — this is the "embeddings grow
-            # on every run" mechanic the README leans on.
-            chunks: list = []
-            if fulltext:
-                try:
-                    from scripts.core.chunker import chunk_markdown
-                    from scripts.core.markdown_processor import strip_end_matter
-                    chunks = chunk_markdown(strip_end_matter(fulltext), doi)
-                except Exception as exc:
-                    logger.warning("Chunking failed for %s (non-fatal): %s", doi, exc)
-            # R28 + G6: helper centralises add_paper + add_chunks + graph write + phase marks.
-            # ChromaDB metadata stays scalar-only; graph payload extends on the side.
-            _embed_paper_meta: dict[str, Any] = {
-                "source_type": "paper", "title": title, "year": year,
-            }
-            if graph_db is not None:
-                _graph_paper_meta = dict(_embed_paper_meta)
-                _graph_paper_meta["journal"] = journal
-                _graph_paper_meta["authors"] = authors
-                _graph_paper_meta["keywords_json"] = keywords
-                _graph_entities, _graph_relationships = build_graph_tuples(
-                    extraction=extraction,
-                    paper_metadata=_graph_paper_meta,
-                    source_doi=doi,
-                    state_db=state_db,
-                )
-            else:
-                _graph_paper_meta = _embed_paper_meta
-                _graph_entities, _graph_relationships = [], []
-            embed_ok, embed_err = index_embeddings_and_mark_phases(
-                doi=doi,
-                zotero_key=zotero_key,
-                fulltext=embed_text,
-                paper_metadata=_embed_paper_meta,
-                chunks=chunks,
-                state_db=state_db,
-                embeddings_db=embeddings_db,
-                phases_to_mark=tuple(_phases_to_mark),
-                logger=logger,
-                graph_db=graph_db,
-                graph_entities=_graph_entities,
-                graph_relationships=_graph_relationships,
-                graph_paper_metadata=_graph_paper_meta,
-            )
-            if not embed_ok:
-                # Skip downstream work (state flag, relink) so the paper isn't
-                # falsely marked complete; outer except will mark it failed.
-                raise RuntimeError(embed_err)
-            # H1: single authoritative status flip now that the embed step
-            # succeeded — combined with the note path + embeddings flag write.
-            state_db.upsert_paper({
-                "doi": doi,
-                "status": "extraction_complete",
-                "note_title": note_title,
-                "note_path": note_path,
-                "embeddings_indexed": 1,
-                "last_updated": _now(),
-            })
-            # Relink this note only
-            try:
-                relink_note(note_path, embeddings_db, state_db, config=config)
-            except Exception as exc:
-                logger.warning("Relink failed for %s: %s", doi, exc)
-
-            # M4: collect discovered_topics for end-of-run vocabulary merge.
-            _raw_topics = extraction.get("discovered_topics")
-            if isinstance(_raw_topics, list) and _raw_topics:
-                _topics_batch.append(
-                    (doi, [str(t) for t in _raw_topics if t and isinstance(t, str)])
-                )
-            summary.papers_ingested += 1
-            consecutive_429 = 0
-            logger.debug("Ingested new paper: %s", doi)
-        except RateLimitError as exc:
-            # V-9: exponential back-off; abort after 3 consecutive hits.
-            consecutive_429 += 1
-            logger.warning(
-                "Rate limit hit on %s (consecutive: %d): %s",
-                doi, consecutive_429, exc,
-            )
-            if consecutive_429 >= 3:
-                logger.error(
-                    "Rate limit persists after %d consecutive hits — "
-                    "aborting ingestion cleanly. "
-                    "Quota should reset shortly; the next run will resume.",
-                    consecutive_429,
-                )
-                # M1: mirror brain_build — record rate_limited status and exit
-                # with non-zero code so cron logs are honest. Paper is NOT
-                # marked error; next run will retry via Zotero poll.
-                state_db.finish_run(
-                    run_id,
-                    status="rate_limited",
-                    processed=summary.papers_ingested,
-                    failed=summary.papers_failed,
-                    errors=summary.errors,
-                )
-                raise SystemExit(2)
-            wait = 60 * (2 ** (consecutive_429 - 1))
-            logger.warning("Sleeping %ds before next paper", wait)
-            _time.sleep(wait)
-            # Paper not marked error — next run will retry via Zotero poll.
-        except Exception as exc:
-            consecutive_429 = 0
-            logger.error("Ingestion failed for %s: %s", doi, exc, exc_info=True)
-            summary.papers_failed += 1
-            summary.errors.append(f"{doi}: {exc}")
-    # Persist current library version so the next run only fetches newer items
+    graph_db = safe_graph_db()
     try:
-        current_version = zotero_client.get_current_version()
-        state_db.set_kv("zotero_library_version", str(current_version))
-        logger.debug("Updated Zotero library version to %d", current_version)
-    except Exception as exc:
-        logger.warning("Could not update Zotero library version: %s", exc)
-
-    # M4: append novel discovered_topics to topics.yaml and concepts.yaml.
-    if _topics_batch:
-        try:
-            from scripts.vocabulary.topic_merger import merge_discovered_topics
-            merged = merge_discovered_topics(_topics_batch)
-            if merged:
-                logger.warning(
-                    "M4 vocabulary merge: %d novel topic(s) appended — %s",
-                    len(merged), merged,
+        for item in new_items:
+            data = item.get("data", {})
+            doi = (data.get("DOI") or "").strip() or None
+            zotero_key = item.get("key", "")
+            title = data.get("title", "")
+            if not doi:
+                # D2: try CrossRef before giving up — ZoteroClient is already
+                # imported at the top of this function (line: from scripts.core…).
+                _authors = ZoteroClient.extract_authors(data)
+                doi = resolve_doi(
+                    title, _authors, _parse_year(data.get("date", ""))
+                ) or None
+                if not doi:
+                    logger.debug("New Zotero item %s has no DOI — skipping", zotero_key)
+                    continue
+                logger.debug(
+                    "CrossRef resolved DOI for new item %s (%s): %s",
+                    zotero_key, title[:60], doi,
                 )
-        except Exception as exc:
-            strict_fallback(
-                logger,
-                f"M4 vocabulary merge failed: {exc}. "
-                "discovered_topics from this run were not appended to topics.yaml.",
-                exc,
-            )
-    # G6: release the KuzuDB connection at ingestion end.  Safe to call when None.
-    if graph_db is not None:
+
+            # A2: metadata quality gate — skip items with empty titles (and warn on
+            # absent authors / abstracts) before doing any expensive work.
+            ok, reason = _check_item_quality(data)
+            if not ok:
+                logger.debug("Quality filter: skipping new item %s (%r) — %s", zotero_key, title[:60], reason)
+                continue
+
+            # A3: resume check — if a previous run fully processed this item (e.g.
+            # ingestion partially completed then was restarted), skip it now.
+            progress = state_db.get_brain_build_progress(zotero_key)
+            if progress and progress.get("fully_complete"):
+                logger.debug("Ingestion resume: %s already fully complete — skipping", doi)
+                continue
+
+            # Paper-status dedup: skip items already processed by brain-build or a
+            # prior complete ingestion run.
+            existing = state_db.get_paper(doi)
+            if existing and existing.get("status") not in (None, "discovered"):
+                continue
+
+            # A3: register this item in the progress table before doing any work
+            # so a crash mid-item is recoverable on the next run.
+            state_db.upsert_brain_build_progress(zotero_key, doi)
+
+            try:
+                # M1: read markdown attachment from Zotero local storage.
+                fulltext = zotero_client.get_markdown_attachment(zotero_key)
+                if fulltext is None:
+                    logger.debug(
+                        "No markdown attachment for new item %s — skipping "
+                        "(attach a .md file in Zotero to enable extraction)",
+                        doi,
+                    )
+                    continue
+                ocr_heavy = False  # markdown attachments are never OCR-heavy
+                authors = ZoteroClient.extract_authors(data)
+                year = _parse_year(data.get("date", ""))
+                journal = data.get("publicationTitle", "")
+                abstract = data.get("abstractNote", "") or ""
+                keywords = _extract_keywords(data)
+                # L1: pre-extraction S2 enrichment (mirrors brain_build H3/H4).
+                # Enrichment happens before extract_paper so detect_review() can
+                # set the correct source_type on the first DB write.
+                # H1: wrap so a transient S2 outage doesn't waste LLM tokens by
+                # marking the paper failed; narrow exception list mirrors
+                # brain_build for cross-pipeline consistency.
+                try:
+                    s2_data = enrich_paper(doi)
+                except (
+                    requests.exceptions.RequestException,
+                    ConnectionError,
+                    TimeoutError,
+                    json.JSONDecodeError,
+                    RuntimeError,
+                ) as exc:
+                    logger.warning("S2 enrichment failed for %s (non-fatal): %s", doi, exc)
+                    s2_data = {}
+                s2_pub_types = s2_data.get("s2_publication_types") if s2_data else None
+                source_type = "paper"
+                if detect_review(s2_pub_types, title=title, abstract=abstract, journal=journal):
+                    logger.debug("detect_review: classifying %s as review article", doi)
+                    source_type = "review"
+                existing_extraction = state_db.get_extraction_json(doi) or {}
+                # M3: determine which phases still need running based on progress row.
+                _prog = state_db.get_brain_build_progress(zotero_key) or {}
+                phases_needed: list[str] = []
+                if not _prog.get("simple_complete"):
+                    phases_needed.append("simple")
+                if not _prog.get("complex_complete"):
+                    phases_needed.append("complex")
+                if not phases_needed:
+                    phases_needed = ["simple", "complex"]
+                # M5: forward per-mode chunk_chars from extraction.yaml to simple phase.
+                _ing_cfg = getattr(config, "ingestion", None)
+                _chunk_chars = getattr(_ing_cfg, "chunk_chars", None)
+                extraction = extract_paper(
+                    fulltext,
+                    llm,
+                    content_type=source_type,
+                    ocr_heavy=ocr_heavy,
+                    phases=tuple(phases_needed),
+                    existing_extraction=existing_extraction if existing_extraction else None,
+                    chunk_chars_override=int(_chunk_chars) if isinstance(_chunk_chars, (int, float)) else None,
+                )
+                # Merge S2 data into extraction so it's persisted in the same upsert.
+                if s2_data:
+                    extraction.update(s2_data)
+                # Audit R28 fix: defer phase marking until AFTER the paper-level
+                # embed has succeeded.  Marking here would leave the paper stuck
+                # at fully_complete=1 + status='error' if add_paper raises, and a
+                # subsequent --resume would silently skip the retry.
+                _phases_to_mark = [
+                    phase for phase in phases_needed
+                    if f"_{phase}_error" not in extraction
+                ]
+
+                # H1: persist the extraction payload but defer the status flip until
+                # after the embed step succeeds.  Pre-fix, status='extraction_complete'
+                # was written here and an add_paper failure would leave the row in a
+                # 'looks done but has zero embeddings' state that --resume skipped.
+                state_db.upsert_paper({
+                    "doi": doi,
+                    "title": title,
+                    "authors": authors,
+                    "year": year,
+                    "journal": journal,
+                    "zotero_key": zotero_key,
+                    "source_type": source_type,
+                    "extraction_json": json.dumps(extraction),
+                    "extraction_provider": _llm_provider_str(llm),
+                    "extraction_model": _llm_model_str(llm),
+                    "keywords_json": keywords,
+                    "first_seen_date": str(date.today()),
+                    "last_updated": _now(),
+                })
+                # Assign vocabulary themes from Zotero tags (B2).
+                from scripts.vocabulary.normalizer import assign_themes
+                themes = assign_themes(keywords)
+                paper_record = {
+                    "doi": doi,
+                    "title": title,
+                    "authors": authors,
+                    "year": year,
+                    "journal": journal,
+                    "zotero_key": zotero_key,
+                    "first_seen_date": str(date.today()),
+                    "keywords": keywords,
+                    "themes": themes,
+                    "tracked_author": item.get("tracked_author", False),
+                    "fulltext_analyzed": True,
+                    # N8d: pass actual provider/model so the template doesn't fall
+                    # back to the (incorrect) global config attribute.
+                    "extraction_provider": _llm_provider_str(llm),
+                    "extraction_model": _llm_model_str(llm),
+                }
+                note_path = write_paper_note(paper_record, extraction, config)
+                note_title = Path(note_path).stem
+                embed_text = _paper_embed_text(title, abstract, extraction)
+                # Each ingested item embeds into ChromaDB here — this is the "embeddings grow
+                # on every run" mechanic the README leans on.
+                chunks: list = []
+                if fulltext:
+                    try:
+                        from scripts.core.chunker import chunk_markdown
+                        from scripts.core.markdown_processor import strip_end_matter
+                        chunks = chunk_markdown(strip_end_matter(fulltext), doi)
+                    except Exception as exc:
+                        logger.warning("Chunking failed for %s (non-fatal): %s", doi, exc)
+                # R28 + G6: helper centralises add_paper + add_chunks + graph write + phase marks.
+                # ChromaDB metadata stays scalar-only; graph payload extends on the side.
+                _embed_paper_meta: dict[str, Any] = {
+                    "source_type": "paper", "title": title, "year": year,
+                }
+                if graph_db is not None:
+                    _graph_paper_meta = dict(_embed_paper_meta)
+                    _graph_paper_meta["journal"] = journal
+                    _graph_paper_meta["authors"] = authors
+                    _graph_paper_meta["keywords_json"] = keywords
+                    _graph_entities, _graph_relationships = build_graph_tuples(
+                        extraction=extraction,
+                        paper_metadata=_graph_paper_meta,
+                        source_doi=doi,
+                        state_db=state_db,
+                    )
+                else:
+                    _graph_paper_meta = _embed_paper_meta
+                    _graph_entities, _graph_relationships = [], []
+                embed_ok, embed_err = index_embeddings_and_mark_phases(
+                    doi=doi,
+                    zotero_key=zotero_key,
+                    fulltext=embed_text,
+                    paper_metadata=_embed_paper_meta,
+                    chunks=chunks,
+                    state_db=state_db,
+                    embeddings_db=embeddings_db,
+                    phases_to_mark=tuple(_phases_to_mark),
+                    logger=logger,
+                    graph_db=graph_db,
+                    graph_entities=_graph_entities,
+                    graph_relationships=_graph_relationships,
+                    graph_paper_metadata=_graph_paper_meta,
+                )
+                if not embed_ok:
+                    # Skip downstream work (state flag, relink) so the paper isn't
+                    # falsely marked complete; outer except will mark it failed.
+                    raise RuntimeError(embed_err)
+                # H1: single authoritative status flip now that the embed step
+                # succeeded — combined with the note path + embeddings flag write.
+                state_db.upsert_paper({
+                    "doi": doi,
+                    "status": "extraction_complete",
+                    "note_title": note_title,
+                    "note_path": note_path,
+                    "embeddings_indexed": 1,
+                    "last_updated": _now(),
+                })
+                # Relink this note only
+                try:
+                    relink_note(note_path, embeddings_db, state_db, config=config)
+                except Exception as exc:
+                    logger.warning("Relink failed for %s: %s", doi, exc)
+
+                # M4: collect discovered_topics for end-of-run vocabulary merge.
+                _raw_topics = extraction.get("discovered_topics")
+                if isinstance(_raw_topics, list) and _raw_topics:
+                    _topics_batch.append(
+                        (doi, [str(t) for t in _raw_topics if t and isinstance(t, str)])
+                    )
+                summary.papers_ingested += 1
+                consecutive_429 = 0
+                logger.debug("Ingested new paper: %s", doi)
+            except RateLimitError as exc:
+                # V-9: exponential back-off; abort after 3 consecutive hits.
+                consecutive_429 += 1
+                logger.warning(
+                    "Rate limit hit on %s (consecutive: %d): %s",
+                    doi, consecutive_429, exc,
+                )
+                if consecutive_429 >= 3:
+                    logger.error(
+                        "Rate limit persists after %d consecutive hits — "
+                        "aborting ingestion cleanly. "
+                        "Quota should reset shortly; the next run will resume.",
+                        consecutive_429,
+                    )
+                    # M1: mirror brain_build — record rate_limited status and exit
+                    # with non-zero code so cron logs are honest. Paper is NOT
+                    # marked error; next run will retry via Zotero poll.
+                    state_db.finish_run(
+                        run_id,
+                        status="rate_limited",
+                        processed=summary.papers_ingested,
+                        failed=summary.papers_failed,
+                        errors=summary.errors,
+                    )
+                    raise SystemExit(2)
+                wait = 60 * (2 ** (consecutive_429 - 1))
+                logger.warning("Sleeping %ds before next paper", wait)
+                _time.sleep(wait)
+                # Paper not marked error — next run will retry via Zotero poll.
+            except Exception as exc:
+                consecutive_429 = 0
+                logger.error("Ingestion failed for %s: %s", doi, exc, exc_info=True)
+                summary.papers_failed += 1
+                summary.errors.append(f"{doi}: {exc}")
+        # Persist current library version so the next run only fetches newer items
         try:
-            graph_db.close()
-        except Exception as exc:  # pragma: no cover — defensive
-            logger.warning("G6: graph_db.close() failed (non-fatal): %s", exc)
+            current_version = zotero_client.get_current_version()
+            state_db.set_kv("zotero_library_version", str(current_version))
+            logger.debug("Updated Zotero library version to %d", current_version)
+        except Exception as exc:
+            logger.warning("Could not update Zotero library version: %s", exc)
+
+        # M4: append novel discovered_topics to topics.yaml and concepts.yaml.
+        if _topics_batch:
+            try:
+                from scripts.vocabulary.topic_merger import merge_discovered_topics
+                merged = merge_discovered_topics(_topics_batch)
+                if merged:
+                    logger.warning(
+                        "M4 vocabulary merge: %d novel topic(s) appended — %s",
+                        len(merged), merged,
+                    )
+            except Exception as exc:
+                strict_fallback(
+                    logger,
+                    f"M4 vocabulary merge failed: {exc}. "
+                    "discovered_topics from this run were not appended to topics.yaml.",
+                    exc,
+                )
+    finally:
+        # G6: release the KuzuDB connection at ingestion end.  Safe to call when None.
+        if graph_db is not None:
+            try:
+                graph_db.close()
+            except Exception as exc:  # pragma: no cover — defensive
+                logger.warning("G6: graph_db.close() failed (non-fatal): %s", exc)
