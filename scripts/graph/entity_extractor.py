@@ -11,7 +11,7 @@ Field map (verified against config/extraction_schema.yaml as of v0.4.0):
   topic    → extraction_json["discovered_topics"]        (list or string field)
              extraction_json["novelty_statement"]        (string field)
   keyword  → paper_metadata["keywords_json"]             (JSON array of Zotero tags)
-  author   → paper_metadata["authors"]                   (JSON array of strings)
+  author   → paper_metadata["authors"]                   (JSON array of dicts or strings)
   journal  → paper_metadata["journal"]                   (plain string)
 
 Deviation from the original brief:
@@ -148,25 +148,78 @@ def _emit_from_list_field(
 
 
 def _parse_json_string_array(raw: Any) -> list[str]:
-    """Parse a JSON-encoded list of strings into a Python list.
+    """Parse a JSON array of strings (e.g. Zotero keywords_json).
 
-    Handles:
-    - JSON string ``'["a", "b"]'``
-    - Already-parsed ``list`` passed directly
-    - Missing / None / invalid JSON → returns empty list (no crash)
+    Skips non-string items with a debug log so unexpected shapes are observable.
     """
-    if not raw:
+    if raw is None or raw == "":
         return []
-    if isinstance(raw, list):
-        return [str(x).strip() for x in raw if x]
     if isinstance(raw, str):
         try:
-            parsed = json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
             return []
-        if isinstance(parsed, list):
-            return [str(x).strip() for x in parsed if x]
-    return []
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for x in raw:
+        if isinstance(x, str):
+            stripped = x.strip()
+            if stripped:
+                out.append(stripped)
+        elif x:
+            logger.debug("_parse_json_string_array: skipping non-str %r", type(x).__name__)
+    return out
+
+
+def _parse_authors(raw: Any) -> list[str]:
+    """Parse Zotero authors field — supports both list-of-strings and list-of-dicts.
+
+    Zotero stores authors as either:
+      - list of dicts: [{"lastName": "Smith", "firstName": "Jane"}, ...]
+      - list of strings: ["Smith, Jane", "Jones, Bob"]
+
+    Returns canonical surface forms ("Last, First" preferred, falls back to
+    whichever name part is present).
+    """
+    # Reuse the JSON-decode + type-check from the existing helper, but bail
+    # before the str() coercion so dicts survive the parse.
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return []
+    if not isinstance(raw, list):
+        return []
+
+    out: list[str] = []
+    for item in raw:
+        if not item:
+            continue
+        if isinstance(item, dict):
+            # Zotero shape: {"firstName": "Jane", "lastName": "Smith"}
+            # Also tolerate the "first"/"last" alias seen in some test fixtures.
+            last = (item.get("lastName") or item.get("last") or "").strip()
+            first = (item.get("firstName") or item.get("first") or "").strip()
+            if last and first:
+                name = f"{last}, {first}"
+            elif last:
+                name = last
+            elif first:
+                name = first
+            else:
+                logger.debug("_parse_authors: dict without name fields: %r", item)
+                continue
+            out.append(name)
+        elif isinstance(item, str):
+            stripped = item.strip()
+            if stripped:
+                out.append(stripped)
+        else:
+            logger.debug("_parse_authors: skipping non-str/dict item: %r", type(item).__name__)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +242,7 @@ def extract_entities(
         parsed into a dict.  May be empty if the paper has not been extracted yet.
     paper_metadata:
         Zotero-origin fields from the same state.db row:
-        ``authors`` (JSON array of strings), ``journal`` (plain string),
+        ``authors`` (JSON array of dicts or strings), ``journal`` (plain string),
         and optionally ``keywords_json`` (JSON array of Zotero tag strings).
     normalizer:
         EntityNormalizer instance from G2.  Deduplication/fuzzy-collapse scope
@@ -207,6 +260,8 @@ def extract_entities(
     raw: list[EntityTuple] = []
 
     # 1. extraction_json fields: method, material, topic
+    # Phase 1: whole-field span (0, len(text)). Phase 2's BioBERT NER will
+    # replace this with substring-level extraction across the field text.
     for type_, field_names in _SCHEMA_ENTITY_SOURCES.items():
         for field in field_names:
             value = extraction_json.get(field)
@@ -235,8 +290,8 @@ def extract_entities(
             span_end=None,
         ))
 
-    # 3. Authors from paper_metadata (Zotero — stored as JSON array of strings)
-    for author in _parse_json_string_array(paper_metadata.get("authors")):
+    # 3. Authors from paper_metadata (Zotero — stored as JSON array of dicts or strings)
+    for author in _parse_authors(paper_metadata.get("authors")):
         canonical, _via = normalizer.normalize(author, type_="author")
         raw.append(EntityTuple(
             canonical_id=canonical,

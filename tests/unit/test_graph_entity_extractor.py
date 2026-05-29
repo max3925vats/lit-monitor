@@ -381,6 +381,59 @@ class TestAuthorParsing:
 
 
 # ---------------------------------------------------------------------------
+# G3 AC2: list-of-dicts author shape (Zotero primary format)
+# ---------------------------------------------------------------------------
+
+class TestParseAuthorsDictShape:
+    """G3 AC2: list-of-dicts authors are the Zotero primary format."""
+
+    def test_dict_shape_with_lastName_and_firstName(self):
+        """Zotero canonical shape: dicts with 'lastName' and 'firstName'."""
+        from scripts.graph.entity_extractor import _parse_authors
+        raw = json.dumps([
+            {"lastName": "Smith", "firstName": "Jane"},
+            {"lastName": "Jones", "firstName": "Bob"},
+        ])
+        assert _parse_authors(raw) == ["Smith, Jane", "Jones, Bob"]
+
+    def test_dict_shape_extracts_to_entities(self):
+        """End-to-end: dict-shape authors produce Entity(type='author')."""
+        n = EntityNormalizer(aliases={})
+        authors_json = json.dumps([
+            {"lastName": "Smith", "firstName": "Jane"},
+            {"lastName": "Jones", "firstName": "Bob"},
+        ])
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": authors_json, "journal": ""},
+            normalizer=n,
+        )
+        authors = [t for t in result if t.type == "author"]
+        assert len(authors) == 2
+        assert any("smith" in t.canonical_id for t in authors)
+        assert any("jones" in t.canonical_id for t in authors)
+
+    def test_dict_shape_with_only_last_name(self):
+        """Dict with only lastName (no firstName) still produces an author."""
+        from scripts.graph.entity_extractor import _parse_authors
+        raw = json.dumps([{"lastName": "Smith"}])
+        assert _parse_authors(raw) == ["Smith"]
+
+    def test_dict_shape_with_first_last_alias_fields(self):
+        """Some legacy fixtures use 'first'/'last' instead of 'firstName'/'lastName'."""
+        from scripts.graph.entity_extractor import _parse_authors
+        raw = json.dumps([{"first": "Jane", "last": "Smith"}])
+        assert _parse_authors(raw) == ["Smith, Jane"]
+
+    def test_dict_without_name_fields_is_skipped(self):
+        """Garbage dict (no name keys) is silently skipped."""
+        from scripts.graph.entity_extractor import _parse_authors
+        raw = json.dumps([{"affiliation": "X"}, {"firstName": "Bob"}])
+        # First dict has no name field → skipped; second has only firstName → kept
+        assert _parse_authors(raw) == ["Bob"]
+
+
+# ---------------------------------------------------------------------------
 # Surface form preservation
 # ---------------------------------------------------------------------------
 
