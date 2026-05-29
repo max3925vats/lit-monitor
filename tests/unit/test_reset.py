@@ -396,3 +396,7 @@ def test_format_size_bytes_renders_human_readable() -> None:
     assert reset_mod._format_size_bytes(512) == "512 B"
     assert reset_mod._format_size_bytes(2048).endswith("KB")
     assert reset_mod._format_size_bytes(5 * 1024 * 1024).endswith("MB")
+    # Exact-value pin so future refactors of the unit-walking loop can't
+    # silently regress the boundary math.
+    assert reset_mod._format_size_bytes(1024 * 1024 * 1024) == "1.0 GB"
+    assert reset_mod._format_size_bytes(2 * 1024 * 1024) == "2.0 MB"

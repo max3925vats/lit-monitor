@@ -29,6 +29,15 @@ from typing import Any
 import click
 
 from scripts.core.strict_mode import set_strict, strict_fallback
+from scripts.setup.reset import (
+    ResetResult,
+    ResetTarget,
+    _format_size_bytes,
+    perform_state_reset,
+    perform_vault_reset,
+    state_targets,
+    vault_targets,
+)
 
 logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
@@ -1871,9 +1880,8 @@ def reset_group() -> None:
     """
 
 
-def _render_targets(targets: list, header: str) -> None:
+def _render_targets(targets: list[ResetTarget], header: str) -> None:
     """Print the ``About to PERMANENTLY DELETE`` block for a reset target list."""
-    from scripts.setup.reset import _format_size_bytes
     click.echo()
     click.echo(click.style(header, bold=True, fg="red"))
     for tgt in targets:
@@ -1911,11 +1919,12 @@ def _confirm_phrase(expected: str) -> bool:
     try:
         typed = input(f"Type '{expected}' (exactly) to confirm: ")
     except EOFError:
+        click.echo("(no TTY for confirmation — aborting)", err=True)
         return False
     return typed == expected
 
 
-def _render_results(results: list) -> None:
+def _render_results(results: list[ResetResult]) -> None:
     """Print per-target ``✓ deleted`` / ``- skipped`` lines."""
     for r in results:
         if r.deleted:
@@ -1944,26 +1953,33 @@ _VAULT_PRESERVED = [
 ]
 
 
-def _run_state_reset(ctx: click.Context) -> bool:
+def _run_state_reset(ctx: click.Context) -> None:
     """Shared body for ``reset state`` and the state half of ``reset all``.
 
-    Returns True on successful wipe, False on user abort. Confirms via the
-    typed phrase ``reset state`` before deleting state targets — the same
-    phrase is required when this is invoked as the state half of
-    ``reset all`` so the prompt remains predictable for muscle memory.
+    Handles its own exit semantics: returns on either a successful wipe or a
+    user abort, and calls ``sys.exit(1)`` on config-load failure. The return
+    value is intentionally ``None`` — callers (including ``reset all``) do
+    not branch on success; aborting one half does not abort the other.
+
+    Confirms via the typed phrase ``reset state`` before deleting state
+    targets — the same phrase is required when this is invoked as the state
+    half of ``reset all`` so the prompt remains predictable for muscle memory.
     """
-    from scripts.setup.reset import perform_state_reset, state_targets
     try:
         config = _make_config()
-    except Exception as exc:
+    except (FileNotFoundError, KeyError) as exc:
         click.echo(f"Error loading config: {exc}", err=True)
+        click.echo(
+            "Run 'lit-monitor first-run' or 'lit-monitor diagnose' first.",
+            err=True,
+        )
         sys.exit(1)
     targets = state_targets(config)
     _render_targets(targets, "About to PERMANENTLY DELETE (pipeline state):")
     _render_preserved(_STATE_PRESERVED)
     if not _confirm_phrase("reset state"):
         click.echo("Aborted — nothing deleted.")
-        return False
+        return
     click.echo()
     results = perform_state_reset(targets)
     _render_results(results)
@@ -1972,21 +1988,26 @@ def _run_state_reset(ctx: click.Context) -> bool:
         "Next: run 'lit-monitor brain-build' to rebuild from your Zotero "
         "collection."
     )
-    return True
 
 
-def _run_vault_reset(ctx: click.Context) -> bool:
+def _run_vault_reset(ctx: click.Context) -> None:
     """Shared body for ``reset vault`` and the vault half of ``reset all``.
 
-    Returns True on successful wipe, False on user abort. Confirms via the
-    typed phrase ``reset vault`` before deleting markdown files in the
-    Papers, Digests, and Synthesis folders.
+    Handles its own exit semantics: returns on either a successful wipe or a
+    user abort, and calls ``sys.exit(1)`` on config-load failure. The return
+    value is intentionally ``None`` — callers do not branch on success.
+
+    Confirms via the typed phrase ``reset vault`` before deleting markdown
+    files in the Papers, Digests, and Synthesis folders.
     """
-    from scripts.setup.reset import perform_vault_reset, vault_targets
     try:
         config = _make_config()
-    except Exception as exc:
+    except (FileNotFoundError, KeyError) as exc:
         click.echo(f"Error loading config: {exc}", err=True)
+        click.echo(
+            "Run 'lit-monitor first-run' or 'lit-monitor diagnose' first.",
+            err=True,
+        )
         sys.exit(1)
     targets = vault_targets(config)
     click.echo()
@@ -2002,7 +2023,7 @@ def _run_vault_reset(ctx: click.Context) -> bool:
     _render_preserved(_VAULT_PRESERVED)
     if not _confirm_phrase("reset vault"):
         click.echo("Aborted — nothing deleted.")
-        return False
+        return
     click.echo()
     results = perform_vault_reset(targets)
     _render_results(results)
@@ -2011,7 +2032,6 @@ def _run_vault_reset(ctx: click.Context) -> bool:
         "Next: run 'lit-monitor obsidian rerender --all' to regenerate notes "
         "from the state DB."
     )
-    return True
 
 
 @reset_group.command("state")

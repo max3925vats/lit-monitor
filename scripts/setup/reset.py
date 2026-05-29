@@ -98,13 +98,13 @@ def _format_size_bytes(num_bytes: int) -> str:
     """
     if num_bytes < 1024:
         return f"{num_bytes} B"
+    num_bytes_f = float(num_bytes)
     for unit in ("KB", "MB", "GB", "TB"):
-        num_bytes_f = num_bytes / 1024.0
+        num_bytes_f /= 1024.0
         if num_bytes_f < 1024 or unit == "TB":
             return f"{num_bytes_f:.1f} {unit}"
-        num_bytes = int(num_bytes_f)
-    # Unreachable, but keep mypy happy.
-    return f"{num_bytes} B"
+    # Unreachable: the TB branch above always returns.
+    raise AssertionError("unreachable")
 
 
 def _probe_path(path: Path) -> tuple[bool, int, int]:
@@ -248,9 +248,26 @@ def _delete_file(path: Path) -> None:
 
 
 def _delete_directory(path: Path) -> None:
-    """Remove a directory tree. Missing → no-op."""
-    if path.exists():
-        shutil.rmtree(path, ignore_errors=False)
+    """Remove a directory tree. Missing → no-op.
+
+    Uses ``ignore_errors=True`` because a half-deleted directory is the worst
+    possible end state for the chroma persist dir: chromadb will reopen it
+    and crash with ``SQLITE_READONLY_DBMOVED``. Untouched works (we'll just
+    report partial success); fully deleted works (next run rebuilds it);
+    half-deleted does not. Surface any errors via a warning before swallowing
+    them so the failure is at least visible in the logs.
+    """
+    if not path.exists():
+        return
+    errors: list[tuple[str, BaseException]] = []
+
+    def _onerror(_func: Any, target: str, exc_info: Any) -> None:
+        errors.append((target, exc_info[1]))
+
+    shutil.rmtree(path, onerror=_onerror)
+    if errors:
+        for target, exc in errors:
+            logger.warning("rmtree partial failure at %s: %s", target, exc)
 
 
 def _delete_state_db(path: Path) -> bool:
