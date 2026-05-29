@@ -2343,6 +2343,42 @@ def graph_rebuild(all_data: bool, aliases_only: bool) -> None:
             pass
 
 
+@graph_cmd.command("propose-aliases")
+@click.option("--min-ratio", default=80, type=int,
+              help="Fuzzy match threshold (0-100). Higher = stricter clusters. Default: 80.")
+@click.option("--out", default="config/entity_aliases.suggested.yaml",
+              help="Output YAML path.")
+def graph_propose_aliases(min_ratio: int, out: str) -> None:
+    """Propose new aliases via fuzzy clustering (no LLM)."""
+    from pathlib import Path
+
+    from scripts.graph import safe_graph_db
+    from scripts.graph.propose_aliases import propose_aliases, write_proposal_file
+
+    graph_db = safe_graph_db()
+    if graph_db is None:
+        raise click.UsageError(
+            "[graph] extra not installed. Install with: uv sync --extra graph"
+        )
+
+    try:
+        proposals = propose_aliases(graph_db, min_ratio=min_ratio)
+        if not proposals:
+            click.echo("No alias proposals (no clusters found at the given threshold).")
+            return
+        out_path = Path(out)
+        write_proposal_file(out_path, proposals)
+        total = sum(len(v) for v in proposals.values())
+        click.echo(f"Wrote {total} alias proposals across {len(proposals)} types → {out}")
+        click.echo("Review and merge by hand into config/entity_aliases.yaml,")
+        click.echo("then run `lit-monitor graph rebuild --aliases-only` to apply.")
+    finally:
+        try:
+            graph_db.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
