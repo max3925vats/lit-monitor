@@ -1858,6 +1858,194 @@ def db_cleanup_stale(ctx: click.Context) -> None:
 
 
 # ---------------------------------------------------------------------------
+# reset — destructive wipe of pipeline state and/or generated vault notes
+# ---------------------------------------------------------------------------
+@main.group("reset")
+def reset_group() -> None:
+    """Destructive: wipe pipeline state and/or generated Obsidian notes.
+
+    Each subcommand requires the user to type the exact subcommand phrase
+    (case-sensitive) before any deletion happens. Credentials in
+    ``~/.config/lit-monitor/config.toml`` are NEVER touched — delete those
+    by hand if you really want them gone.
+    """
+
+
+def _render_targets(targets: list, header: str) -> None:
+    """Print the ``About to PERMANENTLY DELETE`` block for a reset target list."""
+    from scripts.setup.reset import _format_size_bytes
+    click.echo()
+    click.echo(click.style(header, bold=True, fg="red"))
+    for tgt in targets:
+        if not tgt.exists:
+            click.echo(f"  - {tgt.label}: {tgt.path}  (not present)")
+            continue
+        if tgt.file_count > 0:
+            size_str = _format_size_bytes(tgt.size_bytes)
+            click.echo(
+                f"  - {tgt.label}: {tgt.path}  "
+                f"({tgt.file_count} files, {size_str})"
+            )
+        else:
+            size_str = _format_size_bytes(tgt.size_bytes)
+            click.echo(f"  - {tgt.label}: {tgt.path}  ({size_str})")
+
+
+def _render_preserved(items: list[str]) -> None:
+    """Print the NOT-touched callout."""
+    click.echo()
+    click.echo(click.style("NOT touched:", bold=True, fg="green"))
+    for item in items:
+        click.echo(f"  - {item}")
+
+
+def _confirm_phrase(expected: str) -> bool:
+    """Prompt for the confirmation phrase; return True iff it matches exactly.
+
+    Case-sensitive, no whitespace stripping beyond a trailing newline. We use
+    ``input()`` rather than ``click.prompt`` because click.prompt strips the
+    trailing newline but normalises in ways we don't want for an
+    exact-match confirmation gate.
+    """
+    click.echo()
+    try:
+        typed = input(f"Type '{expected}' (exactly) to confirm: ")
+    except EOFError:
+        return False
+    return typed == expected
+
+
+def _render_results(results: list) -> None:
+    """Print per-target ``✓ deleted`` / ``- skipped`` lines."""
+    for r in results:
+        if r.deleted:
+            click.echo(
+                click.style(f"  ✓ deleted {r.label}: {r.path}", fg="green")
+            )
+        else:
+            reason = r.skipped_reason or "skipped"
+            click.echo(f"  - skipped {r.label} ({reason}): {r.path}")
+
+
+_STATE_PRESERVED = [
+    "credentials (~/.config/lit-monitor/config.toml)",
+    "dev sandbox (~/.config/lit-monitor/chroma_dev, state_dev.db)",
+    "run logs (~/.config/lit-monitor/logs/)",
+    "tracked configs (paths.yaml, topics.yaml, concepts.yaml, …)",
+    "any *.example.yaml files",
+]
+
+_VAULT_PRESERVED = [
+    "credentials (~/.config/lit-monitor/config.toml)",
+    "Literature/_Dev/ (dev sandbox)",
+    "vault root theme pages",
+    "every vault subdirectory not listed above",
+]
+
+
+def _run_state_reset(ctx: click.Context) -> bool:
+    """Shared body for ``reset state`` and the state half of ``reset all``.
+
+    Returns True on successful wipe, False on user abort. Confirmation
+    phrase is the exact subcommand path (``reset state`` or ``reset all``)
+    decided by the caller — passing it in keeps the prompt accurate when
+    invoked from ``reset all``.
+    """
+    from scripts.setup.reset import perform_state_reset, state_targets
+    try:
+        config = _make_config()
+    except Exception as exc:
+        click.echo(f"Error loading config: {exc}", err=True)
+        sys.exit(1)
+    targets = state_targets(config)
+    _render_targets(targets, "About to PERMANENTLY DELETE (pipeline state):")
+    _render_preserved(_STATE_PRESERVED)
+    if not _confirm_phrase("reset state"):
+        click.echo("Aborted — nothing deleted.")
+        return False
+    click.echo()
+    results = perform_state_reset(targets)
+    _render_results(results)
+    click.echo()
+    click.echo(
+        "Next: run 'lit-monitor brain-build' to rebuild from your Zotero "
+        "collection."
+    )
+    return True
+
+
+def _run_vault_reset(ctx: click.Context) -> bool:
+    """Shared body for ``reset vault`` and the vault half of ``reset all``."""
+    from scripts.setup.reset import perform_vault_reset, vault_targets
+    try:
+        config = _make_config()
+    except Exception as exc:
+        click.echo(f"Error loading config: {exc}", err=True)
+        sys.exit(1)
+    targets = vault_targets(config)
+    click.echo()
+    click.echo(
+        click.style(
+            "WARNING: user edits inside generated notes (persist-zone blocks) "
+            "will be destroyed.",
+            bold=True,
+            fg="yellow",
+        )
+    )
+    _render_targets(targets, "About to PERMANENTLY DELETE (vault notes):")
+    _render_preserved(_VAULT_PRESERVED)
+    if not _confirm_phrase("reset vault"):
+        click.echo("Aborted — nothing deleted.")
+        return False
+    click.echo()
+    results = perform_vault_reset(targets)
+    _render_results(results)
+    click.echo()
+    click.echo(
+        "Next: run 'lit-monitor obsidian rerender --all' to regenerate notes "
+        "from the state DB."
+    )
+    return True
+
+
+@reset_group.command("state")
+@click.pass_context
+def reset_state(ctx: click.Context) -> None:
+    """Wipe durable pipeline state (state.db + chroma + auto-generated drafts).
+
+    Requires typing ``reset state`` exactly (case-sensitive) to proceed.
+    """
+    _setup_logging("reset_state", verbose=ctx.obj.get("verbose", False))
+    _run_state_reset(ctx)
+
+
+@reset_group.command("vault")
+@click.pass_context
+def reset_vault(ctx: click.Context) -> None:
+    """Wipe Obsidian notes generated by lit-monitor (Papers/Reviews/Digests/Synthesis).
+
+    Requires typing ``reset vault`` exactly (case-sensitive) to proceed.
+    Dev sandbox folder, vault root pages, and other subdirectories are preserved.
+    """
+    _setup_logging("reset_vault", verbose=ctx.obj.get("verbose", False))
+    _run_vault_reset(ctx)
+
+
+@reset_group.command("all")
+@click.pass_context
+def reset_all(ctx: click.Context) -> None:
+    """Run ``reset state`` and ``reset vault`` in sequence.
+
+    Each half requires its own typed confirmation phrase. Aborting one half
+    does not abort the other — declining ``reset state`` still lets you
+    proceed with ``reset vault``.
+    """
+    _setup_logging("reset_all", verbose=ctx.obj.get("verbose", False))
+    _run_state_reset(ctx)
+    _run_vault_reset(ctx)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
