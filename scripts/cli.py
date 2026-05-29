@@ -1937,6 +1937,7 @@ _STATE_PRESERVED = [
 
 _VAULT_PRESERVED = [
     "credentials (~/.config/lit-monitor/config.toml)",
+    "books_folder (user-managed; book/bookSection items skip the pipeline)",
     "Literature/_Dev/ (dev sandbox)",
     "vault root theme pages",
     "every vault subdirectory not listed above",
@@ -1946,10 +1947,10 @@ _VAULT_PRESERVED = [
 def _run_state_reset(ctx: click.Context) -> bool:
     """Shared body for ``reset state`` and the state half of ``reset all``.
 
-    Returns True on successful wipe, False on user abort. Confirmation
-    phrase is the exact subcommand path (``reset state`` or ``reset all``)
-    decided by the caller — passing it in keeps the prompt accurate when
-    invoked from ``reset all``.
+    Returns True on successful wipe, False on user abort. Confirms via the
+    typed phrase ``reset state`` before deleting state targets — the same
+    phrase is required when this is invoked as the state half of
+    ``reset all`` so the prompt remains predictable for muscle memory.
     """
     from scripts.setup.reset import perform_state_reset, state_targets
     try:
@@ -1975,7 +1976,12 @@ def _run_state_reset(ctx: click.Context) -> bool:
 
 
 def _run_vault_reset(ctx: click.Context) -> bool:
-    """Shared body for ``reset vault`` and the vault half of ``reset all``."""
+    """Shared body for ``reset vault`` and the vault half of ``reset all``.
+
+    Returns True on successful wipe, False on user abort. Confirms via the
+    typed phrase ``reset vault`` before deleting markdown files in the
+    Papers, Digests, and Synthesis folders.
+    """
     from scripts.setup.reset import perform_vault_reset, vault_targets
     try:
         config = _make_config()

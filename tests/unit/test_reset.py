@@ -231,8 +231,14 @@ def test_perform_state_reset_clears_chromadb_cache_even_if_absent(
 # Vault target enumeration
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
-def test_vault_targets_enumerates_four_folders(tmp_path: Path) -> None:
-    """vault_targets covers Papers / Reviews(=Books) / Digests / Synthesis(=Connections)."""
+def test_vault_targets_enumerates_three_folders(tmp_path: Path) -> None:
+    """vault_targets covers Papers (also reviews) / Digests / Synthesis(=Connections).
+
+    Reviews share ``papers_folder`` with regular papers — see
+    ``obsidian_writer.write_paper_note`` — so the Papers entry covers them
+    too. ``books_folder`` is intentionally excluded because book items are
+    routed to the ``skip`` pipeline and lit-monitor does not write there.
+    """
     cfg = _fake_config(
         state_db_path=tmp_path / "state.db",
         vault_path=tmp_path / "vault",
@@ -241,10 +247,33 @@ def test_vault_targets_enumerates_four_folders(tmp_path: Path) -> None:
     labels = [t.label for t in targets]
     assert labels == [
         "Papers folder",
-        "Reviews folder",
         "Digests folder",
         "Synthesis folder",
     ]
+
+
+@pytest.mark.unit
+def test_vault_targets_excludes_books_folder(tmp_path: Path) -> None:
+    """books_folder must NOT appear in the vault target list.
+
+    Books/bookSections are routed to ``pipeline: "skip"`` in
+    ``config/item_routing.yaml``; any notes in that folder are user-managed
+    content outside lit-monitor's scope.
+    """
+    cfg = _fake_config(
+        state_db_path=tmp_path / "state.db",
+        vault_path=tmp_path / "vault",
+        books_folder="Literature/Books",
+    )
+    targets = reset_mod.vault_targets(cfg)
+    for tgt in targets:
+        path_str = str(tgt.path)
+        assert "Books" not in path_str, (
+            f"books_folder leaked into target {tgt.label}: {path_str}"
+        )
+        assert tgt.label != "Reviews folder", (
+            "Reviews are co-located in Papers folder; no standalone Reviews target."
+        )
 
 
 @pytest.mark.unit
@@ -305,12 +334,13 @@ def test_perform_vault_reset_removes_files(tmp_path: Path) -> None:
     targets = reset_mod.vault_targets(cfg)
     results = reset_mod.perform_vault_reset(targets)
 
-    # Papers and Digests should report deleted=True; the others absent → skipped.
+    # Papers and Digests should report deleted=True; Synthesis absent → skipped.
     by_label = {r.label: r for r in results}
     assert by_label["Papers folder"].deleted is True
     assert by_label["Digests folder"].deleted is True
-    assert by_label["Reviews folder"].deleted is False
     assert by_label["Synthesis folder"].deleted is False
+    # No Reviews folder target — reviews share papers_folder.
+    assert "Reviews folder" not in by_label
 
     # Files gone, folder preserved.
     assert papers.exists()

@@ -15,8 +15,9 @@ What ``reset state`` removes:
   - ``config/topics_suggested.yaml`` (auto-generated)
 
 What ``reset vault`` removes:
-  - ``<vault>/<papers_folder>/`` markdown notes
-  - ``<vault>/<books_folder>/`` markdown notes (review-style content)
+  - ``<vault>/<papers_folder>/`` markdown notes (covers regular papers AND
+    review-type Zotero items — both are written to ``papers_folder`` by
+    ``obsidian_writer.write_paper_note``)
   - ``<vault>/<digests_folder>/`` markdown notes
   - ``<vault>/<connections_folder>/`` markdown notes (synthesis output)
 
@@ -27,6 +28,9 @@ What is NEVER touched:
   - ``~/.config/lit-monitor/logs/`` — kept for post-reset debugging.
   - Any ``.example.yaml`` files.
   - Tracked YAML configs (paths.yaml, topics.yaml, concepts.yaml, etc.).
+  - ``<vault>/<books_folder>/`` — books/bookSections are routed to the
+    ``skip`` pipeline (see ``config/item_routing.yaml``); any notes there are
+    user-managed content, not lit-monitor-generated.
   - ``<vault>/Literature/_Dev/`` — sandbox subfolder managed elsewhere.
   - Theme pages at the vault root (may carry user-added context).
 
@@ -198,15 +202,23 @@ def state_targets(config: Any) -> list[ResetTarget]:
 def vault_targets(config: Any) -> list[ResetTarget]:
     """Enumerate every path ``reset vault`` would delete.
 
-    Returns one target per generated content folder. We read each folder
-    name from ``config.obsidian.*_folder`` so user overrides in paths.yaml
-    are honoured. The dev sandbox subfolder (``Literature/_Dev``) and the
-    vault root theme pages are deliberately excluded — see module docstring.
+    Returns one target per lit-monitor-generated content folder. We read
+    each folder name from ``config.obsidian.*_folder`` so user overrides in
+    paths.yaml are honoured. The dev sandbox subfolder (``Literature/_Dev``)
+    and the vault root theme pages are deliberately excluded — see module
+    docstring.
 
-    Note: the codebase does not (yet) have dedicated ``reviews_folder`` or
-    ``synthesis_folder`` config keys. ``books_folder`` is the canonical home
-    for review-style content (default ``Literature/Books``) and
-    ``connections_folder`` is where synthesis notes are written (default
+    Reviews are co-located with regular papers: ``obsidian_writer`` writes
+    both ``source_type='paper'`` and ``source_type='review'`` notes into
+    ``papers_folder`` (see ``scripts/output/obsidian_writer.py``), so the
+    Papers folder entry covers both. There is no separate Reviews target.
+
+    ``books_folder`` is intentionally omitted: books/bookSections are
+    routed to ``pipeline: "skip"`` in ``config/item_routing.yaml`` and are
+    not written by any production pipeline. Any markdown in that folder is
+    user-curated and outside lit-monitor's scope.
+
+    Synthesis notes live in ``connections_folder`` (default
     ``Literature/Connections``) — see ``scripts/obsidian_tools/synthesize.py``.
     """
     vault_root = Path(config.obsidian.vault_path).expanduser()
@@ -214,10 +226,6 @@ def vault_targets(config: Any) -> list[ResetTarget]:
         _make_target(
             "Papers folder",
             vault_root / getattr(config.obsidian, "papers_folder", "Literature/Papers"),
-        ),
-        _make_target(
-            "Reviews folder",
-            vault_root / getattr(config.obsidian, "books_folder", "Literature/Books"),
         ),
         _make_target(
             "Digests folder",

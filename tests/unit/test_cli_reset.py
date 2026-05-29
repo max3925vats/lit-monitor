@@ -202,15 +202,20 @@ def test_reset_vault_aborts_on_wrong_phrase(
 def test_reset_vault_proceeds_on_exact_phrase(
     runner: CliRunner, tmp_env: dict
 ) -> None:
-    """Typing 'reset vault' exactly must remove .md files from all four folders."""
+    """Typing 'reset vault' exactly must remove .md files from the three managed folders."""
     result = _invoke(runner, tmp_env, ["reset", "vault"], stdin="reset vault\n")
     assert result.exit_code == 0, result.output
-    for sub in ("Papers", "Books", "Digests", "Connections"):
+    # Papers (also reviews), Digests, Connections — lit-monitor-managed → wiped.
+    for sub in ("Papers", "Digests", "Connections"):
         assert not (
             tmp_env["vault"] / "Literature" / sub / "note.md"
         ).exists(), f"{sub} .md should be gone"
         # Folder itself preserved for downstream pipelines.
         assert (tmp_env["vault"] / "Literature" / sub).exists()
+    # Books folder is user-managed → note.md must survive.
+    assert (
+        tmp_env["vault"] / "Literature" / "Books" / "note.md"
+    ).exists(), "books_folder content is user-managed and must survive reset vault"
     # Dev sandbox and theme page survive.
     assert (tmp_env["dev_dir"] / "sandbox.md").exists()
     assert (tmp_env["vault"] / "MyTheme.md").exists()
