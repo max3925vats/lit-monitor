@@ -628,6 +628,12 @@ class StateDB:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def get_all_citation_edges(self) -> list[dict]:
+        """Return every row in citation_edges (used by G5 mirror for full sync)."""
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM citation_edges").fetchall()
+        return [dict(r) for r in rows]
+
     def get_papers_citing_doi(self, target_doi: str) -> list[str]:
         """Return source_dois of papers that resolved a citation to target_doi."""
         with self._connect() as conn:

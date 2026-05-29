@@ -1631,12 +1631,19 @@ def obsidian_re_extract(
     show_default=True,
     help="Maximum S2 retry attempts on rate-limit responses.",
 )
+@click.option(
+    "--no-graph",
+    is_flag=True,
+    default=False,
+    help="Skip mirroring resolved citations into the KuzuDB graph (G5).",
+)
 @click.pass_context
 def obsidian_build_citation_graph(
     ctx: click.Context,
     doi: str | None,
     scope: str,
     max_retries: int,
+    no_graph: bool,
 ) -> None:
     """Resolve key_citations to DOIs via S2 and write citation_edges rows.
 
@@ -1702,6 +1709,18 @@ def obsidian_build_citation_graph(
             f"{unresolved_total} unresolved, {failed} failed"
         )
 
+    # G5: mirror resolved citation_edges into Kuzu after E1 work, unless opted out.
+    if not no_graph:
+        from scripts.graph.import_citations import _safe_graph_db, mirror_citations
+        graph_db = _safe_graph_db()
+        if graph_db is not None:
+            try:
+                added = mirror_citations(graph_db, state_db)
+                if added:
+                    click.echo(f"  Mirrored {added} CITES edges into Kuzu.")
+            finally:
+                graph_db.close()
+
 
 @obsidian.command("rebuild-citations")
 @click.option(
@@ -1733,6 +1752,12 @@ def obsidian_build_citation_graph(
     default=False,
     help="Skip relinking the Obsidian note after resolution.",
 )
+@click.option(
+    "--no-graph",
+    is_flag=True,
+    default=False,
+    help="Skip mirroring resolved citations into the KuzuDB graph (G5).",
+)
 @click.pass_context
 def obsidian_rebuild_citations(
     ctx: click.Context,
@@ -1740,6 +1765,7 @@ def obsidian_rebuild_citations(
     scope: str,
     max_retries: int,
     no_rerender: bool,
+    no_graph: bool,
 ) -> None:
     """Re-extract complex phase, resolve citations via S2, and relink notes.
 
@@ -1832,6 +1858,18 @@ def obsidian_rebuild_citations(
             f"Done: {total} papers, {resolved_total} resolved edges, "
             f"{unresolved_total} unresolved, {failed} failed."
         )
+
+    # G5: mirror resolved citation_edges into Kuzu after E1 work, unless opted out.
+    if not no_graph:
+        from scripts.graph.import_citations import _safe_graph_db, mirror_citations
+        graph_db = _safe_graph_db()
+        if graph_db is not None:
+            try:
+                added = mirror_citations(graph_db, state_db)
+                if added:
+                    click.echo(f"  Mirrored {added} CITES edges into Kuzu.")
+            finally:
+                graph_db.close()
 
 
 # ---------------------------------------------------------------------------
