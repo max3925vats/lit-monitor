@@ -71,18 +71,22 @@ def test_state_targets_enumerates_correct_paths(tmp_path: Path) -> None:
         targets = reset_mod.state_targets(cfg)
 
     labels = [t.label for t in targets]
+    # G12 adds "graph DB" between "ChromaDB persist dir" and the config drafts.
     assert labels == [
         "state DB",
         "ChromaDB persist dir",
+        "graph DB",
         "concepts_draft.yaml",
         "concepts_draft_refinement_raw.txt",
         "topics_suggested.yaml",
     ]
-    # chroma should sit alongside state DB
+    # chroma should sit alongside state DB; graph default is ~/.config/lit-monitor/graph.kuzu
     paths_by_label = {t.label: t.path for t in targets}
     assert paths_by_label["state DB"] == tmp_path / "state.db"
     assert paths_by_label["ChromaDB persist dir"] == tmp_path / "chroma"
     assert paths_by_label["concepts_draft.yaml"] == tmp_path / "config" / "concepts_draft.yaml"
+    # Graph DB target must not be the dev sandbox path.
+    assert "graph_dev" not in str(paths_by_label["graph DB"])
 
 
 @pytest.mark.unit
@@ -400,3 +404,132 @@ def test_format_size_bytes_renders_human_readable() -> None:
     # silently regress the boundary math.
     assert reset_mod._format_size_bytes(1024 * 1024 * 1024) == "1.0 GB"
     assert reset_mod._format_size_bytes(2 * 1024 * 1024) == "2.0 MB"
+
+
+# ---------------------------------------------------------------------------
+# G12: graph.kuzu reset tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_state_targets_includes_graph_kuzu(tmp_path: Path) -> None:
+    """G12: state_targets includes the production graph.kuzu path."""
+    cfg = _fake_config(
+        state_db_path=tmp_path / "state.db",
+        vault_path=tmp_path / "vault",
+    )
+    with patch.object(reset_mod, "_project_config_dir", return_value=tmp_path / "config"):
+        targets = reset_mod.state_targets(cfg)
+
+    labels = [t.label for t in targets]
+    assert "graph DB" in labels, (
+        f"Expected 'graph DB' label in state_targets; got labels: {labels}"
+    )
+    paths_by_label = {t.label: t.path for t in targets}
+    graph_path = paths_by_label["graph DB"]
+    assert "graph" in str(graph_path).lower(), (
+        f"graph DB target path does not look like a graph path: {graph_path}"
+    )
+    # Must NOT be the production ChromaDB path
+    assert "chroma" not in str(graph_path).lower()
+
+
+@pytest.mark.unit
+def test_state_targets_graph_path_not_sandbox(tmp_path: Path) -> None:
+    """G12: state_targets graph path must not be the dev sandbox path."""
+    cfg = _fake_config(
+        state_db_path=tmp_path / "state.db",
+        vault_path=tmp_path / "vault",
+    )
+    with patch.object(reset_mod, "_project_config_dir", return_value=tmp_path / "config"):
+        targets = reset_mod.state_targets(cfg)
+
+    for tgt in targets:
+        assert "graph_dev" not in str(tgt.path), (
+            f"state_targets must not target the dev sandbox; found: {tgt.path}"
+        )
+
+
+@pytest.mark.unit
+def test_graph_persist_dir_returns_string(tmp_path: Path) -> None:
+    """G12: _graph_persist_dir returns a non-empty string."""
+    cfg = _fake_config(
+        state_db_path=tmp_path / "state.db",
+        vault_path=tmp_path / "vault",
+    )
+    result = reset_mod._graph_persist_dir(cfg)
+    assert isinstance(result, str)
+    assert "graph" in result.lower()
+
+
+@pytest.mark.unit
+def test_perform_state_reset_removes_graph_dir(tmp_path: Path) -> None:
+    """G12: perform_state_reset rmtrees the graph dir when present."""
+    state_db = tmp_path / "state.db"
+    state_db.write_bytes(b"x")
+    (tmp_path / "chroma").mkdir()
+    cfg_dir = tmp_path / "config"
+    cfg_dir.mkdir()
+
+    # Create a fake graph dir.
+    fake_graph = tmp_path / "graph.kuzu"
+    fake_graph.mkdir()
+    (fake_graph / "data").write_bytes(b"placeholder")
+
+    cfg = _fake_config(state_db_path=state_db, vault_path=tmp_path / "vault")
+    with patch.object(reset_mod, "_project_config_dir", return_value=cfg_dir):
+        with patch.object(reset_mod, "_graph_persist_dir", return_value=str(fake_graph)):
+            targets = reset_mod.state_targets(cfg)
+            results = reset_mod.perform_state_reset(targets)
+
+    deleted_labels = {r.label for r in results if r.deleted}
+    assert "graph DB" in deleted_labels, (
+        f"graph DB was not deleted; results: {results}"
+    )
+    assert not fake_graph.exists(), "graph dir must be removed by perform_state_reset"
+
+
+@pytest.mark.unit
+def test_perform_state_reset_handles_missing_graph_dir(tmp_path: Path) -> None:
+    """G12: missing graph.kuzu does not crash perform_state_reset (idempotent)."""
+    state_db = tmp_path / "state.db"
+    # No graph dir created — it simply doesn't exist.
+    cfg_dir = tmp_path / "config"
+    cfg_dir.mkdir()
+    missing_graph = tmp_path / "nonexistent.kuzu"
+
+    cfg = _fake_config(state_db_path=state_db, vault_path=tmp_path / "vault")
+    with patch.object(reset_mod, "_project_config_dir", return_value=cfg_dir):
+        with patch.object(reset_mod, "_graph_persist_dir", return_value=str(missing_graph)):
+            targets = reset_mod.state_targets(cfg)
+            # Should not raise.
+            results = reset_mod.perform_state_reset(targets)
+
+    # Graph target should be listed as skipped (not present).
+    graph_results = [r for r in results if r.label == "graph DB"]
+    assert len(graph_results) == 1
+    assert not graph_results[0].deleted
+    assert graph_results[0].skipped_reason == "not present"
+
+
+@pytest.mark.unit
+def test_perform_state_reset_removes_graph_sentinel(tmp_path: Path) -> None:
+    """G12: perform_state_reset also removes the .schema_version sentinel."""
+    state_db = tmp_path / "state.db"
+    state_db.write_bytes(b"x")
+    cfg_dir = tmp_path / "config"
+    cfg_dir.mkdir()
+
+    # Create both the kuzu file and its sentinel.
+    fake_graph = tmp_path / "graph.kuzu"
+    fake_graph.write_bytes(b"kuzu-placeholder")
+    sentinel = Path(str(fake_graph) + ".schema_version")
+    sentinel.write_text("3")
+
+    cfg = _fake_config(state_db_path=state_db, vault_path=tmp_path / "vault")
+    with patch.object(reset_mod, "_project_config_dir", return_value=cfg_dir):
+        with patch.object(reset_mod, "_graph_persist_dir", return_value=str(fake_graph)):
+            targets = reset_mod.state_targets(cfg)
+            reset_mod.perform_state_reset(targets)
+
+    assert not fake_graph.exists(), "graph file must be removed"
+    assert not sentinel.exists(), "graph .schema_version sentinel must be removed"

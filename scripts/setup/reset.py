@@ -10,6 +10,7 @@ Splits enumeration from deletion so the Click wrapper can:
 What ``reset state`` removes:
   - ``~/.config/lit-monitor/state.db`` (and ``state.db-wal`` / ``state.db-shm``)
   - ``~/.config/lit-monitor/chroma/`` (entire ChromaDB persist dir)
+  - ``~/.config/lit-monitor/graph.kuzu`` + ``graph.kuzu.schema_version`` (G12)
   - ``config/concepts_draft.yaml`` (auto-generated)
   - ``config/concepts_draft_refinement_raw.txt`` (auto-generated)
   - ``config/topics_suggested.yaml`` (auto-generated)
@@ -24,7 +25,8 @@ What ``reset vault`` removes:
 What is NEVER touched:
   - ``~/.config/lit-monitor/config.toml`` — credentials. User must delete
     manually if they really want it gone.
-  - ``~/.config/lit-monitor/chroma_dev/`` and ``state_dev.db`` — dev sandbox.
+  - ``~/.config/lit-monitor/chroma_dev/``, ``state_dev.db``, and
+    ``graph_dev.kuzu`` — dev sandbox (managed by ``dev_sandbox.clear_sandbox``).
   - ``~/.config/lit-monitor/logs/`` — kept for post-reset debugging.
   - Any ``.example.yaml`` files.
   - Tracked YAML configs (paths.yaml, topics.yaml, concepts.yaml, etc.).
@@ -173,6 +175,32 @@ def _project_config_dir() -> Path:
     return Path(__file__).resolve().parent.parent.parent / "config"
 
 
+def _graph_persist_dir(config: Any) -> str:
+    """Resolve the production KuzuDB persist path.
+
+    Returns a string (GraphDB takes ``persist_dir: str``). The default path
+    mirrors ``safe_graph_db()`` in ``scripts/graph/import_citations.py``.
+    Config lookup matches the retrieval section shape added in G1/G2 — if the
+    config has ``retrieval.graph_db.persist_dir`` we honour it; otherwise the
+    canonical default applies.
+
+    Never returns a sandbox or dev path — ``~/.config/lit-monitor/graph_dev.kuzu``
+    is managed by ``dev_sandbox.clear_sandbox``, not by ``reset state``.
+    """
+    default = str(Path("~/.config/lit-monitor/graph.kuzu").expanduser())
+    try:
+        retrieval = getattr(config, "retrieval", None)
+        if retrieval is not None:
+            graph_db_cfg = getattr(retrieval, "graph_db", None)
+            if graph_db_cfg is not None:
+                val = getattr(graph_db_cfg, "persist_dir", None)
+                if val:
+                    return str(val)
+    except Exception:  # noqa: BLE001 — defensive; attribute shape may vary
+        pass
+    return default
+
+
 # ---------------------------------------------------------------------------
 # Target enumeration
 # ---------------------------------------------------------------------------
@@ -187,9 +215,14 @@ def state_targets(config: Any) -> list[ResetTarget]:
     state_db = _state_db_path(config)
     chroma = _chroma_persist_dir(config)
     cfg_dir = _project_config_dir()
+    # G12: include the production KuzuDB path so ``reset state`` wipes the
+    # graph alongside state.db and chroma. The dev sandbox path
+    # (graph_dev.kuzu) is intentionally excluded — see module docstring.
+    graph = Path(_graph_persist_dir(config))
     return [
         _make_target("state DB", state_db),
         _make_target("ChromaDB persist dir", chroma),
+        _make_target("graph DB", graph),
         _make_target("concepts_draft.yaml", cfg_dir / "concepts_draft.yaml"),
         _make_target(
             "concepts_draft_refinement_raw.txt",
@@ -369,6 +402,20 @@ def perform_state_reset(targets: list[ResetTarget]) -> list[ResetResult]:
             elif tgt.label == "ChromaDB persist dir":
                 _delete_directory(tgt.path)
                 chroma_seen = True
+            elif tgt.label == "graph DB":
+                # G12: KuzuDB stores its data as a FILE at persist_dir (not a
+                # directory), but we handle both shapes defensively in case a
+                # future migration or kuzu version changes the layout.
+                if tgt.path.is_dir():
+                    _delete_directory(tgt.path)
+                else:
+                    _delete_file(tgt.path)
+                # Also clean the .schema_version sentinel stored alongside the DB.
+                sentinel = Path(str(tgt.path) + ".schema_version")
+                if sentinel.exists():
+                    sentinel.unlink()
+                    logger.debug("Removed graph schema sentinel: %s", sentinel)
+                logger.info("Removed graph DB: %s", tgt.path)
             else:
                 _delete_file(tgt.path)
             results.append(
@@ -430,4 +477,5 @@ __all__ = [
     "perform_state_reset",
     "perform_vault_reset",
     "_format_size_bytes",
+    "_graph_persist_dir",
 ]

@@ -24,16 +24,20 @@ from scripts.server import dev_sandbox
 
 @pytest.fixture(autouse=True)
 def _reset_sandbox_embeddings_cache() -> None:
-    """Clear the sandbox_embeddings_db singleton between tests.
+    """Clear the sandbox_embeddings_db and sandbox_graph_db singletons between tests.
 
-    The singleton (added to dodge chromadb's per-path client invariant) leaks
-    across tests if not reset — e.g. a tmp_path-bound client from test A would
-    survive into test B's fresh tmp_path. Force-reset before AND after each
-    test so monkeypatched SANDBOX_CHROMA_DIR is honoured.
+    The singletons leak across tests if not reset — e.g. a tmp_path-bound client
+    from test A would survive into test B's fresh tmp_path. Force-reset before AND
+    after each test so monkeypatched SANDBOX_CHROMA_DIR / SANDBOX_GRAPH_DIR are
+    honoured.
     """
     dev_sandbox.sandbox_embeddings_db.cache_clear()
+    if hasattr(dev_sandbox, "sandbox_graph_db"):
+        dev_sandbox.sandbox_graph_db.cache_clear()
     yield
     dev_sandbox.sandbox_embeddings_db.cache_clear()
+    if hasattr(dev_sandbox, "sandbox_graph_db"):
+        dev_sandbox.sandbox_graph_db.cache_clear()
 
 
 # ---------------------------------------------------------------------------
@@ -373,3 +377,243 @@ def test_sandbox_collections_returns_real_chroma_collections(
     # collections are queryable, not just placeholder objects.
     assert papers.count() == 0
     assert chunks.count() == 0
+
+
+# ---------------------------------------------------------------------------
+# G12: sandbox graph DB tests
+# ---------------------------------------------------------------------------
+
+def _patch_all_sandbox_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    graph_path: Path | None = None,
+) -> None:
+    """Redirect ALL sandbox module-level path constants into tmp_path.
+
+    Matches the pattern used by the existing sandbox tests: redirect every
+    path constant so no test ever touches the real ~/.config/lit-monitor/.
+    """
+    monkeypatch.setattr(dev_sandbox, "SANDBOX_STATE_DB_PATH", tmp_path / "state_dev.db")
+    monkeypatch.setattr(dev_sandbox, "SANDBOX_CHROMA_DIR", tmp_path / "chroma_dev")
+    monkeypatch.setattr(
+        dev_sandbox, "SANDBOX_GRAPH_DIR", str(graph_path or tmp_path / "graph_dev.kuzu")
+    )
+    _stub_get_config(
+        monkeypatch,
+        vault_path=tmp_path / "vault",
+        state_db_path=tmp_path / "state.db",
+    )
+
+
+@pytest.mark.unit
+def test_sandbox_graph_db_returns_graphdb_instance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """G12: sandbox_graph_db() returns a GraphDB bound to SANDBOX_GRAPH_DIR."""
+    sandbox_graph_path = tmp_path / "graph_dev.kuzu"
+    _patch_all_sandbox_paths(monkeypatch, tmp_path, graph_path=sandbox_graph_path)
+    dev_sandbox.sandbox_graph_db.cache_clear()
+
+    # Stub GraphDB so the test is hermetic (no kuzu required at unit-test time).
+    class _FakeGraphDB:
+        def __init__(self, persist_dir: str) -> None:
+            self.persist_dir = persist_dir
+
+    monkeypatch.setattr("scripts.graph.db.GraphDB", _FakeGraphDB)
+    # Also patch the import inside dev_sandbox so the module-level import resolves
+    import scripts.graph as graph_mod
+    monkeypatch.setattr(graph_mod, "GraphDB", _FakeGraphDB)
+
+    graph = dev_sandbox.sandbox_graph_db()
+    assert isinstance(graph, _FakeGraphDB)
+    # The persist_dir handed to the constructor must match SANDBOX_GRAPH_DIR.
+    assert graph.persist_dir == str(sandbox_graph_path)
+    dev_sandbox.sandbox_graph_db.cache_clear()
+
+
+@pytest.mark.unit
+def test_sandbox_graph_db_is_cached(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """G12: repeated calls return the same instance (lru_cache)."""
+    _patch_all_sandbox_paths(monkeypatch, tmp_path)
+    dev_sandbox.sandbox_graph_db.cache_clear()
+
+    construction_count = {"n": 0}
+
+    class _FakeGraphDB:
+        def __init__(self, persist_dir: str) -> None:
+            construction_count["n"] += 1
+
+    import scripts.graph as graph_mod
+    monkeypatch.setattr(graph_mod, "GraphDB", _FakeGraphDB)
+
+    g1 = dev_sandbox.sandbox_graph_db()
+    g2 = dev_sandbox.sandbox_graph_db()
+
+    assert g1 is g2, "sandbox_graph_db must be cached as a singleton"
+    assert construction_count["n"] == 1, (
+        f"GraphDB constructor ran {construction_count['n']} times; cache is broken"
+    )
+    dev_sandbox.sandbox_graph_db.cache_clear()
+
+
+@pytest.mark.unit
+def test_clear_sandbox_removes_graph_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """G12: clear_sandbox(confirm=True) removes the SANDBOX_GRAPH_DIR file."""
+    sandbox_graph_path = tmp_path / "graph_dev.kuzu"
+    # Materialise as a file (KuzuDB stores as a file, not directory).
+    sandbox_graph_path.write_bytes(b"kuzu-placeholder")
+    _patch_all_sandbox_paths(monkeypatch, tmp_path, graph_path=sandbox_graph_path)
+    dev_sandbox.sandbox_graph_db.cache_clear()
+
+    result = dev_sandbox.clear_sandbox(confirm=True)
+
+    assert result["status"] in ("cleared", "partial"), f"unexpected status: {result}"
+    assert not sandbox_graph_path.exists(), "SANDBOX_GRAPH_DIR file must be removed"
+
+
+@pytest.mark.unit
+def test_clear_sandbox_removes_graph_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """G12: clear_sandbox handles SANDBOX_GRAPH_DIR that is a directory."""
+    sandbox_graph_path = tmp_path / "graph_dev.kuzu"
+    # Materialise as a directory (handle both shapes per G12 brief).
+    sandbox_graph_path.mkdir()
+    (sandbox_graph_path / "data").write_bytes(b"x")
+    _patch_all_sandbox_paths(monkeypatch, tmp_path, graph_path=sandbox_graph_path)
+    dev_sandbox.sandbox_graph_db.cache_clear()
+
+    result = dev_sandbox.clear_sandbox(confirm=True)
+
+    assert result["status"] in ("cleared", "partial"), f"unexpected status: {result}"
+    assert not sandbox_graph_path.exists(), "SANDBOX_GRAPH_DIR directory must be removed"
+
+
+@pytest.mark.unit
+def test_clear_sandbox_removes_graph_sentinel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """G12: clear_sandbox also removes the .schema_version sentinel if present."""
+    sandbox_graph_path = tmp_path / "graph_dev.kuzu"
+    sentinel = Path(str(sandbox_graph_path) + ".schema_version")
+    sentinel.write_text("3")
+    sandbox_graph_path.write_bytes(b"kuzu-placeholder")
+    _patch_all_sandbox_paths(monkeypatch, tmp_path, graph_path=sandbox_graph_path)
+    dev_sandbox.sandbox_graph_db.cache_clear()
+
+    dev_sandbox.clear_sandbox(confirm=True)
+
+    assert not sentinel.exists(), "graph .schema_version sentinel must be removed"
+
+
+@pytest.mark.unit
+def test_clear_sandbox_clears_graph_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """G12: clear_sandbox invalidates the sandbox_graph_db lru_cache."""
+    _patch_all_sandbox_paths(monkeypatch, tmp_path)
+    dev_sandbox.sandbox_graph_db.cache_clear()
+
+    construction_count = {"n": 0}
+
+    class _FakeGraphDB:
+        def __init__(self, persist_dir: str) -> None:
+            construction_count["n"] += 1
+
+    import scripts.graph as graph_mod
+    monkeypatch.setattr(graph_mod, "GraphDB", _FakeGraphDB)
+
+    first = dev_sandbox.sandbox_graph_db()
+    assert construction_count["n"] == 1
+
+    dev_sandbox.clear_sandbox(confirm=True)
+
+    # After clear, the next call must construct a new instance.
+    second = dev_sandbox.sandbox_graph_db()
+    assert construction_count["n"] == 2, (
+        "clear_sandbox did not invalidate sandbox_graph_db cache; "
+        f"constructor ran {construction_count['n']} times total"
+    )
+    assert first is not second
+    dev_sandbox.sandbox_graph_db.cache_clear()
+
+
+@pytest.mark.unit
+def test_sandbox_status_includes_graph_node_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """G12: sandbox_status returns a graph_node_count key (int)."""
+    _patch_all_sandbox_paths(monkeypatch, tmp_path)
+
+    # Mock sandbox_graph_db to return a fake with a queryable _conn.
+    class _FakeResult:
+        def has_next(self) -> bool:
+            return True
+
+        def get_next(self) -> list:
+            return [7]  # 7 nodes
+
+    class _FakeConn:
+        def execute(self, query: str) -> _FakeResult:
+            return _FakeResult()
+
+    class _FakeGraphDB:
+        def __init__(self, persist_dir: str) -> None:
+            self._conn = _FakeConn()
+
+    import scripts.graph as graph_mod
+    monkeypatch.setattr(graph_mod, "GraphDB", _FakeGraphDB)
+    # Reset the cache so the next sandbox_graph_db() uses _FakeGraphDB.
+    dev_sandbox.sandbox_graph_db.cache_clear()
+
+    status = dev_sandbox.sandbox_status()
+
+    assert "graph_node_count" in status, (
+        f"sandbox_status missing 'graph_node_count' key; got keys: {list(status)}"
+    )
+    assert isinstance(status["graph_node_count"], int)
+    assert status["graph_node_count"] == 7
+    dev_sandbox.sandbox_graph_db.cache_clear()
+
+
+@pytest.mark.unit
+def test_sandbox_status_graph_node_count_zero_on_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """G12: graph query errors in sandbox_status must not raise; return 0."""
+    _patch_all_sandbox_paths(monkeypatch, tmp_path)
+
+    class _BrokenConn:
+        def execute(self, query: str) -> None:
+            raise RuntimeError("kuzu not available in test env")
+
+    class _FakeGraphDB:
+        def __init__(self, persist_dir: str) -> None:
+            self._conn = _BrokenConn()
+
+    import scripts.graph as graph_mod
+    monkeypatch.setattr(graph_mod, "GraphDB", _FakeGraphDB)
+    dev_sandbox.sandbox_graph_db.cache_clear()
+
+    status = dev_sandbox.sandbox_status()
+
+    assert status["graph_node_count"] == 0
+    dev_sandbox.sandbox_graph_db.cache_clear()
+
+
+@pytest.mark.unit
+def test_sandbox_graph_dir_is_separate_from_production() -> None:
+    """G12: SANDBOX_GRAPH_DIR must not collide with production graph.kuzu."""
+    # Production is ~/.config/lit-monitor/graph.kuzu
+    import os
+    prod = os.path.expanduser("~/.config/lit-monitor/graph.kuzu")
+    assert dev_sandbox.SANDBOX_GRAPH_DIR != prod, (
+        f"SANDBOX_GRAPH_DIR collides with production: {dev_sandbox.SANDBOX_GRAPH_DIR}"
+    )
+    # Must use the 'graph_dev.kuzu' naming convention.
+    assert "graph_dev" in dev_sandbox.SANDBOX_GRAPH_DIR

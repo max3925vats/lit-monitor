@@ -46,6 +46,12 @@ SANDBOX_STATE_DB_PATH: Path = Path("~/.config/lit-monitor/state_dev.db").expandu
 # see module docstring for the singleton-collision rationale.
 SANDBOX_CHROMA_DIR: Path = Path("~/.config/lit-monitor/chroma_dev").expanduser()
 SANDBOX_VAULT_SUBFOLDER: str = "Literature/_Dev"
+# G12: sandbox KuzuDB path — parallel to the other sandbox stores.
+# KuzuDB stores its data as a FILE at this path (not a directory), so the type
+# is str to match GraphDB(persist_dir: str). Production sits at graph.kuzu;
+# the sandbox uses graph_dev.kuzu so clear_sandbox never touches production data.
+# Tests monkeypatch SANDBOX_GRAPH_DIR to redirect into tmp_path.
+SANDBOX_GRAPH_DIR: str = str(Path("~/.config/lit-monitor/graph_dev.kuzu").expanduser())
 # ChromaDB rejects names that start with an underscore (must start/end with
 # [a-zA-Z0-9]). Use the ``dev-`` prefix instead so the sandbox collections
 # can actually be created at runtime — the leading underscore from earlier
@@ -154,6 +160,28 @@ def sandbox_collections() -> tuple[Any, Any]:
 
 
 # ---------------------------------------------------------------------------
+# KuzuDB graph helper (G12)
+# ---------------------------------------------------------------------------
+@functools.lru_cache(maxsize=1)
+def sandbox_graph_db():
+    """Return a cached GraphDB bound to the sandbox graph path.
+
+    Mirrors ``sandbox_embeddings_db()`` — module-level lru_cache so both
+    ``sandbox_status()`` (polled every 5 s) and ``_run_sandbox_ingest()``
+    see the same client handle. The cache is invalidated by
+    ``clear_sandbox(confirm=True)`` after the DB file is removed.
+
+    KuzuDB stores its data as a single FILE at ``SANDBOX_GRAPH_DIR`` (not a
+    directory), so ``GraphDB(persist_dir=SANDBOX_GRAPH_DIR)`` is the correct
+    constructor form — matching the production pattern in
+    ``scripts/graph/import_citations.py::safe_graph_db``.
+    """
+    from scripts.graph import GraphDB  # lazy — kuzu optional extra
+
+    return GraphDB(persist_dir=SANDBOX_GRAPH_DIR)
+
+
+# ---------------------------------------------------------------------------
 # Status panel
 # ---------------------------------------------------------------------------
 def sandbox_status() -> dict[str, Any]:
@@ -200,12 +228,26 @@ def sandbox_status() -> dict[str, Any]:
     except Exception as exc:
         logger.warning("Sandbox vault file count failed: %s", exc)
 
+    # G12: graph node count — wrap in its own try/except so a missing kuzu
+    # install (or an empty sandbox) degrades gracefully to zero without
+    # masking the other status fields.
+    graph_node_count = 0
+    try:
+        graph = sandbox_graph_db()
+        res = graph._conn.execute("MATCH (n) RETURN count(n) AS c")  # noqa: SLF001
+        if res.has_next():
+            row = res.get_next()
+            graph_node_count = int(row[0])
+    except Exception as exc:  # noqa: BLE001 — defensive, kuzu may not be installed
+        logger.debug("sandbox_status: graph node count failed: %s", exc)
+
     return {
         "state_db_rows": state_rows,
         "papers_collection_count": papers_chroma,
         "chunks_collection_count": chunks_chroma,
         "vault_file_count": vault_files,
         "last_modified": last_modified,
+        "graph_node_count": graph_node_count,
     }
 
 
@@ -275,7 +317,29 @@ def clear_sandbox(*, confirm: bool = False) -> dict[str, str]:
         # Not flagged as failed — chromadb may not be installed in test env,
         # and on fresh dirs (no prior client) the reset is a no-op anyway.
 
-    # 3) Vault subfolder
+    # 3) Sandbox graph DB (G12) — KuzuDB stores as a FILE, but we handle both
+    # a file and a directory defensively (mirrors the dual-shape handling in
+    # perform_state_reset). Also remove the .schema_version sentinel if present.
+    graph_path = Path(SANDBOX_GRAPH_DIR)
+    try:
+        if graph_path.exists():
+            if graph_path.is_dir():
+                shutil.rmtree(graph_path, ignore_errors=False)
+            else:
+                graph_path.unlink()
+            actions.append(f"removed graph sandbox {graph_path}")
+        sentinel = Path(str(SANDBOX_GRAPH_DIR) + ".schema_version")
+        if sentinel.exists():
+            sentinel.unlink()
+            actions.append(f"removed graph sentinel {sentinel}")
+    except Exception as exc:
+        actions.append(f"FAILED graph sandbox remove: {exc}")
+        failed = True
+    # Drop the cached GraphDB so the next caller gets a fresh instance against
+    # the re-created (empty) sandbox dir — same pattern as sandbox_embeddings_db.
+    sandbox_graph_db.cache_clear()
+
+    # 4) Vault subfolder
     try:
         # Resolve directly (without auto-create) so we don't recreate then nuke.
         cfg = get_config()
@@ -296,6 +360,7 @@ def clear_sandbox(*, confirm: bool = False) -> dict[str, str]:
 __all__ = [
     "SANDBOX_STATE_DB_PATH",
     "SANDBOX_CHROMA_DIR",
+    "SANDBOX_GRAPH_DIR",
     "SANDBOX_VAULT_SUBFOLDER",
     "SANDBOX_PAPERS_COLLECTION",
     "SANDBOX_CHUNKS_COLLECTION",
@@ -303,6 +368,7 @@ __all__ = [
     "sandbox_vault_subfolder",
     "sandbox_collections",
     "sandbox_embeddings_db",
+    "sandbox_graph_db",
     "sandbox_status",
     "clear_sandbox",
 ]
