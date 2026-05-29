@@ -33,6 +33,11 @@ _WHITESPACE = re.compile(r"\s+")
 # Transliteration table for scientific symbols that NFKD/ASCII-encode drops
 # entirely (e.g. Greek letters common in bioscience nomenclature).
 # Lowercase only — applied AFTER .lower() in _basic_normalize.
+#
+# NOTE: μ → "u" is the Greek-letter rule (matches "mu"); it does NOT handle
+# the SI prefix μ (micro-). Inputs like "μg", "μM", "μL" become "ug", "um",
+# "ul" — acceptable for entity names but wrong for quantity strings. Strip
+# units before normalizing if quantity accuracy matters.
 _TRANSLITERATE: dict[str, str] = {
     "α": "a",
     "β": "b",
@@ -65,7 +70,11 @@ MatchVia = Literal["identity", "alias", "fuzzy"]
 
 
 def _basic_normalize(s: str) -> str:
-    """Apply steps 1–3: lowercase + ASCII fold → singularize → punct strip.
+    """Apply steps 1–3: lowercase + ASCII fold → punct strip → singularize.
+
+    Order matters: inflect.singular_noun() returns False on plurals with
+    trailing punctuation (e.g. 'antibodies.' → False; 'antibodies' → 'antibody').
+    Strip punct BEFORE singularizing so real-text input normalizes correctly.
 
     This is a module-level function (not a method) so it is testable in
     isolation and reusable by other modules without instantiating the full
@@ -78,16 +87,19 @@ def _basic_normalize(s: str) -> str:
     s = s.translate(_TRANSLITERATE_TABLE)
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
 
-    # Step 2: singularize.  singular_noun() returns the singular if the word
+    # Step 2: strip trailing punctuation then collapse internal whitespace.
+    # Must come BEFORE singularize — inflect does not recognize plurals with
+    # trailing punctuation ('antibodies.' → False instead of 'antibody').
+    s = _TRAILING_PUNCT.sub("", s)
+    s = _WHITESPACE.sub(" ", s).strip()
+
+    # Step 3: singularize.  singular_noun() returns the singular if the word
     # IS plural, or False when it is already singular — so we only reassign
     # when a plural form was detected.
     singular = _INFLECT.singular_noun(s)
     if singular:
         s = singular
 
-    # Step 3: strip trailing punctuation then collapse internal whitespace.
-    s = _TRAILING_PUNCT.sub("", s)
-    s = _WHITESPACE.sub(" ", s).strip()
     return s
 
 
@@ -103,6 +115,11 @@ class EntityNormalizer:
         Optional pre-populated per-type vocabulary.  More commonly built up
         incrementally via :meth:`add_to_vocab` as entities are ingested.
     """
+
+    # G2: ingest is stricter than query — ingest collapses on near-identical
+    # surfaces only; query lets a typo or fuzzier user input still match.
+    DEFAULT_INGEST_RATIO: int = 90
+    DEFAULT_QUERY_RATIO: int = 85
 
     def __init__(
         self,
