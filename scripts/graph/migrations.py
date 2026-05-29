@@ -32,15 +32,16 @@ Phase 3 will add EXTENDS + CONTRADICTS — those are NOT defined here.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    pass  # kuzu types not importable at type-check time without the extra
 
 logger = logging.getLogger(__name__)
 
 # Bumped here (G14): adds confidence/extracted_at/prompt_version to all REL TABLEs.
 SCHEMA_VERSION: int = 2
+
+# Default prompt version tag written to all REL TABLE edges by the DDL DEFAULT
+# and used as the migration column default.  Centralised here so DDL and
+# migration stay in sync when the tag is bumped.
+_DEFAULT_PROMPT_VERSION: str = "phase1.0"
 
 # ---------------------------------------------------------------------------
 # Three provenance columns appended to every REL TABLE (G14).
@@ -51,7 +52,7 @@ SCHEMA_VERSION: int = 2
 _REL_PROVENANCE = (
     "confidence DOUBLE DEFAULT 1.0, "
     "extracted_at TIMESTAMP DEFAULT current_timestamp(), "
-    "prompt_version STRING DEFAULT 'phase1.0'"
+    f"prompt_version STRING DEFAULT '{_DEFAULT_PROMPT_VERSION}'"
 )
 
 # ---------------------------------------------------------------------------
@@ -192,7 +193,7 @@ def migrate_v1_to_v2(conn) -> None:  # type: ignore[type-arg]
     new_cols = [
         ("confidence", "DOUBLE DEFAULT 1.0"),
         ("extracted_at", "TIMESTAMP DEFAULT current_timestamp()"),
-        ("prompt_version", "STRING DEFAULT 'phase1.0'"),
+        ("prompt_version", f"STRING DEFAULT '{_DEFAULT_PROMPT_VERSION}'"),
     ]
     for table in _REL_TABLES_V1_TO_V2:
         for col_name, col_def in new_cols:
@@ -208,7 +209,7 @@ def migrate_v1_to_v2(conn) -> None:  # type: ignore[type-arg]
                 # exists" (generic form) and "already has property" (Kuzu form)
                 # so the migration is idempotent across engine minor versions.
                 if "already has property" in msg or "already exists" in msg:
-                    logger.warning(
+                    logger.debug(
                         "migrate_v1_to_v2: %s.%s already exists, skipping.",
                         table,
                         col_name,

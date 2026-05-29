@@ -126,6 +126,22 @@ class TestGraphDB:
 
 
 @pytest.mark.unit
+class TestGraphDBSchemaVersion:
+    """G14: schema-version sentinel file is written on fresh init."""
+
+    def test_schema_version_file_written_on_fresh_init(self, tmp_path):
+        """The .schema_version sentinel file is created on first GraphDB init."""
+        from scripts.graph import GraphDB
+        from scripts.graph.migrations import SCHEMA_VERSION
+
+        db_path = tmp_path / "fresh.kuzu"
+        GraphDB(persist_dir=str(db_path))
+        version_file = tmp_path / "fresh.kuzu.schema_version"
+        assert version_file.exists(), "sentinel file must be created on first init"
+        assert int(version_file.read_text().strip()) == SCHEMA_VERSION
+
+
+@pytest.mark.unit
 class TestGraphDBEdgeProperties:
     """G14: REL TABLE edges carry confidence, extracted_at, prompt_version defaults."""
 

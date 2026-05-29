@@ -128,8 +128,23 @@ class GraphDB:
             return 1
 
     def _write_schema_version(self, version: int) -> None:
-        """Write the schema version integer to the sentinel file."""
-        self._version_file.write_text(str(version), encoding="utf-8")
+        """Write the schema version integer to the sentinel file.
+
+        Logs a warning on OSError rather than raising — by the time this is
+        called, schema migrations have already committed to the database, so
+        failing the whole __init__ would leave the user with no way to use
+        the graph at all. Stale sentinel is recoverable; an unconstructable
+        GraphDB is not.
+        """
+        try:
+            self._version_file.write_text(str(version), encoding="utf-8")
+        except OSError as exc:
+            logger.warning(
+                "Could not write schema version to %s (%s); "
+                "migration will re-run on next open.",
+                self._version_file,
+                exc,
+            )
 
     def close(self) -> None:
         """Release the KuzuDB connection and database handle deterministically.
