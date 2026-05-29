@@ -1415,3 +1415,59 @@ def test_discovery_rag_mode_vector_uses_rank_papers(tmp_path):
 # G9 tests for retrieve_doi_candidates, _expand_query, and Config.retrieval
 # are in tests/unit/test_retrieval_branch.py (avoids habanero import issue
 # that blocks collection of this file when the full dependency set is absent).
+
+
+# ===========================================================================
+# G9 C2 — graph-mode discovery rationales must be populated
+# ===========================================================================
+
+@pytest.mark.unit
+def test_rank_papers_graph_produces_rationales(tmp_path):
+    """G9 C2: _rank_papers_graph LLM rationales must be populated.
+
+    Pre-fix, _get_rationales(_top, llm) raised TypeError because the required
+    positional arg ``domain_context: str`` was missing. The broad
+    ``except Exception`` swallowed it, leaving every paper with
+    ``llm_rationale=""``.
+    """
+    from scripts.pipelines.discovery import _rank_papers_graph
+
+    candidates = [
+        {"doi": "10.1/a", "title": "Paper A", "abstract": "About A."},
+        {"doi": "10.1/b", "title": "Paper B", "abstract": "About B."},
+    ]
+
+    llm = MagicMock()
+    # Match the format parse_llm_json returns — a JSON dict of doi -> rationale.
+    llm.complete.return_value = json.dumps({
+        "10.1/a": "A is relevant because of X.",
+        "10.1/b": "B is relevant because of Y.",
+    })
+
+    # Mock graph_db so it returns at least one neighbour per candidate (gives
+    # a non-zero similarity_score so we exercise the rationale path on the
+    # top-K which is the WHOLE candidate set here).
+    graph_db = MagicMock()
+    graph_db.find_similar_papers.return_value = [("10.1/other", 2.0)]
+    graph_db.close = MagicMock()
+
+    # safe_graph_db is called inside _rank_papers_graph — patch it to return
+    # our mock so we don't depend on the [graph] extra.
+    with patch("scripts.pipelines.discovery.safe_graph_db", return_value=graph_db), \
+         patch("scripts.retrieval.branch.retrieve_doi_candidates",
+               return_value=[("10.1/neigh", 0.8)]):
+        ranked = _rank_papers_graph(
+            candidates, embeddings_db=MagicMock(), llm=llm,
+            top_k=10, rag_mode="graph",
+        )
+
+    # Every paper must have a NON-EMPTY rationale. Pre-fix, all would be "".
+    rationales = [p.get("llm_rationale", "") for p in ranked]
+    assert all(r for r in rationales), (
+        "G9 C2 regression: _rank_papers_graph produced empty llm_rationale for "
+        "at least one paper. Most likely _get_rationales is being called "
+        f"without domain_context, raising TypeError. Got rationales: {rationales!r}"
+    )
+    assert any("relevant" in r for r in rationales), (
+        f"Rationales should contain LLM output; got: {rationales!r}"
+    )

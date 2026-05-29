@@ -214,7 +214,10 @@ def relink_note(
         )
     else:
         # G9: graph or hybrid — use branch helper, then rerank if configured.
+        # W1: vector leg of hybrid must preserve v0.3.3 reranker contract
+        # (exclude self, pass query + reranker_config through).
         from scripts.retrieval.branch import retrieve_doi_candidates
+        _reranker_query = sanitize_for_prompt(note_text)
         doi_candidates = retrieve_doi_candidates(
             _rag_mode,
             seed_doi=doi,
@@ -222,11 +225,13 @@ def relink_note(
             embeddings_db=embeddings_db,
             graph_db=graph_db,
             k=top_k,
+            exclude_id=doi,
+            rerank_with_query=_reranker_query if _rag_mode == "hybrid" else None,
+            reranker_config=_reranker_cfg if _rag_mode == "hybrid" else None,
         )
         # Convert (doi, score) pairs → ChromaDB-style result dicts so the
         # downstream build_related_work_block receives the expected shape.
         # Resolve note_title for each candidate DOI via state_db.
-        _reranker_query = sanitize_for_prompt(note_text)
         similar = _doi_pairs_to_similar(doi_candidates, state_db, top_k,
                                         reranker_cfg=_reranker_cfg,
                                         reranker_query=_reranker_query)
@@ -324,24 +329,56 @@ def _doi_pairs_to_similar(
     The returned list matches the shape expected by build_related_work_block:
     each entry has 'score' and 'metadata': {'note_title': <str>}.
 
-    When a reranker_cfg is present the results are re-ranked via the embeddings
-    reranker after conversion (preserves the N19 reranker chain for hybrid).
+    G9 C3: ``document`` is hydrated with title + abstract (+ core_finding) from
+    state_db.get_paper so the cross-encoder reranker actually has text to score.
+    Previously this field was "" and the reranker scored (query, "") — noise.
+
+    G9 C1: when a reranker_cfg is present and enabled, results are re-ranked
+    via the cross-encoder using the same code path as the vector branch
+    (``_apply_reranker`` in scripts.output.embeddings).
     """
     results: list[dict] = []
     for doi_val, score in doi_candidates[:top_k]:
         record = state_db.get_paper(doi_val) if hasattr(state_db, "get_paper") else None
-        note_title = (record or {}).get("note_title", "")
+        record = record or {}
+        note_title = record.get("note_title", "")
+        # C3: hydrate the reranker passage from the same fields v0.3.3 used to
+        # build the paper-level embedding (title + abstract + core_finding).
+        # N+1 query: one get_paper per candidate. Acceptable trade-off — top_k
+        # is typically 10–30 and state_db is local SQLite. Batching would
+        # require a new state_db API and the gain is small at these k values.
         results.append({
             "id": doi_val,
             "score": score,
-            "document": "",
+            "document": _build_reranker_document(record),
             "metadata": {"note_title": note_title, "doi": doi_val},
         })
-    # Re-rank when the reranker chain is configured — same as the vector path.
+    # C1: rerank using the same private helper the vector path uses. This is
+    # the actual API — the previous ``from scripts.output.reranker import rerank``
+    # was a phantom symbol that raised ImportError on every call (silently
+    # swallowed by except Exception).
     if reranker_cfg is not None and reranker_query and results:
-        try:
-            from scripts.output.reranker import rerank
-            results = rerank(results, reranker_query, reranker_cfg)
-        except Exception as exc:
-            logger.warning("Reranker failed in rag-mode path (non-fatal): %s", exc)
+        from scripts.output.embeddings import _apply_reranker, _reranker_enabled
+        if _reranker_enabled(reranker_cfg):
+            results = _apply_reranker(reranker_query, results, top_k, reranker_cfg)
     return results
+
+
+def _build_reranker_document(record: dict) -> str:
+    """G9 C3: build the passage string the cross-encoder reranker scores against.
+
+    Mirrors ``_paper_embed_text`` in brain_build: title + abstract + core_finding.
+    Returns "" only when every field is missing (e.g. record absent in state_db).
+    """
+    if not record:
+        return ""
+    title = (record.get("title") or "").strip()
+    abstract = ""
+    core_finding = ""
+    extraction_raw = record.get("extraction_json") or ""
+    if extraction_raw:
+        extraction = _safe_json(extraction_raw)
+        abstract = (extraction.get("abstract") or "").strip()
+        core_finding = (extraction.get("core_finding") or "").strip()
+    parts = [p for p in (title, abstract, core_finding) if p]
+    return " ".join(parts)

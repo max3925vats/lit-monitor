@@ -29,6 +29,9 @@ def retrieve_doi_candidates(
     embeddings_db: Any | None = None,
     graph_db: Any | None = None,
     k: int = 20,
+    exclude_id: str | None = None,
+    rerank_with_query: str | None = None,
+    reranker_config: Any | None = None,
 ) -> list[tuple[str, float]]:
     """Return one ranked (doi, score) list per rag_mode.
 
@@ -42,6 +45,12 @@ def retrieve_doi_candidates(
         embeddings_db:  EmbeddingsDB instance; may be None.
         graph_db:    GraphDB instance; may be None.
         k:           Maximum number of results.
+        exclude_id:  G9 W1: forwarded to embeddings.find_similar_to_text so the
+                     vector leg of hybrid skips the seed paper (matches v0.3.3).
+        rerank_with_query:  G9 W1: forwarded to embeddings.find_similar_to_text
+                     so the vector leg participates in cross-encoder reranking
+                     (matches v0.3.3 N19 contract).
+        reranker_config:  G9 W1: forwarded alongside ``rerank_with_query``.
 
     Returns:
         List of (doi, score) tuples ranked by relevance descending.
@@ -51,11 +60,21 @@ def retrieve_doi_candidates(
         ValueError: unknown rag_mode value.
     """
     if rag_mode == "vector":
-        return _retrieve_vector(embeddings_db, query_text, k)
+        return _retrieve_vector(
+            embeddings_db, query_text, k,
+            exclude_id=exclude_id,
+            rerank_with_query=rerank_with_query,
+            reranker_config=reranker_config,
+        )
     if rag_mode == "graph":
         return _retrieve_graph(graph_db, seed_doi, entity_ids, k)
     if rag_mode == "hybrid":
-        vector_rank = _retrieve_vector(embeddings_db, query_text, k)
+        vector_rank = _retrieve_vector(
+            embeddings_db, query_text, k,
+            exclude_id=exclude_id,
+            rerank_with_query=rerank_with_query,
+            reranker_config=reranker_config,
+        )
         graph_rank = _retrieve_graph(graph_db, seed_doi, entity_ids, k)
         # RRF expects plain lists of doc IDs, not (doi, score) pairs.
         v_ids = [d for d, _ in vector_rank]
@@ -75,16 +94,32 @@ def _retrieve_vector(
     embeddings_db: Any | None,
     query_text: str | None,
     k: int,
+    *,
+    exclude_id: str | None = None,
+    rerank_with_query: str | None = None,
+    reranker_config: Any | None = None,
 ) -> list[tuple[str, float]]:
-    """Embed-query ChromaDB and return (doi, score) pairs."""
+    """Embed-query ChromaDB and return (doi, score) pairs.
+
+    G9 W1: optional kwargs ``exclude_id``, ``rerank_with_query``, and
+    ``reranker_config`` are forwarded to ``find_similar_to_text`` so the vector
+    leg of hybrid behaves bit-for-bit like the v0.3.3 vector-only path.
+    """
     if embeddings_db is None:
         logger.debug("vector retrieval skipped: embeddings_db is None")
         return []
     if not query_text:
         logger.debug("vector retrieval skipped: no query_text supplied")
         return []
+    kwargs: dict[str, Any] = {"top_k": k}
+    if exclude_id is not None:
+        kwargs["exclude_id"] = exclude_id
+    if rerank_with_query is not None:
+        kwargs["rerank_with_query"] = rerank_with_query
+    if reranker_config is not None:
+        kwargs["reranker_config"] = reranker_config
     try:
-        results = embeddings_db.find_similar_to_text(query_text, top_k=k)
+        results = embeddings_db.find_similar_to_text(query_text, **kwargs)
     except Exception as exc:
         logger.warning("vector retrieval failed: %s", exc)
         return []

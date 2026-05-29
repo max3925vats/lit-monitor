@@ -1242,6 +1242,21 @@ def run_cmd(
     _effective_rag = rag_mode or getattr(
         getattr(config, "retrieval", None), "default_mode", "vector"
     ) or "vector"
+    # W4: explicit --rag-mode graph|hybrid without the [graph] extra is a hard
+    # error — surface it before discovery searches start. Probe with
+    # safe_graph_db() so we don't have to import GraphDB directly here.
+    if rag_mode in ("graph", "hybrid"):
+        from scripts.graph import safe_graph_db as _probe_graph_db
+        _probe = _probe_graph_db()
+        if _probe is None:
+            raise click.UsageError(
+                f"--rag-mode {rag_mode} requires the [graph] extra. "
+                "Install with: uv sync --extra graph"
+            )
+        try:
+            _probe.close()
+        except Exception:
+            pass
     mode_label = "[DRY RUN] " if dry_run else ""
     click.echo(f"{mode_label}Starting discovery pipeline… (rag-mode: {_effective_rag})")
     summary = run_discovery(
@@ -1296,14 +1311,35 @@ def obsidian_relink(ctx: click.Context, doi: str | None, rag_mode: str | None) -
     except Exception as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
-    # G9: open graph_db once for the whole relink pass (None when [graph] extra absent).
+    # G9: resolve rag_mode FIRST so the graph_db open decision uses the
+    # effective mode (CLI flag → config default → "vector"). C4 fix: previously
+    # graph_db was opened only when the CLI flag was set, so an implicit
+    # config-default of "graph" silently degraded to vector with graph_db=None.
     from scripts.graph import safe_graph_db as _safe_graph_db
-    _graph_db = _safe_graph_db() if rag_mode in ("graph", "hybrid") else None
+    _effective_rag = rag_mode or getattr(
+        getattr(config, "retrieval", None), "default_mode", "vector"
+    ) or "vector"
+    _graph_db = _safe_graph_db() if _effective_rag in ("graph", "hybrid") else None
+    # W4: when the user EXPLICITLY requested graph/hybrid via --rag-mode but
+    # the [graph] extra is missing, surface a clear UsageError instead of
+    # silently falling back to vector. Implicit config-default fallthrough is
+    # still allowed (logged at INFO inside safe_graph_db when relevant).
+    if rag_mode in ("graph", "hybrid") and _graph_db is None:
+        raise click.UsageError(
+            f"--rag-mode {rag_mode} requires the [graph] extra. "
+            "Install with: uv sync --extra graph"
+        )
+    if (
+        rag_mode is None
+        and _effective_rag in ("graph", "hybrid")
+        and _graph_db is None
+    ):
+        logger.info(
+            "Config default rag-mode is %r but [graph] extra is not installed; "
+            "falling back to vector for this run.", _effective_rag,
+        )
+        _effective_rag = "vector"
     try:
-        # G9: resolve rag_mode — CLI flag overrides config default.
-        _effective_rag = rag_mode or getattr(
-            getattr(config, "retrieval", None), "default_mode", "vector"
-        ) or "vector"
         def _relink_by_doi(d: str, *, silent_missing: bool = False) -> str | None:
             record = state_db.get_paper(d)
             if not record:
@@ -1466,6 +1502,24 @@ def obsidian_synthesize(
     # G9: open graph_db once for the whole synthesize batch (None when [graph] extra absent).
     from scripts.graph import safe_graph_db as _safe_graph_db
     _graph_db = _safe_graph_db() if _effective_rag in ("graph", "hybrid") else None
+    # W4: explicit --rag-mode graph|hybrid without the [graph] extra is a hard
+    # error (mirrors obsidian_relink). Implicit config-default fallthrough is
+    # downgraded to vector with an INFO log.
+    if rag_mode in ("graph", "hybrid") and _graph_db is None:
+        raise click.UsageError(
+            f"--rag-mode {rag_mode} requires the [graph] extra. "
+            "Install with: uv sync --extra graph"
+        )
+    if (
+        rag_mode is None
+        and _effective_rag in ("graph", "hybrid")
+        and _graph_db is None
+    ):
+        logger.info(
+            "Config default rag-mode is %r but [graph] extra is not installed; "
+            "falling back to vector for this run.", _effective_rag,
+        )
+        _effective_rag = "vector"
     try:
         # Build topic list
         if topics_file:

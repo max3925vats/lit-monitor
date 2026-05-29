@@ -117,6 +117,8 @@ def synthesize(
         # Build entity_ids from expanded surface forms via graph resolve, if possible.
         entity_ids = _resolve_entity_ids(expanded_terms, graph_db)
         from scripts.retrieval.branch import retrieve_doi_candidates
+        # W1: forward exclude_id (None here — synthesize has no seed paper) and
+        # reranker config so the vector leg of hybrid preserves v0.3.3 behaviour.
         doi_candidates = retrieve_doi_candidates(
             _rag_mode,
             query_text=topic,          # vector leg uses the raw topic
@@ -124,19 +126,29 @@ def synthesize(
             embeddings_db=embeddings_db,
             graph_db=graph_db,
             k=top_k * 2,
+            rerank_with_query=topic if _rag_mode == "hybrid" else None,
+            reranker_config=_reranker_cfg if _rag_mode == "hybrid" else None,
         )
         # Convert (doi, score) pairs → ChromaDB-style result dicts.
-        similar = [
-            {"id": d, "score": s, "document": "", "metadata": {}}
-            for d, s in doi_candidates[:top_k]
-        ]
-        # Reranker chain at the END — preserves N19 contract.
+        # C3: hydrate ``document`` from state_db so the cross-encoder reranker
+        # actually scores meaningful text instead of empty strings.
+        similar = []
+        for d, s in doi_candidates[:top_k]:
+            record = state_db.get_paper(d) if hasattr(state_db, "get_paper") else None
+            record = record or {}
+            similar.append({
+                "id": d,
+                "score": s,
+                "document": _build_reranker_document(record),
+                "metadata": {"note_title": record.get("note_title", ""), "doi": d},
+            })
+        # C1: reranker chain at the END — use the real cross-encoder helper
+        # (``_apply_reranker``); the previous ``from scripts.output.reranker
+        # import rerank`` raised ImportError and was silently swallowed.
         if _reranker_cfg and similar:
-            try:
-                from scripts.output.reranker import rerank
-                similar = rerank(similar, topic, _reranker_cfg)
-            except Exception as exc:
-                logger.warning("Reranker failed in rag-mode path (non-fatal): %s", exc)
+            from scripts.output.embeddings import _apply_reranker, _reranker_enabled
+            if _reranker_enabled(_reranker_cfg):
+                similar = _apply_reranker(topic, similar, top_k, _reranker_cfg)
         use_chunks = False  # no chunk-level passages in graph/hybrid mode
     if not similar:
         logger.warning("No similar notes found for topic %r", topic)
@@ -278,6 +290,34 @@ def _slugify(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# G9 C3: Reranker document hydration
+# ---------------------------------------------------------------------------
+
+def _build_reranker_document(record: dict) -> str:
+    """Build the passage string the cross-encoder reranker scores against.
+
+    Mirrors ``_paper_embed_text`` in brain_build: title + abstract +
+    core_finding (the same fields used to build the paper-level embedding in
+    v0.3.3). Returns "" only when every field is missing.
+    """
+    if not record:
+        return ""
+    title = (record.get("title") or "").strip()
+    abstract = ""
+    core_finding = ""
+    extraction_raw = record.get("extraction_json") or ""
+    if extraction_raw:
+        try:
+            extraction = json.loads(extraction_raw)
+        except Exception:
+            extraction = {}
+        abstract = (extraction.get("abstract") or "").strip()
+        core_finding = (extraction.get("core_finding") or "").strip()
+    parts = [p for p in (title, abstract, core_finding) if p]
+    return " ".join(parts)
+
+
+# ---------------------------------------------------------------------------
 # G9: Query expansion helpers
 # ---------------------------------------------------------------------------
 
@@ -320,9 +360,10 @@ def _expand_query(topic: str, llm) -> list[str]:
 def _resolve_entity_ids(surface_forms: list[str], graph_db) -> list[str]:
     """G9: resolve surface form strings to canonical entity IDs via graph_db.
 
-    Uses graph_db.resolve_query_entity() when available (G7).  Falls back to
-    returning the surface forms as-is when graph_db is None or the method
-    raises, so callers always get a usable list.
+    Uses graph_db.resolve_query_entity() when available (G7). Returns an empty
+    list when the graph is unavailable or nothing resolves — callers MUST treat
+    surface forms (free text) as distinct from canonical entity IDs because
+    find_papers_by_entities expects IDs that exist in the graph.
 
     Args:
         surface_forms: List of term strings (output of _expand_query).
@@ -332,24 +373,27 @@ def _resolve_entity_ids(surface_forms: list[str], graph_db) -> list[str]:
         List of canonical entity ID strings (may be empty).
     """
     if graph_db is None or not surface_forms:
-        return surface_forms  # pass through for find_papers_by_entities
+        # W3: return [] on no-match instead of leaking surface forms as if they
+        # were entity IDs — find_papers_by_entities silently produces zero hits
+        # when given free-text terms, which masks the graph-unavailable case.
+        return []
     canonical: list[str] = []
     for term in surface_forms:
         try:
             result = graph_db.resolve_query_entity(term)
-            if result:
-                # resolve_query_entity returns (entity_id, canonical_name, score)
-                # or a list thereof — handle both shapes.
-                if isinstance(result, (list, tuple)) and result:
-                    first = result[0]
-                    if isinstance(first, (list, tuple)) and first:
-                        canonical.append(str(first[0]))
-                    else:
-                        canonical.append(str(first))
-                else:
-                    canonical.append(str(result))
         except Exception as exc:
             logger.debug("Entity resolution failed for %r: %s", term, exc)
+            continue
+        if not result:
+            continue
+        # W2: resolve_query_entity returns a (entity_id, canonical_name, score)
+        # tuple in current G7 contract. Accept either a single tuple or a list
+        # of tuples — earlier code branched on str too, which the real API
+        # never returns; drop that dead branch.
+        items = result if isinstance(result, list) else [result]
+        for item in items:
+            if isinstance(item, tuple) and item:
+                canonical.append(str(item[0]))
     # De-duplicate while preserving order.
     seen: set[str] = set()
     unique: list[str] = []
@@ -357,5 +401,4 @@ def _resolve_entity_ids(surface_forms: list[str], graph_db) -> list[str]:
         if c not in seen:
             seen.add(c)
             unique.append(c)
-    # Fall back to raw surface forms when resolution yields nothing.
-    return unique if unique else surface_forms
+    return unique

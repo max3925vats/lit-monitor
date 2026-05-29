@@ -289,10 +289,13 @@ def _rank_papers_graph(
         scored.sort(key=lambda p: p.get("similarity_score", 0.0), reverse=True)
 
         # Add LLM rationale for top-K (mirrors rank_papers behaviour).
+        # C2 fix: _get_rationales requires `domain_context: str` — the previous
+        # call omitted it and TypeError was silently swallowed by the broad
+        # except below, leaving every graph/hybrid paper with rationale="".
         _top = scored[:top_k]
         try:
             from scripts.llm.ranker import _get_rationales  # type: ignore[attr-defined]
-            rationales = _get_rationales(_top, llm)
+            rationales = _get_rationales(_top, llm, domain_context="")
             for p in _top:
                 p["llm_rationale"] = rationales.get(p.get("doi", ""), "")
         except Exception as exc:
