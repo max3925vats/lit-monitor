@@ -210,3 +210,118 @@ class TestFindPapersByEntities:
         _Fixture.build(db)
         result = db.find_papers_by_entities([], k=10)
         assert result == []
+
+
+@pytest.mark.unit
+class TestFindSimilarPapersDistinct:
+    """G7: count(DISTINCT e) — same canonical_id in different fields counted once."""
+
+    def test_same_entity_in_two_fields_counts_as_one_shared(self, tmp_path):
+        db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+        # Paper /a mentions 'chromatography' in TWO fields → two MENTIONS edges
+        entities_a = [
+            EntityTuple(
+                canonical_id="chromatography",
+                type="method",
+                surface="chromatography",
+                field="methods_summary",
+                span_start=0,
+                span_end=14,
+            ),
+            EntityTuple(
+                canonical_id="chromatography",
+                type="method",
+                surface="chromatography",
+                field="discovered_topics",
+                span_start=None,
+                span_end=None,
+            ),
+        ]
+        # Paper /b mentions 'chromatography' in ONE field
+        entities_b = [
+            EntityTuple(
+                canonical_id="chromatography",
+                type="method",
+                surface="chromatography",
+                field="methods_summary",
+                span_start=0,
+                span_end=14,
+            ),
+        ]
+        db.add_paper(
+            doi="10.0/a",
+            entities=entities_a,
+            relationships=[],
+            paper_metadata={"title": "A", "year": 2024, "journal": "X"},
+        )
+        db.add_paper(
+            doi="10.0/b",
+            entities=entities_b,
+            relationships=[],
+            paper_metadata={"title": "B", "year": 2024, "journal": "X"},
+        )
+
+        result = db.find_similar_papers("10.0/a", k=10)
+        # Without DISTINCT: would be 2 (two MENTIONS paths through chromatography).
+        # With DISTINCT: 1 (one shared entity, regardless of field count).
+        assert len(result) == 1
+        assert result[0][0] == "10.0/b"
+        assert result[0][1] == 1.0, f"expected 1.0 with DISTINCT, got {result[0][1]}"
+
+
+@pytest.mark.unit
+class TestFindPapersByEntitiesDistinct:
+    """G7: count(DISTINCT e) — same canonical_id in different fields counted once."""
+
+    def test_same_entity_in_two_fields_counts_once(self, tmp_path):
+        db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+        # Paper /a mentions chromatography in TWO fields → two MENTIONS edges
+        entities_a = [
+            EntityTuple(
+                canonical_id="chromatography",
+                type="method",
+                surface="chromatography",
+                field="methods_summary",
+                span_start=0,
+                span_end=14,
+            ),
+            EntityTuple(
+                canonical_id="chromatography",
+                type="method",
+                surface="chromatography",
+                field="discovered_topics",
+                span_start=None,
+                span_end=None,
+            ),
+        ]
+        db.add_paper(
+            doi="10.0/a",
+            entities=entities_a,
+            relationships=[],
+            paper_metadata={"title": "A", "year": 2024, "journal": "X"},
+        )
+
+        result = db.find_papers_by_entities(["chromatography"], k=10)
+        # Without DISTINCT: 2 (two MENTIONS edges).
+        # With DISTINCT: 1.
+        assert len(result) == 1
+        assert result[0][0] == "10.0/a"
+        assert result[0][1] == 1.0
+
+
+@pytest.mark.unit
+class TestInvalidateQueryCache:
+    def test_invalidate_clears_cached_normalizer(self, tmp_path):
+        db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+        _Fixture.build(db)
+        # Trigger cache build
+        result1 = db.resolve_query_entity("ion exchange", type_="method")
+        assert result1 == "ion exchange"
+        assert db._query_normalizer is not None
+        # Invalidate
+        db.invalidate_query_cache()
+        assert db._query_normalizer is None
+        # Next call rebuilds
+        result2 = db.resolve_query_entity("ion exchange", type_="method")
+        assert result2 == "ion exchange"
+        assert db._query_normalizer is not None

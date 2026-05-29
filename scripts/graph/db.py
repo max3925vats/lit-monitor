@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts.graph.migrations import apply_migrations, apply_schema
+from scripts.graph.normalizer import EntityNormalizer
 from scripts.graph.relationship_validator import VALID_PREDICATES
 
 logger = logging.getLogger(__name__)
@@ -113,6 +114,11 @@ class GraphDB:
                 new_version,
                 self._persist_dir,
             )
+
+        # G7: query-time EntityNormalizer cache.  None = not yet built.
+        # Call invalidate_query_cache() after add_paper() if you need
+        # resolve_query_entity to see the new entities in the same process.
+        self._query_normalizer: EntityNormalizer | None = None
 
         logger.debug(
             "GraphDB ready (schema v%d): %s", new_version, self._persist_dir
@@ -424,6 +430,15 @@ class GraphDB:
                 _SLOW_QUERY_THRESHOLD_S,
             )
 
+    def invalidate_query_cache(self) -> None:
+        """G7: drop the cached query-time EntityNormalizer.
+
+        Call after adding new entities via add_paper() if you need
+        resolve_query_entity to see them in the same process.  Phase 2 will
+        invalidate automatically; Phase 1 defers to the caller.
+        """
+        self._query_normalizer = None
+
     # ------------------------------------------------------------------
     # G7 — read-side query API
     # ------------------------------------------------------------------
@@ -449,7 +464,7 @@ class GraphDB:
         cypher = (
             "MATCH (a:Paper {doi: $doi})-[:MENTIONS]->(e:Entity)<-[:MENTIONS]-(b:Paper) "
             "WHERE a.doi <> b.doi "
-            "RETURN b.doi AS doi, count(e) AS score "
+            "RETURN b.doi AS doi, count(DISTINCT e) AS score "
             "ORDER BY score DESC LIMIT $k"
         )
         t0 = time.perf_counter()
@@ -498,13 +513,12 @@ class GraphDB:
             The matched canonical_id, or ``None`` if no match found within scope.
         """
         from scripts.graph.aliases import load_aliases
-        from scripts.graph.normalizer import EntityNormalizer
 
         t0 = time.perf_counter()
 
         # Build (and cache) the normalizer seeded with live Entity nodes.
-        # Reset by setting self._query_normalizer = None when new entities arrive.
-        if not hasattr(self, "_query_normalizer") or self._query_normalizer is None:
+        # Call invalidate_query_cache() to clear after add_paper().
+        if self._query_normalizer is None:
             normalizer: EntityNormalizer = EntityNormalizer(aliases=load_aliases())
             res = self._conn.execute(
                 "MATCH (e:Entity) RETURN e.canonical_id, e.type"
@@ -513,7 +527,7 @@ class GraphDB:
                 row = res.get_next()
                 # add_to_vocab(type_, canonical) — row order: [canonical_id, type]
                 normalizer.add_to_vocab(str(row[1]), str(row[0]))
-            self._query_normalizer: EntityNormalizer | None = normalizer
+            self._query_normalizer = normalizer
 
         normalizer = self._query_normalizer
 
@@ -579,7 +593,7 @@ class GraphDB:
         cypher = (
             "MATCH (p:Paper)-[:MENTIONS]->(e:Entity) "
             "WHERE e.canonical_id IN $ids "
-            "RETURN p.doi AS doi, count(e) AS score "
+            "RETURN p.doi AS doi, count(DISTINCT e) AS score "
             "ORDER BY score DESC LIMIT $k"
         )
         t0 = time.perf_counter()
