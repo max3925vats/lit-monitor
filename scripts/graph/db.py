@@ -61,3 +61,20 @@ class GraphDB:
         # Apply the Phase-1 schema DDL — idempotent on re-open.
         apply_schema(self._conn)
         logger.debug("GraphDB ready: %s", self._persist_dir)
+
+    def close(self) -> None:
+        """Release the KuzuDB connection and database handle deterministically.
+
+        kuzu.Connection / kuzu.Database are released when dereferenced; this method
+        drops our references explicitly so callers can free resources without
+        relying on CPython refcounting. Safe to call multiple times.
+        """
+        self._conn = None  # type: ignore[assignment]
+        self._db = None    # type: ignore[assignment]
+        logger.debug("GraphDB closed: %s", self._persist_dir)
+
+    def __enter__(self) -> GraphDB:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()

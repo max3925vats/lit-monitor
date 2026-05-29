@@ -28,11 +28,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Bumped by future bundles that change the DDL. G14 will bump to 2 when it
+# adds confidence/extracted_at/prompt_version to every REL TABLE.
+SCHEMA_VERSION: int = 1
+
 # ---------------------------------------------------------------------------
 # DDL statements — executed in order by apply_schema().
 # All use IF NOT EXISTS so re-runs are no-ops.
 # ---------------------------------------------------------------------------
-_DDL_STATEMENTS: list[str] = [
+DDL_STATEMENTS: list[str] = [
     # --- Node tables ---
     (
         "CREATE NODE TABLE IF NOT EXISTS Paper("
@@ -94,6 +98,9 @@ def apply_schema(conn) -> None:  # type: ignore[type-arg]
     The function is idempotent — calling it more than once on the same
     database is safe because every statement uses ``IF NOT EXISTS``.
     """
-    for ddl in _DDL_STATEMENTS:
+    for ddl in DDL_STATEMENTS:
         conn.execute(ddl)
-    logger.debug("apply_schema: %d DDL statement(s) executed (idempotent).", len(_DDL_STATEMENTS))
+    logger.debug(
+        "apply_schema: %d DDL statement(s) executed (idempotent).",
+        len(DDL_STATEMENTS),
+    )

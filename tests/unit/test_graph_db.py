@@ -109,35 +109,46 @@ class TestGraphDBInit:
 
 
 @pytest.mark.unit
+class TestGraphDB:
+    """GraphDB context-manager and resource lifecycle tests."""
+
+    def test_context_manager_closes_handles(self, tmp_path):
+        """GraphDB used as a context manager releases its kuzu handles on exit."""
+        from scripts.graph import GraphDB
+
+        persist = tmp_path / "ctx.kuzu"
+        with GraphDB(persist_dir=str(persist)) as g:
+            assert g._conn is not None
+            assert g._db is not None
+        # After __exit__, handles must be released.
+        assert g._conn is None
+        assert g._db is None
+
+
+@pytest.mark.unit
 class TestGraphDBImportError:
     """GraphDB raises ImportError when kuzu is not installed."""
 
     def test_import_error_without_kuzu(self, tmp_path, monkeypatch):
-        """When kuzu is absent, GraphDB.__init__ raises ImportError with install hint."""
-        # Use monkeypatch to block kuzu import inside GraphDB
-        # We do this by temporarily removing kuzu from sys.modules and blocking it.
-        kuzu_backup = sys.modules.pop("kuzu", None)
-
-        # Also remove graph.db so it re-evaluates lazy import
+        """Instantiating GraphDB without kuzu raises a clear ImportError."""
+        # Block the kuzu import via monkeypatch so cleanup is automatic.
+        monkeypatch.setitem(sys.modules, "kuzu", None)  # type: ignore[arg-type]
+        # Purge any cached scripts.graph modules so the import inside __init__
+        # re-runs against the blocked kuzu slot.
         for mod_name in list(sys.modules.keys()):
-            if "scripts.graph" in mod_name:
-                del sys.modules[mod_name]
+            if mod_name.startswith("scripts.graph"):
+                monkeypatch.delitem(sys.modules, mod_name, raising=False)
 
-        # Block kuzu from being importable
-        sys.modules["kuzu"] = None  # type: ignore[assignment]
+        from scripts.graph.db import GraphDB as FreshGraphDB
 
-        try:
-            from scripts.graph.db import GraphDB as FreshGraphDB
+        with pytest.raises(ImportError, match="uv sync --extra graph"):
+            FreshGraphDB(persist_dir=str(tmp_path / "graph.kuzu"))
 
-            with pytest.raises(ImportError, match="uv sync --extra graph"):
-                FreshGraphDB(persist_dir=str(tmp_path / "graph.kuzu"))
-        finally:
-            # Restore kuzu
-            if kuzu_backup is not None:
-                sys.modules["kuzu"] = kuzu_backup
-            else:
-                sys.modules.pop("kuzu", None)
-            # Reload scripts.graph to restore correct state
-            for mod_name in list(sys.modules.keys()):
-                if "scripts.graph" in mod_name:
-                    del sys.modules[mod_name]
+    def test_module_import_succeeds_without_kuzu(self, monkeypatch):
+        """scripts.graph imports cleanly even when kuzu is absent."""
+        monkeypatch.setitem(sys.modules, "kuzu", None)  # type: ignore[arg-type]
+        for mod_name in list(sys.modules.keys()):
+            if mod_name.startswith("scripts.graph"):
+                monkeypatch.delitem(sys.modules, mod_name, raising=False)
+        # Importing the package must NOT raise — only instantiation does.
+        import scripts.graph  # noqa: F401
