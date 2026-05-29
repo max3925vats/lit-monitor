@@ -1,0 +1,54 @@
+# G15: closed predicate vocabulary for the knowledge graph.
+#
+# Each predicate has a canonical name (the YAML key).  The optional
+# 'aliases' list collapses multiple surface forms to that canonical at
+# extract time, so future renames don't require an edge rebuild.
+# Deprecated predicates still resolve normally but log a one-shot WARNING
+# per session — use this to stage renames before a full edge rebuild (v0.8+).
+#
+# This is the .example.yaml; copy to predicates.yaml to customize.
+#
+# Phase 1 closed vocabulary (8 predicates).  Phase 3 will add EXTENDS and
+# CONTRADICTS — do not add them here until the v0.8 schema migration is ready.
+
+MENTIONS:
+  description: "Paper mentions an entity (topic / method / material / author / journal / keyword)."
+  aliases: []
+  deprecated: false
+
+CITES:
+  description: "Paper A directly cites paper B."
+  aliases: []
+  deprecated: false
+
+COMPARES_TO:
+  description: "Paper A explicitly compares its work to paper B or entity B."
+  # Demo alias: COMPARES_WITH and BENCHMARKS_AGAINST are common LLM surface
+  # forms that should fold into COMPARES_TO without a schema change.
+  aliases: [COMPARES_WITH, BENCHMARKS_AGAINST]
+  deprecated: false
+
+DEPENDS_ON:
+  description: "Paper depends on (assumes availability of) an entity."
+  aliases: []
+  deprecated: false
+
+PROPOSES:
+  description: "Paper proposes an entity, typically as new work or future direction."
+  aliases: []
+  deprecated: false
+
+LIMITED_BY:
+  description: "Paper acknowledges an entity as a limitation of its work."
+  aliases: []
+  deprecated: false
+
+INTRODUCES:
+  description: "Paper introduces a novel entity (its primary novelty claim)."
+  aliases: []
+  deprecated: false
+
+RAISES_QUESTION:
+  description: "Paper surfaces an open question concerning an entity."
+  aliases: []
+  deprecated: false

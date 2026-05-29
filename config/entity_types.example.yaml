@@ -1,0 +1,40 @@
+# G15: closed entity-type vocabulary for the knowledge graph.
+#
+# Each type has a canonical name (the YAML key).  The optional 'aliases' list
+# lets upstream extractors emit synonymous forms ("technique" → "method") that
+# are collapsed to the canonical at extract time.  Aliases are intentionally
+# empty for v0.4.0 — populate in v0.8+ as the schema evolves.
+#
+# This is the .example.yaml; copy to entity_types.yaml to customize.
+#
+# Phase 1 closed vocabulary: 6 entity types.
+
+topic:
+  description: "High-level research subject area (e.g. 'protein purification')."
+  aliases: []
+  deprecated: false
+
+method:
+  description: "Experimental technique or computational procedure."
+  aliases: []
+  deprecated: false
+
+material:
+  description: "Biological or chemical material studied or used (reagent, protein, buffer, etc.)."
+  aliases: []
+  deprecated: false
+
+author:
+  description: "Paper author surface-form name."
+  aliases: []
+  deprecated: false
+
+journal:
+  description: "Journal name or standard abbreviation."
+  aliases: []
+  deprecated: false
+
+keyword:
+  description: "Generic keyword extracted from paper indexing terms or abstract."
+  aliases: []
+  deprecated: false
