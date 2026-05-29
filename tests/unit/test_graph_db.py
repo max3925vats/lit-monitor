@@ -126,6 +126,68 @@ class TestGraphDB:
 
 
 @pytest.mark.unit
+class TestGraphDBEdgeProperties:
+    """G14: REL TABLE edges carry confidence, extracted_at, prompt_version defaults."""
+
+    def test_mentions_edge_has_default_confidence_extracted_at_prompt_version(
+        self, tmp_path
+    ):
+        """G14: every MENTIONS edge defaults to confidence=1.0, prompt_version='phase1.0',
+        extracted_at=now (set by DB DEFAULT)."""
+        from scripts.graph import GraphDB
+
+        db = GraphDB(persist_dir=str(tmp_path / "g14.kuzu"))
+        conn = db._conn
+        # Insert a Paper, an Entity, and a MENTIONS edge without the 3 new props.
+        conn.execute(
+            "CREATE (p:Paper {doi: '10.0/a', title: 'A', year: 2024, journal: 'X'})"
+        )
+        conn.execute(
+            "CREATE (e:Entity {canonical_id: 'ion_exchange', type: 'method', "
+            "surface: 'ion exchange'})"
+        )
+        conn.execute(
+            "MATCH (p:Paper {doi: '10.0/a'}), (e:Entity {canonical_id: 'ion_exchange'}) "
+            "CREATE (p)-[:MENTIONS {source: 'schema', surface: 'ion exchange', "
+            "field: 'methods_summary', span_start: 0, span_end: 0}]->(e)"
+        )
+        # Read back — the three new columns must be populated from DEFAULTs.
+        result = conn.execute(
+            "MATCH (:Paper)-[m:MENTIONS]->(:Entity) "
+            "RETURN m.confidence, m.extracted_at, m.prompt_version LIMIT 1"
+        )
+        row = result.get_next()
+        assert row[0] == 1.0, f"Expected confidence=1.0, got {row[0]!r}"
+        assert row[1] is not None, "extracted_at must be set by DB DEFAULT (not None)"
+        assert row[2] == "phase1.0", f"Expected prompt_version='phase1.0', got {row[2]!r}"
+
+    def test_compares_to_edge_has_default_properties(self, tmp_path):
+        """G14: Paper→Paper REL COMPARES_TO also carries the three default properties."""
+        from scripts.graph import GraphDB
+
+        db = GraphDB(persist_dir=str(tmp_path / "g14_pp.kuzu"))
+        conn = db._conn
+        conn.execute(
+            "CREATE (p1:Paper {doi: '10.0/b', title: 'B', year: 2023, journal: 'Y'})"
+        )
+        conn.execute(
+            "CREATE (p2:Paper {doi: '10.0/c', title: 'C', year: 2024, journal: 'Z'})"
+        )
+        conn.execute(
+            "MATCH (p1:Paper {doi: '10.0/b'}), (p2:Paper {doi: '10.0/c'}) "
+            "CREATE (p1)-[:COMPARES_TO {evidence: 'benchmarked on same dataset'}]->(p2)"
+        )
+        result = conn.execute(
+            "MATCH (:Paper)-[r:COMPARES_TO]->(:Paper) "
+            "RETURN r.confidence, r.extracted_at, r.prompt_version LIMIT 1"
+        )
+        row = result.get_next()
+        assert row[0] == 1.0, f"Expected confidence=1.0, got {row[0]!r}"
+        assert row[1] is not None, "extracted_at must be set by DB DEFAULT (not None)"
+        assert row[2] == "phase1.0", f"Expected prompt_version='phase1.0', got {row[2]!r}"
+
+
+@pytest.mark.unit
 class TestGraphDBImportError:
     """GraphDB raises ImportError when kuzu is not installed."""
 
