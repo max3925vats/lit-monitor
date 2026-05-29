@@ -1,0 +1,413 @@
+"""Tests for G3: schema-source entity extractor.
+
+Field map used (verified against config/extraction_schema.yaml):
+  method   → ["methods_summary"]
+  material → ["materials_systems"]
+  topic    → ["discovered_topics", "novelty_statement"]
+  keyword  → from paper_metadata["keywords_json"] (Zotero tag strings)
+  author   → from paper_metadata["authors"]  (JSON array of strings)
+  journal  → from paper_metadata["journal"]
+"""
+import json
+
+import pytest
+
+from scripts.graph.entity_extractor import EntityTuple, extract_entities
+from scripts.graph.normalizer import EntityNormalizer
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _normalizer() -> EntityNormalizer:
+    """Return a no-alias, no-vocab normalizer (identity normalization only)."""
+    return EntityNormalizer(aliases={})
+
+
+# ---------------------------------------------------------------------------
+# Basic contract tests
+# ---------------------------------------------------------------------------
+
+class TestExtractEntitiesBasic:
+    def test_returns_list_of_entitytuples(self):
+        """G3: extract_entities returns a list of EntityTuple, never None or dict."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={"methods_summary": "ion exchange chromatography"},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        assert isinstance(result, list)
+        assert all(isinstance(t, EntityTuple) for t in result)
+
+    def test_method_field_produces_method_entity(self):
+        """G3: methods_summary → ≥1 EntityTuple with type='method'."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={"methods_summary": "ion exchange chromatography"},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        method_tuples = [t for t in result if t.type == "method"]
+        assert len(method_tuples) >= 1
+        assert method_tuples[0].canonical_id == "ion exchange chromatography"
+        assert method_tuples[0].field == "methods_summary"
+
+    def test_materials_systems_produces_material_entity(self):
+        """G3: materials_systems → EntityTuple with type='material'."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={"materials_systems": "Protein A resin"},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        material_tuples = [t for t in result if t.type == "material"]
+        assert len(material_tuples) >= 1
+        # normalizer lowercases
+        assert "protein" in material_tuples[0].canonical_id
+        assert material_tuples[0].field == "materials_systems"
+
+    def test_discovered_topics_list_produces_topic_entities(self):
+        """G3: discovered_topics as list → one EntityTuple per item."""
+        n = _normalizer()
+        topics = ["antibody purification", "protein aggregation"]
+        result = extract_entities(
+            extraction_json={"discovered_topics": topics},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        topic_tuples = [t for t in result if t.type == "topic"]
+        assert len(topic_tuples) == 2
+
+    def test_novelty_statement_string_produces_topic_entity(self):
+        """G3: novelty_statement string → EntityTuple with type='topic'."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={"novelty_statement": "first use of mixed-mode chromatography"},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        topic_tuples = [t for t in result if t.type == "topic"]
+        assert len(topic_tuples) >= 1
+        assert topic_tuples[0].field == "novelty_statement"
+
+    def test_authors_from_metadata_list_of_strings(self):
+        """G3: Zotero authors stored as JSON array of 'Last, First' strings."""
+        n = _normalizer()
+        authors_json = json.dumps(["Smith, Jane", "Jones, Bob"])
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": authors_json, "journal": ""},
+            normalizer=n,
+        )
+        authors = [t for t in result if t.type == "author"]
+        assert len(authors) == 2
+        assert any("smith" in t.canonical_id for t in authors)
+        assert any("jones" in t.canonical_id for t in authors)
+
+    def test_authors_field_is_none_for_author_entities(self):
+        """G3: author entities have field=None (they come from Zotero, not extraction_json)."""
+        n = _normalizer()
+        authors_json = json.dumps(["Smith, Jane"])
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": authors_json, "journal": ""},
+            normalizer=n,
+        )
+        authors = [t for t in result if t.type == "author"]
+        assert all(t.field is None for t in authors)
+
+    def test_journal_metadata_becomes_journal_entity(self):
+        """G3: paper_metadata['journal'] → EntityTuple with type='journal'."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": "[]", "journal": "Biotechnology and Bioengineering"},
+            normalizer=n,
+        )
+        journals = [t for t in result if t.type == "journal"]
+        assert len(journals) == 1
+        assert "biotechnology" in journals[0].canonical_id
+
+    def test_journal_field_is_none(self):
+        """G3: journal entity has field=None (comes from Zotero paper_metadata)."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": "[]", "journal": "Nature Methods"},
+            normalizer=n,
+        )
+        journals = [t for t in result if t.type == "journal"]
+        assert all(t.field is None for t in journals)
+
+    def test_keywords_from_metadata_produce_keyword_entities(self):
+        """G3: paper_metadata['keywords_json'] (Zotero tags) → EntityTuple with type='keyword'."""
+        n = _normalizer()
+        kw_json = json.dumps(["antibody", "chromatography"])
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": "[]", "journal": "", "keywords_json": kw_json},
+            normalizer=n,
+        )
+        kw_tuples = [t for t in result if t.type == "keyword"]
+        assert len(kw_tuples) == 2
+
+    def test_empty_extraction_json_and_minimal_metadata(self):
+        """G3: all-empty input returns empty list."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        assert result == []
+
+    def test_none_field_value_skipped(self):
+        """G3: None field values produce no tuples (LLM returned null)."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={"methods_summary": None, "materials_systems": None},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        assert result == []
+
+    def test_empty_string_field_value_skipped(self):
+        """G3: empty string field values produce no tuples."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={"methods_summary": ""},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Deduplication
+# ---------------------------------------------------------------------------
+
+class TestExtractEntitiesDedup:
+    def test_dedup_by_canonical_type_field(self):
+        """G3: same surface in different fields → 2 tuples (different field = different provenance)."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={
+                "methods_summary": "ion exchange chromatography",
+                # novelty_statement → type=topic, different type → still 2 distinct tuples
+            },
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        # Just check no crash and all are distinct (canonical, type, field) triples
+        keys = [(t.canonical_id, t.type, t.field) for t in result]
+        assert len(keys) == len(set(keys))
+
+    def test_dedup_same_canonical_same_type_same_field(self):
+        """G3: duplicate entries in a list field are deduplicated."""
+        n = _normalizer()
+        # discovered_topics as list with duplicate
+        result = extract_entities(
+            extraction_json={"discovered_topics": ["protein aggregation", "protein aggregation"]},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        topic_tuples = [t for t in result if t.type == "topic"]
+        # After dedup: only one tuple for same (canonical_id, type, field)
+        assert len(topic_tuples) == 1
+
+    def test_same_surface_different_fields_kept(self):
+        """G3: same canonical in two different fields → 2 tuples (dedup is per (canonical,type,field))."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={
+                "methods_summary": "size exclusion chromatography",
+                # novelty_statement is topic type, so different type key → definitely 2 tuples
+                "novelty_statement": "size exclusion chromatography for purity assessment",
+            },
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        # methods_summary → type=method; novelty_statement → type=topic
+        # Both fields have the same technology mentioned, but different (canonical, type, field)
+        keys = {(t.canonical_id, t.type, t.field) for t in result}
+        # At minimum: one method entry + one topic entry
+        method_keys = {k for k in keys if k[1] == "method"}
+        topic_keys = {k for k in keys if k[1] == "topic"}
+        assert len(method_keys) >= 1
+        assert len(topic_keys) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Span tests
+# ---------------------------------------------------------------------------
+
+class TestExtractEntitiesSpans:
+    def test_span_populated_for_string_field(self):
+        """G3: string field → span_start=0, span_end=len(text)."""
+        n = _normalizer()
+        text = "ion exchange chromatography was used to purify the antibody"
+        result = extract_entities(
+            extraction_json={"methods_summary": text},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        method_tuples = [t for t in result if t.type == "method"]
+        assert len(method_tuples) >= 1
+        t = method_tuples[0]
+        assert t.span_start == 0
+        assert t.span_end == len(text)
+
+    def test_span_null_for_list_field(self):
+        """G3: list field → span_start=None, span_end=None."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={"discovered_topics": ["antibody purification", "protein aggregation"]},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        topic_tuples = [t for t in result if t.type == "topic"]
+        assert all(t.span_start is None and t.span_end is None for t in topic_tuples)
+
+    def test_span_null_for_author_entities(self):
+        """G3: author entities have no span (come from structured Zotero metadata)."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": json.dumps(["Smith, Jane"]), "journal": ""},
+            normalizer=n,
+        )
+        authors = [t for t in result if t.type == "author"]
+        assert all(t.span_start is None and t.span_end is None for t in authors)
+
+    def test_span_null_for_journal_entity(self):
+        """G3: journal entity has no span."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": "[]", "journal": "Journal of Biotechnology"},
+            normalizer=n,
+        )
+        journals = [t for t in result if t.type == "journal"]
+        assert all(t.span_start is None and t.span_end is None for t in journals)
+
+    def test_span_null_for_keyword_entity(self):
+        """G3: keyword entities (from Zotero tags list) have no span."""
+        n = _normalizer()
+        kw_json = json.dumps(["antibody"])
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": "[]", "journal": "", "keywords_json": kw_json},
+            normalizer=n,
+        )
+        kw_tuples = [t for t in result if t.type == "keyword"]
+        assert all(t.span_start is None and t.span_end is None for t in kw_tuples)
+
+
+# ---------------------------------------------------------------------------
+# Author parsing edge cases
+# ---------------------------------------------------------------------------
+
+class TestAuthorParsing:
+    def test_authors_empty_json_array(self):
+        """G3: empty authors JSON array → no author entities."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        assert not any(t.type == "author" for t in result)
+
+    def test_authors_missing_from_metadata(self):
+        """G3: missing authors key → no crash, no author entities."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"journal": "Nature"},
+            normalizer=n,
+        )
+        assert not any(t.type == "author" for t in result)
+
+    def test_authors_invalid_json_skipped(self):
+        """G3: invalid JSON in authors field → no crash, no author entities."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": "not-valid-json", "journal": ""},
+            normalizer=n,
+        )
+        assert not any(t.type == "author" for t in result)
+
+    def test_keywords_missing_from_metadata(self):
+        """G3: missing keywords_json key → no crash, no keyword entities."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        assert not any(t.type == "keyword" for t in result)
+
+    def test_keywords_empty_array(self):
+        """G3: empty keywords_json → no keyword entities."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": "[]", "journal": "", "keywords_json": "[]"},
+            normalizer=n,
+        )
+        assert not any(t.type == "keyword" for t in result)
+
+    def test_keywords_invalid_json_skipped(self):
+        """G3: invalid JSON in keywords_json → no crash, no keyword entities."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": "[]", "journal": "", "keywords_json": "bad-json"},
+            normalizer=n,
+        )
+        assert not any(t.type == "keyword" for t in result)
+
+    def test_empty_journal_produces_no_entity(self):
+        """G3: empty journal string → no journal entity."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        assert not any(t.type == "journal" for t in result)
+
+
+# ---------------------------------------------------------------------------
+# Surface form preservation
+# ---------------------------------------------------------------------------
+
+class TestSurfacePreservation:
+    def test_surface_preserves_original_case(self):
+        """G3: surface field holds raw input before normalization."""
+        n = _normalizer()
+        result = extract_entities(
+            extraction_json={"materials_systems": "Protein A Sepharose"},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=n,
+        )
+        material_tuples = [t for t in result if t.type == "material"]
+        assert len(material_tuples) == 1
+        # surface = original; canonical_id = normalized
+        assert material_tuples[0].surface == "Protein A Sepharose"
+        assert material_tuples[0].canonical_id != "Protein A Sepharose"  # normalizer lowercased it
+
+    def test_entitytuple_is_frozen(self):
+        """G3: EntityTuple instances are immutable (frozen=True dataclass)."""
+        t = EntityTuple(
+            canonical_id="test",
+            type="method",
+            surface="Test",
+            field="methods_summary",
+            span_start=0,
+            span_end=4,
+        )
+        with pytest.raises((AttributeError, TypeError)):
+            t.canonical_id = "changed"  # type: ignore[misc]
