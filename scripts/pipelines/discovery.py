@@ -42,7 +42,10 @@ from scripts.llm.llm_client import RateLimitError
 from scripts.llm.ranker import rank_papers
 from scripts.obsidian_tools.relink import relink_note
 from scripts.output.obsidian_writer import write_paper_note
-from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+from scripts.pipelines._ingest import (
+    build_graph_tuples,
+    index_embeddings_and_mark_phases,
+)
 from scripts.pipelines.brain_build import (
     _check_item_quality,  # A2: metadata quality gate
     _extract_keywords,
@@ -373,6 +376,10 @@ def _run_ingestion(
     # M4: (doi, discovered_topics) pairs — mirrors brain_build.py:run_brain_build
     # (parallel collection pattern; same name reused intentionally).
     _topics_batch: list[tuple[str, list[str]]] = []
+    # G6: open the GraphDB once for this ingestion pass.  None when the
+    # [graph] extra is absent — vector-only behaviour is unchanged.
+    from scripts.graph.import_citations import _safe_graph_db
+    graph_db = _safe_graph_db()
     for item in new_items:
         data = item.get("data", {})
         doi = (data.get("DOI") or "").strip() or None
@@ -541,17 +548,39 @@ def _run_ingestion(
                     chunks = chunk_markdown(strip_end_matter(fulltext), doi)
                 except Exception as exc:
                     logger.warning("Chunking failed for %s (non-fatal): %s", doi, exc)
-            # R28: helper centralises add_paper + add_chunks + deferred phase marks.
+            # R28 + G6: helper centralises add_paper + add_chunks + graph write + phase marks.
+            # ChromaDB metadata stays scalar-only; graph payload extends on the side.
+            _embed_paper_meta: dict[str, Any] = {
+                "source_type": "paper", "title": title, "year": year,
+            }
+            if graph_db is not None:
+                _graph_paper_meta = dict(_embed_paper_meta)
+                _graph_paper_meta["journal"] = journal
+                _graph_paper_meta["authors"] = authors
+                _graph_paper_meta["keywords_json"] = keywords
+                _graph_entities, _graph_relationships = build_graph_tuples(
+                    extraction=extraction,
+                    paper_metadata=_graph_paper_meta,
+                    source_doi=doi,
+                    state_db=state_db,
+                )
+            else:
+                _graph_paper_meta = _embed_paper_meta
+                _graph_entities, _graph_relationships = [], []
             embed_ok, embed_err = index_embeddings_and_mark_phases(
                 doi=doi,
                 zotero_key=zotero_key,
                 fulltext=embed_text,
-                paper_metadata={"source_type": "paper", "title": title, "year": year},
+                paper_metadata=_embed_paper_meta,
                 chunks=chunks,
                 state_db=state_db,
                 embeddings_db=embeddings_db,
                 phases_to_mark=tuple(_phases_to_mark),
                 logger=logger,
+                graph_db=graph_db,
+                graph_entities=_graph_entities,
+                graph_relationships=_graph_relationships,
+                graph_paper_metadata=_graph_paper_meta,
             )
             if not embed_ok:
                 # Skip downstream work (state flag, relink) so the paper isn't
@@ -641,3 +670,9 @@ def _run_ingestion(
                 "discovered_topics from this run were not appended to topics.yaml.",
                 exc,
             )
+    # G6: release the KuzuDB connection at ingestion end.  Safe to call when None.
+    if graph_db is not None:
+        try:
+            graph_db.close()
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.warning("G6: graph_db.close() failed (non-fatal): %s", exc)

@@ -37,7 +37,10 @@ from scripts.llm.extraction_schema import all_fields_for_schema
 from scripts.llm.extractor import extract_fields, extract_paper
 from scripts.llm.llm_client import RateLimitError
 from scripts.output.obsidian_writer import write_paper_note
-from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+from scripts.pipelines._ingest import (
+    build_graph_tuples,
+    index_embeddings_and_mark_phases,
+)
 from scripts.search.semantic_scholar import enrich_paper
 
 logger = logging.getLogger(__name__)
@@ -133,6 +136,10 @@ def run_brain_build(
     summary.run_id = run_id
     summary.started_at = datetime.now(UTC).isoformat()
     state_db.start_run(run_id, "brain_build")
+    # G6: resolve GraphDB once per run.  None when [graph] extra absent or
+    # the Kuzu DB can't be opened — vector-only behaviour is unaffected.
+    from scripts.graph.import_citations import _safe_graph_db
+    graph_db = _safe_graph_db()
     # M4: (doi, discovered_topics) pairs — mirrors discovery.py:_run_ingestion
     # (parallel collection pattern; same name reused intentionally).
     _topics_batch: list[tuple[str, list[str]]] = []
@@ -266,6 +273,7 @@ def run_brain_build(
                         pass_strategy=pass_strategy,
                         extract_paper_fn=extract_paper,
                         write_paper_note_fn=write_paper_note,
+                        graph_db=graph_db,  # G6
                     )
                     if processed:
                         summary.papers_processed += 1
@@ -349,6 +357,13 @@ def run_brain_build(
         summary.papers_skipped,
         summary.papers_failed,
     )
+    # G6: release the KuzuDB connection at pipeline end.  ``close()`` is safe
+    # to call multiple times and is a no-op when graph_db is None.
+    if graph_db is not None:
+        try:
+            graph_db.close()
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.warning("G6: graph_db.close() failed (non-fatal): %s", exc)
     return summary
 # ---------------------------------------------------------------------------
 # Per-paper processing
@@ -367,6 +382,7 @@ def _process_paper(
     pass_strategy: str = "individual",
     extract_paper_fn,
     write_paper_note_fn,
+    graph_db=None,  # G6
 ) -> tuple[bool, list[str]]:
     """
     Process a single paper end-to-end.
@@ -560,18 +576,47 @@ def _process_paper(
             chunks = chunk_markdown(strip_end_matter(fulltext), doi)
         except Exception as exc:
             logger.warning("Chunking failed for %s (non-fatal): %s", doi, exc)
-    # R28: helper centralises add_paper + add_chunks + deferred phase marks.
+    # R28 + G6: helper centralises add_paper + add_chunks + graph write + deferred phase marks.
     # add_paper failure -> phases NOT marked, returns (False, err).
+    # graph_db failure -> graph_indexed stays 0; phases STILL marked.
+    # NB: paper_metadata feeds BOTH ChromaDB (which only accepts scalar values)
+    # AND the graph payload (which needs Zotero authors/keywords for G3).
+    # ChromaDB metadata stays unchanged; the graph payload extends it on the
+    # side so the embeddings call is not broken by list values.
+    _embed_paper_meta: dict[str, Any] = {
+        "source_type": "paper",
+        "title": title,
+        "year": year,
+        "note_title": note_title,
+    }
+    if graph_db is not None:
+        _graph_paper_meta = dict(_embed_paper_meta)
+        _graph_paper_meta["journal"] = journal
+        _graph_paper_meta["authors"] = authors
+        _graph_paper_meta["keywords_json"] = keywords
+        _graph_entities, _graph_relationships = build_graph_tuples(
+            extraction=extraction,
+            paper_metadata=_graph_paper_meta,
+            source_doi=doi,
+            state_db=state_db,
+        )
+    else:
+        _graph_paper_meta = _embed_paper_meta
+        _graph_entities, _graph_relationships = [], []
     embed_ok, embed_err = index_embeddings_and_mark_phases(
         doi=doi,
         zotero_key=zotero_key,
         fulltext=embed_text,
-        paper_metadata={"source_type": "paper", "title": title, "year": year, "note_title": note_title},
+        paper_metadata=_embed_paper_meta,
         chunks=chunks,
         state_db=state_db,
         embeddings_db=embeddings_db,
         phases_to_mark=tuple(_phases_to_mark),
         logger=logger,
+        graph_db=graph_db,
+        graph_entities=_graph_entities,
+        graph_relationships=_graph_relationships,
+        graph_paper_metadata=_graph_paper_meta,
     )
     if not embed_ok:
         # Propagate embed failure to caller so the paper isn't marked complete.

@@ -495,6 +495,34 @@ class StateDB:
                 (key, value),
             )
 
+    def set_graph_indexed(self, doi: str, value: int) -> None:
+        """G6: flip the per-paper papers.graph_indexed flag.
+
+        Part of the R28 dual-write invariant: only set to 1 after BOTH the
+        vector index (ChromaDB) AND the graph (KuzuDB) writes have succeeded.
+        Called from ``scripts.pipelines._ingest.index_embeddings_and_mark_phases``.
+
+        Parameters
+        ----------
+        doi:
+            Paper DOI (primary key of ``papers``).
+        value:
+            0 or 1.  Coerced via ``int(value)`` so callers passing bools
+            still produce an INTEGER column value.
+
+        Notes
+        -----
+        - UPDATE on a missing DOI silently affects 0 rows; this is intentional
+          so the ingest helper can call it without a pre-existence check.
+        - This method intentionally does NOT touch ``last_updated`` — the
+          column is a side-channel flag, not a content-bearing update.
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE papers SET graph_indexed = ? WHERE doi = ?",
+                (int(value), doi),
+            )
+
     def reset_embeddings_indexed(self) -> None:
         """Set embeddings_indexed = 0 for every row in the papers table.
 

@@ -214,3 +214,80 @@ class TestGetPapersWithoutInsightRun:
         assert len(result) == 1
         assert isinstance(result[0], dict)
         assert "doi" in result[0]
+
+
+# ---------------------------------------------------------------------------
+# G6 — set_graph_indexed flips the R28 dual-write column
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestSetGraphIndexed:
+    """G6: set_graph_indexed(doi, val) toggles papers.graph_indexed."""
+
+    def test_default_is_zero(self, tmp_path):
+        """G1 migration default: graph_indexed = 0 on fresh insert."""
+        db_path = str(tmp_path / "state.db")
+        db = StateDB(db_path)
+        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT graph_indexed FROM papers WHERE doi = '10.0/a'"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row[0] == 0
+
+    def test_set_graph_indexed_updates_value(self, tmp_path):
+        """G6: set_graph_indexed(doi, 1) flips the column to 1."""
+        db_path = str(tmp_path / "state.db")
+        db = StateDB(db_path)
+        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+        db.set_graph_indexed("10.0/a", 1)
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT graph_indexed FROM papers WHERE doi = '10.0/a'"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row[0] == 1
+
+    def test_set_graph_indexed_idempotent(self, tmp_path):
+        """G6: calling set_graph_indexed twice with same value is safe."""
+        db_path = str(tmp_path / "state.db")
+        db = StateDB(db_path)
+        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+        db.set_graph_indexed("10.0/a", 1)
+        db.set_graph_indexed("10.0/a", 1)
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT graph_indexed FROM papers WHERE doi = '10.0/a'"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row[0] == 1
+
+    def test_set_graph_indexed_can_clear(self, tmp_path):
+        """G6: set_graph_indexed(doi, 0) clears the flag (e.g. for rebuilds)."""
+        db_path = str(tmp_path / "state.db")
+        db = StateDB(db_path)
+        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+        db.set_graph_indexed("10.0/a", 1)
+        db.set_graph_indexed("10.0/a", 0)
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT graph_indexed FROM papers WHERE doi = '10.0/a'"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row[0] == 0
+
+    def test_set_graph_indexed_unknown_doi_is_noop(self, tmp_path):
+        """G6: set_graph_indexed on a missing DOI updates 0 rows but doesn't raise."""
+        db_path = str(tmp_path / "state.db")
+        db = StateDB(db_path)
+        # Must not raise — UPDATE matching no rows is allowed.
+        db.set_graph_indexed("10.0/nope", 1)
