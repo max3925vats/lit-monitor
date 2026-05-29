@@ -18,6 +18,7 @@ import json
 import logging
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -171,6 +172,10 @@ class StateDB:
                 # G1: per-paper flag toggled by the R28 dual-write path (Graph RAG phase 1).
                 ("papers", "graph_indexed",
                  "ALTER TABLE papers ADD COLUMN graph_indexed INTEGER DEFAULT 0"),
+                # G16: per-paper timestamp for v0.8+ insight-discovery tracking.
+                # NULL = never processed; set by future insight-discovery passes.
+                ("papers", "last_insight_run",
+                 "ALTER TABLE papers ADD COLUMN last_insight_run TEXT NULL"),
             ]
             for table, column, sql in additive_migrations:
                 if self._column_exists(conn, table, column):
@@ -680,6 +685,40 @@ class StateDB:
                 "SELECT * FROM run_log WHERE run_type = ? ORDER BY started_at DESC LIMIT ?",
                 (run_type, limit),
             ).fetchall()
+        return [dict(r) for r in rows]
+
+    # -- Insight discovery (G16) --
+
+    def get_papers_without_insight_run(
+        self, since: datetime | None = None
+    ) -> list[dict[str, Any]]:
+        """Return papers with NULL or stale last_insight_run.
+
+        v0.8+ insight discovery uses this to find papers eligible for the next
+        pass. Returns all NULL rows if since is None; otherwise also includes
+        rows whose last_insight_run is older than since.
+
+        Args:
+            since: Optional cutoff datetime. Papers last processed before this
+                datetime are included alongside papers that have never been
+                processed (last_insight_run IS NULL).
+
+        Returns:
+            List of paper rows as dicts. Unused in v0.4-v0.7; substrate for
+            v0.8+ insight-discovery passes.
+        """
+        if since is None:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM papers WHERE last_insight_run IS NULL"
+                ).fetchall()
+        else:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM papers "
+                    "WHERE last_insight_run IS NULL OR last_insight_run < ?",
+                    (since.isoformat(),),
+                ).fetchall()
         return [dict(r) for r in rows]
 
     # -- Utility --
