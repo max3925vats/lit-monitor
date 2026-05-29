@@ -104,3 +104,11 @@ class TestRunDiagnose:
         assert result["ollama.reachable"] == (True, "ok")
         assert result["zotero.reachable"] == (False, "down")
         assert result["vault.vault_exists"] == (True, "ok")
+
+    def test_run_diagnose_config_only_includes_graph_row(self) -> None:
+        """G13: run_diagnose(config_only=True) always returns a 'graph' key."""
+        result = run_diagnose(config_only=True)
+        assert "graph" in result, "'graph' row missing from run_diagnose output"
+        ok, msg = result["graph"]
+        assert isinstance(ok, bool)
+        assert isinstance(msg, str) and msg  # non-empty message

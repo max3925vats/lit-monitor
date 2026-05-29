@@ -173,6 +173,29 @@ DEBUG log is always written to `logs/{date}_{command}.jsonl`. For the full
 command surface (model comparison, citation graph rebuild, targeted field
 re-extraction, `--all-library` mode, etc.) see `lit-monitor --help`.
 
+### Graph RAG (optional — v0.4.0+)
+
+A KuzuDB knowledge graph runs alongside the ChromaDB vector store. Install the
+optional extra to enable it:
+
+```bash
+uv sync --extra graph           # install kuzu
+
+lit-monitor graph backfill --all            # index all papers into the graph
+lit-monitor graph status                    # show node + edge counts
+lit-monitor graph propose-aliases           # suggest entity normalization rules
+
+# Use graph or hybrid retrieval (default is "vector"):
+lit-monitor ask "what methods compare X to Y" --rag-mode hybrid
+lit-monitor synthesize --rag-mode graph
+```
+
+When the `[graph]` extra is not installed, all graph-aware commands print a
+friendly install message and exit 0 — the rest of the pipeline is unaffected.
+`lit-monitor diagnose --config-only` includes a `graph` row showing extra
+availability and persist-dir reachability. `lit-monitor status` appends a
+`Graph: indexed=N / total=M  entities=K` line when the graph is active.
+
 ### Strict mode
 
 `lit-monitor` has a strict mode that turns every silent fallback (corrupt

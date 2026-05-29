@@ -1,4 +1,4 @@
-"""G10: CLI tests for graph backfill + rebuild."""
+"""G10/G13: CLI tests for graph backfill + rebuild + status subcommand."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -71,3 +71,65 @@ class TestGraphBackfillCLI:
             result = runner.invoke(main, ["graph", "rebuild", "--all", "--yes"])
         assert result.exit_code != 0
         assert "uv sync --extra graph" in result.output
+
+
+class TestGraphStatusCLI:
+    """G13: `lit-monitor graph status` command."""
+
+    def test_status_exits_zero_when_graph_extra_missing(self):
+        """G13: ImportError during [graph] import -> friendly message, exit 0."""
+        runner = CliRunner()
+        # Simulate kuzu not installed by making the scripts.graph module raise
+        # ImportError when imported inside the command body.
+        import builtins
+        _real_import = builtins.__import__
+
+        def _mock_import(name: str, *args: object, **kwargs: object) -> object:
+            if name == "scripts.graph":
+                raise ImportError("[graph] not installed")
+            return _real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=_mock_import):
+            result = runner.invoke(main, ["graph", "status"])
+        # Must not crash; informative message expected
+        assert result.exit_code == 0
+
+    def test_status_exits_zero_when_no_graph_db(self):
+        """G13: safe_graph_db() returns None -> friendly message, exit 0."""
+        runner = CliRunner()
+        with patch("scripts.graph.safe_graph_db", return_value=None):
+            result = runner.invoke(main, ["graph", "status"])
+        assert result.exit_code == 0
+        assert "backfill" in result.output.lower() or "graph" in result.output.lower()
+
+    def test_status_prints_paper_count(self):
+        """G13: when graph DB is available, output includes Paper and Entity rows."""
+        runner = CliRunner()
+        mock_conn = MagicMock()
+
+        # Make res.has_next() return True once then False, giving count 42 for Paper
+        # and count 7 for Entity; all rels return 0.
+        def _execute_side_effect(sql: str) -> MagicMock:
+            res = MagicMock()
+            res.has_next.return_value = True
+            if "Paper" in sql:
+                res.get_next.return_value = [42]
+            elif "Entity" in sql:
+                res.get_next.return_value = [7]
+            else:
+                res.get_next.return_value = [0]
+            return res
+
+        mock_conn.execute.side_effect = _execute_side_effect
+        mock_graph_db = MagicMock()
+        mock_graph_db._conn = mock_conn
+
+        with patch("scripts.graph.safe_graph_db", return_value=mock_graph_db):
+            result = runner.invoke(main, ["graph", "status"])
+
+        assert result.exit_code == 0
+        # The table must contain node types
+        assert "Paper" in result.output
+        assert "Entity" in result.output
+        # And the numeric count
+        assert "42" in result.output

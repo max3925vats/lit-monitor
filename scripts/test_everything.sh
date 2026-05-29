@@ -99,6 +99,14 @@ tier_1() {
         fail "leakage detected in tracked files (see paths above)"
     fi
 
+    # G13: graph smoke check — gated on REFERENCE_DOI and GRAPH_ENABLED=1
+    if [[ -n "${REFERENCE_DOI:-}" ]] && [[ "${GRAPH_ENABLED:-}" == "1" ]]; then
+        info "[Tier 1 Graph Smoke] backfill 1 paper + verify status output"
+        uv run lit-monitor graph backfill --doi "$REFERENCE_DOI" || { fail "graph backfill --doi failed"; }
+        uv run lit-monitor graph status | grep -q "Paper" || { fail "graph status output missing 'Paper' row"; }
+        pass "graph smoke ok"
+    fi
+
     pass "Tier 1 OK"
 }
 

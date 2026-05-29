@@ -624,6 +624,38 @@ def status(ctx: click.Context) -> None:
         label = status_val if status_val is not None else "(none)"
         click.echo(f"  {label:<30s} {n:4d}")
     click.echo()
+
+    # G13: append graph line when [graph] extra is present
+    try:
+        from scripts.graph import safe_graph_db as _safe_graph_db
+        _g = _safe_graph_db()
+        if _g is not None:
+            try:
+                _conn = _g._conn
+                _res = _conn.execute("MATCH (p:Paper) RETURN count(p) AS c")
+                _paper_count = int(_res.get_next()[0]) if _res.has_next() else 0
+                _res = _conn.execute("MATCH (e:Entity) RETURN count(e) AS c")
+                _entity_count = int(_res.get_next()[0]) if _res.has_next() else 0
+                # Count papers with graph_indexed=1 vs total from state_db
+                with state_db._connect() as _sconn:
+                    _rows = _sconn.execute(
+                        "SELECT COUNT(*) FROM papers WHERE graph_indexed = 1"
+                    ).fetchall()
+                    _indexed = _rows[0][0] if _rows else 0
+                    _rows = _sconn.execute("SELECT COUNT(*) FROM papers").fetchall()
+                    _total = _rows[0][0] if _rows else 0
+                click.echo(
+                    f"  Graph: indexed={_indexed} / total={_total}  entities={_entity_count}"
+                )
+            finally:
+                try:
+                    _g.close()
+                except Exception:  # noqa: BLE001
+                    pass
+    except ImportError:
+        pass  # [graph] extra not installed — silently omit the line
+
+
 # ---------------------------------------------------------------------------
 # _suggest_topics — helper shared by build-vocabulary
 # ---------------------------------------------------------------------------
@@ -2372,6 +2404,66 @@ def graph_propose_aliases(min_ratio: int, out: str) -> None:
         click.echo(f"Wrote {total} alias proposals across {len(proposals)} types → {out}")
         click.echo("Review and merge by hand into config/entity_aliases.yaml,")
         click.echo("then run `lit-monitor graph rebuild --aliases-only` to apply.")
+    finally:
+        try:
+            graph_db.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+# ---------------------------------------------------------------------------
+# G13: graph status subcommand
+# ---------------------------------------------------------------------------
+@graph_cmd.command("status")
+def graph_status() -> None:
+    """Show Kuzu node + edge counts as a rich.Table (G13)."""
+    from rich.console import Console
+    from rich.table import Table
+
+    try:
+        from scripts.graph import safe_graph_db
+    except ImportError:
+        click.echo("[graph] extra not installed.")
+        click.echo("Install with: uv sync --extra graph")
+        return  # exit 0 — not an error
+
+    graph_db = safe_graph_db()
+    if graph_db is None:
+        click.echo("[graph] extra installed but no DB found.")
+        click.echo("Run: lit-monitor graph backfill --all")
+        return  # exit 0 — not an error
+
+    try:
+        conn = graph_db._conn
+        rows: list[tuple[str, int]] = []
+
+        # Node counts
+        for node_type in ("Paper", "Entity"):
+            try:
+                res = conn.execute(f"MATCH (n:{node_type}) RETURN count(n) AS c")
+                row = res.get_next() if res.has_next() else None
+                rows.append((node_type, int(row[0]) if row else 0))
+            except Exception:  # noqa: BLE001
+                rows.append((node_type, 0))
+
+        # Edge counts for all schema-defined relationship types
+        for rel in (
+            "MENTIONS", "CITES", "COMPARES_TO", "DEPENDS_ON",
+            "PROPOSES", "LIMITED_BY", "INTRODUCES", "RAISES_QUESTION",
+        ):
+            try:
+                res = conn.execute(f"MATCH ()-[r:{rel}]->() RETURN count(r) AS c")
+                row = res.get_next() if res.has_next() else None
+                rows.append((rel, int(row[0]) if row else 0))
+            except Exception:  # noqa: BLE001
+                rows.append((rel, 0))
+
+        table = Table(title="lit-monitor Graph Status")
+        table.add_column("Type", style="cyan")
+        table.add_column("Count", justify="right", style="green")
+        for name, count in rows:
+            table.add_row(name, str(count))
+        Console().print(table)
     finally:
         try:
             graph_db.close()

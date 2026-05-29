@@ -116,6 +116,43 @@ def check_prompts() -> dict[str, tuple[bool, str]]:
     return results
 
 
+def _check_graph_extra() -> tuple[bool, str]:
+    """G13: check whether the [graph] extra is installed and the persist dir is reachable.
+
+    Returns:
+        ``(ok, message)`` — ``ok`` is always True unless the persist directory
+        parent exists but is not writable.  A missing [graph] extra is not a
+        failure — it's an optional feature.
+    """
+    try:
+        import kuzu  # noqa: F401, PLC0415
+    except ImportError:
+        return (True, "[graph] extra not installed (optional)")
+
+    # Extra is present — check that the persist dir parent is reachable
+    try:
+        cfg = _config_mod.get_config()
+        # Navigate the config hierarchy defensively (retrieval.graph_db.persist_dir)
+        _retrieval = getattr(cfg, "retrieval", None)
+        _graph_section = getattr(_retrieval, "graph_db", None) if _retrieval else None
+        _persist_dir = getattr(_graph_section, "persist_dir", None) if _graph_section else None
+    except Exception:  # noqa: BLE001
+        _persist_dir = None
+
+    persist_path = Path(
+        _persist_dir or "~/.config/lit-monitor/graph.kuzu"
+    ).expanduser()
+
+    parent = persist_path.parent
+    if not parent.exists():
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            return (False, f"persist dir parent not writable: {exc}")
+
+    return (True, f"ok ({persist_path})")
+
+
 def run_diagnose(*, config_only: bool = False) -> dict[str, tuple[bool, str]]:
     """Read-only validation of all config files (and optionally services).
 
@@ -140,6 +177,9 @@ def run_diagnose(*, config_only: bool = False) -> dict[str, tuple[bool, str]]:
     results.update(check_schemas())
     results.update(check_optional_configs())
     results.update(check_prompts())
+
+    # G13: always include a 'graph' row — optional extra, so absence is OK (not a failure)
+    results["graph"] = _check_graph_extra()
 
     if not config_only:
         # The "config" sub-dict contains CheckResult NamedTuples (3-tuples

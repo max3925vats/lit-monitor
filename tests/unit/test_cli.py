@@ -177,6 +177,73 @@ class TestCliStatus:
         assert result.exit_code == 0
         assert "Papers" in result.output
         assert "extraction_complete" in result.output
+
+    def test_status_includes_graph_line_when_extra_installed(self, runner, tmp_path):
+        """G13: when [graph] is importable, lit-monitor status includes Graph: line."""
+        mock_config = MagicMock()
+        mock_config.state_db.path = str(tmp_path / "state.db")
+        mock_state_db = MagicMock()
+        mock_state_db.count_by_status.return_value = {}
+        mock_state_db.get_all_by_source_type.return_value = []
+
+        # Mock graph DB returning paper_count=3, entity_count=10
+        mock_conn = MagicMock()
+
+        def _exec(sql: str) -> MagicMock:
+            res = MagicMock()
+            res.has_next.return_value = True
+            if "Paper" in sql:
+                res.get_next.return_value = [3]
+            elif "Entity" in sql:
+                res.get_next.return_value = [10]
+            else:
+                res.get_next.return_value = [0]
+            return res
+
+        mock_conn.execute.side_effect = _exec
+        mock_graph_db = MagicMock()
+        mock_graph_db._conn = mock_conn
+
+        # state_db._connect() returns a context-manager conn with fetchall results
+        mock_inner_conn = MagicMock()
+        mock_inner_conn.execute.return_value.fetchall.side_effect = [
+            [(2,)],   # graph_indexed=1 count  -> indexed=2
+            [(5,)],   # total papers            -> total=5
+        ]
+        mock_state_db._connect.return_value.__enter__ = lambda s: mock_inner_conn
+        mock_state_db._connect.return_value.__exit__ = MagicMock(return_value=False)
+
+        with (
+            patch("scripts.cli._make_config", return_value=mock_config),
+            patch("scripts.cli._make_state_db", return_value=mock_state_db),
+            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
+        ):
+            result = runner.invoke(main, ["status"])
+
+        assert result.exit_code == 0
+        assert "Graph:" in result.output
+        assert "indexed=" in result.output
+        assert "entities=" in result.output
+
+    def test_status_omits_graph_line_when_extra_missing(self, runner, tmp_path):
+        """G13: ImportError on [graph] import -> status doesn't crash, omits Graph: line."""
+        mock_config = MagicMock()
+        mock_config.state_db.path = str(tmp_path / "state.db")
+        mock_state_db = MagicMock()
+        mock_state_db.count_by_status.return_value = {}
+        mock_state_db.get_all_by_source_type.return_value = []
+
+        with (
+            patch("scripts.cli._make_config", return_value=mock_config),
+            patch("scripts.cli._make_state_db", return_value=mock_state_db),
+            patch("scripts.graph.safe_graph_db", side_effect=ImportError("no graph")),
+        ):
+            result = runner.invoke(main, ["status"])
+
+        assert result.exit_code == 0
+        assert "Graph:" not in result.output
+
+
 class TestCliCheck:
     def test_check_all_pass(self, runner):
         from scripts.setup.check_configured import CheckResult
