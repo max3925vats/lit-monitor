@@ -12,9 +12,15 @@ The prompt is THE long-lived asset of this bundle — see
 as the entity-layer quality reveals gaps; the Python here is mechanical.
 
 Defensive contract:
-  - any failure (no API key, disabled flag, malformed JSON, network error)
-    returns the empty result and logs WARNING.  Never raises to the caller.
   - exactly ONE Ollama call per paper — no retries, no nested calls.
+  - the function NEVER raises; failures degrade with a WARNING log.
+  - DESIGN DECISION: cloud-Ollama is ENRICHMENT, not a gate.  When the
+    cloud is unavailable (disabled flag, no API key, parse failure,
+    network error), ``low_conf_entities`` are PRESERVED as ``validations``
+    entries with ``keep=True`` and a descriptive ``reason``.  A network
+    blip therefore does NOT silently drop BioBERT NER results — the
+    caller should treat empty ``new_entities`` + all-keep ``validations``
+    as "BioBERT result accepted unchanged".
 """
 from __future__ import annotations
 
@@ -30,6 +36,31 @@ logger = logging.getLogger(__name__)
 # caller can never mutate the module-level dict.
 def _empty_result() -> dict[str, list]:
     return {"new_entities": [], "validations": []}
+
+
+def _preserve_low_conf(
+    low_conf_entities: list[dict[str, Any]] | None, reason: str
+) -> dict[str, list]:
+    """When cloud is unavailable, preserve low-conf BioBERT spans as keep=True.
+
+    Phase 2 design decision: cloud-Ollama is enrichment, not a gate. A
+    network blip should not silently drop NER results that already came
+    from a working local model. The caller treats this shape — empty
+    ``new_entities`` + all-keep ``validations`` — as "BioBERT result
+    accepted unchanged, no cloud enrichment available".
+    """
+    if not low_conf_entities:
+        return {"new_entities": [], "validations": []}
+    validations: list[dict[str, Any]] = [
+        {
+            "surface": str(e.get("surface", "")),
+            "keep": True,
+            "reason": reason,
+        }
+        for e in low_conf_entities
+        if isinstance(e, dict) and e.get("surface")
+    ]
+    return {"new_entities": [], "validations": validations}
 
 
 # Truncation cap on the paper text we pass to the LLM.  Matches the "~6000
@@ -89,8 +120,17 @@ def _strip_fences(raw: str) -> str:
     return text.strip()
 
 
-def _validate_response(parsed: Any) -> dict[str, list]:
-    """Return ``parsed`` if shape is correct; else ``_empty_result()`` (and log)."""
+def _validate_response(
+    parsed: Any, *, source_text: str = ""
+) -> dict[str, list]:
+    """Validate response shape + per-item structural integrity.
+
+    Drops items that fail validation (does NOT drop the whole response).
+    The prompt promises ``text[span_start:span_end] == surface`` but LLMs
+    routinely lie about offsets — we therefore re-check every span against
+    ``source_text`` and silently skip the bad ones. Each drop is logged at
+    WARNING with a short content prefix so debugging is possible.
+    """
     if not isinstance(parsed, dict):
         logger.warning(
             "long_tail: response is not a dict (%s)", type(parsed).__name__
@@ -107,7 +147,59 @@ def _validate_response(parsed: Any) -> dict[str, list]:
     ):
         logger.warning("long_tail: new_entities/validations are not lists")
         return _empty_result()
-    return parsed
+
+    # ---- Per-item check on new_entities: offset contract must hold.
+    clean_new: list[dict[str, Any]] = []
+    for item in parsed["new_entities"]:
+        if not isinstance(item, dict):
+            continue
+        required = {"surface", "type", "span_start", "span_end"}
+        if not required.issubset(item):
+            logger.warning(
+                "long_tail: dropping new_entity missing keys: %r", item
+            )
+            continue
+        surf = item["surface"]
+        s = item["span_start"]
+        e = item["span_end"]
+        if not (
+            isinstance(surf, str) and isinstance(s, int) and isinstance(e, int)
+        ):
+            logger.warning(
+                "long_tail: dropping new_entity with bad types: %r", item
+            )
+            continue
+        if not surf:
+            logger.warning("long_tail: dropping new_entity with empty surface")
+            continue
+        if not (0 <= s < e <= len(source_text)):
+            logger.warning(
+                "long_tail: dropping span out of range s=%d e=%d len=%d",
+                s, e, len(source_text),
+            )
+            continue
+        if source_text[s:e] != surf:
+            logger.warning(
+                "long_tail: dropping span — text[%d:%d]=%r != surface=%r",
+                s, e, source_text[s:e][:60], surf[:60],
+            )
+            continue
+        clean_new.append(item)
+
+    # ---- Per-item check on validations: must have surface(str) + keep(bool).
+    clean_val: list[dict[str, Any]] = []
+    for v in parsed["validations"]:
+        if not isinstance(v, dict):
+            continue
+        surf = v.get("surface")
+        keep = v.get("keep")
+        if not isinstance(surf, str) or not surf:
+            continue
+        if not isinstance(keep, bool):
+            continue
+        clean_val.append(v)
+
+    return {"new_entities": clean_new, "validations": clean_val}
 
 
 # ---------------------------------------------------------------------------
@@ -135,11 +227,16 @@ def extract_long_tail_and_validate(
             When ``None``, loaded via ``prompt_registry.load_prompt('long_tail_ner')``.
 
     Returns:
-        ``{"new_entities": [...], "validations": [...]}`` — possibly both empty
-        on disabled / missing key / parse failure / network error.
+        ``{"new_entities": [...], "validations": [...]}``.
+
+    Note: ``low_conf_entities`` are PRESERVED with ``keep=True`` when the
+    cloud is unavailable (disabled, no key, parse failure, network error).
+    The cloud LLM is enrichment, not a gate — caller should treat empty
+    ``new_entities`` + all-keep ``validations`` as "BioBERT result
+    accepted unchanged".
 
     The function NEVER raises.  Failures are logged at WARNING and degrade
-    to the empty result.
+    to the preserve-low-conf result.
     """
     # ---- Gate: only construct a client when explicitly enabled AND key present.
     # When the caller passed a client, skip the gate (this is the test injection
@@ -149,7 +246,9 @@ def extract_long_tail_and_validate(
         try:
             config = _load_runtime_config()
             if not _is_enabled(config):
-                return _empty_result()
+                return _preserve_low_conf(
+                    low_conf_entities, reason="cloud disabled"
+                )
             from scripts.llm.llm_client import OllamaClient  # noqa: PLC0415
 
             cloud_model = getattr(
@@ -161,7 +260,9 @@ def extract_long_tail_and_validate(
             client = OllamaClient(model=cloud_model, host=cloud_host)
         except Exception as exc:  # noqa: BLE001 — defensive perimeter
             logger.warning("long_tail: client construction failed: %s", exc)
-            return _empty_result()
+            return _preserve_low_conf(
+                low_conf_entities, reason="client construction failed"
+            )
 
     # ---- Load the prompt (registry or override).
     if prompt is None:
@@ -171,7 +272,9 @@ def extract_long_tail_and_validate(
             prompt = load_prompt("long_tail_ner")
         except Exception as exc:  # noqa: BLE001 — defensive perimeter
             logger.warning("long_tail: prompt load failed: %s", exc)
-            return _empty_result()
+            return _preserve_low_conf(
+                low_conf_entities, reason="prompt load failed"
+            )
 
     # ---- Render placeholders.
     truncated_text = _truncate_text(text)
@@ -183,7 +286,9 @@ def extract_long_tail_and_validate(
         )
     except (KeyError, AttributeError, TypeError) as exc:
         logger.warning("long_tail: prompt render failed: %s", exc)
-        return _empty_result()
+        return _preserve_low_conf(
+            low_conf_entities, reason="prompt render failed"
+        )
 
     # ---- ONE LLM call.
     try:
@@ -198,10 +303,14 @@ def extract_long_tail_and_validate(
             response = client.complete(system=system_msg, user=user_msg)
         except Exception as exc:  # noqa: BLE001 — defensive perimeter
             logger.warning("long_tail: LLM call failed: %s", exc)
-            return _empty_result()
+            return _preserve_low_conf(
+                low_conf_entities, reason="LLM call failed"
+            )
     except Exception as exc:  # noqa: BLE001 — defensive perimeter
         logger.warning("long_tail: LLM call failed: %s", exc)
-        return _empty_result()
+        return _preserve_low_conf(
+            low_conf_entities, reason="LLM call failed"
+        )
 
     # ---- Parse the JSON response.
     try:
@@ -213,6 +322,8 @@ def extract_long_tail_and_validate(
             exc,
             str(response)[:120],
         )
-        return _empty_result()
+        return _preserve_low_conf(
+            low_conf_entities, reason="JSON parse failed"
+        )
 
-    return _validate_response(parsed)
+    return _validate_response(parsed, source_text=truncated_text)

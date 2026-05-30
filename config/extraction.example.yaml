@@ -24,5 +24,9 @@ graph:
     device: auto
     # Set true to enable cloud-Ollama long-tail validation (N2). Requires OLLAMA_API_KEY.
     cloud_long_tail_enabled: false
+    # Cloud model used when cloud_long_tail_enabled=true. Requires OLLAMA_API_KEY.
+    cloud_model: gemma2:27b-cloud
+    # Cloud Ollama endpoint.
+    cloud_host: https://ollama.com
     # Batch size for NER inference. 16 is conservative; bump on big GPUs.
     batch_size: 16

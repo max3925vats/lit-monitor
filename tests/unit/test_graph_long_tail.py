@@ -217,6 +217,97 @@ class TestPromptRoundTrip:
 
 
 # ---------------------------------------------------------------------------
+# Offset contract — N2 review fix
+# ---------------------------------------------------------------------------
+class TestOffsetContract:
+    def test_drops_entities_with_bad_offsets(self):
+        """N2 fix: when LLM returns wrong offsets, drop the bad entity, keep the good."""
+        canned = {
+            "new_entities": [
+                {"surface": "good", "type": "method", "span_start": 0, "span_end": 4},
+                {"surface": "EGFR", "type": "method", "span_start": 0, "span_end": 100},
+                {"surface": "missing_key"},  # missing offsets
+                {"surface": "wrong_text", "type": "method", "span_start": 0, "span_end": 4},  # text mismatch
+            ],
+            "validations": [],
+        }
+        mock_client = MagicMock()
+        mock_client.complete.return_value = json.dumps(canned)
+        result = extract_long_tail_and_validate(
+            text="good text", low_conf_entities=[], client=mock_client,
+        )
+        # Only "good" survives
+        assert len(result["new_entities"]) == 1
+        assert result["new_entities"][0]["surface"] == "good"
+
+    def test_drops_validations_with_bad_shape(self):
+        canned = {
+            "new_entities": [],
+            "validations": [
+                {"surface": "ok", "keep": True, "reason": "real"},
+                {"surface": "bad", "keep": "yes"},  # keep is not bool
+                {"keep": False},  # surface missing
+                {"surface": "", "keep": True},  # empty surface
+            ],
+        }
+        mock_client = MagicMock()
+        mock_client.complete.return_value = json.dumps(canned)
+        result = extract_long_tail_and_validate(
+            text="t", low_conf_entities=[], client=mock_client,
+        )
+        assert len(result["validations"]) == 1
+        assert result["validations"][0]["surface"] == "ok"
+
+
+# ---------------------------------------------------------------------------
+# Preserve-low-conf on disabled / failure — N2 review fix
+# ---------------------------------------------------------------------------
+class TestPreserveLowConfOnDisabled:
+    def test_disabled_returns_low_conf_as_keep_true(self, monkeypatch):
+        """N2 fix: when disabled, preserve low_conf_entities as keep=True (enrichment, not gate)."""
+        from scripts.graph import long_tail as lt
+        fake_config = MagicMock()
+        fake_config.graph.ner.cloud_long_tail_enabled = False
+        monkeypatch.setattr(lt, "_load_runtime_config", lambda: fake_config)
+
+        low_conf = [
+            {"surface": "EGFR", "confidence": 0.55},
+            {"surface": "BRCA1", "confidence": 0.48},
+        ]
+        result = extract_long_tail_and_validate(
+            text="paper", low_conf_entities=low_conf,
+        )
+        assert result["new_entities"] == []
+        assert len(result["validations"]) == 2
+        assert all(v["keep"] is True for v in result["validations"])
+        assert all("disabled" in v.get("reason", "").lower() for v in result["validations"])
+
+    def test_llm_error_preserves_low_conf(self):
+        """N2 fix: when LLM raises, low_conf_entities are kept (not dropped)."""
+        mock_client = MagicMock()
+        mock_client.complete.side_effect = RuntimeError("network exploded")
+        result = extract_long_tail_and_validate(
+            text="paper",
+            low_conf_entities=[{"surface": "EGFR", "confidence": 0.55}],
+            client=mock_client,
+        )
+        assert len(result["validations"]) == 1
+        assert result["validations"][0]["keep"] is True
+        assert "llm" in result["validations"][0]["reason"].lower() or "call" in result["validations"][0]["reason"].lower()
+
+    def test_malformed_json_preserves_low_conf(self):
+        mock_client = MagicMock()
+        mock_client.complete.return_value = "not json"
+        result = extract_long_tail_and_validate(
+            text="paper",
+            low_conf_entities=[{"surface": "EGFR"}],
+            client=mock_client,
+        )
+        assert len(result["validations"]) == 1
+        assert result["validations"][0]["keep"] is True
+
+
+# ---------------------------------------------------------------------------
 # Single-call invariant under disabled paths
 # ---------------------------------------------------------------------------
 class TestDisabledPathsSkipLLMConstruction:

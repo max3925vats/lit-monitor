@@ -237,14 +237,17 @@ def load_prompt(name: str) -> Prompt:
         # Verify any registered required placeholders are actually present in
         # the user_template — catches typos in the YAML or in
         # _REQUIRED_PLACEHOLDERS at load time rather than at the call site.
+        # Only raises for prompts opted in via _REQUIRED_PLACEHOLDERS, so
+        # backward compatibility with existing un-registered prompts (rationale,
+        # clustering, etc.) is preserved.
         required = _REQUIRED_PLACEHOLDERS.get(name, frozenset())
         if required:
             present = set(_VAR_PLACEHOLDER.findall(loaded.user_template))
             missing = required - present
-            if missing:
-                logger.warning(
-                    "Prompt %r is missing required placeholders %s in user_template",
-                    name, sorted(missing),
+            for placeholder in sorted(missing):
+                raise ValueError(
+                    f"Prompt {name!r}: required placeholder "
+                    f"{{{placeholder}}} missing from user_template"
                 )
         _cache[cache_key] = loaded
         logger.debug("Loaded prompt: %s", name)

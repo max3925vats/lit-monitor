@@ -55,6 +55,28 @@ system: |
       ]
     }
 
+  Example input:
+    Paper text: "We optimized Protein A Sepharose loading in fed-batch
+    mAb capture, achieving 35 g/L resin binding. EGFR variants were
+    purified using SP Sepharose XL cation exchange."
+    Low-confidence spans: [{"surface": "mAb", "confidence": 0.42}]
+
+  Example output (this exact shape is required):
+    {
+      "new_entities": [
+        {"surface": "Protein A Sepharose", "type": "material",
+         "span_start": 13, "span_end": 32},
+        {"surface": "fed-batch mAb capture", "type": "method",
+         "span_start": 44, "span_end": 65},
+        {"surface": "SP Sepharose XL cation exchange", "type": "method",
+         "span_start": 133, "span_end": 164}
+      ],
+      "validations": [
+        {"surface": "mAb", "keep": true,
+         "reason": "monoclonal antibody — standard biopharm abbreviation"}
+      ]
+    }
+
   Rules:
     - Cap "new_entities" at 20 items. Prioritize biopharm-specific entities
       BioBERT would not surface. Do not pad with generic biomedical terms.
@@ -70,6 +92,14 @@ system: |
       "validations". "new_entities" is for spans BioBERT missed entirely.
     - If the paper text is empty or there are zero candidates of a kind,
       return an empty list for that key. Do NOT omit either key.
+
+  Do NOT extract:
+    - generic biology terms ("cells", "protein", "experiment", "results")
+    - method words without specificity ("chromatography" alone, vs.
+      "cation exchange chromatography" which IS specific enough)
+    - units, numbers, or measurement nouns ("g/L", "pH", "concentration")
+    - OCR garbage / single characters / numeric-only tokens
+    - generic adjectives ("novel", "improved", "high-throughput")
 
 user_template: |
   Paper text (truncated to the first ~6000 characters):
