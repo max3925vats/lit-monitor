@@ -222,6 +222,29 @@ New flags:
   corpus-aware graph context.
 - `lit-monitor graph status --by-source` — MENTIONS counts per source.
 
+### Phase 3 LLM relationships (v0.6.0+, optional)
+
+Phase 3 adds `EXTENDS` / `CONTRADICTS` edges + LLM-augmented schema
+relationships. Enable via:
+
+```yaml
+# config/extraction.yaml
+graph:
+  relationships:
+    llm_enabled: true
+```
+
+Plus `OLLAMA_API_KEY` env var.
+
+New CLI:
+- `lit-monitor graph backfill --relationships` — schema-only relationship
+  extraction over existing corpus.
+- `lit-monitor graph backfill --relationships-with-llm` — also runs the
+  cloud-Ollama LLM extractor (EXTENDS + CONTRADICTS + LLM-augmented predicates).
+- `lit-monitor graph status` — now includes EXTENDS + CONTRADICTS edge counts.
+- `lit-monitor graph status --by-source` — typed-predicate counts broken
+  down by `prompt_version` (schema vs LLM split).
+
 ### Strict mode
 
 `lit-monitor` has a strict mode that turns every silent fallback (corrupt

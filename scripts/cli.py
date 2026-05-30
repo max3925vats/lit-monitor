@@ -2600,9 +2600,11 @@ def graph_status(by_source: bool) -> None:
                 rows.append((node_type, 0))
 
         # Edge counts for all schema-defined relationship types
+        # R1 added EXTENDS + CONTRADICTS (Phase 3 LLM-only predicates)
         for rel in (
             "MENTIONS", "CITES", "COMPARES_TO", "DEPENDS_ON",
             "PROPOSES", "LIMITED_BY", "INTRODUCES", "RAISES_QUESTION",
+            "EXTENDS", "CONTRADICTS",
         ):
             try:
                 res = conn.execute(f"MATCH ()-[r:{rel}]->() RETURN count(r) AS c")
@@ -2619,6 +2621,7 @@ def graph_status(by_source: bool) -> None:
         Console().print(table)
 
         # N8: --by-source breakdown of MENTIONS edges
+        # R6: also show typed-predicate (Phase 3) counts broken down by prompt_version
         if by_source:
             try:
                 res = conn.execute(
@@ -2640,6 +2643,33 @@ def graph_status(by_source: bool) -> None:
                 Console().print(src_table)
             except Exception:  # noqa: BLE001
                 click.echo("(by-source query failed — MENTIONS edges may not carry a source property)")
+
+            # R6: typed-predicate breakdown by prompt_version (schema vs LLM split)
+            _TYPED_PREDICATES = [
+                "COMPARES_TO", "DEPENDS_ON", "PROPOSES", "LIMITED_BY",
+                "INTRODUCES", "RAISES_QUESTION", "EXTENDS", "CONTRADICTS",
+            ]
+            typed_by_pv: list[tuple[str, str, int]] = []
+            for pred in _TYPED_PREDICATES:
+                try:
+                    res = conn.execute(
+                        f"MATCH ()-[r:{pred}]->() "
+                        "RETURN r.prompt_version AS pv, count(r) AS n "
+                        "ORDER BY pv"
+                    )
+                    while res.has_next():
+                        row = res.get_next()
+                        typed_by_pv.append((pred, str(row[0]) if row[0] else "(none)", int(row[1])))
+                except Exception:  # noqa: BLE001
+                    pass  # table may not exist yet (pre-R1 DB)
+            if typed_by_pv:
+                pv_table = Table(title="Typed predicates by prompt_version (Phase 3 split)")
+                pv_table.add_column("Predicate", style="cyan")
+                pv_table.add_column("prompt_version")
+                pv_table.add_column("Count", justify="right", style="green")
+                for pred, pv, cnt in typed_by_pv:
+                    pv_table.add_row(pred, pv, str(cnt))
+                Console().print(pv_table)
     finally:
         try:
             graph_db.close()

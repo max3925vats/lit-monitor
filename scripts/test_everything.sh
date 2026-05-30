@@ -117,6 +117,16 @@ tier_1() {
         echo "  ok"
     fi
 
+    # R6: Phase 3 relationship smoke (gated)
+    if [[ -n "${REFERENCE_DOI:-}" ]] && [[ "${GRAPH_ENABLED:-}" == "1" ]] && [[ "${RELATIONSHIPS_ENABLED:-}" == "1" ]]; then
+        echo ">>> [Tier 1 Relationship Smoke] graph backfill --relationships --limit 1"
+        uv run lit-monitor graph backfill --relationships --limit 1 \
+            || { echo "FAIL: backfill --relationships"; exit 1; }
+        uv run lit-monitor graph status | grep -E "EXTENDS|CONTRADICTS|COMPARES_TO" \
+            || { echo "FAIL: status missing Phase 3 predicates"; exit 1; }
+        echo "  ok"
+    fi
+
     pass "Tier 1 OK"
 }
 
