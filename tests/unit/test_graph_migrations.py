@@ -240,3 +240,169 @@ class TestKuzuSchemaMigrationV1ToV2:
 
         result = apply_migrations(conn2, current_version=SCHEMA_VERSION)
         assert result == SCHEMA_VERSION
+
+
+# ---------------------------------------------------------------------------
+# Part 3 — KuzuDB graph schema: Phase 3 R1 — EXTENDS + CONTRADICTS (v2 → v3)
+# ---------------------------------------------------------------------------
+
+
+def _table_names(conn) -> set[str]:  # type: ignore[type-arg]
+    """Return the set of table names from CALL show_tables()."""
+    result = conn.execute("CALL show_tables() RETURN *")
+    names: set[str] = set()
+    while result.has_next():
+        row = result.get_next()
+        # row[1] is the table name in KuzuDB 0.11.x
+        names.add(row[1])
+    return names
+
+
+@pytest.mark.unit
+class TestExtendsContradictsTablesV3:
+    """R1: EXTENDS and CONTRADICTS Paper→Paper REL tables are created in v3 schema."""
+
+    def test_apply_schema_creates_both_new_rel_tables(self, tmp_path):
+        """R1: fresh GraphDB has EXTENDS and CONTRADICTS as Paper→Paper REL tables."""
+        from scripts.graph import GraphDB
+
+        db = GraphDB(persist_dir=str(tmp_path / "r1.kuzu"))
+        names = _table_names(db._conn)
+        assert "EXTENDS" in names, f"EXTENDS missing from {names}"
+        assert "CONTRADICTS" in names, f"CONTRADICTS missing from {names}"
+
+    def test_apply_schema_idempotent_with_new_tables(self, tmp_path):
+        """R1: re-running apply_schema on a v3-fresh DB doesn't raise."""
+        from scripts.graph import GraphDB
+        from scripts.graph.migrations import apply_schema
+
+        db = GraphDB(persist_dir=str(tmp_path / "r1_idem.kuzu"))
+        # Re-apply schema (already applied in __init__) — must not raise.
+        apply_schema(db._conn)
+        # Confirm tables still exist.
+        names = _table_names(db._conn)
+        assert "EXTENDS" in names
+        assert "CONTRADICTS" in names
+
+    def test_extends_edge_can_be_created_with_provenance(self, tmp_path):
+        """R1: EXTENDS edge accepts confidence + extracted_at + prompt_version per G14."""
+        from scripts.graph import GraphDB
+
+        db = GraphDB(persist_dir=str(tmp_path / "r1_ext.kuzu"))
+        conn = db._conn
+        conn.execute(
+            "CREATE (p:Paper {doi: '10.0/a', title: 'A', year: 2024, journal: 'X'})"
+        )
+        conn.execute(
+            "CREATE (p:Paper {doi: '10.0/b', title: 'B', year: 2024, journal: 'X'})"
+        )
+        conn.execute(
+            "MATCH (s:Paper {doi: '10.0/a'}), (t:Paper {doi: '10.0/b'}) "
+            "CREATE (s)-[r:EXTENDS {evidence: 'paper A builds on B'}]->(t)"
+        )
+        res = conn.execute(
+            "MATCH ()-[r:EXTENDS]->() "
+            "RETURN r.evidence, r.confidence, r.prompt_version LIMIT 1"
+        )
+        assert res.has_next()
+        row = res.get_next()
+        assert row[0] == "paper A builds on B"
+        assert row[1] == 1.0, f"confidence default should be 1.0, got {row[1]!r}"
+        assert row[2] == "phase1.0", f"prompt_version default wrong: {row[2]!r}"
+
+    def test_contradicts_edge_can_be_created(self, tmp_path):
+        """R1: CONTRADICTS edge is insertable and queryable with count check."""
+        from scripts.graph import GraphDB
+
+        db = GraphDB(persist_dir=str(tmp_path / "r1_con.kuzu"))
+        conn = db._conn
+        conn.execute(
+            "CREATE (p:Paper {doi: '10.0/a', title: 'A', year: 2024, journal: 'X'})"
+        )
+        conn.execute(
+            "CREATE (p:Paper {doi: '10.0/b', title: 'B', year: 2024, journal: 'X'})"
+        )
+        conn.execute(
+            "MATCH (s:Paper {doi: '10.0/a'}), (t:Paper {doi: '10.0/b'}) "
+            "CREATE (s)-[r:CONTRADICTS {evidence: 'A disputes B'}]->(t)"
+        )
+        res = conn.execute(
+            "MATCH ()-[r:CONTRADICTS]->() RETURN count(r) AS n"
+        )
+        assert res.has_next()
+        assert int(res.get_next()[0]) == 1
+
+
+@pytest.mark.unit
+class TestSchemaVersionV3:
+    """R1: SCHEMA_VERSION is 3 and migration dispatcher handles v1/v2→v3."""
+
+    def test_schema_version_is_3(self):
+        """SCHEMA_VERSION constant must equal 3 after R1."""
+        from scripts.graph.migrations import SCHEMA_VERSION
+
+        assert SCHEMA_VERSION == 3
+
+    def test_migrate_v2_to_v3_adds_new_tables(self, tmp_path):
+        """R1: migrate_v2_to_v3 on a v2-shaped DB adds EXTENDS + CONTRADICTS."""
+        from scripts.graph import GraphDB
+        from scripts.graph.migrations import migrate_v2_to_v3
+
+        db = GraphDB(persist_dir=str(tmp_path / "r1_mig.kuzu"))
+        conn = db._conn
+        # Drop v3-only tables to simulate a v2 snapshot.
+        for name in ("EXTENDS", "CONTRADICTS"):
+            try:
+                conn.execute(f"DROP TABLE {name}")
+            except Exception:
+                pass
+        # Confirm they're gone.
+        before = _table_names(conn)
+        assert "EXTENDS" not in before
+        assert "CONTRADICTS" not in before
+
+        # Run the v2→v3 migration.
+        new_version = migrate_v2_to_v3(conn)
+        assert new_version == 3
+
+        # Confirm both tables are back.
+        after = _table_names(conn)
+        assert "EXTENDS" in after, f"EXTENDS missing after migrate_v2_to_v3: {after}"
+        assert "CONTRADICTS" in after, f"CONTRADICTS missing: {after}"
+
+    def test_apply_migrations_v1_reaches_v3(self, tmp_path):
+        """apply_migrations from v1 chains v1→v2→v3 and returns SCHEMA_VERSION."""
+        from scripts.graph.migrations import SCHEMA_VERSION, apply_migrations
+
+        _, conn = _build_v1_kuzu_db(str(tmp_path / "v1_to_v3.kuzu"))
+        new_version = apply_migrations(conn, current_version=1)
+        assert new_version == SCHEMA_VERSION == 3
+
+    def test_apply_migrations_v2_reaches_v3(self, tmp_path):
+        """apply_migrations from v2 adds only EXTENDS+CONTRADICTS and returns 3."""
+        import kuzu
+
+        from scripts.graph import GraphDB
+        from scripts.graph.migrations import (  # noqa: F401
+            SCHEMA_VERSION,
+            apply_migrations,
+            migrate_v2_to_v3,
+        )
+
+        db = GraphDB(persist_dir=str(tmp_path / "v2_to_v3.kuzu"))
+        # Simulate v2 by dropping v3 tables.
+        for name in ("EXTENDS", "CONTRADICTS"):
+            try:
+                db._conn.execute(f"DROP TABLE {name}")
+            except Exception:
+                pass
+
+        # Open a fresh connection to the same on-disk DB (simulate re-open at v2).
+        db2 = kuzu.Database(str(tmp_path / "v2_to_v3.kuzu"))
+        conn2 = kuzu.Connection(db2)
+
+        new_version = apply_migrations(conn2, current_version=2)
+        assert new_version == SCHEMA_VERSION == 3
+        after = _table_names(conn2)
+        assert "EXTENDS" in after
+        assert "CONTRADICTS" in after

@@ -1,7 +1,7 @@
 """
 KuzuDB schema DDL for lit-monitor Phase 1 knowledge graph.
 
-``apply_schema(conn)`` runs all 10 CREATE … IF NOT EXISTS statements so the
+``apply_schema(conn)`` runs all 12 CREATE … IF NOT EXISTS statements so the
 function is idempotent: calling it on an already-initialised database is a
 no-op.  The calling code (GraphDB.__init__) does not need to track whether
 the schema has been applied before.
@@ -12,13 +12,13 @@ Node tables
   Entity  — canonical named entity (gene, method, dataset, …), keyed by
             a canonical_id string.
 
-Relationship tables (closed predicate set for v0.4.0)
+Relationship tables (closed predicate set for v0.5.0)
 ------------------------------------------------------
 Paper → Entity predicates (6):
   MENTIONS, DEPENDS_ON, PROPOSES, LIMITED_BY, INTRODUCES, RAISES_QUESTION
 
-Paper → Paper predicates (2):
-  CITES, COMPARES_TO
+Paper → Paper predicates (4):
+  CITES, COMPARES_TO, EXTENDS, CONTRADICTS
 
 Every REL TABLE carries three optional provenance properties introduced in G14
 (schema v2), populated by DB DEFAULTs when not explicitly set:
@@ -27,7 +27,9 @@ Every REL TABLE carries three optional provenance properties introduced in G14
   prompt_version STRING DEFAULT 'phase1.0' — extractor prompt tag for
                                              reproducibility / re-extraction
 
-Phase 3 will add EXTENDS + CONTRADICTS — those are NOT defined here.
+Phase 3 R1 adds EXTENDS + CONTRADICTS (schema v3):
+  EXTENDS     — paper A builds on / refines paper B's work
+  CONTRADICTS — paper A disputes paper B's claim
 """
 from __future__ import annotations
 
@@ -35,8 +37,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Bumped here (G14): adds confidence/extracted_at/prompt_version to all REL TABLEs.
-SCHEMA_VERSION: int = 2
+# Bumped to 3 (Phase 3 R1): adds EXTENDS + CONTRADICTS REL TABLEs.
+# History: v1 (G1) → v2 (G14, provenance cols) → v3 (Phase 3 R1, new Paper→Paper RELs).
+SCHEMA_VERSION: int = 3
 
 # Default prompt version tag written to all REL TABLE edges by the DDL DEFAULT
 # and used as the migration column default.  Centralised here so DDL and
@@ -107,6 +110,18 @@ DDL_STATEMENTS: list[str] = [
     ),
     (
         "CREATE REL TABLE IF NOT EXISTS COMPARES_TO("
+        f"FROM Paper TO Paper, evidence STRING, {_REL_PROVENANCE})"
+    ),
+    # --- Phase 3 R1: new Paper → Paper relationship tables ---
+    # EXTENDS: paper A builds on / refines paper B's work.
+    # CONTRADICTS: paper A disputes paper B's claim.
+    # Both share the same G14 provenance block as COMPARES_TO.
+    (
+        "CREATE REL TABLE IF NOT EXISTS EXTENDS("
+        f"FROM Paper TO Paper, evidence STRING, {_REL_PROVENANCE})"
+    ),
+    (
+        "CREATE REL TABLE IF NOT EXISTS CONTRADICTS("
         f"FROM Paper TO Paper, evidence STRING, {_REL_PROVENANCE})"
     ),
 ]
@@ -219,6 +234,66 @@ def migrate_v1_to_v2(conn) -> None:  # type: ignore[type-arg]
     logger.info("migrate_v1_to_v2: all REL TABLE provenance columns ensured.")
 
 
+# ---------------------------------------------------------------------------
+# v2 → v3 migration: add EXTENDS + CONTRADICTS REL tables (Phase 3 R1)
+# ---------------------------------------------------------------------------
+
+# DDL for the two new Paper→Paper REL tables introduced in schema v3.
+# Defined here (not inlined in migrate_v2_to_v3) so the test suite can
+# reference the list independently.
+_V2_TO_V3_REL_TABLES: list[tuple[str, str]] = [
+    (
+        "EXTENDS",
+        (
+            "CREATE REL TABLE IF NOT EXISTS EXTENDS("
+            f"FROM Paper TO Paper, evidence STRING, {_REL_PROVENANCE})"
+        ),
+    ),
+    (
+        "CONTRADICTS",
+        (
+            "CREATE REL TABLE IF NOT EXISTS CONTRADICTS("
+            f"FROM Paper TO Paper, evidence STRING, {_REL_PROVENANCE})"
+        ),
+    ),
+]
+
+
+def migrate_v2_to_v3(conn) -> int:  # type: ignore[type-arg]
+    """Add EXTENDS + CONTRADICTS REL tables to a v2 graph (schema v2 → v3).
+
+    Idempotent: if a table already exists (e.g. this migration has already
+    been run), the ``IF NOT EXISTS`` guard in the DDL makes it a no-op.
+    Any residual ``RuntimeError`` with "already exists" in the message is
+    silently swallowed for belt-and-suspenders safety.
+
+    Parameters
+    ----------
+    conn:
+        An open ``kuzu.Connection`` pointing at a v2-schema KuzuDB database.
+
+    Returns
+    -------
+    int
+        The new schema version: ``3``.
+    """
+    for table_name, ddl in _V2_TO_V3_REL_TABLES:
+        try:
+            conn.execute(ddl)
+            logger.debug("migrate_v2_to_v3: created REL TABLE %s", table_name)
+        except RuntimeError as exc:
+            msg = str(exc).lower()
+            # Guard against engines that don't honour IF NOT EXISTS for REL tables.
+            if "already exists" in msg or "already has" in msg:
+                logger.debug(
+                    "migrate_v2_to_v3: %s already exists (idempotent)", table_name
+                )
+            else:
+                raise
+    logger.info("migrate_v2_to_v3: EXTENDS and CONTRADICTS REL tables ensured.")
+    return 3
+
+
 def apply_migrations(conn, current_version: int) -> int:  # type: ignore[type-arg]
     """Run any pending schema migrations and return the new schema version.
 
@@ -245,6 +320,13 @@ def apply_migrations(conn, current_version: int) -> int:  # type: ignore[type-ar
         migrate_v1_to_v2(conn)
         current_version = 2
 
-    # Future migrations:  if current_version < 3: migrate_v2_to_v3(conn) …
+    if current_version < 3:
+        logger.info(
+            "apply_migrations: v%d → v3 (adding EXTENDS + CONTRADICTS REL tables).",
+            current_version,
+        )
+        current_version = migrate_v2_to_v3(conn)
+
+    # Future migrations: if current_version < 4: migrate_v3_to_v4(conn) …
 
     return current_version
