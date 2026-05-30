@@ -1,4 +1,4 @@
-"""Tests for G3: schema-source entity extractor.
+"""Tests for G3 (schema-source entity extractor) and N3 (MentionEdge multi-source merge).
 
 Field map used (verified against config/extraction_schema.yaml):
   method   → ["methods_summary"]
@@ -12,7 +12,15 @@ import json
 
 import pytest
 
-from scripts.graph.entity_extractor import EntityTuple, extract_entities
+from scripts.graph.entity_extractor import (
+    EntityTuple,
+    MentionEdge,
+    extract_entities,
+    from_biobert,
+    from_llm_cloud,
+    merge_mentions,
+)
+from scripts.graph.ner import NerSpan
 from scripts.graph.normalizer import EntityNormalizer
 
 # ---------------------------------------------------------------------------
@@ -464,3 +472,198 @@ class TestSurfacePreservation:
         )
         with pytest.raises((AttributeError, TypeError)):
             t.canonical_id = "changed"  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# N3: MentionEdge invariants
+# ---------------------------------------------------------------------------
+
+
+class TestMentionEdge:
+    def test_frozen_dataclass(self):
+        """N3: MentionEdge is immutable (frozen=True dataclass)."""
+        m = MentionEdge(
+            paper_id="10.0/a", entity_key="egfr", type="material",
+            source="biobert", surface="EGFR", field=None,
+            confidence=0.95, span_start=0, span_end=4,
+        )
+        with pytest.raises(Exception):
+            m.confidence = 0.5  # type: ignore[misc]
+
+    def test_source_accepts_three_values(self):
+        """N3: source must be one of schema | biobert | llm_cloud."""
+        for source in ("schema", "biobert", "llm_cloud"):
+            MentionEdge(
+                paper_id="10.0/a", entity_key="x", type="topic",
+                source=source, surface="x", field=None,
+                confidence=1.0, span_start=None, span_end=None,
+            )
+
+    def test_invalid_source_raises_value_error(self):
+        """N3: source outside the whitelist is rejected at construction time."""
+        with pytest.raises(ValueError):
+            MentionEdge(
+                paper_id="10.0/a", entity_key="x", type="topic",
+                source="bogus", surface="x", field=None,
+                confidence=1.0, span_start=None, span_end=None,
+            )
+
+
+# ---------------------------------------------------------------------------
+# N3: from_biobert
+# ---------------------------------------------------------------------------
+
+
+class TestFromBiobert:
+    def test_biobert_spans_become_mention_edges(self):
+        """N3: NerSpan list → MentionEdge list with source='biobert'."""
+        normalizer = EntityNormalizer(aliases={})
+        spans = [
+            NerSpan(text="EGFR", label="GENE", start=0, end=4, confidence=0.95),
+            NerSpan(text="lung cancer", label="DISEASE", start=20, end=31, confidence=0.88),
+        ]
+        edges = from_biobert(spans, paper_id="10.0/a", normalizer=normalizer)
+        assert all(e.source == "biobert" for e in edges)
+        assert all(e.paper_id == "10.0/a" for e in edges)
+        # BioBERT confidence carried through
+        assert any(e.confidence == 0.95 for e in edges)
+        # Offsets carried through
+        assert any(e.span_start == 0 and e.span_end == 4 for e in edges)
+
+    def test_biobert_canonicalizes_via_normalizer(self):
+        """N3: surface form normalized to canonical entity_key via alias lookup."""
+        normalizer = EntityNormalizer(aliases={"material": {"mab": "monoclonal antibody"}})
+        spans = [NerSpan(text="mAb", label="material", start=0, end=3, confidence=0.9)]
+        edges = from_biobert(spans, paper_id="10.0/a", normalizer=normalizer)
+        # entity_key holds the canonical (alias-resolved) form
+        assert edges[0].entity_key == "monoclonal antibody"
+        # Surface preserves the original text
+        assert edges[0].surface == "mAb"
+
+    def test_biobert_empty_spans_returns_empty(self):
+        """N3: empty NerSpan list → empty MentionEdge list."""
+        normalizer = EntityNormalizer(aliases={})
+        assert from_biobert([], paper_id="10.0/a", normalizer=normalizer) == []
+
+
+# ---------------------------------------------------------------------------
+# N3: from_llm_cloud
+# ---------------------------------------------------------------------------
+
+
+class TestFromLlmCloud:
+    def test_new_entities_become_mention_edges(self):
+        """N3: payload['new_entities'] → MentionEdge list with source='llm_cloud', confidence=0.85."""
+        normalizer = EntityNormalizer(aliases={})
+        payload = {
+            "new_entities": [
+                {"surface": "perfusion bioreactor", "type": "method",
+                 "span_start": 0, "span_end": 20},
+            ],
+            "validations": [],
+        }
+        edges = from_llm_cloud(payload, paper_id="10.0/a", normalizer=normalizer)
+        assert len(edges) == 1
+        e = edges[0]
+        assert e.source == "llm_cloud"
+        assert e.confidence == 0.85
+        assert e.type == "method"
+        assert e.span_start == 0
+        assert e.span_end == 20
+
+    def test_validations_keep_true_become_edges(self):
+        """N3: validations with keep=True produce edges; keep=False are skipped."""
+        normalizer = EntityNormalizer(aliases={})
+        payload = {
+            "new_entities": [],
+            "validations": [
+                {"surface": "EGFR", "keep": True, "reason": "real gene"},
+                {"surface": "blah", "keep": False, "reason": "not a real entity"},
+            ],
+        }
+        edges = from_llm_cloud(payload, paper_id="10.0/a", normalizer=normalizer)
+        # Only keep=True validations produce edges
+        assert len(edges) == 1
+        assert edges[0].surface == "EGFR"
+        # Validation edges have no span info (offset originated in BioBERT, not reproduced here)
+        assert edges[0].span_start is None
+
+    def test_empty_payload_returns_empty(self):
+        """N3: payload with no new_entities and no validations → empty list."""
+        normalizer = EntityNormalizer(aliases={})
+        edges = from_llm_cloud(
+            {"new_entities": [], "validations": []},
+            paper_id="10.0/a",
+            normalizer=normalizer,
+        )
+        assert edges == []
+
+
+# ---------------------------------------------------------------------------
+# N3: merge_mentions
+# ---------------------------------------------------------------------------
+
+
+class TestMergeMentions:
+    def test_same_entity_two_sources_produces_two_edges(self):
+        """N3: same canonical entity from two sources → one entity_key + two distinct edges."""
+        schema_edges = [MentionEdge(
+            paper_id="10.0/a", entity_key="egfr", type="material",
+            source="schema", surface="EGFR", field="materials_systems",
+            confidence=1.0, span_start=None, span_end=None,
+        )]
+        biobert_edges = [MentionEdge(
+            paper_id="10.0/a", entity_key="egfr", type="material",
+            source="biobert", surface="EGFR", field=None,
+            confidence=0.92, span_start=0, span_end=4,
+        )]
+        merged = merge_mentions(schema_edges, biobert_edges)
+        assert len(merged) == 2
+        sources = {e.source for e in merged}
+        assert sources == {"schema", "biobert"}
+        # Both reference the same canonical entity key
+        assert all(e.entity_key == "egfr" for e in merged)
+
+    def test_dedup_within_same_source(self):
+        """N3: same edge emitted twice from same source → deduped to one."""
+        edge = MentionEdge(
+            paper_id="10.0/a", entity_key="egfr", type="material",
+            source="biobert", surface="EGFR", field=None,
+            confidence=0.92, span_start=0, span_end=4,
+        )
+        merged = merge_mentions([edge, edge, edge])
+        assert len(merged) == 1
+
+    def test_dedup_keys_on_full_tuple(self):
+        """N3: same canonical+source but different spans → 2 edges (distinct positions)."""
+        e1 = MentionEdge(
+            paper_id="10.0/a", entity_key="egfr", type="material",
+            source="biobert", surface="EGFR", field=None,
+            confidence=0.92, span_start=0, span_end=4,
+        )
+        e2 = MentionEdge(
+            paper_id="10.0/a", entity_key="egfr", type="material",
+            source="biobert", surface="EGFR", field=None,
+            confidence=0.88, span_start=50, span_end=54,
+        )
+        merged = merge_mentions([e1, e2])
+        # Different spans → both kept
+        assert len(merged) == 2
+
+    def test_idempotent_rerun(self):
+        """N3: running merge twice on the same inputs is stable."""
+        edges = [MentionEdge(
+            paper_id="10.0/a", entity_key="egfr", type="material",
+            source="schema", surface="EGFR", field="materials_systems",
+            confidence=1.0, span_start=None, span_end=None,
+        )]
+        first = merge_mentions(edges)
+        second = merge_mentions(first)
+        key = lambda e: (e.entity_key, e.source, e.span_start, e.span_end, e.field)  # noqa: E731
+        assert set(key(e) for e in first) == set(key(e) for e in second)
+
+    def test_empty_inputs_returns_empty(self):
+        """N3: merge_mentions with no args or all-empty lists → empty list."""
+        assert merge_mentions() == []
+        assert merge_mentions([]) == []
+        assert merge_mentions([], [], []) == []

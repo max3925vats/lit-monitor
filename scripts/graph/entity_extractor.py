@@ -328,3 +328,246 @@ def extract_entities(
         dedup.append(t)
 
     return dedup
+
+
+# ---------------------------------------------------------------------------
+# N3: MentionEdge + multi-source merge helpers
+# ---------------------------------------------------------------------------
+# Fuses Phase 1 (schema), N1 (BioBERT), and N2 (cloud-Ollama long-tail) into
+# a single set of MentionEdges with per-source provenance.
+#
+# Same entity from two sources → ONE Entity node + TWO MENTIONS edges.
+# Dedup key: (paper_id, entity_key, source, span_start, span_end, field).
+
+_VALID_SOURCES: frozenset[str] = frozenset({"schema", "biobert", "llm_cloud"})
+
+# Default confidence per source when no span-level score is available.
+_LLM_CLOUD_CONFIDENCE: float = 0.85
+_SCHEMA_CONFIDENCE: float = 1.0
+
+
+@dataclass(frozen=True)
+class MentionEdge:
+    """One MENTIONS edge occurrence with per-source provenance.
+
+    Attributes
+    ----------
+    paper_id:
+        Source paper DOI or other stable identifier.
+    entity_key:
+        Canonical entity id after normalization (lowercase, alias-resolved).
+    type:
+        One of the 6 closed entity types: topic / method / material /
+        author / journal / keyword.
+    source:
+        Extraction source — must be one of ``"schema"``, ``"biobert"``,
+        or ``"llm_cloud"``.
+    surface:
+        Original surface form before normalization (original casing).
+    field:
+        extraction_json field name (e.g. ``"methods_summary"``) or ``None``
+        when the entity originates from structured metadata or a NER span
+        without a field association.
+    confidence:
+        Per-source confidence: BioBERT span probability, 0.85 for LLM
+        cloud, 1.0 for schema.
+    span_start:
+        Character offset of the span start in the source field text.
+        ``None`` when offsets are not available (schema / validation edges).
+    span_end:
+        Character offset one past the span end.  ``None`` in same cases.
+    """
+
+    paper_id: str
+    entity_key: str
+    type: str
+    source: str
+    surface: str
+    field: str | None
+    confidence: float
+    span_start: int | None
+    span_end: int | None
+
+    def __post_init__(self) -> None:
+        if self.source not in _VALID_SOURCES:
+            raise ValueError(
+                f"MentionEdge.source must be one of {sorted(_VALID_SOURCES)!r}, "
+                f"got {self.source!r}"
+            )
+
+
+def _ner_label_to_type(label: str) -> str:
+    """N3: map a BioBERT NER label to one of the 6 closed entity types.
+
+    Conservative heuristic for Phase 2.  Phase 3 can refine with per-corpus
+    learning (N6 propose-aliases).
+
+    Args:
+        label: Raw NER label from the BioBERT pipeline (e.g. ``"GENE"``,
+               ``"DISEASE"``).
+
+    Returns:
+        One of: ``"topic"``, ``"method"``, ``"material"``.
+    """
+    label_upper = (label or "").upper()
+    if "DISEASE" in label_upper or "CONDITION" in label_upper:
+        return "topic"
+    if "METHOD" in label_upper or "TECHNIQUE" in label_upper:
+        return "method"
+    # Default: genetic / biomedical spans from biobert_genetic_ner are
+    # overwhelmingly material-type entities in biopharm corpora.
+    return "material"
+
+
+def from_biobert(
+    spans: list[Any],
+    paper_id: str,
+    normalizer: EntityNormalizer,
+) -> list[MentionEdge]:
+    """N3: convert BioBERT NerSpans into MentionEdges with source='biobert'.
+
+    Args:
+        spans: List of ``NerSpan`` objects from ``BiobertNER.extract()``.
+        paper_id: Identifier of the source paper (DOI or state.db key).
+        normalizer: ``EntityNormalizer`` instance from G2 for canonical lookup.
+
+    Returns:
+        List of ``MentionEdge`` objects, one per span. Empty if spans is empty
+        or all spans normalize to empty strings.
+    """
+    out: list[MentionEdge] = []
+    for span in spans:
+        type_ = _ner_label_to_type(span.label)
+        canonical, _via = normalizer.normalize(span.text, type_=type_)
+        if not canonical:
+            continue
+        out.append(MentionEdge(
+            paper_id=paper_id,
+            entity_key=canonical,
+            type=type_,
+            source="biobert",
+            surface=span.text,
+            field=None,
+            confidence=float(span.confidence),
+            span_start=int(span.start),
+            span_end=int(span.end),
+        ))
+    return out
+
+
+def from_llm_cloud(
+    payload: dict[str, Any],
+    paper_id: str,
+    normalizer: EntityNormalizer,
+) -> list[MentionEdge]:
+    """N3: convert N2's long-tail+validation payload into MentionEdges.
+
+    Payload shape (from N2 cloud-Ollama extractor)::
+
+        {
+          "new_entities": [
+              {"surface": "...", "type": "...", "span_start": int, "span_end": int},
+              ...
+          ],
+          "validations": [
+              {"surface": "...", "keep": bool, "reason": "..."},
+              ...
+          ],
+        }
+
+    - ``new_entities`` → MentionEdge with span offsets when present; source='llm_cloud'.
+    - ``validations[keep=True]`` → MentionEdge, no span offsets (offsets lived in BioBERT).
+    - ``validations[keep=False]`` → silently skipped.
+
+    Args:
+        payload: Dict conforming to the N2 output schema.
+        paper_id: Identifier of the source paper.
+        normalizer: ``EntityNormalizer`` instance from G2.
+
+    Returns:
+        List of ``MentionEdge`` objects with source='llm_cloud'.
+    """
+    out: list[MentionEdge] = []
+
+    for ent in payload.get("new_entities") or []:
+        if not isinstance(ent, dict):
+            continue
+        surface = ent.get("surface")
+        type_ = ent.get("type")
+        if not isinstance(surface, str) or not surface:
+            continue
+        if not isinstance(type_, str) or not type_:
+            continue
+        canonical, _via = normalizer.normalize(surface, type_=type_)
+        if not canonical:
+            continue
+        # Carry span offsets only when both are integers.
+        span_start = ent.get("span_start")
+        span_end = ent.get("span_end")
+        if not isinstance(span_start, int) or not isinstance(span_end, int):
+            span_start = None
+            span_end = None
+        out.append(MentionEdge(
+            paper_id=paper_id,
+            entity_key=canonical,
+            type=type_,
+            source="llm_cloud",
+            surface=surface,
+            field=None,
+            confidence=_LLM_CLOUD_CONFIDENCE,
+            span_start=span_start,
+            span_end=span_end,
+        ))
+
+    for val in payload.get("validations") or []:
+        if not isinstance(val, dict):
+            continue
+        if not val.get("keep"):
+            continue
+        surface = val.get("surface")
+        if not isinstance(surface, str) or not surface:
+            continue
+        # Validation edges default to type='material' (BioBERT genetic NER default).
+        # No offsets: the original span lived in BioBERT and isn't reproduced here.
+        canonical, _via = normalizer.normalize(surface, type_="material")
+        if not canonical:
+            continue
+        out.append(MentionEdge(
+            paper_id=paper_id,
+            entity_key=canonical,
+            type="material",
+            source="llm_cloud",
+            surface=surface,
+            field=None,
+            confidence=_LLM_CLOUD_CONFIDENCE,
+            span_start=None,
+            span_end=None,
+        ))
+
+    return out
+
+
+def merge_mentions(*edge_lists: list[MentionEdge]) -> list[MentionEdge]:
+    """N3: merge and deduplicate MentionEdge lists from multiple sources.
+
+    Dedup key: ``(paper_id, entity_key, source, span_start, span_end, field)``.
+
+    Same entity from two different sources → two edges are kept (one per source).
+    Same edge emitted twice from the same source → collapsed to one.
+
+    Args:
+        *edge_lists: Any number of ``list[MentionEdge]`` positional arguments.
+
+    Returns:
+        Flat deduplicated list in encounter order.
+    """
+    seen: set[tuple] = set()
+    out: list[MentionEdge] = []
+    for edges in edge_lists:
+        for e in edges:
+            key = (e.paper_id, e.entity_key, e.source, e.span_start, e.span_end, e.field)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(e)
+    return out
