@@ -38,7 +38,13 @@ jobs:
         # python-multipart that the F2.x wizard tests import. Without it,
         # 11 of the unit test files fail at collection time with
         # ModuleNotFoundError: No module named 'fastapi'.
-        run: uv sync --extra dev --extra server
+        # Graph extra (v0.4.0+, Phase 1) brings kuzu + inflect. The
+        # normalizer (scripts/graph/normalizer.py) imports inflect at
+        # module level; without it, conftest.py + every graph test file
+        # fails collection with ModuleNotFoundError: No module named 'inflect'.
+        # [nlp] extra is NOT installed in CI — tests use the BiobertNERStub
+        # fixture rather than the real transformers + torch stack.
+        run: uv sync --extra dev --extra server --extra graph
 
       - name: Lint with ruff
         run: uv run ruff check .
