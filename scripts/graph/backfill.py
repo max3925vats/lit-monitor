@@ -16,6 +16,7 @@ from typing import Any
 from scripts.graph.aliases import load_aliases
 from scripts.graph.entity_extractor import extract_entities
 from scripts.graph.migrations import apply_schema
+from scripts.graph.ner_pipeline import build_mention_edges
 from scripts.graph.normalizer import EntityNormalizer
 from scripts.graph.relationship_extractor import extract_relationships
 
@@ -129,6 +130,113 @@ def backfill_papers(
             logger.warning("backfill: failed to index %s: %s", doi, exc)
 
     return processed
+
+
+def backfill_ner(
+    state_db: Any,
+    graph_db: Any,
+    *,
+    with_llm: bool = False,
+    limit: int | None = None,
+    since: datetime | None = None,
+    progress_callback: Any = None,
+) -> dict[str, int]:
+    """N5: run the NER-augmented entity pipeline (N1+N2+N3+N4) over existing papers.
+
+    Only processes papers where ``ner_processed_at IS NULL`` (idempotent).
+    After a successful per-paper run, stamps ``ner_processed_at`` via
+    :meth:`StateDB.set_ner_processed_at`.
+
+    Args:
+        state_db:          Open :class:`StateDB` instance.
+        graph_db:          Open :class:`GraphDB` instance.
+        with_llm:          When True, enables cloud-Ollama long-tail NER (N2).
+        limit:             Cap on the number of candidate papers.
+        since:             Restrict candidates to papers with
+                           ``last_updated >= since``.
+        progress_callback: Optional callable ``(doi, done_count, total_count)``.
+
+    Returns:
+        Summary dict with keys ``papers_processed``, ``edges_added``,
+        ``failures``.
+    """
+    candidates = state_db.get_papers_for_ner_backfill(
+        since=since, limit=limit, only_unprocessed=True,
+    )
+    if not candidates:
+        logger.info("backfill_ner: no candidates — nothing to do")
+        return {"papers_processed": 0, "edges_added": 0, "failures": 0}
+
+    normalizer = EntityNormalizer(aliases=load_aliases())
+    summary: dict[str, int] = {"papers_processed": 0, "edges_added": 0, "failures": 0}
+    total = len(candidates)
+
+    for idx, paper in enumerate(candidates):
+        doi = paper.get("doi")
+        if not doi:
+            continue
+
+        try:
+            # Parse extraction_json — may be a JSON string or already a dict.
+            extraction: dict[str, Any] = {}
+            raw = paper.get("extraction_json")
+            if isinstance(raw, str):
+                try:
+                    extraction = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    extraction = {}
+            elif isinstance(raw, dict):
+                extraction = raw
+
+            paper_metadata: dict[str, Any] = {
+                "title": paper.get("title") or "",
+                "year": paper.get("year") or 0,
+                "journal": paper.get("journal") or "",
+                "authors": paper.get("authors") or "",
+                "keywords_json": paper.get("keywords_json") or "",
+            }
+
+            # Fulltext may not exist for all papers; pass empty string rather than None.
+            text: str = paper.get("fulltext") or ""
+
+            edges = build_mention_edges(
+                paper_id=doi,
+                text=text,
+                extraction_json=extraction,
+                paper_metadata=paper_metadata,
+                normalizer=normalizer,
+                use_biobert=True,
+                use_cloud_llm=with_llm,
+            )
+
+            # MERGE into graph via G6 add_paper semantics (idempotent).
+            # N5 does NOT touch typed-relationship edges — entity/MENTIONS only.
+            graph_db.add_paper(
+                doi=doi,
+                entities=edges,
+                relationships=[],
+                paper_metadata=paper_metadata,
+                prompt_version="phase2.0",
+            )
+
+            # Stamp so re-runs skip this paper.
+            state_db.set_ner_processed_at(doi, datetime.now().isoformat())
+
+            summary["papers_processed"] += 1
+            summary["edges_added"] += len(edges)
+
+            if (idx + 1) % 25 == 0:
+                logger.info(
+                    "backfill_ner: processed %d/%d papers", idx + 1, total,
+                )
+            if progress_callback is not None:
+                progress_callback(doi, idx + 1, total)
+
+        except Exception as exc:  # noqa: BLE001 — log + skip; don't abort the run
+            logger.warning("backfill_ner: failed for %s: %s", doi, exc)
+            summary["failures"] += 1
+
+    return summary
 
 
 def rebuild_all(state_db: Any, graph_db: Any) -> int:

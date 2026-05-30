@@ -1,4 +1,4 @@
-"""G10: backfill + rebuild tests."""
+"""G10 / N5: backfill + rebuild + NER-backfill tests."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -129,3 +129,181 @@ class TestRebuildAliasesOnly:
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         result = rebuild_aliases_only(graph_db)
         assert isinstance(result, int)
+
+
+# ---------------------------------------------------------------------------
+# N5: backfill_ner tests
+# ---------------------------------------------------------------------------
+
+class TestBackfillNer:
+    """N5: backfill_ner — NER-augmented entity pipeline over existing corpus."""
+
+    def _fake_edge(self, paper_id: str):
+        """Return a minimal MentionEdge for mocking build_mention_edges."""
+        from scripts.graph.entity_extractor import MentionEdge
+        return MentionEdge(
+            paper_id=paper_id,
+            entity_key="test_entity",
+            type="material",
+            source="biobert",
+            surface="test",
+            field=None,
+            confidence=0.9,
+            span_start=0,
+            span_end=4,
+        )
+
+    def test_backfill_ner_processes_unprocessed_papers(self, tmp_path, monkeypatch):
+        """N5: backfill_ner runs pipeline on papers where ner_processed_at IS NULL."""
+        from scripts.graph.backfill import backfill_ner
+
+        state_db = StateDB(tmp_path / "state.db")
+        for doi in ("10.0/a", "10.0/b"):
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+        graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+
+        fake_edge = self._fake_edge  # bind helper
+
+        def fake_build(*, paper_id: str, **_kwargs):
+            return [fake_edge(paper_id)]
+
+        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", fake_build)
+
+        summary = backfill_ner(state_db, graph_db, with_llm=False)
+        assert summary["papers_processed"] == 2
+        assert summary["edges_added"] >= 2
+        assert summary["failures"] == 0
+
+    def test_backfill_ner_idempotent_on_rerun(self, tmp_path, monkeypatch):
+        """N5: re-running backfill_ner after success is a no-op."""
+        from scripts.graph.backfill import backfill_ner
+
+        state_db = StateDB(tmp_path / "state.db")
+        for doi in ("10.0/a", "10.0/b"):
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+        graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+
+        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", lambda **kw: [])
+
+        first = backfill_ner(state_db, graph_db, with_llm=False)
+        assert first["papers_processed"] == 2
+
+        # Second run: ner_processed_at is now set → should be a no-op.
+        second = backfill_ner(state_db, graph_db, with_llm=False)
+        assert second["papers_processed"] == 0
+
+    def test_backfill_ner_respects_limit(self, tmp_path, monkeypatch):
+        """N5: limit= caps the number of papers processed."""
+        from scripts.graph.backfill import backfill_ner
+
+        state_db = StateDB(tmp_path / "state.db")
+        for doi in ("10.0/a", "10.0/b", "10.0/c"):
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+        graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+
+        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", lambda **kw: [])
+
+        summary = backfill_ner(state_db, graph_db, with_llm=False, limit=2)
+        assert summary["papers_processed"] == 2
+
+    def test_backfill_ner_respects_since_filter(self, tmp_path, monkeypatch):
+        """N5: since= filters candidates by papers.last_updated."""
+        from scripts.graph.backfill import backfill_ner
+
+        state_db = StateDB(tmp_path / "state.db")
+        state_db.upsert_paper({"doi": "10.0/old", "title": "O", "year": 2020, "source_type": "zotero"})
+        state_db.upsert_paper({"doi": "10.0/new", "title": "N", "year": 2024, "source_type": "zotero"})
+        # Backdate the old paper.
+        with state_db._connect() as conn:
+            conn.execute(
+                "UPDATE papers SET last_updated = ? WHERE doi = ?",
+                ("2020-01-01T00:00:00", "10.0/old"),
+            )
+            conn.commit()
+        graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+
+        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", lambda **kw: [])
+
+        summary = backfill_ner(state_db, graph_db, with_llm=False, since=datetime(2023, 1, 1))
+        # Only the "new" paper (with current timestamp) should be processed.
+        assert summary["papers_processed"] == 1
+
+    def test_backfill_ner_with_llm_flag_passed_through(self, tmp_path, monkeypatch):
+        """N5: with_llm=True sets use_cloud_llm=True in build_mention_edges."""
+        from scripts.graph.backfill import backfill_ner
+
+        state_db = StateDB(tmp_path / "state.db")
+        state_db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+        graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+
+        captured: dict[str, object] = {}
+
+        def fake_build(*, use_cloud_llm: bool, **kwargs):
+            captured["use_cloud_llm"] = use_cloud_llm
+            return []
+
+        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", fake_build)
+
+        backfill_ner(state_db, graph_db, with_llm=True)
+        assert captured["use_cloud_llm"] is True
+
+    def test_backfill_ner_without_llm_flag(self, tmp_path, monkeypatch):
+        """N5: with_llm=False (default) sets use_cloud_llm=False."""
+        from scripts.graph.backfill import backfill_ner
+
+        state_db = StateDB(tmp_path / "state.db")
+        state_db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+        graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+
+        captured: dict[str, object] = {}
+
+        def fake_build(*, use_cloud_llm: bool, **kwargs):
+            captured["use_cloud_llm"] = use_cloud_llm
+            return []
+
+        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", fake_build)
+
+        backfill_ner(state_db, graph_db)  # with_llm defaults to False
+        assert captured["use_cloud_llm"] is False
+
+    def test_backfill_ner_per_paper_failure_counted(self, tmp_path, monkeypatch):
+        """N5: per-paper failures are counted + skipped, not raised."""
+        from scripts.graph.backfill import backfill_ner
+
+        state_db = StateDB(tmp_path / "state.db")
+        for doi in ("10.0/a", "10.0/b"):
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+        graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+
+        call_count = {"n": 0}
+
+        def flaky_build(**kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise RuntimeError("simulated NER failure")
+            return []
+
+        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", flaky_build)
+
+        summary = backfill_ner(state_db, graph_db, with_llm=False)
+        assert summary["failures"] == 1
+        assert summary["papers_processed"] == 1
+
+    def test_backfill_ner_progress_callback_called(self, tmp_path, monkeypatch):
+        """N5: progress_callback receives (doi, done, total) for each paper."""
+        from scripts.graph.backfill import backfill_ner
+
+        state_db = StateDB(tmp_path / "state.db")
+        for doi in ("10.0/a", "10.0/b"):
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+        graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+
+        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", lambda **kw: [])
+
+        calls: list[tuple[str, int, int]] = []
+        backfill_ner(
+            state_db, graph_db, with_llm=False,
+            progress_callback=lambda d, done, total: calls.append((d, done, total)),
+        )
+        assert len(calls) == 2
+        assert all(t == 2 for _, _, t in calls)

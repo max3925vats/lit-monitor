@@ -176,6 +176,10 @@ class StateDB:
                 # NULL = never processed; set by future insight-discovery passes.
                 ("papers", "last_insight_run",
                  "ALTER TABLE papers ADD COLUMN last_insight_run TEXT NULL"),
+                # N5: per-paper timestamp for NER backfill (BioBERT + optional cloud-LLM).
+                # NULL = never NER-processed; set by backfill_ner() after success.
+                ("papers", "ner_processed_at",
+                 "ALTER TABLE papers ADD COLUMN ner_processed_at TEXT NULL"),
             ]
             for table, column, sql in additive_migrations:
                 if self._column_exists(conn, table, column):
@@ -753,6 +757,75 @@ class StateDB:
                     "WHERE last_insight_run IS NULL OR last_insight_run < ?",
                     (since.isoformat(),),
                 ).fetchall()
+        return [dict(r) for r in rows]
+
+    # -- NER backfill (N5) --
+
+    def set_ner_processed_at(self, doi: str, timestamp: str) -> None:
+        """N5: stamp the per-paper NER-processed timestamp.
+
+        Called by ``backfill_ner()`` after a successful NER pipeline run so
+        that subsequent re-runs skip already-processed papers.
+
+        Parameters
+        ----------
+        doi:
+            Paper DOI (primary key of ``papers``).
+        timestamp:
+            ISO-format datetime string, e.g. ``datetime.now().isoformat()``.
+
+        Notes
+        -----
+        UPDATE on a missing DOI silently affects 0 rows — intentional; same
+        pattern as :meth:`set_graph_indexed`.
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE papers SET ner_processed_at = ? WHERE doi = ?",
+                (timestamp, doi),
+            )
+
+    def get_papers_for_ner_backfill(
+        self,
+        *,
+        since: datetime | None = None,
+        limit: int | None = None,
+        only_unprocessed: bool = True,
+    ) -> list[dict[str, Any]]:
+        """N5: return candidate papers for the NER backfill run.
+
+        Args:
+            since: When set, restrict candidates to papers whose
+                ``last_updated`` column is >= this datetime.  Papers with
+                NULL ``last_updated`` are always included (same convention as
+                :func:`backfill_papers`).
+            limit: Cap on the number of rows returned.
+            only_unprocessed: When True (default) return only papers where
+                ``ner_processed_at IS NULL``.  Pass False to re-process
+                already-stamped papers (e.g. ``--force``).
+
+        Returns:
+            List of paper rows as dicts.
+        """
+        conditions: list[str] = []
+        params: list[Any] = []
+
+        if only_unprocessed:
+            conditions.append("ner_processed_at IS NULL")
+
+        if since is not None:
+            # NULL last_updated → treat as always eligible (same as backfill_papers).
+            conditions.append("(last_updated IS NULL OR last_updated >= ?)")
+            params.append(since.isoformat())
+
+        sql = "SELECT * FROM papers"
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+        if limit is not None:
+            sql += f" LIMIT {int(limit)}"
+
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
 
     # -- Utility --

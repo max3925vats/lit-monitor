@@ -2283,8 +2283,40 @@ def graph_cmd() -> None:
     "--since", default=None,
     help="Only process papers updated since YYYY-MM-DD.",
 )
-def graph_backfill(all_papers: bool, doi: str | None, since: str | None) -> None:
-    """Backfill the knowledge graph from existing state.db papers."""
+@click.option(
+    "--limit", default=None, type=int,
+    help="Cap the number of papers processed in this run.",
+)
+@click.option(
+    "--ner", is_flag=True, default=False,
+    help=(
+        "Run NER-augmented entity pipeline (BioBERT + schema) over existing "
+        "papers. Requires the [nlp] extra: uv sync --extra nlp"
+    ),
+)
+@click.option(
+    "--ner-with-llm", "ner_with_llm", is_flag=True, default=False,
+    help=(
+        "Same as --ner plus cloud-Ollama long-tail NER. "
+        "Requires the [nlp] extra and OLLAMA_API_KEY."
+    ),
+)
+def graph_backfill(
+    all_papers: bool,
+    doi: str | None,
+    since: str | None,
+    limit: int | None,
+    ner: bool,
+    ner_with_llm: bool,
+) -> None:
+    """Backfill the knowledge graph from existing state.db papers.
+
+    Schema-only mode (default): re-indexes papers with graph_indexed=0.
+
+    NER mode (--ner / --ner-with-llm): runs the N1+N2+N3+N4 BioBERT entity
+    pipeline over papers that have not yet been NER-processed
+    (ner_processed_at IS NULL).  Requires the [nlp] extra.
+    """
     from datetime import datetime as dt
 
     from rich.progress import Progress
@@ -2292,10 +2324,13 @@ def graph_backfill(all_papers: bool, doi: str | None, since: str | None) -> None
     from scripts.core.config import get_config
     from scripts.core.state_db import StateDB
     from scripts.graph import safe_graph_db
-    from scripts.graph.backfill import backfill_papers
 
-    if not (all_papers or doi or since):
-        raise click.UsageError("Must specify --all, --doi, or --since.")
+    # --ner-with-llm implies --ner.
+    if ner_with_llm:
+        ner = True
+
+    if not (all_papers or doi or since or ner or ner_with_llm):
+        raise click.UsageError("Must specify --all, --doi, --since, --ner, or --ner-with-llm.")
 
     config = get_config()
     state_db = StateDB(config.state_db.path)
@@ -2306,22 +2341,53 @@ def graph_backfill(all_papers: bool, doi: str | None, since: str | None) -> None
         )
 
     since_dt = dt.fromisoformat(since) if since else None
-    filter_doi = doi if not all_papers else None
 
     try:
-        with Progress() as progress:
-            task = progress.add_task("Backfilling...", total=None)
+        if ner:
+            # N5: NER-augmented backfill path.
+            from scripts.graph.backfill import backfill_ner  # noqa: PLC0415
 
-            def _cb(d: str, done: int, total: int) -> None:  # noqa: ANN001
-                progress.update(task, completed=done, total=total)
+            with Progress() as progress:
+                task = progress.add_task("NER backfilling...", total=None)
 
-            count = backfill_papers(
-                state_db, graph_db,
-                filter_doi=filter_doi,
-                since=since_dt,
-                progress_callback=_cb,
+                def _ner_cb(d: str, done: int, total: int) -> None:  # noqa: ANN001
+                    progress.update(task, completed=done, total=total)
+
+                summary = backfill_ner(
+                    state_db, graph_db,
+                    with_llm=ner_with_llm,
+                    limit=limit,
+                    since=since_dt,
+                    progress_callback=_ner_cb,
+                )
+
+            click.echo(
+                f"NER backfill: {summary['papers_processed']} papers, "
+                f"{summary['edges_added']} edges added, "
+                f"{summary['failures']} failures."
             )
-        click.echo(f"Backfilled {count} papers.")
+            if summary["failures"] > 0:
+                # Partial success — non-zero exit so callers can detect it.
+                click.get_current_context().exit(1)
+        else:
+            # G10: schema-only backfill path (unchanged).
+            from scripts.graph.backfill import backfill_papers  # noqa: PLC0415
+
+            filter_doi = doi if not all_papers else None
+
+            with Progress() as progress:
+                task = progress.add_task("Backfilling...", total=None)
+
+                def _cb(d: str, done: int, total: int) -> None:  # noqa: ANN001
+                    progress.update(task, completed=done, total=total)
+
+                count = backfill_papers(
+                    state_db, graph_db,
+                    filter_doi=filter_doi,
+                    since=since_dt,
+                    progress_callback=_cb,
+                )
+            click.echo(f"Backfilled {count} papers.")
     finally:
         try:
             graph_db.close()

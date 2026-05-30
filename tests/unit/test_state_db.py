@@ -291,3 +291,112 @@ class TestSetGraphIndexed:
         db = StateDB(db_path)
         # Must not raise — UPDATE matching no rows is allowed.
         db.set_graph_indexed("10.0/nope", 1)
+
+
+# ---------------------------------------------------------------------------
+# N5 — ner_processed_at column + set_ner_processed_at + get_papers_for_ner_backfill
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestNerBackfillHelpers:
+    """N5: StateDB helpers for NER backfill tracking."""
+
+    def test_ner_processed_at_column_exists(self, tmp_path):
+        """N5: papers.ner_processed_at column is created by additive migration."""
+        StateDB(tmp_path / "state.db")  # triggers schema creation
+        info = _column_info(str(tmp_path / "state.db"), "papers")
+        assert "ner_processed_at" in info
+        # Must be nullable (notnull=0) with NULL default.
+        assert info["ner_processed_at"]["notnull"] == 0
+        assert info["ner_processed_at"]["dflt_value"] is None
+
+    def test_ner_processed_at_default_is_null(self, tmp_path):
+        """N5: freshly inserted papers have NULL ner_processed_at."""
+        db = StateDB(tmp_path / "state.db")
+        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+        conn = sqlite3.connect(str(tmp_path / "state.db"))
+        try:
+            row = conn.execute(
+                "SELECT ner_processed_at FROM papers WHERE doi = '10.0/a'"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row[0] is None
+
+    def test_set_ner_processed_at(self, tmp_path):
+        """N5: set_ner_processed_at stamps the column for the given DOI."""
+        db = StateDB(tmp_path / "state.db")
+        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+        db.set_ner_processed_at("10.0/a", "2026-06-01T00:00:00")
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT ner_processed_at FROM papers WHERE doi = '10.0/a'"
+            ).fetchone()
+        assert row[0] == "2026-06-01T00:00:00"
+
+    def test_set_ner_processed_at_unknown_doi_is_noop(self, tmp_path):
+        """N5: stamping a missing DOI updates 0 rows but doesn't raise."""
+        db = StateDB(tmp_path / "state.db")
+        # Must not raise.
+        db.set_ner_processed_at("10.0/nope", "2026-06-01T00:00:00")
+
+    def test_get_papers_for_ner_backfill_returns_only_unprocessed(self, tmp_path):
+        """N5: only papers with ner_processed_at IS NULL are returned."""
+        db = StateDB(tmp_path / "state.db")
+        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+        db.upsert_paper({"doi": "10.0/b", "title": "B", "year": 2024, "source_type": "zotero"})
+        db.set_ner_processed_at("10.0/a", "2026-06-01T00:00:00")
+
+        candidates = db.get_papers_for_ner_backfill()
+        dois = {p["doi"] for p in candidates}
+        assert dois == {"10.0/b"}
+
+    def test_get_papers_for_ner_backfill_with_only_unprocessed_false(self, tmp_path):
+        """N5: only_unprocessed=False returns all papers regardless of stamp."""
+        db = StateDB(tmp_path / "state.db")
+        for doi in ("10.0/a", "10.0/b"):
+            db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+        db.set_ner_processed_at("10.0/a", "2026-06-01T00:00:00")
+
+        candidates = db.get_papers_for_ner_backfill(only_unprocessed=False)
+        dois = {p["doi"] for p in candidates}
+        assert dois == {"10.0/a", "10.0/b"}
+
+    def test_get_papers_for_ner_backfill_since_filter(self, tmp_path):
+        """N5: since= restricts candidates by papers.last_updated."""
+        db = StateDB(tmp_path / "state.db")
+        db.upsert_paper({"doi": "10.0/old", "title": "O", "year": 2020, "source_type": "zotero"})
+        db.upsert_paper({"doi": "10.0/new", "title": "N", "year": 2024, "source_type": "zotero"})
+        # Backdate the old paper.
+        with db._connect() as conn:
+            conn.execute(
+                "UPDATE papers SET last_updated = ? WHERE doi = ?",
+                ("2020-01-01T00:00:00", "10.0/old"),
+            )
+            conn.commit()
+
+        candidates = db.get_papers_for_ner_backfill(since=datetime(2023, 1, 1))
+        dois = {p["doi"] for p in candidates}
+        # Only /new (current timestamp >= 2023) should be included.
+        assert "10.0/new" in dois
+        assert "10.0/old" not in dois
+
+    def test_get_papers_for_ner_backfill_limit(self, tmp_path):
+        """N5: limit= caps the result count."""
+        db = StateDB(tmp_path / "state.db")
+        for doi in ("10.0/a", "10.0/b", "10.0/c"):
+            db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+
+        candidates = db.get_papers_for_ner_backfill(limit=2)
+        assert len(candidates) == 2
+
+    def test_get_papers_for_ner_backfill_returns_list_of_dicts(self, tmp_path):
+        """N5: result is list[dict], not list of Row objects."""
+        db = StateDB(tmp_path / "state.db")
+        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+
+        result = db.get_papers_for_ner_backfill()
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], dict)
+        assert "doi" in result[0]

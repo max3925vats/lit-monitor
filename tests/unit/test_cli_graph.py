@@ -1,4 +1,4 @@
-"""G10/G13: CLI tests for graph backfill + rebuild + status subcommand."""
+"""G10/G13/N5: CLI tests for graph backfill + rebuild + status subcommand."""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -71,6 +71,102 @@ class TestGraphBackfillCLI:
             result = runner.invoke(main, ["graph", "rebuild", "--all", "--yes"])
         assert result.exit_code != 0
         assert "uv sync --extra graph" in result.output
+
+
+class TestGraphBackfillNerCLI:
+    """N5: CLI --ner / --ner-with-llm flags on `lit-monitor graph backfill`."""
+
+    def test_backfill_ner_flag_triggers_backfill_ner(self, tmp_path):
+        """N5: --ner invokes backfill_ner and echoes the summary."""
+        runner = CliRunner()
+        mock_graph_db = MagicMock()
+        summary = {"papers_processed": 5, "edges_added": 12, "failures": 0}
+        with (
+            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("scripts.graph.backfill.backfill_ner", return_value=summary),
+            patch("scripts.core.config.get_config") as mock_cfg,
+        ):
+            mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
+            result = runner.invoke(main, ["graph", "backfill", "--ner"])
+        assert result.exit_code == 0, result.output
+        assert "5" in result.output
+        assert "12" in result.output
+
+    def test_backfill_ner_with_llm_flag(self, tmp_path):
+        """N5: --ner-with-llm sets with_llm=True in backfill_ner call."""
+        runner = CliRunner()
+        mock_graph_db = MagicMock()
+        summary = {"papers_processed": 1, "edges_added": 3, "failures": 0}
+        captured: dict[str, object] = {}
+
+        def fake_backfill_ner(state_db, graph_db, *, with_llm, **kwargs):
+            captured["with_llm"] = with_llm
+            return summary
+
+        with (
+            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("scripts.graph.backfill.backfill_ner", side_effect=fake_backfill_ner),
+            patch("scripts.core.config.get_config") as mock_cfg,
+        ):
+            mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
+            result = runner.invoke(main, ["graph", "backfill", "--ner-with-llm"])
+        assert result.exit_code == 0, result.output
+        assert captured["with_llm"] is True
+
+    def test_backfill_ner_partial_failure_exits_one(self, tmp_path):
+        """N5: partial failures (failures > 0) cause exit code 1."""
+        runner = CliRunner()
+        mock_graph_db = MagicMock()
+        summary = {"papers_processed": 3, "edges_added": 7, "failures": 2}
+        with (
+            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("scripts.graph.backfill.backfill_ner", return_value=summary),
+            patch("scripts.core.config.get_config") as mock_cfg,
+        ):
+            mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
+            result = runner.invoke(main, ["graph", "backfill", "--ner"])
+        assert result.exit_code == 1
+
+    def test_backfill_ner_help_mentions_nlp_extra(self):
+        """N5: --ner help text references the [nlp] extra."""
+        runner = CliRunner()
+        result = runner.invoke(main, ["graph", "backfill", "--help"])
+        assert result.exit_code == 0
+        assert "nlp" in result.output
+
+    def test_backfill_ner_no_other_flags_required(self, tmp_path):
+        """N5: --ner alone is sufficient (no --all / --doi / --since needed)."""
+        runner = CliRunner()
+        mock_graph_db = MagicMock()
+        summary = {"papers_processed": 0, "edges_added": 0, "failures": 0}
+        with (
+            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("scripts.graph.backfill.backfill_ner", return_value=summary),
+            patch("scripts.core.config.get_config") as mock_cfg,
+        ):
+            mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
+            result = runner.invoke(main, ["graph", "backfill", "--ner"])
+        assert result.exit_code == 0, result.output
+
+    def test_backfill_limit_flag_accepted(self, tmp_path):
+        """N5: --limit N is accepted alongside --ner."""
+        runner = CliRunner()
+        mock_graph_db = MagicMock()
+        captured: dict[str, object] = {}
+
+        def fake_backfill_ner(state_db, graph_db, *, limit, **kwargs):
+            captured["limit"] = limit
+            return {"papers_processed": 0, "edges_added": 0, "failures": 0}
+
+        with (
+            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("scripts.graph.backfill.backfill_ner", side_effect=fake_backfill_ner),
+            patch("scripts.core.config.get_config") as mock_cfg,
+        ):
+            mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
+            result = runner.invoke(main, ["graph", "backfill", "--ner", "--limit", "10"])
+        assert result.exit_code == 0, result.output
+        assert captured["limit"] == 10
 
 
 class TestGraphStatusCLI:
