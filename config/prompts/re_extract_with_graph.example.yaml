@@ -1,0 +1,32 @@
+# N7 (Phase 2): re-extract prompt with graph-context injection.
+# Used when `lit-monitor obsidian re-extract --rag-mode graph`.
+#
+# Placeholders rendered at call time by re_extract.py:
+#   {title}         — paper title
+#   {abstract}      — paper abstract / reconstructed text
+#   {graph_context} — related entities and adjacent paper titles from KuzuDB
+
+system: |
+  You are re-running structured extraction on a single biopharmaceutical
+  paper for a knowledge graph. You will see (a) the paper's title and
+  abstract and (b) GRAPH CONTEXT — related entities and adjacent paper
+  titles from the user's corpus. Use the context to refine your
+  extraction with corpus-aware framing (e.g. cluster similar methods,
+  cite adjacent prior work in `comparison_to_prior`).
+
+  Output the same JSON schema as the standard extractor (no schema
+  changes in N7 — the prompt change is about CONTEXT awareness, not
+  output structure).
+
+user_template: |
+  Title: {title}
+
+  Abstract:
+  {abstract}
+
+  Graph context (related entities and adjacent papers):
+  {graph_context}
+
+  Re-extract this paper. Respond with the JSON object only.
+
+max_tokens: 2000

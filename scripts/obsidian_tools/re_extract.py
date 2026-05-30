@@ -7,6 +7,7 @@ Use cases:
   - Re-run complex phase: re_extract(doi, phases=["complex"], ...)
   - Refresh a specific field: re_extract(doi, fields=["actionable_insights"], ...)
   - Bulk re-extraction: re_extract_all_failed_phase("simple", ...)
+  - Graph-context injection (N7): re_extract(doi, ..., rag_mode="graph")
 
 Single-item failures log and continue in bulk mode.
 """
@@ -36,6 +37,8 @@ def re_extract(
     fields: list[str] | None = None,
     rerender: bool = True,
     zotero_client=None,
+    rag_mode: str = "vector",
+    graph_k: int = 8,
 ) -> dict[str, Any]:
     """Re-run LLM extraction for a single paper or review.
 
@@ -51,6 +54,16 @@ def re_extract(
         Cannot be combined with ``phases``.
     rerender:
         If True, rerender the Obsidian note after extraction.
+    rag_mode:
+        Retrieval mode for context injection. "vector" (default) uses the
+        existing extraction path unchanged. "graph" (N7) fetches related
+        entities and adjacent paper titles from KuzuDB and injects them as
+        {graph_context} into the re_extract_with_graph prompt. Falls back to
+        "vector" with a WARNING if [graph] extra is missing or Kuzu is
+        unreachable.
+    graph_k:
+        Number of related papers/entities to fetch for graph-mode context.
+        Default 8.
 
     Returns
     -------
@@ -78,6 +91,38 @@ def re_extract(
             f"Unknown source_type: {source_type!r}. "
             "Re-extraction supports 'paper' and 'review' only."
         )
+
+    # N7: graph-mode — try to open GraphDB and inject corpus context.
+    # Falls back to vector silently on failure so the command never hard-fails.
+    effective_rag = rag_mode
+    if rag_mode == "graph":
+        graph_db = _open_graph_db_safe()
+        if graph_db is None:
+            logger.warning(
+                "N7: --rag-mode graph requested but graph DB unavailable; "
+                "falling back to vector mode for %s",
+                doi,
+            )
+            effective_rag = "vector"
+
+    if effective_rag == "graph":
+        # Build graph-context string and route through the graph-aware prompt.
+        graph_context = _fetch_graph_context(graph_db, doi, k=graph_k)
+        merged = _re_extract_with_graph(
+            doi=doi,
+            record=record,
+            source_type=source_type,
+            existing=existing,
+            fulltext=fulltext,
+            config=config,
+            state_db=state_db,
+            llm=llm,
+            rerender=rerender,
+            graph_context=graph_context,
+        )
+        return merged
+
+    # --- vector path (original behaviour, unchanged) ---
 
     # E3: targeted field extraction — focused prompt, no full phase run.
     if fields is not None and phases is None:
@@ -176,6 +221,155 @@ def re_extract_all_failed_phase(
     return stats
 
 
+
+
+def _open_graph_db_safe() -> Any | None:
+    """N7: open GraphDB via safe_graph_db helper; return None on any failure.
+
+    Lazily imports so the module remains usable without the [graph] extra.
+    """
+    try:
+        from scripts.graph.import_citations import safe_graph_db
+        return safe_graph_db()
+    except Exception as exc:
+        logger.warning("N7: could not open GraphDB: %s", exc)
+        return None
+
+
+def _fetch_graph_context(graph_db: Any, doi: str, k: int = 8) -> str:
+    """N7: build a graph context block for the LLM prompt.
+
+    Returns a human-readable string with:
+      - Top-K related papers (via G7 find_similar_papers + titles)
+      - Entities mentioned by this paper (via MENTIONS edges)
+
+    Returns an empty string if graph_db is None or the neighbourhood is empty.
+    Falls back gracefully on any Kuzu error, logging a WARNING.
+    """
+    if graph_db is None:
+        return ""
+    try:
+        related: list[tuple[str, float]] = graph_db.find_similar_papers(doi, k=k)
+
+        lines: list[str] = []
+
+        if not related:
+            lines.append("(no related papers found in the corpus)")
+        else:
+            lines.append(
+                f"Top {len(related)} most-related papers (by shared MENTIONS overlap):"
+            )
+            for related_doi, score in related:
+                # Fetch the title for this neighbour paper.
+                res = graph_db._conn.execute(
+                    "MATCH (p:Paper {doi: $d}) RETURN p.title",
+                    {"d": related_doi},
+                )
+                if res.has_next():
+                    title = str(res.get_next()[0])
+                else:
+                    title = "(no title)"
+                lines.append(
+                    f"  - {related_doi} (overlap={int(score)}): {title}"
+                )
+
+        # Entities mentioned by this paper.
+        ent_res = graph_db._conn.execute(
+            "MATCH (p:Paper {doi: $d})-[:MENTIONS]->(e:Entity) "
+            "RETURN e.canonical_id, e.type LIMIT $k",
+            {"d": doi, "k": k},
+        )
+        ent_rows: list[tuple[str, str]] = []
+        while ent_res.has_next():
+            row = ent_res.get_next()
+            ent_rows.append((str(row[0]), str(row[1])))
+
+        if ent_rows:
+            lines.append("")
+            lines.append("Entities mentioned by this paper:")
+            for canonical, type_ in ent_rows:
+                lines.append(f"  - {canonical} [{type_}]")
+
+        return "\n".join(lines)
+
+    except Exception as exc:
+        logger.warning("N7: _fetch_graph_context failed for %s: %s", doi, exc)
+        return ""
+
+
+def _re_extract_with_graph(
+    doi: str,
+    record: dict[str, Any],
+    source_type: str,
+    existing: dict[str, Any],
+    fulltext: str,
+    config: Any,
+    state_db: Any,
+    llm: Any,
+    rerender: bool,
+    graph_context: str,
+) -> dict[str, Any]:
+    """N7: single-pass LLM re-extraction using the graph-context prompt.
+
+    Renders the re_extract_with_graph prompt with the paper's title, a text
+    excerpt, and the pre-built graph_context block, then calls llm.complete()
+    directly (same pattern used in other non-extractor LLM sites in this repo).
+    Merges the result into existing and persists to state_db.
+    """
+    from scripts.llm.prompt_registry import load_prompt
+
+    prompt = load_prompt("re_extract_with_graph")
+
+    # Use title + abstract fields from the DB record if available; otherwise
+    # fall back to the full text (already sanitized by _load_fulltext).
+    extraction = existing or {}
+    title = record.get("title") or extraction.get("title") or "(no title)"
+    abstract = record.get("abstract") or fulltext
+
+    user_msg = prompt.render_user(
+        title=title,
+        abstract=abstract,
+        graph_context=graph_context or "(graph context unavailable)",
+    )
+
+    raw_response: str = llm.complete(
+        system=prompt.system,
+        user=user_msg,
+        max_tokens=prompt.max_tokens,
+    )
+
+    # Parse the JSON response — tolerate leading/trailing whitespace and
+    # markdown code-fences the model sometimes emits.
+    cleaned = raw_response.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("```", 2)[1]
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:]
+        # Remove closing fence if present.
+        cleaned = cleaned.rsplit("```", 1)[0]
+    try:
+        new_fields: dict[str, Any] = json.loads(cleaned)
+    except json.JSONDecodeError:
+        logger.warning(
+            "N7: LLM response for %s was not valid JSON; keeping existing extraction",
+            doi,
+        )
+        return existing
+
+    merged = dict(existing)
+    merged.update(new_fields)
+    merged["_overall_confidence"] = compute_confidence_score(merged)
+
+    state_db.update_extraction_json(doi, merged)
+    if rerender and record.get("note_path"):
+        try:
+            rerender_note(doi, config, state_db)
+        except Exception as exc:
+            logger.warning(
+                "N7: Rerender failed after graph re-extract for %s: %s", doi, exc
+            )
+    logger.info("N7: Graph re-extracted %s: %s", source_type, doi)
+    return merged
 
 
 def _load_fulltext(record: dict[str, Any], zotero_client=None) -> str:

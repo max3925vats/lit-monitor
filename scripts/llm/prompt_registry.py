@@ -188,6 +188,8 @@ _REQUIRED_PLACEHOLDERS: dict[str, frozenset[str]] = {
     "long_tail_ner": frozenset({"text", "low_conf_json"}),
     # N6: cloud-Ollama validation of fuzzy alias clusters.
     "alias_consensus": frozenset({"clusters_json"}),
+    # N7: re-extract with graph-context injection.
+    "re_extract_with_graph": frozenset({"title", "abstract", "graph_context"}),
 }
 
 

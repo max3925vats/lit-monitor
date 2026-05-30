@@ -1710,6 +1710,18 @@ def obsidian_rechunk_all(ctx: click.Context, doi: str | None, rechunk_all: bool)
 )
 @click.option("--no-rerender", is_flag=True, default=False,
               help="Skip rerendering the Obsidian note after re-extraction.")
+@click.option(
+    "--rag-mode",
+    type=click.Choice(["vector", "graph"]),
+    default="vector",
+    show_default=True,
+    help=(
+        "Retrieval mode for re-extraction context. "
+        "graph: inject corpus-aware context (related entities, adjacent papers) "
+        "into the prompt via KuzuDB — requires the [graph] extra. "
+        "Falls back to vector on failure."
+    ),
+)
 @click.pass_context
 def obsidian_re_extract(
     ctx: click.Context,
@@ -1718,6 +1730,7 @@ def obsidian_re_extract(
     phases: tuple[str, ...],
     field: tuple[str, ...],
     no_rerender: bool,
+    rag_mode: str,
 ) -> None:
     """Re-run LLM extraction for a specific DOI or set of records."""
     _setup_logging("re_extract", verbose=ctx.obj.get("verbose", False))
@@ -1762,6 +1775,7 @@ def obsidian_re_extract(
             fields=fields_arg,
             rerender=rerender_flag,
             zotero_client=zotero_client,
+            rag_mode=rag_mode,
         )
         click.echo(f"Done: {result}")
 
