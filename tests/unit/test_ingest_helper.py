@@ -473,6 +473,7 @@ class TestMaybeExtractLlmRelationships:
         cfg.graph.relationships.llm_enabled = True
 
         import logging
+
         from scripts.pipelines._ingest import maybe_extract_llm_relationships
         with caplog.at_level(logging.WARNING):
             result = maybe_extract_llm_relationships(
