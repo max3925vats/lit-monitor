@@ -391,11 +391,22 @@ class GraphDB:
         rel: Any,
         prompt_version: str,
     ) -> None:
-        """Create one typed predicate edge iff missing.
+        """G6+R3: write one typed predicate edge with multi-source dedup.
+
+        R3 invariants (multi-source):
+        1. Same (subject, predicate, target) from different prompt_version values
+           (e.g. "phase1.0_schema" vs "phase3.0_llm") produces TWO distinct edges,
+           one per source.
+        2. Same (subject, predicate, target) re-run with the SAME prompt_version
+           is idempotent (no duplicate).
+        3. Different (subject, predicate, target) combinations always produce
+           distinct edges regardless of source.
+        4. Phase 1 schema-only path: works unchanged for callers that use the
+           default prompt_version="phase1.0".
 
         Predicate label is interpolated from ``rel.predicate`` — caller has
         already validated against VALID_PREDICATES; ``add_paper`` re-checks.
-        Idempotency key is (source_doi, predicate, target_id).
+        Idempotency key is (source_doi, predicate, target_id, prompt_version).
         """
         conn = self._conn
         pred = rel.predicate
@@ -405,12 +416,14 @@ class GraphDB:
         else:
             target_match = "(t:Paper {doi: $tid})"
 
-        # Existence check — count edges of this predicate between the two endpoints.
+        # Existence check — count edges with this predicate between endpoints
+        # AND matching prompt_version so schema + LLM sources produce distinct edges.
         check_q = (
             f"MATCH (s:Paper {{doi: $sd}})-[r:{pred}]->{target_match} "
+            "WHERE r.prompt_version = $pv "
             "RETURN count(r)"
         )
-        res = conn.execute(check_q, {"sd": rel.source_doi, "tid": rel.target_id})
+        res = conn.execute(check_q, {"sd": rel.source_doi, "tid": rel.target_id, "pv": prompt_version})
         if int(res.get_next()[0]) > 0:
             return
 
