@@ -71,11 +71,28 @@ class TestExtractRelationshipsHappyPath:
         assert intro.target_id == "novel method"
 
     def test_single_ollama_call_per_paper(self) -> None:
-        """R2 invariant: exactly ONE LLM round-trip per paper."""
-        mock_client = MagicMock()
-        mock_client.complete.return_value = json.dumps({"triples": []})
+        """R2 invariant: ONE Ollama call per paper, even with multiple
+        triples in response.
 
-        extract_llm_relationships(
+        Strengthened with a 3-triple payload so the invariant would FAIL
+        if a future refactor accidentally looped per-triple (N calls).
+        """
+        mock_client = MagicMock()
+        mock_client.complete.return_value = json.dumps({
+            "triples": [
+                {"subject": "10.0/a", "predicate": "EXTENDS",
+                 "object": "10.0/b", "object_kind": "Paper",
+                 "evidence": "e", "confidence": 0.9},
+                {"subject": "10.0/a", "predicate": "INTRODUCES",
+                 "object": "novel method", "object_kind": "Entity",
+                 "evidence": "e", "confidence": 0.85},
+                {"subject": "10.0/a", "predicate": "LIMITED_BY",
+                 "object": "1L scale", "object_kind": "Entity",
+                 "evidence": "e", "confidence": 0.8},
+            ],
+        })
+
+        result = extract_llm_relationships(
             fulltext="text",
             paper_doi="10.0/a",
             extraction_json={},
@@ -83,6 +100,7 @@ class TestExtractRelationshipsHappyPath:
         )
 
         assert mock_client.complete.call_count == 1
+        assert len(result) == 3  # invariant holds under load
 
     def test_strips_markdown_fences_around_json(self) -> None:
         """R2: tolerate the LLM wrapping JSON in ```json ... ``` fences."""
@@ -488,3 +506,52 @@ class TestValidatorExtended:
             "RAISES_QUESTION",
         ):
             assert p in VALID_PREDICATES
+
+
+# ---------------------------------------------------------------------------
+# Prompt vocabulary — defends against YAML refactors dropping a predicate
+# ---------------------------------------------------------------------------
+class TestPromptVocabulary:
+    def test_prompt_lists_all_eight_predicates(self) -> None:
+        """R2: the 8 LLM-emitted predicates must appear in the system prompt.
+
+        Note: MENTIONS and CITES are intentionally NOT in R2's prompt vocab —
+        MENTIONS comes from N1-N3 (entity extraction); CITES from G4
+        (citation edges). R2 covers the 6 schema-source-augmenting +
+        2 LLM-only (EXTENDS, CONTRADICTS) predicates.
+        """
+        yaml_path = Path("config/prompts/relationship_extraction.example.yaml")
+        raw = yaml_path.read_text()
+        expected = {
+            "EXTENDS",
+            "CONTRADICTS",
+            "COMPARES_TO",
+            "DEPENDS_ON",
+            "PROPOSES",
+            "LIMITED_BY",
+            "INTRODUCES",
+            "RAISES_QUESTION",
+        }
+        for pred in expected:
+            assert pred in raw, f"prompt missing predicate {pred}"
+
+    def test_mentions_and_cites_not_in_prompt(self) -> None:
+        """R2: prompt must NOT include MENTIONS or CITES as predicate
+        definitions (those belong to N1-N3 / G4).
+        """
+        import re
+
+        yaml_path = Path("config/prompts/relationship_extraction.example.yaml")
+        raw = yaml_path.read_text()
+
+        # MENTIONS is the safest pattern (word-boundary match for the
+        # predicate; the word never appears as common prose in this prompt).
+        predicate_tokens = re.findall(r"\b[A-Z_]{3,}\b", raw)
+        assert "MENTIONS" not in predicate_tokens
+
+        # CITES might appear in prose elsewhere ("we cite Carta et al."),
+        # so be specific: it must not appear as a PREDICATE definition.
+        # Quick check: 'CITES' should not appear as a labeled predicate
+        # token followed by a newline or space at the start of the file's
+        # definition block.
+        assert "CITES\n" not in raw and "CITES " not in raw[:5000]

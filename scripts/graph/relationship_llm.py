@@ -40,9 +40,16 @@ _DOI_RE = re.compile(r"^10\.\d+/\S+$")
 # Predicates whose Paper -> Paper form must carry a DOI-shaped object.
 # EXTENDS / CONTRADICTS / COMPARES_TO are the high-stakes "claim about another
 # paper" edges — false positives are sticky in the graph.
+# CITES is intentionally NOT here: it is G4's domain (citation_edges produces
+# CITES). The R2 prompt does not list CITES; this set is the validator's gate
+# and must mirror the prompt vocabulary to avoid silent surface divergence.
 _PAPER_PREDICATES: frozenset[str] = frozenset(
-    {"EXTENDS", "CONTRADICTS", "COMPARES_TO", "CITES"}
+    {"EXTENDS", "CONTRADICTS", "COMPARES_TO"}  # CITES is G4's domain
 )
+
+# R2: minimum confidence floor. Prompt says "do NOT emit anything below 0.5".
+# We enforce it in code too so prompt drift cannot silently lower the bar.
+_MIN_CONFIDENCE = 0.5
 
 # Truncation cap on the paper text we pass to the LLM. Matches the "~8000
 # chars" hint in the prompt's user_template comment. Keeps the single round
@@ -58,9 +65,24 @@ _MAX_TRIPLES = 25
 _EVIDENCE_MAX_CHARS = 200
 
 
+def _normalize_doi(s: str) -> str:
+    """Strip trailing punctuation that LLMs often emit on DOIs mid-sentence.
+
+    LLMs frequently echo DOIs with a trailing period/comma/paren when the
+    DOI appears at the end of a sentence (e.g. ``"10.1002/btpr.123."``).
+    Normalize before regex match AND before storing as ``target_id`` so the
+    downstream graph lookup uses the canonical form.
+    """
+    return s.strip().rstrip(".,;:)]}")
+
+
 def _is_doi(s: Any) -> bool:
-    """R2: True iff `s` looks like a CrossRef-shaped DOI (10.X/Y)."""
-    return isinstance(s, str) and bool(_DOI_RE.match(s.strip()))
+    """R2: True iff `s` looks like a CrossRef-shaped DOI (10.X/Y) after
+    trailing-punctuation normalization.
+    """
+    if not isinstance(s, str):
+        return False
+    return bool(_DOI_RE.match(_normalize_doi(s)))
 
 
 def _truncate_text(text: str, max_chars: int = _MAX_FULLTEXT_CHARS) -> str:
@@ -144,12 +166,14 @@ def _validate_triple(
 
     Drops (with INFO log) on any of:
       - not a dict.
-      - subject != paper_doi.
+      - subject != paper_doi (case-insensitive).
       - predicate not in VALID_PREDICATES.
       - empty/non-string object.
       - object_kind not in {'Paper', 'Entity'}.
-      - Paper -> Paper edge whose object is not DOI-shaped.
+      - Paper -> Paper edge whose object is not DOI-shaped (after
+        trailing-punctuation normalization).
       - confidence not in [0.0, 1.0] or wrong type.
+      - confidence below ``_MIN_CONFIDENCE`` (mirrors prompt rule).
     """
     if not isinstance(triple, dict):
         logger.info("R2: dropped non-dict triple: %r", type(triple).__name__)
@@ -162,9 +186,14 @@ def _validate_triple(
     evidence = triple.get("evidence", "")
     confidence = triple.get("confidence")
 
-    # Subject gate: must equal paper_doi exactly. The LLM occasionally
-    # echoes a cited paper's DOI here — drop those silently.
-    if not isinstance(subject, str) or subject.strip() != paper_doi.strip():
+    # Subject gate: must equal paper_doi (case-insensitive — CrossRef DOIs
+    # are officially case-insensitive, and LLMs occasionally re-case them).
+    # The LLM occasionally echoes a cited paper's DOI here — drop those
+    # silently.
+    if (
+        not isinstance(subject, str)
+        or subject.strip().lower() != paper_doi.strip().lower()
+    ):
         logger.info(
             "R2: dropped predicate=%s subject=%r object=%r (subject mismatch with paper_doi=%r)",
             predicate, subject, obj, paper_doi,
@@ -199,14 +228,19 @@ def _validate_triple(
     # Paper -> Paper sticky-edge defense: object MUST be DOI-shaped.
     # Without this gate the LLM happily emits ``object="Smith et al."`` for
     # EXTENDS, which would silently degrade every downstream graph query.
+    # Normalize trailing punctuation BEFORE the regex check AND store the
+    # normalized form as target_id so downstream lookups don't fail on the
+    # LLM-emitted "10.X/Y." form.
     if predicate in _PAPER_PREDICATES and object_kind == "Paper":
-        if not _is_doi(obj):
+        normalized = _normalize_doi(obj)
+        if not _DOI_RE.match(normalized):
             logger.info(
                 "R2: dropped predicate=%s subject=%s object=%r "
                 "(Paper->Paper requires DOI-shaped object)",
                 predicate, subject, obj,
             )
             return None
+        obj = normalized  # store the clean form on the tuple
 
     # Confidence range gate.
     if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
@@ -220,6 +254,15 @@ def _validate_triple(
         logger.info(
             "R2: dropped predicate=%s subject=%s (confidence=%s out of [0,1])",
             predicate, subject, confidence,
+        )
+        return None
+    # Sticky-edge defense extends to the confidence dimension. The prompt
+    # already asks for >= 0.5; enforcing in code prevents prompt drift from
+    # silently lowering the bar.
+    if confidence < _MIN_CONFIDENCE:
+        logger.info(
+            "R2: dropped predicate=%s subject=%s (confidence=%s below floor %s)",
+            predicate, subject, confidence, _MIN_CONFIDENCE,
         )
         return None
 

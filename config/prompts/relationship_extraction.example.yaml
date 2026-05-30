@@ -44,6 +44,14 @@ system: |
       by DOI. Example: "We extend the cation exchange model of Carta et al.
       (10.1002/btpr.123) by ..." -> predicate=EXTENDS, object=10.1002/btpr.123.
 
+      COUNTER-example: "We benchmark our method against Carta et al.
+      (10.1002/btpr.123)" -> COMPARES_TO, NOT EXTENDS. Comparison is
+      weaker than building on; do not promote it to EXTENDS.
+
+      Tie-break: if uncertain between EXTENDS and COMPARES_TO, emit
+      COMPARES_TO. False-positive EXTENDS edges silently degrade every
+      downstream graph query; false-positive COMPARES_TO is recoverable.
+
     CONTRADICTS
       The current paper explicitly disputes, refutes, or reports findings
       that contradict a specific prior paper. Must cite by DOI.
