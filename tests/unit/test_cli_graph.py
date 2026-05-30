@@ -279,3 +279,123 @@ class TestGraphStatusCLI:
         assert result.exit_code == 0, result.output
         # The by-source table header and at least one source name must appear
         assert "MENTIONS by source" in result.output or "schema" in result.output or "biobert" in result.output
+
+
+# ---------------------------------------------------------------------------
+# R5: CLI --relationships / --relationships-with-llm flags
+# ---------------------------------------------------------------------------
+
+class TestCliGraphBackfillRelationshipsFlag:
+    """R5: --relationships / --relationships-with-llm on `lit-monitor graph backfill`."""
+
+    def test_relationships_flag_invokes_backfill_relationships(self, tmp_path):
+        """R5: --relationships calls backfill_relationships (not backfill_papers/backfill_ner)."""
+        runner = CliRunner()
+        mock_graph_db = MagicMock()
+        summary = {"papers_processed": 4, "edges_added": 9, "failures": 0}
+        with (
+            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("scripts.graph.backfill.backfill_relationships", return_value=summary),
+            patch("scripts.core.config.get_config") as mock_cfg,
+        ):
+            mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
+            result = runner.invoke(main, ["graph", "backfill", "--relationships"])
+        assert result.exit_code == 0, result.output
+        assert "4" in result.output
+        assert "9" in result.output
+
+    def test_relationships_with_llm_implies_relationships(self, tmp_path):
+        """R5: --relationships-with-llm alone is sufficient; implies --relationships."""
+        runner = CliRunner()
+        mock_graph_db = MagicMock()
+        summary = {"papers_processed": 2, "edges_added": 5, "failures": 0}
+        captured: dict[str, object] = {}
+
+        def fake_backfill_rel(state_db, graph_db, *, with_llm, **kwargs):
+            captured["with_llm"] = with_llm
+            return summary
+
+        with (
+            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("scripts.graph.backfill.backfill_relationships", side_effect=fake_backfill_rel),
+            patch("scripts.core.config.get_config") as mock_cfg,
+        ):
+            mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
+            result = runner.invoke(main, ["graph", "backfill", "--relationships-with-llm"])
+        assert result.exit_code == 0, result.output
+        assert captured["with_llm"] is True
+
+    def test_relationships_with_llm_false_without_flag(self, tmp_path):
+        """R5: --relationships alone sets with_llm=False."""
+        runner = CliRunner()
+        mock_graph_db = MagicMock()
+        captured: dict[str, object] = {}
+
+        def fake_backfill_rel(state_db, graph_db, *, with_llm, **kwargs):
+            captured["with_llm"] = with_llm
+            return {"papers_processed": 0, "edges_added": 0, "failures": 0}
+
+        with (
+            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("scripts.graph.backfill.backfill_relationships", side_effect=fake_backfill_rel),
+            patch("scripts.core.config.get_config") as mock_cfg,
+        ):
+            mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
+            result = runner.invoke(main, ["graph", "backfill", "--relationships"])
+        assert result.exit_code == 0, result.output
+        assert captured["with_llm"] is False
+
+    def test_relationships_partial_failure_exits_one(self, tmp_path):
+        """R5: failures > 0 causes exit code 1."""
+        runner = CliRunner()
+        mock_graph_db = MagicMock()
+        summary = {"papers_processed": 3, "edges_added": 6, "failures": 1}
+        with (
+            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("scripts.graph.backfill.backfill_relationships", return_value=summary),
+            patch("scripts.core.config.get_config") as mock_cfg,
+        ):
+            mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
+            result = runner.invoke(main, ["graph", "backfill", "--relationships"])
+        assert result.exit_code == 1
+
+    def test_relationships_no_other_flags_required(self, tmp_path):
+        """R5: --relationships alone is sufficient (no --all / --doi / --since needed)."""
+        runner = CliRunner()
+        mock_graph_db = MagicMock()
+        summary = {"papers_processed": 0, "edges_added": 0, "failures": 0}
+        with (
+            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("scripts.graph.backfill.backfill_relationships", return_value=summary),
+            patch("scripts.core.config.get_config") as mock_cfg,
+        ):
+            mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
+            result = runner.invoke(main, ["graph", "backfill", "--relationships"])
+        assert result.exit_code == 0, result.output
+
+    def test_relationships_help_text(self):
+        """R5: --relationships appears in backfill --help."""
+        runner = CliRunner()
+        result = runner.invoke(main, ["graph", "backfill", "--help"])
+        assert result.exit_code == 0
+        assert "relationships" in result.output
+
+    def test_relationships_limit_accepted(self, tmp_path):
+        """R5: --limit N is accepted alongside --relationships."""
+        runner = CliRunner()
+        mock_graph_db = MagicMock()
+        captured: dict[str, object] = {}
+
+        def fake_backfill_rel(state_db, graph_db, *, limit, **kwargs):
+            captured["limit"] = limit
+            return {"papers_processed": 0, "edges_added": 0, "failures": 0}
+
+        with (
+            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("scripts.graph.backfill.backfill_relationships", side_effect=fake_backfill_rel),
+            patch("scripts.core.config.get_config") as mock_cfg,
+        ):
+            mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
+            result = runner.invoke(main, ["graph", "backfill", "--relationships", "--limit", "5"])
+        assert result.exit_code == 0, result.output
+        assert captured["limit"] == 5

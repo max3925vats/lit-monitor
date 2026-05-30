@@ -239,6 +239,182 @@ def backfill_ner(
     return summary
 
 
+# ---------------------------------------------------------------------------
+# R5: backfill_relationships
+# ---------------------------------------------------------------------------
+
+def backfill_relationships(
+    state_db: Any,
+    graph_db: Any,
+    *,
+    with_llm: bool = False,
+    limit: int | None = None,
+    since: datetime | None = None,
+    progress_callback: Any = None,
+) -> dict[str, int]:
+    """R5: run G4 schema-source (+ optional R2 LLM) relationship extraction over existing papers.
+
+    Only processes papers where ``rel_processed_at IS NULL`` (idempotent).
+    After a successful per-paper run, stamps ``rel_processed_at`` via
+    :meth:`StateDB.set_rel_processed_at`.
+
+    R5 does NOT touch entity/MENTIONS edges — those belong to N5's backfill_ner.
+    ``entities=[]`` is passed to ``graph_db.add_paper`` so the call is
+    relationship-only.
+
+    Args:
+        state_db:          Open :class:`StateDB` instance.
+        graph_db:          Open :class:`GraphDB` instance.
+        with_llm:          When True, also calls R2 cloud-Ollama LLM relationship
+                           extraction (requires OLLAMA_API_KEY).  Falls back to
+                           schema-only and logs WARN when the key is absent.
+        limit:             Cap on the number of candidate papers.
+        since:             Restrict candidates to papers with
+                           ``last_updated >= since``.
+        progress_callback: Optional callable ``(doi, done_count, total_count)``.
+
+    Returns:
+        Summary dict with keys ``papers_processed``, ``edges_added``,
+        ``failures``.
+    """
+    from scripts.pipelines._ingest import maybe_extract_llm_relationships  # noqa: PLC0415
+
+    candidates = state_db.get_papers_for_rel_backfill(
+        since=since, limit=limit, only_unprocessed=True,
+    )
+    if not candidates:
+        logger.info("backfill_relationships: no candidates — nothing to do")
+        return {"papers_processed": 0, "edges_added": 0, "failures": 0}
+
+    normalizer = EntityNormalizer(aliases=load_aliases())
+    summary: dict[str, int] = {"papers_processed": 0, "edges_added": 0, "failures": 0}
+    total = len(candidates)
+
+    # Config shim: propagates the runtime --with-llm flag into the R4 helper
+    # without mutating the real loaded config.  Three nested classes mirror
+    # cfg.graph.relationships.llm_enabled via property delegation.
+    class _RelShim:
+        def __init__(self, base: Any, llm_enabled: bool) -> None:
+            self._base = base
+            self._llm_enabled = llm_enabled
+
+        @property
+        def llm_enabled(self) -> bool:
+            return self._llm_enabled
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(self._base, name)
+
+    class _GraphShim:
+        def __init__(self, base: Any, llm_enabled: bool) -> None:
+            self._base = base
+            self._llm_enabled = llm_enabled
+
+        @property
+        def relationships(self) -> _RelShim:
+            # Pass None as base: _RelShim.llm_enabled is fully shimmed, and
+            # __getattr__ on unknown names would only be needed for other attributes.
+            return _RelShim(None, self._llm_enabled)
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(self._base, name)
+
+    class _CfgShim:
+        def __init__(self, base: Any, llm_enabled: bool) -> None:
+            self._base = base
+            self._llm_enabled = llm_enabled
+
+        @property
+        def graph(self) -> _GraphShim:
+            # Pass None as base: relationships is fully shimmed on _GraphShim.
+            return _GraphShim(None, self._llm_enabled)
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(self._base, name)
+
+    from scripts.core.config import get_config  # noqa: PLC0415
+    cfg_for_backfill = _CfgShim(get_config(), with_llm)
+
+    for idx, paper in enumerate(candidates):
+        doi = paper.get("doi")
+        if not doi:
+            continue
+
+        try:
+            # Parse extraction_json — may be a JSON string or already a dict.
+            extraction: dict[str, Any] = {}
+            raw = paper.get("extraction_json")
+            if isinstance(raw, str):
+                try:
+                    extraction = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    extraction = {}
+            elif isinstance(raw, dict):
+                extraction = raw
+
+            paper_metadata: dict[str, Any] = {
+                "title": paper.get("title") or "",
+                "year": paper.get("year") or 0,
+                "journal": paper.get("journal") or "",
+                "authors": paper.get("authors") or "",
+                "keywords_json": paper.get("keywords_json") or "",
+            }
+
+            # Fulltext may not exist for all papers; pass empty string rather than None.
+            text: str = paper.get("fulltext") or ""
+
+            # G3 entities are needed only to build the entity_lookup for G4.
+            entities = extract_entities(extraction, paper_metadata, normalizer)
+            entity_lookup = _build_entity_lookup(entities)
+
+            # G4: schema-source relationship extraction.
+            schema_rels = extract_relationships(
+                extraction,
+                source_doi=doi,
+                entity_lookup=entity_lookup,
+                state_db=state_db,
+            )
+
+            # R4: optional cloud-Ollama LLM extraction (guarded by the cfg shim).
+            llm_rels = maybe_extract_llm_relationships(
+                paper_doi=doi,
+                fulltext=text,
+                extraction_json=extraction,
+                cfg=cfg_for_backfill,
+            )
+
+            all_rels = schema_rels + llm_rels
+
+            # R5 only touches relationship edges — do NOT re-process entity/MENTIONS
+            # (N5 owns that backfill mode).
+            graph_db.add_paper(
+                doi=doi,
+                entities=[],
+                relationships=all_rels,
+                paper_metadata=paper_metadata,
+                prompt_version="phase3.0" if with_llm else "phase1.0_schema",
+            )
+
+            # Stamp so re-runs skip this paper.
+            state_db.set_rel_processed_at(doi, datetime.now().isoformat())
+
+            summary["papers_processed"] += 1
+            summary["edges_added"] += len(all_rels)
+
+            if (idx + 1) % 25 == 0:
+                logger.info(
+                    "backfill_relationships: processed %d/%d papers", idx + 1, total,
+                )
+            if progress_callback is not None:
+                progress_callback(doi, idx + 1, total)
+
+        except Exception as exc:  # noqa: BLE001 — log + skip; don't abort the run
+            logger.warning("backfill_relationships: failed for %s: %s", doi, exc)
+            summary["failures"] += 1
+
+    return summary
+
+
 def rebuild_all(state_db: Any, graph_db: Any) -> int:
     """Drop all graph data, reset graph_indexed flags, and re-run full backfill.
 

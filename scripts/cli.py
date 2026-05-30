@@ -2315,6 +2315,21 @@ def graph_cmd() -> None:
         "Requires the [nlp] extra and OLLAMA_API_KEY."
     ),
 )
+@click.option(
+    "--relationships", "do_relationships", is_flag=True, default=False,
+    help=(
+        "Run G4 schema-source relationship extraction over existing papers. "
+        "Requires the [graph] extra. Add --relationships-with-llm for "
+        "cloud-Ollama LLM relationship extraction."
+    ),
+)
+@click.option(
+    "--relationships-with-llm", "relationships_with_llm", is_flag=True, default=False,
+    help=(
+        "Same as --relationships plus R2 cloud-Ollama LLM relationship extraction. "
+        "Requires OLLAMA_API_KEY. Implies --relationships."
+    ),
+)
 def graph_backfill(
     all_papers: bool,
     doi: str | None,
@@ -2322,6 +2337,8 @@ def graph_backfill(
     limit: int | None,
     ner: bool,
     ner_with_llm: bool,
+    do_relationships: bool,
+    relationships_with_llm: bool,
 ) -> None:
     """Backfill the knowledge graph from existing state.db papers.
 
@@ -2330,6 +2347,12 @@ def graph_backfill(
     NER mode (--ner / --ner-with-llm): runs the N1+N2+N3+N4 BioBERT entity
     pipeline over papers that have not yet been NER-processed
     (ner_processed_at IS NULL).  Requires the [nlp] extra.
+
+    Relationship mode (--relationships / --relationships-with-llm): runs G4
+    schema-source relationship extraction over papers that have not yet been
+    relationship-processed (rel_processed_at IS NULL).  Add
+    --relationships-with-llm to also call R2 cloud-Ollama; requires
+    OLLAMA_API_KEY.  Requires the [graph] extra.
     """
     from datetime import datetime as dt
 
@@ -2343,8 +2366,15 @@ def graph_backfill(
     if ner_with_llm:
         ner = True
 
-    if not (all_papers or doi or since or ner or ner_with_llm):
-        raise click.UsageError("Must specify --all, --doi, --since, --ner, or --ner-with-llm.")
+    # --relationships-with-llm implies --relationships.
+    if relationships_with_llm:
+        do_relationships = True
+
+    if not (all_papers or doi or since or ner or ner_with_llm or do_relationships or relationships_with_llm):
+        raise click.UsageError(
+            "Must specify --all, --doi, --since, --ner, --ner-with-llm, "
+            "--relationships, or --relationships-with-llm."
+        )
 
     config = get_config()
     state_db = StateDB(config.state_db.path)
@@ -2383,6 +2413,34 @@ def graph_backfill(
             if summary["failures"] > 0:
                 # Partial success — non-zero exit so callers can detect it.
                 click.get_current_context().exit(1)
+
+        elif do_relationships:
+            # R5: relationship backfill path.
+            from scripts.graph.backfill import backfill_relationships  # noqa: PLC0415
+
+            with Progress() as progress:
+                task = progress.add_task("Relationship backfilling...", total=None)
+
+                def _rel_cb(d: str, done: int, total: int) -> None:  # noqa: ANN001
+                    progress.update(task, completed=done, total=total)
+
+                rel_summary = backfill_relationships(
+                    state_db, graph_db,
+                    with_llm=relationships_with_llm,
+                    limit=limit,
+                    since=since_dt,
+                    progress_callback=_rel_cb,
+                )
+
+            click.echo(
+                f"Relationship backfill: {rel_summary['papers_processed']} papers, "
+                f"{rel_summary['edges_added']} edges added, "
+                f"{rel_summary['failures']} failures."
+            )
+            if rel_summary["failures"] > 0:
+                # Partial success — non-zero exit so callers can detect it.
+                click.get_current_context().exit(1)
+
         else:
             # G10: schema-only backfill path (unchanged).
             from scripts.graph.backfill import backfill_papers  # noqa: PLC0415

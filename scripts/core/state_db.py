@@ -180,6 +180,10 @@ class StateDB:
                 # NULL = never NER-processed; set by backfill_ner() after success.
                 ("papers", "ner_processed_at",
                  "ALTER TABLE papers ADD COLUMN ner_processed_at TEXT NULL"),
+                # R5: per-paper timestamp for relationship backfill (G4 schema + optional R2 LLM).
+                # NULL = never rel-processed; set by backfill_relationships() after success.
+                ("papers", "rel_processed_at",
+                 "ALTER TABLE papers ADD COLUMN rel_processed_at TEXT NULL"),
             ]
             for table, column, sql in additive_migrations:
                 if self._column_exists(conn, table, column):
@@ -812,6 +816,75 @@ class StateDB:
 
         if only_unprocessed:
             conditions.append("ner_processed_at IS NULL")
+
+        if since is not None:
+            # NULL last_updated → treat as always eligible (same as backfill_papers).
+            conditions.append("(last_updated IS NULL OR last_updated >= ?)")
+            params.append(since.isoformat())
+
+        sql = "SELECT * FROM papers"
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+        if limit is not None:
+            sql += f" LIMIT {int(limit)}"
+
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+    # -- Relationship backfill (R5) --
+
+    def set_rel_processed_at(self, doi: str, timestamp: str) -> None:
+        """R5: stamp the per-paper relationship-processed timestamp.
+
+        Called by ``backfill_relationships()`` after a successful G4/R2 pipeline
+        run so that subsequent re-runs skip already-processed papers.
+
+        Parameters
+        ----------
+        doi:
+            Paper DOI (primary key of ``papers``).
+        timestamp:
+            ISO-format datetime string, e.g. ``datetime.now().isoformat()``.
+
+        Notes
+        -----
+        UPDATE on a missing DOI silently affects 0 rows — intentional; same
+        pattern as :meth:`set_ner_processed_at`.
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE papers SET rel_processed_at = ? WHERE doi = ?",
+                (timestamp, doi),
+            )
+
+    def get_papers_for_rel_backfill(
+        self,
+        *,
+        since: datetime | None = None,
+        limit: int | None = None,
+        only_unprocessed: bool = True,
+    ) -> list[dict[str, Any]]:
+        """R5: return candidate papers for the relationship backfill run.
+
+        Args:
+            since: When set, restrict candidates to papers whose
+                ``last_updated`` column is >= this datetime.  Papers with
+                NULL ``last_updated`` are always included (same convention as
+                :func:`backfill_papers`).
+            limit: Cap on the number of rows returned.
+            only_unprocessed: When True (default) return only papers where
+                ``rel_processed_at IS NULL``.  Pass False to re-process
+                already-stamped papers (e.g. ``--force``).
+
+        Returns:
+            List of paper rows as dicts.
+        """
+        conditions: list[str] = []
+        params: list[Any] = []
+
+        if only_unprocessed:
+            conditions.append("rel_processed_at IS NULL")
 
         if since is not None:
             # NULL last_updated → treat as always eligible (same as backfill_papers).

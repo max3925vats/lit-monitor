@@ -1,4 +1,4 @@
-"""G10 / N5: backfill + rebuild + NER-backfill tests."""
+"""G10 / N5 / R5: backfill + rebuild + NER-backfill + relationship-backfill tests."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -302,6 +302,202 @@ class TestBackfillNer:
 
         calls: list[tuple[str, int, int]] = []
         backfill_ner(
+            state_db, graph_db, with_llm=False,
+            progress_callback=lambda d, done, total: calls.append((d, done, total)),
+        )
+        assert len(calls) == 2
+        assert all(t == 2 for _, _, t in calls)
+
+
+# ---------------------------------------------------------------------------
+# R5: backfill_relationships tests
+# ---------------------------------------------------------------------------
+
+class TestBackfillRelationships:
+    """R5: backfill_relationships — G4 schema + optional R2 LLM over existing corpus."""
+
+    def _setup(self, tmp_path, dois=("10.0/a", "10.0/b")):
+        """Insert papers and return (state_db, graph_db)."""
+        state_db = StateDB(tmp_path / "state.db")
+        for doi in dois:
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+        graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+        return state_db, graph_db
+
+    def test_processes_unprocessed_papers(self, tmp_path, monkeypatch):
+        """R5: backfill_relationships runs over papers where rel_processed_at IS NULL."""
+        from scripts.graph.backfill import backfill_relationships
+
+        state_db, graph_db = self._setup(tmp_path)
+
+        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", lambda *a, **kw: [])
+        monkeypatch.setattr(
+            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            lambda **kw: [],
+        )
+
+        summary = backfill_relationships(state_db, graph_db, with_llm=False)
+        assert summary["papers_processed"] == 2
+        assert summary["failures"] == 0
+
+    def test_idempotent_on_rerun(self, tmp_path, monkeypatch):
+        """R5: re-running after rel_processed_at stamped is a no-op."""
+        from scripts.graph.backfill import backfill_relationships
+
+        state_db, graph_db = self._setup(tmp_path)
+
+        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", lambda *a, **kw: [])
+        monkeypatch.setattr(
+            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            lambda **kw: [],
+        )
+
+        first = backfill_relationships(state_db, graph_db, with_llm=False)
+        assert first["papers_processed"] == 2
+
+        # Second run: rel_processed_at is now set → should be a no-op.
+        second = backfill_relationships(state_db, graph_db, with_llm=False)
+        assert second["papers_processed"] == 0
+
+    def test_respects_limit(self, tmp_path, monkeypatch):
+        """R5: limit= caps the number of papers processed."""
+        from scripts.graph.backfill import backfill_relationships
+
+        state_db, graph_db = self._setup(tmp_path, dois=("10.0/a", "10.0/b", "10.0/c"))
+
+        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", lambda *a, **kw: [])
+        monkeypatch.setattr(
+            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            lambda **kw: [],
+        )
+
+        summary = backfill_relationships(state_db, graph_db, with_llm=False, limit=2)
+        assert summary["papers_processed"] == 2
+
+    def test_with_llm_flag_propagates_via_cfg_shim(self, tmp_path, monkeypatch):
+        """R5: with_llm=True reaches maybe_extract_llm_relationships via the cfg shim."""
+        from scripts.graph.backfill import backfill_relationships
+
+        state_db, graph_db = self._setup(tmp_path, dois=("10.0/a",))
+
+        captured: dict[str, object] = {}
+
+        def fake_maybe_llm(*, paper_doi, fulltext, extraction_json, cfg):
+            # The shim must expose llm_enabled=True.
+            try:
+                captured["llm_enabled"] = cfg.graph.relationships.llm_enabled
+            except AttributeError:
+                captured["llm_enabled"] = None
+            return []
+
+        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", lambda *a, **kw: [])
+        monkeypatch.setattr(
+            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            fake_maybe_llm,
+        )
+
+        backfill_relationships(state_db, graph_db, with_llm=True)
+        assert captured.get("llm_enabled") is True
+
+    def test_with_llm_false_propagates_via_cfg_shim(self, tmp_path, monkeypatch):
+        """R5: with_llm=False (default) sets cfg.graph.relationships.llm_enabled=False."""
+        from scripts.graph.backfill import backfill_relationships
+
+        state_db, graph_db = self._setup(tmp_path, dois=("10.0/a",))
+
+        captured: dict[str, object] = {}
+
+        def fake_maybe_llm(*, paper_doi, fulltext, extraction_json, cfg):
+            try:
+                captured["llm_enabled"] = cfg.graph.relationships.llm_enabled
+            except AttributeError:
+                captured["llm_enabled"] = None
+            return []
+
+        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", lambda *a, **kw: [])
+        monkeypatch.setattr(
+            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            fake_maybe_llm,
+        )
+
+        backfill_relationships(state_db, graph_db)  # with_llm defaults to False
+        assert captured.get("llm_enabled") is False
+
+    def test_per_paper_failure_counted(self, tmp_path, monkeypatch):
+        """R5: per-paper failures are counted + skipped, not raised."""
+        from scripts.graph.backfill import backfill_relationships
+
+        state_db, graph_db = self._setup(tmp_path)
+
+        call_count = {"n": 0}
+
+        def flaky_extract(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise RuntimeError("simulated extraction failure")
+            return []
+
+        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", flaky_extract)
+        monkeypatch.setattr(
+            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            lambda **kw: [],
+        )
+
+        summary = backfill_relationships(state_db, graph_db, with_llm=False)
+        assert summary["failures"] == 1
+        assert summary["papers_processed"] == 1
+
+    def test_entities_not_passed_to_graph_db(self, tmp_path, monkeypatch):
+        """R5: entities=[] in graph_db.add_paper — R5 never touches MENTIONS edges."""
+        from scripts.graph.backfill import backfill_relationships
+
+        state_db, graph_db = self._setup(tmp_path, dois=("10.0/a",))
+        captured_entities: list[list] = []
+
+        real_add_paper = graph_db.add_paper
+
+        def spy_add_paper(doi, entities, relationships, paper_metadata, prompt_version):
+            captured_entities.append(list(entities))
+            return real_add_paper(
+                doi=doi,
+                entities=entities,
+                relationships=relationships,
+                paper_metadata=paper_metadata,
+                prompt_version=prompt_version,
+            )
+
+        monkeypatch.setattr(graph_db, "add_paper", spy_add_paper)
+        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", lambda *a, **kw: [])
+        monkeypatch.setattr(
+            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            lambda **kw: [],
+        )
+
+        backfill_relationships(state_db, graph_db, with_llm=False)
+        assert all(e == [] for e in captured_entities), "R5 must not write entity edges"
+
+    def test_progress_callback_called(self, tmp_path, monkeypatch):
+        """R5: progress_callback receives (doi, done, total) for each paper."""
+        from scripts.graph.backfill import backfill_relationships
+
+        state_db, graph_db = self._setup(tmp_path)
+
+        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", lambda *a, **kw: [])
+        monkeypatch.setattr(
+            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            lambda **kw: [],
+        )
+
+        calls: list[tuple[str, int, int]] = []
+        backfill_relationships(
             state_db, graph_db, with_llm=False,
             progress_callback=lambda d, done, total: calls.append((d, done, total)),
         )
