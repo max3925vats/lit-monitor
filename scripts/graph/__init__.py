@@ -1,11 +1,15 @@
 """
-scripts.graph — KuzuDB-backed knowledge graph for lit-monitor (Phase 1).
+scripts.graph — KuzuDB-backed knowledge graph for lit-monitor (Phase 1 + 2).
 
 Public API
 ----------
-GraphDB : the main wrapper class; import is always safe. Instantiation
-          raises ImportError if kuzu is not installed (install with
-          ``uv sync --extra graph``).
+GraphDB      : KuzuDB wrapper; import is always safe. Instantiation raises
+               ImportError if kuzu is not installed (``uv sync --extra graph``).
+BiobertNER   : BioBERT NER wrapper (N1, Phase 2). Import is always safe;
+               ``.extract()`` raises ImportError if [nlp] not installed
+               (``uv sync --extra nlp``).
+NerSpan      : Frozen dataclass for a single NER-extracted span.
+safe_graph_db: Context-manager helper around GraphDB.
 """
 from __future__ import annotations
 
@@ -16,4 +20,7 @@ from __future__ import annotations
 from scripts.graph.db import GraphDB
 from scripts.graph.import_citations import safe_graph_db
 
-__all__ = ["GraphDB", "safe_graph_db"]
+# N1 (Phase 2): BioBERT NER — lazy transformers import, safe to import always.
+from scripts.graph.ner import BiobertNER, NerSpan
+
+__all__ = ["GraphDB", "safe_graph_db", "BiobertNER", "NerSpan"]

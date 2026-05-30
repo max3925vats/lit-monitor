@@ -10,8 +10,13 @@ fail with ``code: 14 unable to open database file`` from the Rust bindings.
 
 Clearing the cache before every test is cheap (it is a no-op when empty) and
 makes ChromaDB-backed tests order-independent.
+
+N1 (Phase 2): BiobertNERStub and biobert_stub fixture are also defined here so
+any unit test can reference them without importing transformers or torch.
 """
 from __future__ import annotations
+
+import re
 
 import pytest
 
@@ -57,3 +62,57 @@ def _reset_chromadb_shared_system_cache():
         cache = getattr(SharedSystemClient, "_identifier_to_system", None)
         if cache is not None:
             cache.clear()
+
+
+# ---------------------------------------------------------------------------
+# N1 (Phase 2): BioBERT NER stub — no transformers / torch dependency.
+# ---------------------------------------------------------------------------
+
+from scripts.graph.ner import NerSpan  # noqa: E402  (after imports block is fine)
+
+
+class BiobertNERStub:
+    """N1 test fixture: deterministic stub of BiobertNER.
+
+    Returns NerSpan results by regex over text (no transformers/torch needed).
+    Recognized patterns (case-sensitive):
+    - gene-like names (2+ uppercase letters, optional trailing digits) → GENE
+    - 'mutation', 'cancer', 'tumor', 'tumour' → MEDICAL_CONDITION
+    """
+
+    # Two-or-more uppercase letters, optional trailing digits (e.g. EGFR, BRCA1, TP53)
+    _GENE_RE = re.compile(r"\b[A-Z]{2,}[0-9]*\b")
+    # Common medical condition tokens (case-sensitive lowercase)
+    _CONDITION_RE = re.compile(r"\b(?:mutation|cancer|tumor|tumour)\b")
+
+    def extract(self, text: str) -> list[NerSpan]:
+        """Return deterministic NerSpan list; offsets always slice text correctly."""
+        spans: list[NerSpan] = []
+        for m in self._GENE_RE.finditer(text):
+            spans.append(
+                NerSpan(
+                    text=m.group(0),
+                    label="GENE",
+                    start=m.start(),
+                    end=m.end(),
+                    confidence=0.95,
+                )
+            )
+        for m in self._CONDITION_RE.finditer(text):
+            spans.append(
+                NerSpan(
+                    text=m.group(0),
+                    label="MEDICAL_CONDITION",
+                    start=m.start(),
+                    end=m.end(),
+                    confidence=0.90,
+                )
+            )
+        # Deterministic order by start offset
+        return sorted(spans, key=lambda s: s.start)
+
+
+@pytest.fixture
+def biobert_stub() -> BiobertNERStub:
+    """N1: deterministic BioBERT stub for unit tests (no model download)."""
+    return BiobertNERStub()

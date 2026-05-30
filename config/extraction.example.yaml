@@ -11,3 +11,18 @@ retrieval:
   default_mode: vector          # "vector" | "graph" | "hybrid"
   graph_db:
     persist_dir: "~/.config/lit-monitor/graph.kuzu"
+
+# ---------------------------------------------------------------------------
+# N1 (Phase 2): BioBERT NER + cloud-Ollama long-tail.
+# Optional — requires `uv sync --extra nlp`.
+# ---------------------------------------------------------------------------
+graph:
+  ner:
+    # Pinned default. Swap by setting your own HuggingFace model id.
+    model: alvaroalon2/biobert_genetic_ner
+    # auto | mps | cuda | cpu.  'auto' picks MPS > CUDA > CPU.
+    device: auto
+    # Set true to enable cloud-Ollama long-tail validation (N2). Requires OLLAMA_API_KEY.
+    cloud_long_tail_enabled: false
+    # Batch size for NER inference. 16 is conservative; bump on big GPUs.
+    batch_size: 16
