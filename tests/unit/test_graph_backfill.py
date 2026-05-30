@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from unittest.mock import MagicMock
 
 from scripts.core.state_db import StateDB
 from scripts.graph import GraphDB
@@ -10,6 +11,17 @@ from scripts.graph.backfill import (
     rebuild_aliases_only,
     rebuild_all,
 )
+
+
+def _make_stub_cfg(llm_enabled: bool = False) -> MagicMock:
+    """Return a minimal config stub that satisfies the _CfgShim in backfill_relationships.
+
+    Avoids the ``config/paths.yaml`` filesystem dependency in CI environments
+    that only have the ``.example.yaml`` files.
+    """
+    cfg = MagicMock()
+    cfg.graph.relationships.llm_enabled = llm_enabled
+    return cfg
 
 
 class TestBackfillPapers:
@@ -337,7 +349,7 @@ class TestBackfillRelationships:
             lambda **kw: [],
         )
 
-        summary = backfill_relationships(state_db, graph_db, with_llm=False)
+        summary = backfill_relationships(state_db, graph_db, with_llm=False, cfg=_make_stub_cfg())
         assert summary["papers_processed"] == 2
         assert summary["failures"] == 0
 
@@ -354,11 +366,11 @@ class TestBackfillRelationships:
             lambda **kw: [],
         )
 
-        first = backfill_relationships(state_db, graph_db, with_llm=False)
+        first = backfill_relationships(state_db, graph_db, with_llm=False, cfg=_make_stub_cfg())
         assert first["papers_processed"] == 2
 
         # Second run: rel_processed_at is now set → should be a no-op.
-        second = backfill_relationships(state_db, graph_db, with_llm=False)
+        second = backfill_relationships(state_db, graph_db, with_llm=False, cfg=_make_stub_cfg())
         assert second["papers_processed"] == 0
 
     def test_respects_limit(self, tmp_path, monkeypatch):
@@ -374,7 +386,7 @@ class TestBackfillRelationships:
             lambda **kw: [],
         )
 
-        summary = backfill_relationships(state_db, graph_db, with_llm=False, limit=2)
+        summary = backfill_relationships(state_db, graph_db, with_llm=False, limit=2, cfg=_make_stub_cfg())
         assert summary["papers_processed"] == 2
 
     def test_with_llm_flag_propagates_via_cfg_shim(self, tmp_path, monkeypatch):
@@ -400,7 +412,7 @@ class TestBackfillRelationships:
             fake_maybe_llm,
         )
 
-        backfill_relationships(state_db, graph_db, with_llm=True)
+        backfill_relationships(state_db, graph_db, with_llm=True, cfg=_make_stub_cfg())
         assert captured.get("llm_enabled") is True
 
     def test_with_llm_false_propagates_via_cfg_shim(self, tmp_path, monkeypatch):
@@ -425,7 +437,7 @@ class TestBackfillRelationships:
             fake_maybe_llm,
         )
 
-        backfill_relationships(state_db, graph_db)  # with_llm defaults to False
+        backfill_relationships(state_db, graph_db, cfg=_make_stub_cfg())  # with_llm defaults to False
         assert captured.get("llm_enabled") is False
 
     def test_per_paper_failure_counted(self, tmp_path, monkeypatch):
@@ -449,7 +461,7 @@ class TestBackfillRelationships:
             lambda **kw: [],
         )
 
-        summary = backfill_relationships(state_db, graph_db, with_llm=False)
+        summary = backfill_relationships(state_db, graph_db, with_llm=False, cfg=_make_stub_cfg())
         assert summary["failures"] == 1
         assert summary["papers_processed"] == 1
 
@@ -480,7 +492,7 @@ class TestBackfillRelationships:
             lambda **kw: [],
         )
 
-        backfill_relationships(state_db, graph_db, with_llm=False)
+        backfill_relationships(state_db, graph_db, with_llm=False, cfg=_make_stub_cfg())
         assert all(e == [] for e in captured_entities), "R5 must not write entity edges"
 
     def test_progress_callback_called(self, tmp_path, monkeypatch):
@@ -500,6 +512,7 @@ class TestBackfillRelationships:
         backfill_relationships(
             state_db, graph_db, with_llm=False,
             progress_callback=lambda d, done, total: calls.append((d, done, total)),
+            cfg=_make_stub_cfg(),
         )
         assert len(calls) == 2
         assert all(t == 2 for _, _, t in calls)

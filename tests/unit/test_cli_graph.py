@@ -24,10 +24,14 @@ class TestGraphBackfillCLI:
         assert result.exit_code != 0
         assert "Must specify" in result.output
 
-    def test_backfill_without_graph_extra_errors(self):
+    def test_backfill_without_graph_extra_errors(self, tmp_path):
         """G10: safe_graph_db() returning None gives a helpful error."""
         runner = CliRunner()
-        with patch("scripts.graph.safe_graph_db", return_value=None):
+        with (
+            patch("scripts.graph.safe_graph_db", return_value=None),
+            patch("scripts.core.config.get_config") as mock_cfg,
+        ):
+            mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "backfill", "--all"])
         assert result.exit_code != 0
         assert "uv sync --extra graph" in result.output
@@ -64,10 +68,14 @@ class TestGraphBackfillCLI:
         assert result.exit_code != 0
         assert "mutually exclusive" in result.output
 
-    def test_rebuild_without_graph_extra_errors(self):
+    def test_rebuild_without_graph_extra_errors(self, tmp_path):
         """G10: rebuild without graph extra gives helpful error."""
         runner = CliRunner()
-        with patch("scripts.graph.safe_graph_db", return_value=None):
+        with (
+            patch("scripts.graph.safe_graph_db", return_value=None),
+            patch("scripts.core.config.get_config") as mock_cfg,
+        ):
+            mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "rebuild", "--all", "--yes"])
         assert result.exit_code != 0
         assert "uv sync --extra graph" in result.output

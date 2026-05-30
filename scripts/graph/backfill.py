@@ -251,6 +251,7 @@ def backfill_relationships(
     limit: int | None = None,
     since: datetime | None = None,
     progress_callback: Any = None,
+    cfg: Any = None,
 ) -> dict[str, int]:
     """R5: run G4 schema-source (+ optional R2 LLM) relationship extraction over existing papers.
 
@@ -272,6 +273,10 @@ def backfill_relationships(
         since:             Restrict candidates to papers with
                            ``last_updated >= since``.
         progress_callback: Optional callable ``(doi, done_count, total_count)``.
+        cfg:               Optional pre-built config object.  When ``None``
+                           (the production default), ``get_config()`` is called
+                           at runtime.  Tests pass a stub to avoid the
+                           ``config/paths.yaml`` filesystem dependency.
 
     Returns:
         Summary dict with keys ``papers_processed``, ``edges_added``,
@@ -332,8 +337,10 @@ def backfill_relationships(
         def __getattr__(self, name: str) -> Any:
             return getattr(self._base, name)
 
-    from scripts.core.config import get_config  # noqa: PLC0415
-    cfg_for_backfill = _CfgShim(get_config(), with_llm)
+    if cfg is None:
+        from scripts.core.config import get_config  # noqa: PLC0415
+        cfg = get_config()
+    cfg_for_backfill = _CfgShim(cfg, with_llm)
 
     for idx, paper in enumerate(candidates):
         doi = paper.get("doi")

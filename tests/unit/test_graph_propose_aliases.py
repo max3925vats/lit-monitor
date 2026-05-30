@@ -58,12 +58,15 @@ class TestProposeAliases:
 
     def test_existing_aliases_are_skipped(self, tmp_path, monkeypatch):
         """G11: surfaces already aliased in entity_aliases.yaml are not re-proposed."""
+        import scripts.graph.propose_aliases as _mod  # ensure submodule is bound on scripts.graph
+
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         _seed(db)
 
         # Mock load_aliases to claim 'monoclonal antibodies' is already aliased
         monkeypatch.setattr(
-            "scripts.graph.propose_aliases.load_aliases",
+            _mod,
+            "load_aliases",
             lambda: {"material": {"monoclonal antibodies": "monoclonal antibody"}},
         )
         proposals = propose_aliases(db, min_ratio=80)
@@ -162,6 +165,8 @@ class TestN6LLMAccept:
         db.add_paper(doi="10.0/a", entities=entities, relationships=[],
                      paper_metadata={"title": "A", "year": 2024, "journal": "X"})
 
+        import scripts.graph.propose_aliases as _mod  # ensure submodule is bound on scripts.graph
+
         # Mock _consult_llm to accept the only cluster, with explicit canonical.
         def fake_consult_llm(clusters_by_type, **kwargs):
             # There should be exactly one material cluster.
@@ -174,9 +179,7 @@ class TestN6LLMAccept:
                 }
             }
 
-        monkeypatch.setattr(
-            "scripts.graph.propose_aliases._consult_llm", fake_consult_llm,
-        )
+        monkeypatch.setattr(_mod, "_consult_llm", fake_consult_llm)
 
         proposals = propose_aliases(db, min_ratio=80, with_llm=True)
         assert "material" in proposals
@@ -200,6 +203,8 @@ class TestN6LLMReject:
         db.add_paper(doi="10.0/a", entities=entities, relationships=[],
                      paper_metadata={"title": "A", "year": 2024, "journal": "X"})
 
+        import scripts.graph.propose_aliases as _mod  # ensure submodule is bound on scripts.graph
+
         def reject_llm(clusters_by_type, **kwargs):
             verdicts = {}
             for type_, clusters in clusters_by_type.items():
@@ -211,9 +216,7 @@ class TestN6LLMReject:
                     }
             return verdicts
 
-        monkeypatch.setattr(
-            "scripts.graph.propose_aliases._consult_llm", reject_llm,
-        )
+        monkeypatch.setattr(_mod, "_consult_llm", reject_llm)
 
         proposals = propose_aliases(db, min_ratio=80, with_llm=True)
         # All clusters rejected -> no material proposals at all.
@@ -221,6 +224,8 @@ class TestN6LLMReject:
 
     def test_llm_missing_verdict_drops_cluster(self, tmp_path, monkeypatch):
         """N6: a cluster_id absent from verdicts is treated as accept=false."""
+        import scripts.graph.propose_aliases as _mod  # ensure submodule is bound on scripts.graph
+
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         entities = [
             EntityTuple(canonical_id="monoclonal antibody", type="material",
@@ -235,7 +240,8 @@ class TestN6LLMReject:
 
         # Empty verdicts — no cluster_ids present.
         monkeypatch.setattr(
-            "scripts.graph.propose_aliases._consult_llm",
+            _mod,
+            "_consult_llm",
             lambda clusters_by_type, **kw: {},
         )
 
@@ -251,12 +257,15 @@ class TestN6LLMFallback:
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         _seed(db)
 
+        import scripts.graph.propose_aliases as _mod  # ensure submodule is bound on scripts.graph
+
         # Fuzzy-only baseline.
         fuzzy_only = propose_aliases(db, min_ratio=80, with_llm=False)
 
         # Simulate LLM failure.
         monkeypatch.setattr(
-            "scripts.graph.propose_aliases._consult_llm",
+            _mod,
+            "_consult_llm",
             lambda clusters_by_type, **kw: None,
         )
 
