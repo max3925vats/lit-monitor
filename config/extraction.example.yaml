@@ -30,3 +30,12 @@ graph:
     cloud_host: https://ollama.com
     # Batch size for NER inference. 16 is conservative; bump on big GPUs.
     batch_size: 16
+  relationships:
+    # R4 (Phase 3): enable LLM relationship extraction during ingest.
+    # Requires OLLAMA_API_KEY.  Single cloud-Ollama call per paper, produces
+    # typed triples across 8 LLM-emitted predicates (EXTENDS, CONTRADICTS,
+    # COMPARES_TO + the 5 Paper→Entity ones).  Augmentation, not replacement —
+    # G4 schema-source extraction still runs first.
+    llm_enabled: false
+    # Cloud model used when llm_enabled=true.
+    cloud_model: gemma2:27b-cloud

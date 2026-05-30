@@ -42,6 +42,7 @@ from scripts.pipelines._ingest import (
     build_graph_tuples,
     build_ner_mention_edges,
     index_embeddings_and_mark_phases,
+    maybe_extract_llm_relationships,
 )
 from scripts.search.semantic_scholar import enrich_paper
 
@@ -606,14 +607,23 @@ def _process_paper(
             state_db=state_db,
             fulltext=fulltext or "",
         )
-        # Relationships are computed separately from extraction_json (G4 path),
-        # not from NER spans, so build_graph_tuples still owns that leg.
-        _, _graph_relationships = build_graph_tuples(
+        # Relationships: G4 schema-source extraction first, then R4 LLM
+        # augmentation (gated by graph.relationships.llm_enabled).  The two
+        # lists are merged; R3 multi-source merge invariants apply inside
+        # graph_db.add_paper.  R28: any R4 failure returns [] (non-fatal).
+        _, _schema_relationships = build_graph_tuples(
             extraction=extraction,
             paper_metadata=_graph_paper_meta,
             source_doi=doi,
             state_db=state_db,
         )
+        _llm_relationships = maybe_extract_llm_relationships(
+            paper_doi=doi,
+            fulltext=fulltext,
+            extraction_json=extraction,
+            cfg=config,
+        )
+        _graph_relationships = _schema_relationships + _llm_relationships
     else:
         _graph_paper_meta = _embed_paper_meta
         _graph_entities, _graph_relationships = [], []

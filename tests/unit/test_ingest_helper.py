@@ -379,3 +379,154 @@ class TestBuildMentionEdgesNoText:
         sources = {e.source for e in edges}
         assert "biobert" not in sources
         assert "llm_cloud" not in sources
+
+
+# ---------------------------------------------------------------------------
+# R4 — maybe_extract_llm_relationships unit tests
+# ---------------------------------------------------------------------------
+
+class TestMaybeExtractLlmRelationships:
+    """R4: conditionally run R2 LLM relationship extraction inside ingest.
+
+    R28 invariant: any failure → empty list + WARN; ingest continues.
+    """
+
+    def _make_rel(self, doi: str = "10.0/a"):
+        """Build a single RelationshipTuple for use as a canned return value."""
+        from scripts.graph.relationship_extractor import RelationshipTuple
+        return RelationshipTuple(
+            source_doi=doi,
+            predicate="EXTENDS",
+            target_id="10.0/b",
+            target_kind="Paper",
+            evidence="builds on prior work",
+            confidence=0.9,
+            field="llm_extracted",
+        )
+
+    def test_disabled_returns_empty_no_llm_call(self, monkeypatch):
+        """R4: when graph.relationships.llm_enabled=False, no LLM call, empty result."""
+        called = {"n": 0}
+
+        def fake_extract(*args, **kwargs):
+            called["n"] += 1
+            return [self._make_rel()]
+
+        monkeypatch.setattr(
+            "scripts.pipelines._ingest.extract_llm_relationships",
+            fake_extract,
+        )
+
+        cfg = MagicMock()
+        cfg.graph.relationships.llm_enabled = False
+
+        from scripts.pipelines._ingest import maybe_extract_llm_relationships
+        result = maybe_extract_llm_relationships(
+            paper_doi="10.0/a",
+            fulltext="paper text",
+            extraction_json={},
+            cfg=cfg,
+        )
+        assert result == []
+        assert called["n"] == 0
+
+    def test_enabled_calls_extractor_and_returns_triples(self, monkeypatch):
+        """R4: when llm_enabled=True, calls R2 and returns its triples."""
+        canned = [self._make_rel("10.0/a")]
+        called = {"n": 0, "doi": None}
+
+        def fake_extract(fulltext, paper_doi, extraction_json, **kwargs):
+            called["n"] += 1
+            called["doi"] = paper_doi
+            return canned
+
+        monkeypatch.setattr(
+            "scripts.pipelines._ingest.extract_llm_relationships",
+            fake_extract,
+        )
+
+        cfg = MagicMock()
+        cfg.graph.relationships.llm_enabled = True
+
+        from scripts.pipelines._ingest import maybe_extract_llm_relationships
+        result = maybe_extract_llm_relationships(
+            paper_doi="10.0/a",
+            fulltext="paper text",
+            extraction_json={"methods_summary": "ion exchange"},
+            cfg=cfg,
+        )
+        assert result == canned
+        assert called["n"] == 1
+        assert called["doi"] == "10.0/a"
+
+    def test_extractor_exception_returns_empty_with_warn(self, monkeypatch, caplog):
+        """R4: R2 raises → caught + WARN log + empty result (R28 invariant: ingest continues)."""
+        def failing(*args, **kwargs):
+            raise RuntimeError("network exploded")
+
+        monkeypatch.setattr(
+            "scripts.pipelines._ingest.extract_llm_relationships",
+            failing,
+        )
+
+        cfg = MagicMock()
+        cfg.graph.relationships.llm_enabled = True
+
+        import logging
+        from scripts.pipelines._ingest import maybe_extract_llm_relationships
+        with caplog.at_level(logging.WARNING):
+            result = maybe_extract_llm_relationships(
+                paper_doi="10.0/a",
+                fulltext="paper text",
+                extraction_json={},
+                cfg=cfg,
+            )
+        assert result == []
+        assert any(
+            "llm" in r.message.lower() or "relationship" in r.message.lower()
+            for r in caplog.records
+        )
+
+    def test_no_fulltext_returns_empty(self, monkeypatch):
+        """R4: empty fulltext skips the LLM call entirely."""
+        called = {"n": 0}
+
+        def fake_extract(*args, **kwargs):
+            called["n"] += 1
+            return [self._make_rel()]
+
+        monkeypatch.setattr(
+            "scripts.pipelines._ingest.extract_llm_relationships",
+            fake_extract,
+        )
+
+        cfg = MagicMock()
+        cfg.graph.relationships.llm_enabled = True
+
+        from scripts.pipelines._ingest import maybe_extract_llm_relationships
+        result = maybe_extract_llm_relationships(
+            paper_doi="10.0/a",
+            fulltext="",
+            extraction_json={},
+            cfg=cfg,
+        )
+        assert result == []
+        assert called["n"] == 0
+
+    def test_missing_config_section_treated_as_disabled(self):
+        """R4: when cfg.graph.relationships raises AttributeError, default to disabled."""
+        cfg = MagicMock()
+        # Make .graph.relationships raise AttributeError on attribute access
+        type(cfg.graph).relationships = property(
+            lambda self: (_ for _ in ()).throw(AttributeError("no relationships key"))
+        )
+
+        from scripts.pipelines._ingest import maybe_extract_llm_relationships
+        # Must not raise; must return empty list.
+        result = maybe_extract_llm_relationships(
+            paper_doi="10.0/a",
+            fulltext="text",
+            extraction_json={},
+            cfg=cfg,
+        )
+        assert result == []

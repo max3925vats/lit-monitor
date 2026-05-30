@@ -32,6 +32,15 @@ from typing import Any
 
 _module_logger = logging.getLogger(__name__)
 
+# R4: lazy module-level binding so monkeypatch can override the symbol.
+# The real import is deferred to keep this module importable without the
+# [graph] extra installed.  If the package is absent, the name resolves to
+# None and maybe_extract_llm_relationships will catch it gracefully.
+try:
+    from scripts.graph.relationship_llm import extract_llm_relationships  # noqa: E402
+except Exception:  # ImportError or missing optional dep
+    extract_llm_relationships = None  # type: ignore[assignment]
+
 
 def build_graph_tuples(
     extraction: dict[str, Any],
@@ -228,3 +237,56 @@ def index_embeddings_and_mark_phases(
     for phase in phases_to_mark:
         state_db.mark_brain_build_phase(zotero_key, phase)
     return True, None
+
+
+def maybe_extract_llm_relationships(
+    paper_doi: str,
+    fulltext: str | None,
+    extraction_json: dict[str, Any] | None,
+    cfg: Any,
+) -> list[Any]:  # list[RelationshipTuple]
+    """R4: conditionally run R2 LLM relationship extraction during ingest.
+
+    Returns a list of RelationshipTuple when the flag is enabled and
+    extraction succeeds.  Returns an empty list when:
+      - ``graph.relationships.llm_enabled`` is false or missing from cfg
+      - ``fulltext`` is empty or None
+      - ``extract_llm_relationships`` raises for any reason (R28 invariant:
+        LLM failure must NEVER abort ingest or block phase marking)
+
+    Never raises.  Matches the N4 ``build_ner_mention_edges`` enrichment
+    pattern: single call per paper, guarded, returns [] on any failure.
+    """
+    # --- flag check ---
+    try:
+        enabled = bool(cfg.graph.relationships.llm_enabled)
+    except (AttributeError, TypeError):
+        # Config section missing or malformed → treat as disabled (default off).
+        enabled = False
+    if not enabled:
+        return []
+
+    # --- guard: nothing to send to the LLM ---
+    if not fulltext:
+        return []
+
+    # --- extraction call (R28: any failure → WARN + empty, not a raise) ---
+    try:
+        if extract_llm_relationships is None:
+            raise ImportError(
+                "scripts.graph.relationship_llm not available "
+                "(install the [graph] extra)"
+            )
+        return extract_llm_relationships(
+            fulltext=fulltext,
+            paper_doi=paper_doi,
+            extraction_json=extraction_json or {},
+        )
+    except Exception as exc:
+        _module_logger.warning(
+            "R4: LLM relationship extraction failed for %s (non-fatal, "
+            "graph_indexed unaffected): %s",
+            paper_doi,
+            exc,
+        )
+        return []
