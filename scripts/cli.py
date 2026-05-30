@@ -2446,8 +2446,11 @@ def graph_rebuild(all_data: bool, aliases_only: bool) -> None:
               help="Fuzzy match threshold (0-100). Higher = stricter clusters. Default: 80.")
 @click.option("--out", default="config/entity_aliases.suggested.yaml",
               help="Output YAML path.")
-def graph_propose_aliases(min_ratio: int, out: str) -> None:
-    """Propose new aliases via fuzzy clustering (no LLM)."""
+@click.option("--with-llm", is_flag=True, default=False,
+              help="N6: validate fuzzy clusters via cloud-Ollama before writing. "
+                   "Requires OLLAMA_API_KEY. Falls back to fuzzy-only on any LLM failure.")
+def graph_propose_aliases(min_ratio: int, out: str, with_llm: bool) -> None:
+    """Propose new aliases via fuzzy clustering (optional --with-llm consensus)."""
     from pathlib import Path
 
     from scripts.graph import safe_graph_db
@@ -2460,7 +2463,7 @@ def graph_propose_aliases(min_ratio: int, out: str) -> None:
         )
 
     try:
-        proposals = propose_aliases(graph_db, min_ratio=min_ratio)
+        proposals = propose_aliases(graph_db, min_ratio=min_ratio, with_llm=with_llm)
         if not proposals:
             click.echo("No alias proposals (no clusters found at the given threshold).")
             return

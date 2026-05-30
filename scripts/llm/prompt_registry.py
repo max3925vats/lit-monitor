@@ -186,6 +186,8 @@ class ClusteringPrompts(BaseModel):
 _REQUIRED_PLACEHOLDERS: dict[str, frozenset[str]] = {
     # N2: cloud-Ollama long-tail NER + low-confidence validation.
     "long_tail_ner": frozenset({"text", "low_conf_json"}),
+    # N6: cloud-Ollama validation of fuzzy alias clusters.
+    "alias_consensus": frozenset({"clusters_json"}),
 }
 
 

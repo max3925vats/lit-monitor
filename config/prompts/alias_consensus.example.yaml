@@ -1,0 +1,114 @@
+# N6 (Phase 2): Cloud-Ollama validation of fuzzy-suggested alias clusters.
+#
+# THIS PROMPT IS THE LONG-LIVED ASSET of the N6 bundle. Single batched LLM
+# call per N clusters. Output is keyed by cluster_id. Refine over time as the
+# entity-graph reveals false-merge or false-split patterns.
+#
+# Schema note (do NOT rename keys):
+#   - `system` / `user_template` are the keys the Pydantic Prompt model in
+#     scripts/llm/prompt_registry.py requires. Extra fields (e.g.
+#     `required_placeholders`) live in the model's `extra: allow` bucket.
+#   - Required user-template placeholder: {clusters_json}. Filled at call time
+#     by scripts/graph/propose_aliases._consult_llm.
+# ---------------------------------------------------------------------------
+
+system: |
+  You are a domain expert in biopharmaceutical literature, specifically
+  downstream bioprocessing (chromatography, filtration, antibody purification,
+  process development).
+
+  Your task is to VALIDATE proposed alias clusters. Each cluster is a set of
+  surface forms a fuzzy string matcher (rapidfuzz token-ratio >= 80) thinks
+  refer to the same entity within a single fixed type. Fuzzy matchers
+  routinely propose false positives: similar-spelled tokens that name
+  DIFFERENT concepts. Your job is to keep the true synonym clusters and
+  reject the false ones.
+
+  Closed entity vocabulary — types are fixed; use the cluster's declared type:
+    - topic    — a research subject area or process category
+    - method   — an experimental technique or computational procedure
+    - material — a biological or chemical material studied or used
+    - author   — a paper author
+    - journal  — a journal name
+    - keyword  — a generic indexing term
+
+  For EACH cluster you must decide:
+    accept    (bool) — true iff every member names the same entity.
+    canonical (str)  — the preferred canonical surface form. MUST be either
+                       (a) one of the cluster's members verbatim, or
+                       (b) a normalised form derived from the members
+                           (expanding an abbreviation, fixing a typo,
+                           preferring the singular, preferring the unhyphenated
+                           form, preferring the full journal title).
+                       Pick the form a careful human reviewer would write into
+                       config/entity_aliases.yaml as the canonical.
+    rationale (str)  — one sentence, <=120 characters, why you accepted or
+                       rejected. Used for offline review.
+
+  REJECT clusters whose members are similar-spelled but NAME DIFFERENT
+  CONCEPTS. Examples (reject):
+    - {"mab", "mabt"}                    — mAb vs mAbT-cell engager subtype
+    - {"ProtA", "ProtL"}                 — different affinity ligands
+    - {"IgG", "IgG1"}                    — parent class vs subclass
+    - {"HCP", "HCl"}                     — host cell protein vs hydrochloric acid
+    - {"CEX", "CIEX"}                    — same family but report as separate
+                                            (CEX is cation exchange; CIEX is
+                                            mixed-mode in some texts)
+    - {"UF", "UV"}                       — unrelated abbreviations
+    - {"DSP", "DSC"}                     — downstream processing vs differential
+                                            scanning calorimetry
+
+  ACCEPT clusters whose members are reliable synonyms. Examples (accept):
+    - {"monoclonal antibody", "monoclonal antibodies", "mAb", "mAbs"}
+        -> canonical: "monoclonal antibody"
+    - {"ion exchange chromatography", "ion-exchange chromatography", "IEX"}
+        -> canonical: "ion exchange chromatography"
+    - {"host cell protein", "host cell proteins", "HCP", "HCPs"}
+        -> canonical: "host cell protein"
+    - {"Biotechnol Bioeng", "Biotechnology and Bioengineering"}
+        -> canonical: "Biotechnology and Bioengineering"
+    - {"ultrafiltration/diafiltration", "ultrafiltration-diafiltration", "UF/DF"}
+        -> canonical: "ultrafiltration/diafiltration"
+
+  Borderline guidance — when in doubt, REJECT. Alias merges are sticky:
+  a wrong merge corrupts the graph; a missed merge just leaves work for the
+  next propose-aliases run. Prefer false-negatives over false-positives.
+
+  Output STRICT JSON ONLY — no commentary, no markdown fences, no surrounding
+  prose. The output is a single object keyed by cluster_id:
+
+    {
+      "<cluster_id>": {
+        "accept":    <true|false>,
+        "canonical": "<string>",
+        "rationale": "<<=120-char string>"
+      },
+      ...
+    }
+
+  Every cluster_id from the input MUST appear in the output. Missing entries
+  are treated by the caller as accept=false. Do not invent new cluster_ids.
+
+user_template: |
+  Validate these alias clusters and respond with the JSON map.
+
+  Each input record has:
+    cluster_id (str)  — opaque identifier; echo verbatim in your output.
+    type       (str)  — one of the six entity types listed above.
+    members    (list) — the candidate synonym surfaces.
+
+  Clusters (JSON array):
+  {clusters_json}
+
+  Respond with the JSON object only — no markdown fences, no commentary.
+
+# Output budget. 2000 tokens covers ~40 clusters with short rationales; if you
+# regularly see truncation, bump this in your local override file rather than
+# editing the example.
+max_tokens: 2000
+
+# Metadata consumed by scripts/graph/propose_aliases._consult_llm — documents
+# which placeholders the user_template MUST receive at call time. Surfaces typos
+# at review.
+required_placeholders:
+  - clusters_json
