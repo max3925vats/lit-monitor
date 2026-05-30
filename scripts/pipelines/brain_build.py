@@ -40,6 +40,7 @@ from scripts.llm.llm_client import RateLimitError
 from scripts.output.obsidian_writer import write_paper_note
 from scripts.pipelines._ingest import (
     build_graph_tuples,
+    build_ner_mention_edges,
     index_embeddings_and_mark_phases,
 )
 from scripts.search.semantic_scholar import enrich_paper
@@ -596,7 +597,18 @@ def _process_paper(
         _graph_paper_meta["journal"] = journal
         _graph_paper_meta["authors"] = authors
         _graph_paper_meta["keywords_json"] = keywords
-        _graph_entities, _graph_relationships = build_graph_tuples(
+        # N4: use NER-augmented MentionEdge list (schema + BioBERT + cloud-LLM).
+        # Falls back to [] on any failure — graph is enrichment, not a gate.
+        _graph_entities = build_ner_mention_edges(
+            extraction=extraction,
+            paper_metadata=_graph_paper_meta,
+            source_doi=doi,
+            state_db=state_db,
+            fulltext=fulltext or "",
+        )
+        # Relationships are computed separately from extraction_json (G4 path),
+        # not from NER spans, so build_graph_tuples still owns that leg.
+        _, _graph_relationships = build_graph_tuples(
             extraction=extraction,
             paper_metadata=_graph_paper_meta,
             source_doi=doi,

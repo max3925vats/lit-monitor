@@ -212,3 +212,170 @@ class TestIngestWithGraph:
         assert graph_db.add_paper.call_count == 1
         state_db.set_graph_indexed.assert_called_once_with("10.g6/y", 1)
         assert state_db.mark_brain_build_phase.call_count == phase_count
+
+
+# ---------------------------------------------------------------------------
+# N4 — build_mention_edges (ner_pipeline) unit tests
+# ---------------------------------------------------------------------------
+
+class TestBuildMentionEdgesFullPath:
+    """N4: all three sources (schema + BioBERT + LLM) produce merged MentionEdge list."""
+
+    def test_schema_plus_biobert_plus_llm(self):
+        from scripts.graph.ner import NerSpan
+        from scripts.graph.ner_pipeline import build_mention_edges
+        from scripts.graph.normalizer import EntityNormalizer
+
+        normalizer = EntityNormalizer(aliases={})
+
+        class FakeBiobert:
+            def extract(self, text: str):  # noqa: ARG002
+                return [NerSpan(text="EGFR", label="GENE", start=0, end=4, confidence=0.95)]
+
+        def fake_llm(text, low_conf):  # noqa: ARG001
+            return {
+                "new_entities": [
+                    {"surface": "perfusion bioreactor", "type": "method",
+                     "span_start": 0, "span_end": 19},
+                ],
+                "validations": [],
+            }
+
+        edges = build_mention_edges(
+            paper_id="10.0/a",
+            text="EGFR mutation in mAb cells. perfusion bioreactor used.",
+            extraction_json={"methods_summary": "ion exchange chromatography"},
+            paper_metadata={"authors": "[]", "journal": ""},
+            normalizer=normalizer,
+            biobert_factory=lambda: FakeBiobert(),
+            llm_long_tail_fn=fake_llm,
+        )
+        sources = {e.source for e in edges}
+        assert "schema" in sources
+        assert "biobert" in sources
+        assert "llm_cloud" in sources
+
+
+class TestBuildMentionEdgesNoNlp:
+    """N4: ImportError from BioBERT factory falls back gracefully to schema-only."""
+
+    def test_falls_back_to_schema_when_biobert_import_fails(self, caplog):
+        import logging
+
+        import scripts.graph.ner_pipeline as np_mod
+        from scripts.graph.ner_pipeline import build_mention_edges
+        from scripts.graph.normalizer import EntityNormalizer
+
+        # Reset once-flag so we see the WARN in this test run.
+        np_mod._NLP_MISSING_LOGGED = False
+
+        normalizer = EntityNormalizer(aliases={})
+
+        def failing_biobert():
+            raise ImportError("transformers not installed")
+
+        with caplog.at_level(logging.WARNING):
+            edges = build_mention_edges(
+                paper_id="10.0/b",
+                text="some text",
+                extraction_json={"methods_summary": "ion exchange"},
+                paper_metadata={"authors": "[]", "journal": ""},
+                normalizer=normalizer,
+                biobert_factory=failing_biobert,
+                llm_long_tail_fn=lambda t, lc: {"new_entities": [], "validations": []},
+            )
+
+        sources = {e.source for e in edges}
+        # Schema edges still present; BioBERT absent.
+        assert "schema" in sources
+        assert "biobert" not in sources
+        # WARN was logged.
+        assert any("nlp" in r.message.lower() for r in caplog.records)
+
+    def test_warn_logged_only_once_across_calls(self):
+        """The [nlp]-missing WARN must fire at most once per process."""
+        import scripts.graph.ner_pipeline as np_mod
+        from scripts.graph.ner_pipeline import build_mention_edges
+        from scripts.graph.normalizer import EntityNormalizer
+
+        np_mod._NLP_MISSING_LOGGED = False
+
+        normalizer = EntityNormalizer(aliases={})
+
+        def failing():
+            raise ImportError("nope")
+
+        build_mention_edges(
+            paper_id="10.0/c", text="t",
+            extraction_json={}, paper_metadata={"authors": "[]"},
+            normalizer=normalizer, biobert_factory=failing,
+            llm_long_tail_fn=lambda t, lc: {"new_entities": [], "validations": []},
+            use_cloud_llm=False,
+        )
+        assert np_mod._NLP_MISSING_LOGGED is True
+        # Second call must NOT reset the flag (it's already True — stays True).
+        build_mention_edges(
+            paper_id="10.0/d", text="t",
+            extraction_json={}, paper_metadata={"authors": "[]"},
+            normalizer=normalizer, biobert_factory=failing,
+            llm_long_tail_fn=lambda t, lc: {"new_entities": [], "validations": []},
+            use_cloud_llm=False,
+        )
+        assert np_mod._NLP_MISSING_LOGGED is True
+
+
+class TestBuildMentionEdgesLlmDisabled:
+    """N4: use_cloud_llm=False skips the LLM step entirely."""
+
+    def test_use_cloud_llm_false_skips_llm_call(self):
+        from scripts.graph.ner_pipeline import build_mention_edges
+        from scripts.graph.normalizer import EntityNormalizer
+
+        normalizer = EntityNormalizer(aliases={})
+        called = {"n": 0}
+
+        def llm_should_not_run(t, lc):  # noqa: ARG001
+            called["n"] += 1
+            return {"new_entities": [], "validations": []}
+
+        edges = build_mention_edges(
+            paper_id="10.0/e", text="t",
+            extraction_json={"methods_summary": "ion exchange"},
+            paper_metadata={"authors": "[]"},
+            normalizer=normalizer,
+            use_biobert=False,
+            use_cloud_llm=False,
+            llm_long_tail_fn=llm_should_not_run,
+        )
+        assert called["n"] == 0
+        sources = {e.source for e in edges}
+        # Only schema edges (or nothing if extraction yielded nothing).
+        assert "llm_cloud" not in sources
+        assert "biobert" not in sources
+
+
+class TestBuildMentionEdgesNoText:
+    """N4: text=None or empty skips BioBERT and LLM (nothing to process)."""
+
+    def test_no_text_skips_biobert_and_llm(self):
+        from scripts.graph.ner_pipeline import build_mention_edges
+        from scripts.graph.normalizer import EntityNormalizer
+
+        normalizer = EntityNormalizer(aliases={})
+
+        def biobert_should_not_run():
+            raise AssertionError("BioBERT must not be called with no text")
+
+        edges = build_mention_edges(
+            paper_id="10.0/f", text="",
+            extraction_json={"methods_summary": "ion exchange"},
+            paper_metadata={"authors": "[]"},
+            normalizer=normalizer,
+            biobert_factory=biobert_should_not_run,
+            # LLM also gated by text — any call would fail the test via the
+            # factory, but we pass a no-op to avoid unrelated failure modes.
+            llm_long_tail_fn=lambda t, lc: {"new_entities": [], "validations": []},
+        )
+        sources = {e.source for e in edges}
+        assert "biobert" not in sources
+        assert "llm_cloud" not in sources

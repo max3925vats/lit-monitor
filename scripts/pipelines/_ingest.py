@@ -16,6 +16,14 @@ G6 extension — graph write inside the R28 invariant:
   - Graph add failure -> WARN log, ``graph_indexed`` stays 0, but PHASE
     MARKING STILL FIRES.  This is the R28 enrichment semantic: the graph
     is not a correctness gate for the vector-only ingest path.
+
+N4 extension — NER-augmented entities:
+  - ``build_ner_mention_edges`` replaces ``build_graph_tuples`` at callsites
+    that want BioBERT + cloud-LLM enrichment in addition to schema entities.
+  - Returns ``list[MentionEdge]`` (N3 dataclass); ``graph_db.add_paper``
+    accepts these via N4 duck-typing in ``db._upsert_entity_and_mentions``.
+  - ``build_graph_tuples`` is preserved unchanged for backward compatibility
+    and for callers that explicitly want schema-only entities.
 """
 from __future__ import annotations
 
@@ -72,6 +80,59 @@ def build_graph_tuples(
             source_doi, exc,
         )
         return [], []
+
+
+def build_ner_mention_edges(
+    extraction: dict[str, Any],
+    paper_metadata: dict[str, Any],
+    source_doi: str,
+    state_db: Any,  # noqa: ARG001 — kept for call-site symmetry with build_graph_tuples
+    fulltext: str | None = None,
+    use_biobert: bool = True,
+    use_cloud_llm: bool = True,
+) -> list[Any]:
+    """N4 callsite helper: build NER-augmented MentionEdge list for one paper.
+
+    Orchestrates schema (N3) + BioBERT (N1) + cloud-Ollama (N2) → merge_mentions.
+    Wraps ``ner_pipeline.build_mention_edges`` with the same defensive perimeter
+    as ``build_graph_tuples``: any failure returns ``[]`` and logs WARN — the
+    graph payload is enrichment, never a correctness gate for vector ingest.
+
+    Returns a ``list[MentionEdge]`` accepted by ``graph_db.add_paper``
+    via N4 duck-typing.  An empty list is a valid return value.
+
+    The ``state_db`` parameter is accepted for API symmetry with
+    ``build_graph_tuples`` so callers can swap the two without restructuring;
+    it is not used internally.
+    """
+    try:
+        from scripts.graph.aliases import load_aliases  # noqa: PLC0415
+        from scripts.graph.ner_pipeline import build_mention_edges  # noqa: PLC0415
+        from scripts.graph.normalizer import EntityNormalizer  # noqa: PLC0415
+    except Exception as exc:
+        _module_logger.warning(
+            "N4 build_ner_mention_edges: import failed for %s: %s", source_doi, exc,
+        )
+        return []
+
+    try:
+        aliases = load_aliases()
+        normalizer = EntityNormalizer(aliases=aliases)
+        return build_mention_edges(
+            paper_id=source_doi,
+            text=fulltext or "",
+            extraction_json=extraction,
+            paper_metadata=paper_metadata,
+            normalizer=normalizer,
+            use_biobert=use_biobert,
+            use_cloud_llm=use_cloud_llm,
+        )
+    except Exception as exc:
+        _module_logger.warning(
+            "N4 build_ner_mention_edges failed for %s (non-fatal, graph_indexed stays 0): %s",
+            source_doi, exc,
+        )
+        return []
 
 
 def index_embeddings_and_mark_phases(

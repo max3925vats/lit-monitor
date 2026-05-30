@@ -323,19 +323,32 @@ class GraphDB:
         MENTIONS uniqueness is (paper_doi, entity_canonical_id, field) — the
         same entity surfacing in two different extraction fields produces two
         edges, matching G3's dedup key.
+
+        N4 duck-typing: accepts both ``EntityTuple`` (canonical_id, no source)
+        and ``MentionEdge`` (entity_key, source, confidence).  Fields not
+        present on EntityTuple default to 'schema' / 1.0 so the existing
+        schema-only path is unchanged.
         """
         conn = self._conn
+
+        # N4: MentionEdge uses entity_key; EntityTuple uses canonical_id.
+        # getattr fallback keeps the call-site identical for both types.
+        cid: str = getattr(ent, "entity_key", None) or ent.canonical_id
+        # N4: MentionEdge carries per-source provenance; EntityTuple defaults
+        # to 'schema' / 1.0 (unchanged from G6 behaviour).
+        source: str = getattr(ent, "source", "schema")
+        confidence: float = float(getattr(ent, "confidence", 1.0))
 
         # 1. Entity node — create if missing.
         res = conn.execute(
             "MATCH (e:Entity {canonical_id: $cid}) RETURN count(e)",
-            {"cid": ent.canonical_id},
+            {"cid": cid},
         )
         if int(res.get_next()[0]) == 0:
             conn.execute(
                 "CREATE (e:Entity {canonical_id: $cid, type: $t, surface: $s})",
                 {
-                    "cid": ent.canonical_id,
+                    "cid": cid,
                     "t": str(ent.type),
                     "s": str(ent.surface),
                 },
@@ -347,7 +360,7 @@ class GraphDB:
         res = conn.execute(
             "MATCH (p:Paper {doi: $d})-[m:MENTIONS]->(e:Entity {canonical_id: $cid}) "
             "WHERE m.field = $f RETURN count(m)",
-            {"d": doi, "cid": ent.canonical_id, "f": field_val},
+            {"d": doi, "cid": cid, "f": field_val},
         )
         if int(res.get_next()[0]) > 0:
             return
@@ -356,17 +369,19 @@ class GraphDB:
         conn.execute(
             "MATCH (p:Paper {doi: $d}), (e:Entity {canonical_id: $cid}) "
             "CREATE (p)-[m:MENTIONS {"
-            "source: 'schema', surface: $s, field: $f, "
+            "source: $src, surface: $s, field: $f, "
             "span_start: $ss, span_end: $se, "
-            "confidence: 1.0, prompt_version: $pv"
+            "confidence: $conf, prompt_version: $pv"
             "}]->(e)",
             {
                 "d": doi,
-                "cid": ent.canonical_id,
+                "cid": cid,
+                "src": source,
                 "s": str(ent.surface),
                 "f": field_val,
                 "ss": int(span_start),
                 "se": int(span_end),
+                "conf": confidence,
                 "pv": prompt_version,
             },
         )
