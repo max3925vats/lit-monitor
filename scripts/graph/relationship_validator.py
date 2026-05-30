@@ -10,8 +10,11 @@ from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
-# Phase 1 closed predicate vocabulary.
-# Phase 3 will extend this with EXTENDS, CONTRADICTS.
+# Phase 1 closed predicate vocabulary (8 predicates), extended in Phase 3 (R2)
+# with EXTENDS + CONTRADICTS — the two LLM-only predicates. Total: 10 names.
+# EXTENDS and CONTRADICTS are sourced exclusively from the LLM relationship
+# extractor (R2); the other 8 can come from either G4 schema extraction or
+# LLM augmentation.
 VALID_PREDICATES: frozenset[str] = frozenset(
     {
         "MENTIONS",
@@ -22,6 +25,8 @@ VALID_PREDICATES: frozenset[str] = frozenset(
         "LIMITED_BY",
         "INTRODUCES",
         "RAISES_QUESTION",
+        "EXTENDS",       # R2 — LLM-extracted Paper→Paper edge
+        "CONTRADICTS",   # R2 — LLM-extracted Paper→Paper edge
     }
 )
 

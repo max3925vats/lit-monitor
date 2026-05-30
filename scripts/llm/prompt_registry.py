@@ -190,6 +190,11 @@ _REQUIRED_PLACEHOLDERS: dict[str, frozenset[str]] = {
     "alias_consensus": frozenset({"clusters_json"}),
     # N7: re-extract with graph-context injection.
     "re_extract_with_graph": frozenset({"title", "abstract", "graph_context"}),
+    # R2 (Phase 3): LLM relationship extractor for 9 predicates
+    # (7 schema-source + EXTENDS + CONTRADICTS).
+    "relationship_extraction": frozenset(
+        {"fulltext", "paper_doi", "extraction_summary"}
+    ),
 }
 
 
