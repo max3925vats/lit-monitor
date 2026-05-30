@@ -229,3 +229,53 @@ class TestGraphStatusCLI:
         assert "Entity" in result.output
         # And the numeric count
         assert "42" in result.output
+
+    def test_graph_status_by_source_shows_table(self):
+        """N8: --by-source prints a second table with schema/biobert/llm_cloud rows."""
+        runner = CliRunner()
+        mock_conn = MagicMock()
+
+        def _execute_side_effect(sql: str) -> MagicMock:
+            res = MagicMock()
+            if "m.source" in sql:
+                # Simulate 3 source rows returned in sequence
+                _rows = [
+                    ["biobert", 7, 5],
+                    ["llm_cloud", 3, 2],
+                    ["schema", 12, 9],
+                ]
+                _iter = iter(_rows)
+
+                def _has_next() -> bool:
+                    # peek without consuming
+                    try:
+                        res._peek = next(_iter)
+                        return True
+                    except StopIteration:
+                        return False
+
+                def _get_next() -> list:
+                    return res._peek  # type: ignore[attr-defined]
+
+                res.has_next.side_effect = _has_next
+                res.get_next.side_effect = _get_next
+            else:
+                res.has_next.return_value = True
+                if "Paper" in sql:
+                    res.get_next.return_value = [10]
+                elif "Entity" in sql:
+                    res.get_next.return_value = [3]
+                else:
+                    res.get_next.return_value = [0]
+            return res
+
+        mock_conn.execute.side_effect = _execute_side_effect
+        mock_graph_db = MagicMock()
+        mock_graph_db._conn = mock_conn
+
+        with patch("scripts.graph.safe_graph_db", return_value=mock_graph_db):
+            result = runner.invoke(main, ["graph", "status", "--by-source"])
+
+        assert result.exit_code == 0, result.output
+        # The by-source table header and at least one source name must appear
+        assert "MENTIONS by source" in result.output or "schema" in result.output or "biobert" in result.output

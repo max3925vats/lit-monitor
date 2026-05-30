@@ -107,6 +107,16 @@ tier_1() {
         pass "graph smoke ok"
     fi
 
+    # N8: Phase 2 NER smoke (gated)
+    if [[ -n "${REFERENCE_DOI:-}" ]] && [[ "${GRAPH_ENABLED:-}" == "1" ]] && [[ "${NER_ENABLED:-}" == "1" ]]; then
+        echo ">>> [Tier 1 NER Smoke] graph backfill --ner --limit 1"
+        uv run lit-monitor graph backfill --ner --limit 1 \
+          || { echo "FAIL: backfill --ner"; exit 1; }
+        uv run lit-monitor graph status --by-source | grep -qE "biobert|schema" \
+          || { echo "FAIL: status --by-source"; exit 1; }
+        echo "  ok"
+    fi
+
     pass "Tier 1 OK"
 }
 

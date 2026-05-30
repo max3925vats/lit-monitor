@@ -2495,11 +2495,23 @@ def graph_propose_aliases(min_ratio: int, out: str, with_llm: bool) -> None:
 
 
 # ---------------------------------------------------------------------------
-# G13: graph status subcommand
+# G13 / N8: graph status subcommand
 # ---------------------------------------------------------------------------
 @graph_cmd.command("status")
-def graph_status() -> None:
-    """Show Kuzu node + edge counts as a rich.Table (G13)."""
+@click.option(
+    "--by-source", "by_source",
+    is_flag=True, default=False,
+    help=(
+        "Also show MENTIONS counts grouped by source "
+        "(schema / biobert / llm_cloud)."
+    ),
+)
+def graph_status(by_source: bool) -> None:
+    """Show Kuzu node + edge counts as a rich.Table (G13).
+
+    With --by-source, also prints a second table grouping MENTIONS edges by
+    their m.source value ({schema, biobert, llm_cloud}) — N8 Phase 2 observability.
+    """
     from rich.console import Console
     from rich.table import Table
 
@@ -2547,6 +2559,29 @@ def graph_status() -> None:
         for name, count in rows:
             table.add_row(name, str(count))
         Console().print(table)
+
+        # N8: --by-source breakdown of MENTIONS edges
+        if by_source:
+            try:
+                res = conn.execute(
+                    "MATCH (p:Paper)-[m:MENTIONS]->(e:Entity) "
+                    "RETURN m.source AS source, count(m) AS edge_count, "
+                    "count(DISTINCT e) AS entity_count "
+                    "ORDER BY source"
+                )
+                by_source_rows: list[tuple[str, int, int]] = []
+                while res.has_next():
+                    row = res.get_next()
+                    by_source_rows.append((str(row[0]), int(row[1]), int(row[2])))
+                src_table = Table(title="MENTIONS by source")
+                src_table.add_column("Source")
+                src_table.add_column("MENTIONS", justify="right")
+                src_table.add_column("Distinct entities", justify="right")
+                for source, mc, ec in by_source_rows:
+                    src_table.add_row(source, str(mc), str(ec))
+                Console().print(src_table)
+            except Exception:  # noqa: BLE001
+                click.echo("(by-source query failed — MENTIONS edges may not carry a source property)")
     finally:
         try:
             graph_db.close()

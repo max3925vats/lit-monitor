@@ -196,6 +196,32 @@ friendly install message and exit 0 — the rest of the pipeline is unaffected.
 availability and persist-dir reachability. `lit-monitor status` appends a
 `Graph: indexed=N / total=M  entities=K` line when the graph is active.
 
+### Graph RAG with NER (v0.5.0+, optional)
+
+Phase 2 layers domain-aware NER on top of Phase 1. Install:
+
+```bash
+uv sync --extra graph --extra nlp
+```
+
+Optional cloud-Ollama long-tail validation:
+
+```bash
+export OLLAMA_API_KEY=your_key
+# Edit config/extraction.yaml: set graph.ner.cloud_long_tail_enabled=true
+```
+
+New flags:
+
+- `lit-monitor graph backfill --ner` — process existing papers via BioBERT.
+- `lit-monitor graph backfill --ner-with-llm` — also use cloud-Ollama
+  long-tail (caps off the schema → BioBERT → LLM merge pipeline).
+- `lit-monitor graph propose-aliases --with-llm` — LLM-validated alias
+  consensus.
+- `lit-monitor obsidian re-extract --rag-mode graph` — re-extract with
+  corpus-aware graph context.
+- `lit-monitor graph status --by-source` — MENTIONS counts per source.
+
 ### Strict mode
 
 `lit-monitor` has a strict mode that turns every silent fallback (corrupt
