@@ -81,9 +81,15 @@ def sandbox_state_db() -> StateDB:
     return StateDB(SANDBOX_STATE_DB_PATH)
 
 
-def sandbox_vault_subfolder() -> Path:
-    """Resolve the sandbox vault output dir, creating it on demand."""
-    cfg = get_config()
+def sandbox_vault_subfolder(*, cfg: Any = None) -> Path:
+    """Resolve the sandbox vault output dir, creating it on demand.
+
+    Args:
+        cfg: optional pre-loaded config (test injection). When ``None``,
+            ``get_config()`` is called at runtime.
+    """
+    if cfg is None:
+        cfg = get_config()
     p = Path(cfg.obsidian.vault_path).expanduser() / SANDBOX_VAULT_SUBFOLDER
     p.mkdir(parents=True, exist_ok=True)
     return p
@@ -93,7 +99,7 @@ def sandbox_vault_subfolder() -> Path:
 # ChromaDB collection helpers (sandbox-only)
 # ---------------------------------------------------------------------------
 @functools.lru_cache(maxsize=1)
-def sandbox_embeddings_db():
+def sandbox_embeddings_db(cfg: Any = None):
     """Singleton ``EmbeddingsDB`` bound to the sandbox ``dev-*`` collections.
 
     Cached as a module-level singleton because chromadb's ``PersistentClient``
@@ -118,10 +124,17 @@ def sandbox_embeddings_db():
     Note: ``sandbox_status()`` re-reads counts via ``col.count()`` on each
     call, which queries chromadb live — so the cached client doesn't cause
     stale counts. Only the client *handle* is cached.
+
+    Args:
+        cfg: optional pre-loaded config (test injection). When ``None``,
+            ``get_config()`` is called at runtime. Note: ``lru_cache`` uses
+            this as part of the cache key, so injected configs produce a
+            separate cached instance from the default-runtime path.
     """
     from scripts.output.embeddings import EmbeddingsDB
 
-    cfg = get_config()
+    if cfg is None:
+        cfg = get_config()
     ollama_host = getattr(cfg.embeddings, "ollama_host", None) or getattr(
         cfg.brain_build, "ollama_host", "http://localhost:11434"
     )
@@ -254,8 +267,15 @@ def sandbox_status() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Destructive: clear the sandbox
 # ---------------------------------------------------------------------------
-def clear_sandbox(*, confirm: bool = False) -> dict[str, str]:
+def clear_sandbox(*, confirm: bool = False, cfg: Any = None) -> dict[str, str]:
     """Wipe all sandbox state. Destructive — requires confirm=True.
+
+    Args:
+        confirm: must be ``True`` to actually wipe; guards against accidental
+            calls.
+        cfg: optional pre-loaded config (test injection). When ``None``,
+            ``get_config()`` is called inside the vault-subfolder step at
+            runtime. Injecting a ``MagicMock`` bypasses the filesystem lookup.
 
     Returns a dict summarising what was cleared. Individual failures are
     captured in the ``actions`` log rather than raising, so a partial wipe
@@ -342,8 +362,9 @@ def clear_sandbox(*, confirm: bool = False) -> dict[str, str]:
     # 4) Vault subfolder
     try:
         # Resolve directly (without auto-create) so we don't recreate then nuke.
-        cfg = get_config()
-        vault_dir = Path(cfg.obsidian.vault_path).expanduser() / SANDBOX_VAULT_SUBFOLDER
+        # Use injected cfg when available; fall back to get_config() at runtime.
+        _cfg = cfg if cfg is not None else get_config()
+        vault_dir = Path(_cfg.obsidian.vault_path).expanduser() / SANDBOX_VAULT_SUBFOLDER
         if vault_dir.exists():
             shutil.rmtree(vault_dir, ignore_errors=True)
             actions.append(f"removed {vault_dir}")

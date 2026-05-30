@@ -174,6 +174,7 @@ def _consult_llm(
     *,
     client: Any = None,
     prompt: Any = None,
+    cfg: Any = None,  # inject for tests; None → load_config() at runtime
 ) -> dict[str, dict[str, Any]] | None:
     """N6: send fuzzy clusters to cloud-Ollama for validation.
 
@@ -182,6 +183,9 @@ def _consult_llm(
             fuzzy-clustered surfaces produced by ``_collect_clusters_by_type``.
         client: optional pre-built LLM client (test injection).
         prompt: optional pre-loaded Prompt instance (test injection).
+        cfg: optional pre-loaded config (test injection). When ``None`` and
+            a client also needs constructing, ``load_config()`` is called at
+            runtime. Injecting a ``MagicMock`` bypasses the filesystem lookup.
 
     Returns:
         ``{cluster_id: {"accept": bool, "canonical": str, "rationale": str}}``
@@ -208,10 +212,11 @@ def _consult_llm(
         try:
             # Lazy imports — keep module-level imports free of LLM clients so
             # the G11 test_no_llm_imports_in_module assertion still passes.
-            from scripts.core.config import load_config  # noqa: PLC0415
             from scripts.llm.llm_client import OllamaClient  # noqa: PLC0415
 
-            cfg = load_config()
+            if cfg is None:
+                from scripts.core.config import load_config  # noqa: PLC0415
+                cfg = load_config()
             # Prefer graph.aliases.cloud_model if the user set one; otherwise
             # reuse the NER cloud model so a single env tuning controls both
             # phase-2 cloud call sites.
@@ -381,6 +386,7 @@ def propose_aliases(
     *,
     min_ratio: int = _DEFAULT_MIN_RATIO,
     with_llm: bool = False,
+    cfg: Any = None,  # inject for tests; None → load_config() inside _consult_llm
 ) -> dict[str, dict[str, str]]:
     """Survey the graph and propose alias mappings for fuzzy-similar surfaces.
 
@@ -399,6 +405,8 @@ def propose_aliases(
             the same cluster. Higher values = stricter matching.
         with_llm: When True, run the N6 consensus pass. Requires
             ``OLLAMA_API_KEY`` in the environment.
+        cfg: optional pre-loaded config (test injection). Forwarded to
+            ``_consult_llm`` so tests can bypass the filesystem config lookup.
 
     Returns:
         ``{type: {surface: canonical}}`` where each surface maps to the
@@ -411,7 +419,7 @@ def propose_aliases(
         return fuzzy_proposals
 
     # N6 LLM consensus pass.
-    verdicts = _consult_llm(clusters_by_type)
+    verdicts = _consult_llm(clusters_by_type, cfg=cfg)
     if verdicts is None:
         # Fallback: BYTE-IDENTICAL to fuzzy-only.
         logger.warning(

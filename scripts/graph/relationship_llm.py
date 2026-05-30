@@ -281,8 +281,13 @@ def _validate_triple(
 # ---------------------------------------------------------------------------
 # Indirection — tests monkeypatch these to control client construction.
 # ---------------------------------------------------------------------------
-def _maybe_construct_client() -> Any | None:
+def _maybe_construct_client(cfg: Any = None) -> Any | None:
     """Construct an OllamaClient iff OLLAMA_API_KEY is set + config loads.
+
+    Args:
+        cfg: optional pre-loaded config (test injection). When ``None``,
+            ``load_config()`` is called at runtime. Injecting a ``MagicMock``
+            bypasses the filesystem lookup.
 
     Returns ``None`` on any failure (no key, missing config, import error).
     Lazy imports keep the LLM client off the module-level import surface
@@ -291,10 +296,11 @@ def _maybe_construct_client() -> Any | None:
     if not os.environ.get("OLLAMA_API_KEY"):
         return None
     try:
-        from scripts.core.config import load_config  # noqa: PLC0415
         from scripts.llm.llm_client import OllamaClient  # noqa: PLC0415
 
-        cfg = load_config()
+        if cfg is None:
+            from scripts.core.config import load_config  # noqa: PLC0415
+            cfg = load_config()
         # Prefer graph.relationships.cloud_model if the user set one;
         # otherwise reuse the NER cloud model so a single env tuning
         # controls all phase-2/phase-3 cloud call sites.
@@ -331,6 +337,7 @@ def extract_llm_relationships(
     *,
     client: Any = None,
     prompt: Any = None,
+    cfg: Any = None,  # inject for tests; None → load_config() inside _maybe_construct_client
 ) -> list[RelationshipTuple]:
     """R2: extract typed relationships via cloud-Ollama (single call per paper).
 
@@ -351,6 +358,8 @@ def extract_llm_relationships(
         prompt: optional pre-loaded ``Prompt`` instance (test injection).
             When ``None``, loaded via
             ``prompt_registry.load_prompt('relationship_extraction')``.
+        cfg: optional pre-loaded config (test injection). Forwarded to
+            ``_maybe_construct_client`` so tests can bypass filesystem lookup.
 
     Returns:
         ``list[RelationshipTuple]`` with ``field="llm_extracted"`` on every
@@ -366,7 +375,7 @@ def extract_llm_relationships(
     # injection path and the future "higher-level pipeline already built
     # the client" path).
     if client is None:
-        client = _maybe_construct_client()
+        client = _maybe_construct_client(cfg=cfg)
         if client is None:
             return []
 

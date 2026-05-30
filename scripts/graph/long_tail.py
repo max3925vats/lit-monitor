@@ -211,6 +211,7 @@ def extract_long_tail_and_validate(
     *,
     client: Any = None,
     prompt: Any = None,
+    cfg: Any = None,  # inject for tests; None → _load_runtime_config() at runtime
 ) -> dict[str, list]:
     """N2: single-LLM-call long-tail NER + low-confidence validation.
 
@@ -225,6 +226,10 @@ def extract_long_tail_and_validate(
             ``OLLAMA_API_KEY`` env var are present.
         prompt: optional pre-loaded ``Prompt`` instance (test injection).
             When ``None``, loaded via ``prompt_registry.load_prompt('long_tail_ner')``.
+        cfg: optional pre-loaded config (test injection). When ``None``,
+            ``_load_runtime_config()`` is called at runtime (the existing
+            monkeypatch hook for back-compat). Injecting a ``MagicMock``
+            bypasses the filesystem lookup without touching any monkeypatches.
 
     Returns:
         ``{"new_entities": [...], "validations": [...]}``.
@@ -244,7 +249,10 @@ def extract_long_tail_and_validate(
     # built the client" path).
     if client is None:
         try:
-            config = _load_runtime_config()
+            # Use injected cfg when available; fall back to the existing
+            # _load_runtime_config() indirection so tests that monkeypatch
+            # that function keep working unchanged.
+            config = cfg if cfg is not None else _load_runtime_config()
             if not _is_enabled(config):
                 return _preserve_low_conf(
                     low_conf_entities, reason="cloud disabled"

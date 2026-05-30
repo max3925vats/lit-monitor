@@ -8,12 +8,18 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def check_vault() -> dict[str, tuple[bool, str]]:
+def check_vault(*, cfg: Any = None) -> dict[str, tuple[bool, str]]:
     """Probe the configured Obsidian vault path.
+
+    Args:
+        cfg: optional pre-loaded config (test injection). When ``None``,
+            ``get_config()`` is called at runtime. Injecting a ``MagicMock``
+            bypasses the filesystem lookup so unit tests never touch paths.yaml.
 
     Returns:
         ``{check_name: (ok, message)}`` describing whether the vault is
@@ -23,8 +29,9 @@ def check_vault() -> dict[str, tuple[bool, str]]:
     # Lazy-import so the module is importable even if config is broken;
     # the health-check route catches the result and falls back to "unconfigured".
     try:
-        from scripts.core.config import get_config
-        cfg = get_config()
+        if cfg is None:
+            from scripts.core.config import get_config
+            cfg = get_config()
         vault_path = Path(cfg.obsidian.vault_path).expanduser()
     except FileNotFoundError:
         return {"paths_yaml": (False, "paths.yaml not found")}
