@@ -38,6 +38,14 @@ _PROMPTS_DIR = Path("config/prompts")
 
 
 def _load_yaml(name: str) -> dict[str, Any]:
+    """Load a prompt YAML by base name.
+
+    Resolves through ``scripts.core.path_utils.resolve_path``, which transparently
+    falls back to a sibling ``{name}.example.yaml`` when the live ``{name}.yaml``
+    is absent.  This keeps the package working on a fresh clone before any user
+    customization, and lets new prompts (e.g. ``long_tail_ner``) ship a single
+    tracked ``.example.yaml`` without committing a duplicate ``.yaml``.
+    """
     path = _resolve_path(_PROMPTS_DIR / f"{name}.yaml")
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
@@ -171,6 +179,26 @@ class ClusteringPrompts(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Registered prompts and their required user_template placeholders.
+# Used at load time to surface typos in shipped YAMLs and at call sites to
+# document the contract.  Extend when adding new prompts.
+# ---------------------------------------------------------------------------
+_REQUIRED_PLACEHOLDERS: dict[str, frozenset[str]] = {
+    # N2: cloud-Ollama long-tail NER + low-confidence validation.
+    "long_tail_ner": frozenset({"text", "low_conf_json"}),
+}
+
+
+def required_placeholders(name: str) -> frozenset[str]:
+    """Return the documented set of required placeholders for a prompt.
+
+    Empty frozenset for prompts that haven't opted in.  Callers can use this
+    to validate ``.render_user(**kwargs)`` argument sets at startup.
+    """
+    return _REQUIRED_PLACEHOLDERS.get(name, frozenset())
+
+
+# ---------------------------------------------------------------------------
 # Module-level cache
 # ---------------------------------------------------------------------------
 _cache: dict[str, Any] = {}
@@ -205,7 +233,20 @@ def load_prompt(name: str) -> Prompt:
             raw["paper_card_separator"] = _render(
                 raw["paper_card_separator"], prompt_name=name
             )
-        _cache[cache_key] = Prompt.model_validate(raw)
+        loaded = Prompt.model_validate(raw)
+        # Verify any registered required placeholders are actually present in
+        # the user_template — catches typos in the YAML or in
+        # _REQUIRED_PLACEHOLDERS at load time rather than at the call site.
+        required = _REQUIRED_PLACEHOLDERS.get(name, frozenset())
+        if required:
+            present = set(_VAR_PLACEHOLDER.findall(loaded.user_template))
+            missing = required - present
+            if missing:
+                logger.warning(
+                    "Prompt %r is missing required placeholders %s in user_template",
+                    name, sorted(missing),
+                )
+        _cache[cache_key] = loaded
         logger.debug("Loaded prompt: %s", name)
     return _cache[cache_key]
 
