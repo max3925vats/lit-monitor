@@ -236,3 +236,147 @@ class TestGetRelatedPapers:
     def test_bad_doi_raises(self, populated_graph):
         with pytest.raises(ValueError):
             get_related_papers("not-a-doi", mode="graph", k=5, cfg=None)
+
+
+# ---------------------------------------------------------------------------
+# H10: get_papers_by_query — shared free-text retrieval function
+# ---------------------------------------------------------------------------
+
+class TestGetPapersByQuery:
+    """Unit tests for get_papers_by_query — the H10 single implementation."""
+
+    def test_invalid_mode_raises(self) -> None:
+        """Unknown mode raises ValueError before touching any backend."""
+        from scripts.api.queries import get_papers_by_query
+        with pytest.raises(ValueError, match="unknown mode"):
+            get_papers_by_query("antibody", mode="bogus", k=10)
+
+    def test_k_zero_raises(self) -> None:
+        """k=0 is below the valid range."""
+        from scripts.api.queries import get_papers_by_query
+        with pytest.raises(ValueError, match="k must be"):
+            get_papers_by_query("antibody", mode="graph", k=0)
+
+    def test_k_negative_raises(self) -> None:
+        """Negative k raises ValueError."""
+        from scripts.api.queries import get_papers_by_query
+        with pytest.raises(ValueError, match="k must be"):
+            get_papers_by_query("antibody", mode="graph", k=-5)
+
+    def test_k_above_100_raises(self) -> None:
+        """k > 100 raises ValueError."""
+        from scripts.api.queries import get_papers_by_query
+        with pytest.raises(ValueError, match="k must be"):
+            get_papers_by_query("antibody", mode="graph", k=101)
+
+    def test_empty_query_returns_empty_list(self) -> None:
+        """Whitespace-only query → [] without contacting any backend."""
+        from scripts.api.queries import get_papers_by_query
+        assert get_papers_by_query("   ", mode="vector", k=10) == []
+
+    def test_empty_string_returns_empty_list(self) -> None:
+        """Empty string query → [] without error."""
+        from scripts.api.queries import get_papers_by_query
+        assert get_papers_by_query("", mode="graph", k=10) == []
+
+    def test_vector_mode_no_embeddings_db_returns_empty(self) -> None:
+        """Vector mode with embeddings_db=None → [] gracefully."""
+        from scripts.api.queries import get_papers_by_query
+        result = get_papers_by_query("antibody", mode="vector", k=10, embeddings_db=None)
+        assert result == []
+
+    def test_vector_mode_returns_doi_title_score(self) -> None:
+        """Vector mode: results include doi, title, and score fields."""
+        from unittest.mock import MagicMock
+        from scripts.api.queries import get_papers_by_query
+
+        mock_edb = MagicMock()
+        mock_edb.find_similar_to_text.return_value = [
+            {"id": "10.1/x", "score": 0.95, "metadata": {"title": "Paper X"}},
+            {"id": "10.1/y", "score": 0.80, "metadata": {"title": "Paper Y"}},
+        ]
+
+        results = get_papers_by_query(
+            "antibody", mode="vector", k=5, embeddings_db=mock_edb
+        )
+        assert len(results) == 2
+        assert results[0]["doi"] == "10.1/x"
+        assert results[0]["title"] == "Paper X"
+        assert results[0]["score"] == pytest.approx(0.95)
+        assert results[1]["doi"] == "10.1/y"
+
+    def test_graph_mode_returns_score(self) -> None:
+        """Graph mode: score field is present in output."""
+        from unittest.mock import MagicMock
+        from scripts.api.queries import get_papers_by_query
+
+        mock_gdb = MagicMock()
+        mock_gdb.resolve_query_entity.return_value = "antibody|method"
+        mock_gdb.find_papers_by_entities.return_value = [
+            ("10.1/a", 3.0),
+            ("10.1/b", 1.0),
+        ]
+        # Simulate metadata fetch returning nothing so we skip enrich logic
+        mock_conn = MagicMock()
+        mock_result = MagicMock()
+        mock_result.has_next.return_value = False
+        mock_conn.execute.return_value = mock_result
+        mock_gdb._conn = mock_conn
+
+        results = get_papers_by_query(
+            "antibody", mode="graph", k=5, graph_db=mock_gdb
+        )
+        assert len(results) == 2
+        dois = [r["doi"] for r in results]
+        assert "10.1/a" in dois
+        # Every entry has a score field
+        for r in results:
+            assert "score" in r
+            assert isinstance(r["score"], float)
+
+    def test_graph_mode_no_entity_returns_empty(self) -> None:
+        """Graph mode: query that resolves to no entity → []."""
+        from unittest.mock import MagicMock
+        from scripts.api.queries import get_papers_by_query
+
+        mock_gdb = MagicMock()
+        mock_gdb.resolve_query_entity.return_value = None  # unresolvable
+
+        results = get_papers_by_query(
+            "unresolvable_xyzzy", mode="graph", k=5, graph_db=mock_gdb
+        )
+        assert results == []
+
+    def test_hybrid_mode_with_no_backends_returns_empty(self) -> None:
+        """Hybrid with graph resolving to None and no vector backend → []."""
+        from unittest.mock import MagicMock
+        from scripts.api.queries import get_papers_by_query
+
+        # Provide graph_db directly so no real kuzu is opened; entity resolves
+        # to None so graph leg produces no hits. embeddings_db=None so vector
+        # leg is skipped. RRF over two empty lists → [].
+        mock_gdb = MagicMock()
+        mock_gdb.resolve_query_entity.return_value = None
+
+        result = get_papers_by_query(
+            "antibody",
+            mode="hybrid",
+            k=5,
+            graph_db=mock_gdb,
+            embeddings_db=None,
+        )
+        # No vector hits, no graph entity resolved → empty
+        assert result == []
+
+    def test_k_1_is_valid(self) -> None:
+        """k=1 is the minimum valid value and does not raise."""
+        from scripts.api.queries import get_papers_by_query
+        # No backends → returns [] without error
+        result = get_papers_by_query("x", mode="vector", k=1, embeddings_db=None)
+        assert result == []
+
+    def test_k_100_is_valid(self) -> None:
+        """k=100 is the maximum valid value and does not raise."""
+        from scripts.api.queries import get_papers_by_query
+        result = get_papers_by_query("x", mode="vector", k=100, embeddings_db=None)
+        assert result == []

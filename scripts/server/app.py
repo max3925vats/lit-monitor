@@ -158,6 +158,11 @@ def create_app() -> FastAPI:
 
     app.include_router(query_router)
 
+    # H10: POST /api/search — free-text paper retrieval (vector/graph/hybrid).
+    from scripts.server.routes.search import router as search_router  # noqa: PLC0415
+
+    app.include_router(search_router)
+
     # Dev-only /dev test surface. Wrapped in try/except so a syntax error or
     # import-time failure inside routes/dev.py downgrades to a warning rather
     # than killing the whole server.

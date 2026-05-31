@@ -493,41 +493,50 @@ def get_papers_by_query(
     *,
     mode: str = "graph",
     k: int = 20,
-    cfg: Any = None,
+    cfg: Any = None,  # noqa: ARG001 — reserved for future EmbeddingsDB lazy-init
     graph_db: Any = None,
     embeddings_db: Any = None,
 ) -> list[dict[str, Any]]:
-    """Free-text query → list of paper snapshots.
+    """H10: single source of truth for free-text paper retrieval.
 
-    Minimal implementation for B2; H10 will expand the vector/hybrid legs
-    with full EmbeddingsDB wiring and cross-encoder reranking.
+    Called by POST /api/search AND MCP find_papers_by_query[_hybrid].
+    Both surfaces share this one implementation to guarantee parity.
 
     Mode 'graph':  Resolve query as entity (Phase 2 alias chain), return
-                   papers MENTIONS-linked to that entity.
-    Mode 'hybrid': Graph leg (entity-resolve) + optional vector leg
-                   (ChromaDB), RRF-fused.  When embeddings_db is None the
-                   vector leg is silently skipped and graph results are
-                   returned ranked by entity overlap count.
-    Mode 'vector': Pure ChromaDB semantic search.  Requires embeddings_db.
-                   Returns [] when embeddings_db is None.
+                   papers MENTIONS-linked to that entity, ranked by overlap.
+    Mode 'hybrid': Graph leg + optional vector leg (ChromaDB), RRF-fused.
+                   Degrades to graph-only when embeddings_db is None.
+    Mode 'vector': Pure ChromaDB semantic search.  Returns [] when
+                   embeddings_db is None (no exception).
 
     Args:
-        query:        Free-text search string.
-        mode:         One of "graph", "hybrid", "vector".
-        k:            Maximum number of results.
-        cfg:          Optional config object (reserved for H10 expansion).
-        graph_db:     GraphDB instance.  When None, a process-global instance
-                      is acquired via safe_graph_db().
+        query:         Free-text search string.  Empty / whitespace-only
+                       returns [] without error.
+        mode:          One of "graph", "hybrid", "vector".
+        k:             Maximum number of results; must be in [1, 100].
+        cfg:           Reserved for future use (lazy EmbeddingsDB init).
+        graph_db:      GraphDB instance.  Lazily acquired via safe_graph_db()
+                       when None and mode requires the graph leg.
         embeddings_db: Optional EmbeddingsDB for vector/hybrid modes.
 
     Returns:
-        list of {doi, title, year, journal} dicts, top-k by relevance.
+        list of {doi, title, score} dicts, top-k by mode-appropriate score.
+        May also include {year, journal} when graph_db enrichment succeeds.
 
     Raises:
-        ValueError: When mode is unrecognised.
+        ValueError: When mode is unrecognised or k is outside [1, 100].
     """
     if mode not in ("graph", "hybrid", "vector"):
         raise ValueError(f"unknown mode: {mode!r}; expected graph/hybrid/vector")
+
+    # k validation — Pydantic catches this at the HTTP layer, but callers via
+    # MCP or direct Python import bypass Pydantic, so guard here too.
+    if not isinstance(k, int) or k < 1 or k > 100:
+        raise ValueError(f"k must be an integer in [1, 100], got {k!r}")
+
+    # Empty / whitespace query → empty result, not an error.
+    if not query or not query.strip():
+        return []
 
     # Acquire graph_db if not injected (lazy — avoids I/O when not needed).
     if graph_db is None and mode in ("graph", "hybrid"):
@@ -547,13 +556,18 @@ def get_papers_by_query(
         except Exception as exc:  # noqa: BLE001
             logger.warning("get_papers_by_query: vector query failed: %s", exc)
             return []
-        return _coerce_jsonable(
-            [
-                {"doi": r.get("id") or r.get("doi", "")}
-                for r in (results or [])
-                if r.get("id") or r.get("doi")
-            ][:k]
-        )
+        out_vec: list[dict[str, Any]] = []
+        for r in (results or []):
+            doi = r.get("id") or r.get("doi", "")
+            if not doi:
+                continue
+            md = r.get("metadata") or {}
+            out_vec.append({
+                "doi": doi,
+                "title": md.get("title", ""),
+                "score": float(r.get("score", 0.0)),
+            })
+        return _coerce_jsonable(out_vec[:k])
 
     # --- Graph leg (used by both "graph" and "hybrid") --------------------------
     graph_results: list[tuple[str, float]] = []
@@ -587,14 +601,15 @@ def get_papers_by_query(
 
         g_ids = [d for d, _ in graph_results]
         v_ids = [d for d, _ in vector_results]
+        # reciprocal_rank_fusion returns list[tuple[str, float]] sorted desc.
         fused = reciprocal_rank_fusion([g_ids, v_ids]) if (g_ids or v_ids) else []
         doi_scores = fused[:k]
 
     # --- Enrich with metadata --------------------------------------------------
     out: list[dict[str, Any]] = []
     if graph_db is not None:
-        for doi, _score in doi_scores[:k]:
-            entry: dict[str, Any] = {"doi": doi}
+        for doi, score in doi_scores[:k]:
+            entry: dict[str, Any] = {"doi": doi, "score": float(score)}
             try:
                 res = graph_db._conn.execute(
                     "MATCH (p:Paper {doi: $d}) RETURN p.title, p.year, p.journal",
@@ -605,13 +620,16 @@ def get_papers_by_query(
                     entry["title"] = str(row[0]) if row[0] else ""
                     entry["year"] = int(row[1]) if row[1] is not None else None
                     entry["journal"] = str(row[2]) if row[2] else ""
+                else:
+                    entry["title"] = ""
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "get_papers_by_query: metadata fetch failed for %s: %s", doi, exc
                 )
+                entry.setdefault("title", "")
             out.append(entry)
     else:
-        # No graph_db — return bare doi list
-        out = [{"doi": d} for d, _ in doi_scores[:k]]
+        # No graph_db — return bare doi + score
+        out = [{"doi": d, "title": "", "score": float(s)} for d, s in doi_scores[:k]]
 
     return _coerce_jsonable(out)
