@@ -1,7 +1,8 @@
 """MCP server exposing lit-monitor graph + vector RAG as 10 tools.
 
 Phase 4b B1: scaffold.  B2 fills in the 8 high-level tools.
-B3/B6 fill in run_cypher / semantic_search.
+B3 fills in run_cypher (safety-guarded Cypher escape hatch).
+B6 fills in semantic_search.
 
 Architecture:
 - stdio transport (matches Claude Desktop's MCP client expectation).
@@ -59,7 +60,7 @@ def _build_server():
     from scripts.mcp import tools as _tools  # noqa: PLC0415
 
     # Dispatch table: maps MCP tool name → callable.
-    # run_cypher (B3) and semantic_search (B6) are not yet implemented.
+    # semantic_search (B6) is not yet implemented.
     _DISPATCH = {
         "find_papers_by_entity": _tools.find_papers_by_entity,
         "find_papers_by_relationship": _tools.find_papers_by_relationship,
@@ -69,6 +70,8 @@ def _build_server():
         "get_schema": _tools.get_schema,
         "find_papers_by_query": _tools.find_papers_by_query,
         "find_papers_by_query_hybrid": _tools.find_papers_by_query_hybrid,
+        # B3: read-only Cypher escape hatch with safety guard.
+        "run_cypher": _tools.run_cypher,
     }
 
     server = Server("lit-monitor-graph")
@@ -101,13 +104,12 @@ def _build_server():
                 return [TextContent(type="text", text=f"Tool error: {exc}")]
             return [TextContent(type="text", text=json.dumps(result, default=str))]
 
-        if name in ("run_cypher", "semantic_search"):
-            # B3 / B6 not yet shipped.
-            pending = {"run_cypher": "B3", "semantic_search": "B6"}
+        if name == "semantic_search":
+            # B6 not yet shipped.
             return [
                 TextContent(
                     type="text",
-                    text=f"Tool {name!r} not yet implemented ({pending[name]} pending)",
+                    text="Tool 'semantic_search' not yet implemented (B6 pending)",
                 )
             ]
 

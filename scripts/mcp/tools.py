@@ -444,4 +444,64 @@ def find_papers_by_query_hybrid(query: str, k: int = 20) -> list[dict[str, Any]]
     doi_list = [d for d, _ in doi_scores]
     fused = reciprocal_rank_fusion([doi_list])[:k]
     fused_scores = [(doi, score) for doi, score in fused]
+
     return _enrich_paper_rows(fused_scores, db, k)
+
+
+# ---------------------------------------------------------------------------
+# Tool 9: run_cypher (B3) — read-only Cypher escape hatch
+# ---------------------------------------------------------------------------
+
+
+def run_cypher(query: str, limit: int = 100) -> list[dict[str, Any]]:
+    """Execute a read-only Cypher query against the live GraphDB.
+
+    This is a power-user escape hatch for the MCP agent to author its own
+    Cypher queries.  Every query passes through the safety guard
+    (:func:`scripts.mcp.cypher_guard.guard`) before reaching Kuzu:
+
+    - Comments are stripped first (``//`` and ``/* */``).
+    - Any mutation keyword (CREATE, MERGE, DELETE, SET, DROP, ALTER,
+      REMOVE, LOAD CSV) raises :class:`CypherSafetyError`.
+    - A ``LIMIT {limit}`` clause is appended when the query has none.
+
+    Result rows are coerced to plain ``dict[str, Any]`` using H1's
+    :func:`scripts.api.queries._coerce_jsonable` so callers always get
+    JSON-serializable output.
+
+    Args:
+        query: Raw Cypher query string.  Must not contain mutation keywords.
+        limit: Maximum rows to return (default 100).  Forwarded to the guard
+               as ``hard_limit``; ignored when the query already has LIMIT.
+
+    Returns:
+        list of row dicts, one per result row.  Column names are the keys.
+
+    Raises:
+        CypherSafetyError: (a :class:`ValueError` subclass) when *query*
+            contains a forbidden keyword.  MCP's ``ValueError`` handler
+            converts this to ``TextContent("Error: ...")``.
+        RuntimeError: When the graph backend is unavailable.
+    """
+    # Late import keeps the module importable even when cypher_guard isn't
+    # installed yet (e.g. in certain unit-test stubs).
+    from scripts.mcp.cypher_guard import guard  # noqa: PLC0415
+
+    # guard() raises CypherSafetyError (ValueError subclass) if unsafe.
+    safe_query = guard(query, hard_limit=limit)
+
+    db = _get_graph_db()
+    if db is None:
+        raise RuntimeError("Graph backend unavailable")
+
+    result = db._conn.execute(safe_query)
+
+    col_names = result.get_column_names()
+    rows: list[dict[str, Any]] = []
+    while result.has_next():
+        raw = result.get_next()
+        # _coerce_jsonable flattens Kuzu node objects to their properties dict
+        # and handles datetime/exotic types → strings.
+        row = {col_names[i]: _coerce_jsonable(raw[i]) for i in range(len(col_names))}
+        rows.append(row)
+    return rows
