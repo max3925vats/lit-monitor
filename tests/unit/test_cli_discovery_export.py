@@ -29,14 +29,16 @@ class TestRenderDigest:
         from scripts.output.digest_renderer import render_digest
 
         md = render_digest({"id": 2, "started_at": "2026-05-01T09:00:00"}, [])
-        assert md.startswith("#")
+        # DR1: format now starts with YAML frontmatter (---), heading follows.
+        assert "# Discovery Digest" in md
         assert "Discovery" in md
 
     def test_empty_papers_no_traceback(self):
         from scripts.output.digest_renderer import render_digest
 
         md = render_digest({"id": 3, "started_at": "2026-05-01"}, [])
-        assert "no new papers" in md.lower() or "No new papers" in md
+        # DR1: empty-paper placeholder is "*No results.*" in the new unified format.
+        assert "No results" in md or "no new papers" in md.lower()
 
     def test_score_formatted_to_3_decimals(self):
         from scripts.output.digest_renderer import render_digest
