@@ -3020,6 +3020,60 @@ def discovery_view(run_selector: str, run_id: int | None, top_k: int) -> None:
     console.print(table)
 
 
+@discovery_group.command("export-md")
+@click.option(
+    "--run",
+    "run_selector",
+    default="latest",
+    type=click.Choice(["latest"]),
+    show_default=True,
+)
+@click.option("--run-id", default=None, type=int)
+@click.option(
+    "--to",
+    "output_path",
+    default=None,
+    type=click.Path(),
+    help="Output file path. Default: Discovery_{date}.md in cwd.",
+)
+def discovery_export_md(
+    run_selector: str, run_id: int | None, output_path: str | None
+) -> None:
+    """Export a discovery run as a Markdown digest file (P7)."""
+    from pathlib import Path
+
+    from scripts.api.queries import get_discovery_run, get_discovery_run_papers
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+    from scripts.output.digest_renderer import render_digest
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+
+    if run_id is None:
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM discovery_runs ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        if not row:
+            click.echo("No discovery runs found.", err=True)
+            raise click.exceptions.Exit(1)
+        run_id = row[0]
+
+    run = get_discovery_run(db, run_id)
+    if run is None:
+        click.echo(f"Run {run_id} not found.", err=True)
+        raise click.exceptions.Exit(1)
+
+    papers = get_discovery_run_papers(db, run_id, top_k=1000)
+    md = render_digest(run, papers)
+
+    date_str = (run.get("started_at") or "")[:10] or "unknown"
+    dest = Path(output_path) if output_path else Path(f"Discovery_{date_str}.md")
+    dest.write_text(md, encoding="utf-8")
+    click.echo(f"Written to {dest}")
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
