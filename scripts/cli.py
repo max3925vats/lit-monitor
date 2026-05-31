@@ -2939,6 +2939,88 @@ def chunks_backfill_cmd(
 
 
 # ---------------------------------------------------------------------------
+# discovery sub-group — P6 view, P7 export-md
+# ---------------------------------------------------------------------------
+
+
+@main.group("discovery")
+def discovery_group() -> None:
+    """View and export discovery run results."""
+
+
+@discovery_group.command("view")
+@click.option(
+    "--run",
+    "run_selector",
+    default="latest",
+    type=click.Choice(["latest"]),
+    show_default=True,
+)
+@click.option("--run-id", default=None, type=int)
+@click.option("--top-k", default=20, show_default=True, type=int)
+def discovery_view(run_selector: str, run_id: int | None, top_k: int) -> None:
+    """Print discovery run results as a Rich table (P6)."""
+    from pathlib import Path
+
+    from rich.console import Console
+    from rich.table import Table
+
+    from scripts.api.queries import get_discovery_run, get_discovery_run_papers
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+    console = Console()
+
+    if run_id is None:
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM discovery_runs ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        if not row:
+            console.print("[yellow]No discovery runs found in state.db.[/yellow]")
+            return
+        run_id = row[0]
+
+    run = get_discovery_run(db, run_id)
+    if run is None:
+        console.print(f"[red]Run {run_id} not found.[/red]")
+        raise click.exceptions.Exit(1)
+
+    papers = get_discovery_run_papers(db, run_id, top_k=top_k)
+    if not papers:
+        console.print(f"[yellow]No papers in run #{run_id}.[/yellow]")
+        return
+
+    date_str = (run.get("started_at") or "")[:10] or "unknown"
+    table = Table(
+        title=f"Discovery Run #{run_id} — {date_str}",
+        show_header=True,
+        header_style="bold cyan",
+    )
+    table.add_column("Rank", width=4, justify="right")
+    table.add_column("Title", min_width=30, max_width=60)
+    table.add_column("DOI", max_width=25)
+    table.add_column("Score", width=6, justify="right")
+    table.add_column("Rationale", max_width=50)
+
+    for i, p in enumerate(papers, 1):
+        rationale = p.get("rationale") or ""
+        if len(rationale) > 80:
+            rationale = rationale[:79] + "…"
+        table.add_row(
+            str(i),
+            p.get("title") or "",
+            p.get("doi") or "",
+            f"{p.get('score') or 0:.3f}",
+            rationale,
+        )
+
+    console.print(table)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
