@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import time as _time
 import uuid
 from dataclasses import dataclass, field
@@ -32,6 +33,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import requests
 
 from scripts.core.doi_resolver import resolve_doi
@@ -352,6 +354,107 @@ def _rank_papers_graph(
                 graph_db.close()
             except Exception:  # pragma: no cover
                 pass
+
+
+# ---------------------------------------------------------------------------
+# Bundle A: soft pre-rank domain filter helpers
+# ---------------------------------------------------------------------------
+
+def _apply_soft_domain_filter(
+    candidates: list[dict[str, Any]],
+    domain_emb: np.ndarray,
+    threshold: float = 0.35,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Bundle A: split candidates into in-domain and off-domain pools.
+
+    Computes cosine(candidate._embedding, domain_emb) for each candidate.
+    Candidates above/at threshold → in_domain; below → off_domain.
+    Candidates with no ``_embedding`` key default to in_domain (fail-safe —
+    we can't evaluate them, so we keep them rather than silently discard).
+
+    The ``_domain_cosine`` key is written onto each candidate so downstream
+    assembly can sort the off-domain pool by domain relevance.
+
+    Parameters
+    ----------
+    candidates:
+        List of paper dicts.
+    domain_emb:
+        Pre-computed embedding of the domain_context paragraph (numpy array).
+    threshold:
+        Cosine similarity cutoff.  Candidates with cosine >= threshold go to
+        in_domain; candidates with cosine < threshold go to off_domain.
+
+    Returns
+    -------
+    (in_domain, off_domain)
+        Two lists of paper dicts (mutually exclusive, together exhaustive).
+    """
+    in_domain: list[dict[str, Any]] = []
+    off_domain: list[dict[str, Any]] = []
+    _domain_norm = float(np.linalg.norm(domain_emb))
+
+    for cand in candidates:
+        emb = cand.get("_embedding")
+        if emb is None:
+            # Can't evaluate cosine → conservative default: keep in in_domain.
+            in_domain.append(cand)
+            continue
+        arr = np.asarray(emb, dtype=np.float32)
+        _cand_norm = float(np.linalg.norm(arr))
+        if _cand_norm < 1e-9 or _domain_norm < 1e-9:
+            # Zero-vector edge case → can't compute cosine; treat as in-domain.
+            in_domain.append(cand)
+            continue
+        cosine = float(np.dot(arr, domain_emb) / (_cand_norm * _domain_norm))
+        cand["_domain_cosine"] = cosine
+        if cosine >= threshold:
+            in_domain.append(cand)
+        else:
+            off_domain.append(cand)
+
+    return in_domain, off_domain
+
+
+def assemble_with_soft_floor(
+    in_domain_ranked: list[dict[str, Any]],
+    off_domain_ranked: list[dict[str, Any]],
+    digest_size: int,
+    min_off_domain_pct: float = 0.05,
+) -> list[dict[str, Any]]:
+    """Bundle A: merge in-domain and off-domain pools with a guaranteed off-domain floor.
+
+    Guarantees that at least ``⌈digest_size × min_off_domain_pct⌉`` slots in the
+    final list come from the off-domain pool — preserving serendipitous discoveries
+    that might be filtered out purely on cosine grounds.
+
+    Parameters
+    ----------
+    in_domain_ranked:
+        Sorted (by score, desc) in-domain candidates.
+    off_domain_ranked:
+        Sorted (by score, desc) off-domain candidates.
+    digest_size:
+        Target number of results (typically ``config.discovery_top_k``).
+    min_off_domain_pct:
+        Fraction of digest_size reserved for off-domain candidates.
+        Default 0.05 = 5%.
+
+    Returns
+    -------
+    list[dict]
+        Final assembled list of at most ``digest_size`` papers.
+        Off-domain candidates appear at the end to preserve in-domain ordering.
+    """
+    min_off_slots = max(1, math.ceil(digest_size * min_off_domain_pct))
+
+    # Take off-domain first (top by score) up to the reserved quota.
+    off_take = off_domain_ranked[:min_off_slots]
+    # Fill the rest from in-domain.
+    remaining_slots = digest_size - len(off_take)
+    in_take = in_domain_ranked[:remaining_slots]
+
+    return in_take + off_take
 
 
 # ---------------------------------------------------------------------------

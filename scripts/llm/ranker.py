@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import numpy as np
+
 try:
     # Base class for chromadb client/connection errors. Imported lazily-safe
     # at module level so we can `except ChromaError` below without surprising
@@ -33,6 +35,9 @@ def rank_papers(
     llm,
     top_k: int = 20,
     domain_context: str = "",
+    *,
+    domain_context_emb: np.ndarray | None = None,
+    domain_context_weight: float = 0.0,
 ) -> list[dict[str, Any]]:
     """
     Rank candidate papers by similarity to the existing knowledge base,
@@ -50,11 +55,20 @@ def rank_papers(
         Number of top results to send to the LLM for rationale.
     domain_context:
         Optional extra context prepended to the LLM system prompt.
+    domain_context_emb:
+        Bundle A: optional pre-computed embedding of the domain_context paragraph.
+        When None or domain_context_weight == 0.0: behavior is byte-for-byte
+        identical to v0.8.0 (regression-test-locked).
+    domain_context_weight:
+        Bundle A: additive weight for the domain_context cosine score.
+        0.0 (default) = no contribution → v0.8.0 behavior preserved.
     Returns
     -------
     list[dict]
         Candidates sorted by similarity score (descending), each augmented
         with ``similarity_score`` and (for top-K) ``llm_rationale``.
+        When domain_context_emb is provided and weight > 0, each paper also
+        gets ``_domain_score`` (the raw cosine value before weighting).
     """
     if not candidates:
         return []
@@ -81,9 +95,29 @@ def rank_papers(
             )
             score = 0.0
         scored.append({**paper, "similarity_score": score})
-    # 2. Sort descending by score
+
+    # 2. Bundle A: optional domain_context additive score.
+    #    Runs only when both the embedding AND a non-zero weight are provided.
+    #    When either is absent/zero: no change to scores → v0.8.0 behavior.
+    if domain_context_emb is not None and domain_context_weight > 0.0:
+        _domain_norm = np.linalg.norm(domain_context_emb)
+        for paper in scored:
+            cand_emb = paper.get("_embedding")
+            if cand_emb is None:
+                # Candidate has no stored embedding — skip silently (no score change).
+                continue
+            cand_arr = np.asarray(cand_emb, dtype=np.float32)
+            _cand_norm = float(np.linalg.norm(cand_arr))
+            if _cand_norm < 1e-9 or _domain_norm < 1e-9:
+                continue
+            domain_score = float(np.dot(cand_arr, domain_context_emb) / (_cand_norm * _domain_norm))
+            # Store raw domain cosine for Bundle B's score decomposition / explainability.
+            paper["_domain_score"] = domain_score
+            paper["similarity_score"] = paper["similarity_score"] + domain_context_weight * domain_score
+
+    # 3. Sort descending by score
     scored.sort(key=lambda p: p.get("similarity_score", 0.0), reverse=True)
-    # 3. LLM rationale for top-K
+    # 4. LLM rationale for top-K
     top = scored[:top_k]
     rationales = _get_rationales(top, llm, domain_context)
     for paper in scored:

@@ -139,6 +139,7 @@ def search_semantic_scholar(
     limit: int = 100,
     *,
     api_key: str | None = _DEFAULT_S2_API_KEY,
+    min_relevance: float | None = None,
 ) -> list[dict[str, Any]]:
     """Search Semantic Scholar by keyword, returning pipeline-format paper dicts.
 
@@ -153,6 +154,11 @@ def search_semantic_scholar(
         Maximum results to return (Semantic Scholar API cap per request).
     api_key : str | None
         Semantic Scholar API key.  Reads ``S2_API_KEY`` env var by default.
+    min_relevance : float | None
+        Bundle A S2 supplement cap.  When provided, candidates whose S2
+        ``relevance_score`` falls below this threshold are dropped before
+        returning.  None (default) preserves today's behavior — all results
+        are returned regardless of relevance score.
 
     Returns
     -------
@@ -201,7 +207,7 @@ def search_semantic_scholar(
                 if hasattr(a, "name") and a.name
             ]
             fos: list[str] = list(getattr(p, "fieldsOfStudy", []) or [])
-            papers.append({
+            paper_dict: dict[str, Any] = {
                 "doi": doi,
                 "title": p.title or "",
                 "authors": authors,
@@ -211,9 +217,33 @@ def search_semantic_scholar(
                 "keywords": fos,
                 "source_databases": ["semantic_scholar"],
                 "tracked_author": False,
-            })
+            }
+            # Bundle A: carry S2 relevance_score as an internal field so the
+            # supplement cap can filter on it.  Using a leading underscore
+            # matches the convention for internal pipeline metadata (_embedding,
+            # _domain_score, etc.).  Downstream pipeline code is harmless —
+            # unknown keys are ignored during state_db upsert.
+            _rel = getattr(p, "relevance_score", None)
+            if _rel is not None:
+                paper_dict["_s2_relevance_score"] = float(_rel)
+            papers.append(paper_dict)
         except Exception as exc:
             logger.warning("Failed to convert S2 search result: %s", exc)
+
+    # Bundle A S2 supplement cap: drop candidates below min_relevance when enabled.
+    # Default is None → no filtering → v0.8.0 behavior unchanged.
+    if min_relevance is not None:
+        before = len(papers)
+        papers = [
+            p for p in papers
+            if p.get("_s2_relevance_score", 1.0) >= min_relevance
+        ]
+        dropped = before - len(papers)
+        if dropped:
+            logger.info(
+                "S2 cap: dropped %d candidate(s) with relevance_score < %.2f (kept %d)",
+                dropped, min_relevance, len(papers),
+            )
 
     logger.info(
         "S2 search %r (since %s): %d results",

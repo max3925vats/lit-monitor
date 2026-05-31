@@ -170,6 +170,33 @@ class Config:
             "default_mode": _ret_mode,
             "graph_db": _Namespace(_ret_graph) if isinstance(_ret_graph, dict) else _ret_graph,
         })
+        # --- Bundle A: context-aware ranking config (all defaults → v0.8.0 behavior) ---
+        # Read from raw_extraction; missing key defaults to an empty dict so every
+        # sub-key falls through to its safe default value.
+        raw_ranking = raw_extraction.get("ranking", {}) or {}
+        _raw_weights = raw_ranking.get("weights", {}) or {}
+        _raw_domain_filter = raw_ranking.get("domain_filter", {}) or {}
+        _raw_s2_cap = raw_ranking.get("s2_supplement_cap", {}) or {}
+        self.ranking = _Namespace({
+            # Signal weight — 0.0 means "no domain_context contribution" (v0.8.0 behavior)
+            "weights": _Namespace({
+                "domain_context": float(_raw_weights.get("domain_context", 0.0)),
+            }),
+            # Pre-rank semantic filter — disabled by default (v0.8.0 behavior)
+            "domain_filter": _Namespace({
+                "enabled": bool(_raw_domain_filter.get("enabled", False)),
+                "threshold": float(_raw_domain_filter.get("threshold", 0.35)),
+                # Soft floor: fraction of digest slots always reserved for off-domain candidates
+                "minimum_off_domain_slots_pct": float(
+                    _raw_domain_filter.get("minimum_off_domain_slots_pct", 0.05)
+                ),
+            }),
+            # S2 supplement cap — disabled by default (v0.8.0 behavior)
+            "s2_supplement_cap": _Namespace({
+                "enabled": bool(_raw_s2_cap.get("enabled", False)),
+                "min_relevance": float(_raw_s2_cap.get("min_relevance", 0.4)),
+            }),
+        })
         # --- Optional configs (loaded lazily if files exist) ---
         self._topics: list[dict] | None = None
         self._discovery_top_k: int = 20

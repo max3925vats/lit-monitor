@@ -19,7 +19,10 @@ from __future__ import annotations
 
 import logging
 import os
+from functools import lru_cache
 from typing import Any
+
+import numpy as np
 
 # Disable ChromaDB's anonymous telemetry before the module is imported.
 # The Settings flag alone doesn't suppress the posthog capture() call in all
@@ -360,6 +363,51 @@ class EmbeddingsDB:
             metadata={"hnsw:space": "cosine"},
         )
         logger.info("ChromaDB chunks collection '%s' cleared.", self._chunks_collection_name)
+
+    # ------------------------------------------------------------------
+    # Bundle A: arbitrary-text embedding helper
+    # ------------------------------------------------------------------
+    @lru_cache(maxsize=32)
+    def embed_text(self, text: str) -> np.ndarray:
+        """Embed an arbitrary string using the current provider/model.
+
+        Bundle A integration point: called once per discovery run to embed
+        the ``domain_context`` paragraph, then reused for cosine scoring
+        against each candidate.
+
+        Cache design note
+        -----------------
+        ``@lru_cache`` on a bound method includes ``self`` in the cache key,
+        giving each EmbeddingsDB instance its own per-instance LRU cache
+        (maxsize=32 texts per instance).  This is the correct behavior: two
+        EmbeddingsDB instances using *different* providers or models must not
+        share cached vectors.  The brief's "NOT including instance state"
+        wording refers to avoiding stale hits when instance fields mutate —
+        EmbeddingsDB fields (``_embed_model``, ``_ollama_host``) are set once
+        in ``__init__`` and never mutated, so per-instance caching is safe.
+
+        Parameters
+        ----------
+        text:
+            The string to embed.  Must be non-empty.
+
+        Returns
+        -------
+        np.ndarray
+            1-D float32 vector matching the configured embedding model's
+            dimensionality (1024 for mxbai-embed-large, 768 for nomic-embed-text).
+
+        Raises
+        ------
+        ValueError
+            If ``text`` is empty or whitespace-only.
+        """
+        if not text or not text.strip():
+            raise ValueError(
+                "embed_text requires non-empty text; got an empty or whitespace-only string."
+            )
+        raw: list[float] = self._embed(text)
+        return np.array(raw, dtype=np.float32)
 
     # ------------------------------------------------------------------
     # Internal

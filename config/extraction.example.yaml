@@ -4,6 +4,39 @@
 # See extraction.yaml for the full brain_build / embeddings / reranker options.
 
 # ---------------------------------------------------------------------------
+# Bundle A — context-aware ranking core
+# All keys default to "off" so existing pipelines are unaffected on upgrade.
+# ---------------------------------------------------------------------------
+ranking:
+  weights:
+    # Additive score contribution from domain_context paragraph.
+    # 0.0 = today's behavior (no domain_context contribution).
+    # Set to 0.2–0.5 once you have a well-written domain_context.yaml.
+    domain_context: 0.0
+    # (Future bundles will add: cluster_centroid, graph_entity_overlap,
+    #  graph_citation, graph_shared_authors, feedback)
+
+  domain_filter:
+    # Set true to enable the pre-rank semantic filter.
+    # Candidates below the threshold cosine are moved to the off-domain pool.
+    # The soft floor (minimum_off_domain_slots_pct) always preserves some
+    # off-domain candidates for serendipitous discovery.
+    enabled: false
+    # Cosine similarity cutoff.  Candidates below this → off-domain pool.
+    threshold: 0.35
+    # Fraction of digest slots always reserved for off-domain candidates.
+    # ⌈digest_size × this⌉ slots are taken from the highest-scoring off-domain papers.
+    # Default 0.05 = 5% of 20 = 1 slot guaranteed for serendipity.
+    minimum_off_domain_slots_pct: 0.05
+
+  s2_supplement_cap:
+    # Set true to drop Semantic Scholar supplemented candidates with low
+    # relevance_score (as returned by the S2 API search endpoint).
+    enabled: false
+    # Candidates with relevance_score below this threshold are dropped.
+    min_relevance: 0.4
+
+# ---------------------------------------------------------------------------
 # G1 — Graph RAG retrieval settings (Phase 1)
 # Install the [graph] extra first: uv sync --extra graph
 # ---------------------------------------------------------------------------
