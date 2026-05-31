@@ -61,3 +61,33 @@ For HTTP endpoint reference, see the FastAPI auto-generated OpenAPI docs at
 `http://127.0.0.1:8000/docs` when running `lit-monitor serve`.
 
 For MCP tool reference, see [docs/MCP_TOOLS.md](MCP_TOOLS.md).
+
+## Phase 5 surfaces (v0.8.0)
+
+Phase 5 (discovery pipeline + notifications) added the following surfaces.
+MCP tool count increases from 10 to **12**.
+
+### HTTP endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/discovery/runs` | List all discovery runs (id, timestamp, paper count, status) |
+| `GET` | `/api/discovery/runs/{id}` | Single run metadata + summary stats |
+| `GET` | `/api/discovery/runs/{id}/papers` | Paginated per-paper results for a run |
+| `GET` | `/discovery/notify-handler` | Notification chooser page (opens on notification click) |
+| `POST` | `/discovery/notify-handler/save-preference` | Persist viewer preference (browser / obsidian / none) |
+
+### MCP tools (additions — total now 12)
+
+| Tool | Description |
+|---|---|
+| `get_recent_discovery_runs` | Returns the N most recent discovery runs with metadata |
+| `get_discovery_run_papers` | Returns per-paper scored results for a given run id |
+
+### CLI commands (additions)
+
+| Command | Description |
+|---|---|
+| `lit-monitor discovery view` | Rich-formatted table of results for a run (`--run latest` or run id) |
+| `lit-monitor discovery export-md` | Export a run's results as a Markdown digest (`--run`, `--to`) |
+| `lit-monitor obsidian sync` | Sync deferred per-paper Obsidian notes (`--all` or `--run`) |

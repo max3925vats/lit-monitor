@@ -246,6 +246,38 @@ Tools include `find_papers_by_entity`, `get_paper_details`,
 `run_cypher` (read-only with safety guard), `semantic_search`, and 5 more.
 See [`docs/MCP_TOOLS.md`](docs/MCP_TOOLS.md) for the full reference.
 
+### Discovery + notifications (v0.8.0)
+
+The discovery pipeline writes structured results (runs + per-paper scores) into
+`state.db`. Multiple surfaces render them on demand.
+
+```bash
+# Rich-formatted table for the most recent run
+lit-monitor discovery view --run latest
+
+# On-demand Markdown export
+lit-monitor discovery export-md --run latest --to ~/discovery.md
+
+# Per-paper Obsidian notes deferred from the discovery pipeline can be synced later
+lit-monitor obsidian sync --all
+```
+
+**Optional OS notifications** — install with `uv sync --extra notify`. On run
+completion an OS notification fires (macOS Notification Center, Linux
+`notify-send`, Windows toast). Clicking the notification opens
+`http://localhost:8765/discovery/notify-handler?run_id=N` — a chooser page on
+first use, or a direct redirect to your preferred surface (browser / Obsidian /
+dismiss) after you save a preference.
+
+**Config flags** (under `discovery:` in `config/extraction.yaml`):
+
+| Key | Default | Effect |
+|---|---|---|
+| `notify.enabled` | `true` | Fire OS notification at run end |
+| `notify.preferred_viewer` | `""` | Skip the chooser when set to `browser`, `obsidian`, or `none` |
+| `notes.auto_write_per_paper` | `true` | `false` → defer per-paper notes to `obsidian sync` |
+| `digest.auto_write` | `true` | `false` → no inline digest .md; use `discovery export-md` |
+
 ### Phase 3 LLM relationships (v0.6.0+, optional)
 
 Phase 3 adds `EXTENDS` / `CONTRADICTS` edges + LLM-augmented schema

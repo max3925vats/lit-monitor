@@ -127,6 +127,17 @@ tier_1() {
         echo "  ok"
     fi
 
+    # P11: Phase 5 discovery CLI smoke (non-fatal — no runs in sandbox is expected)
+    info "[smoke] lit-monitor discovery view"
+    uv run lit-monitor discovery view --run latest --top-k 5 || true
+
+    info "[smoke] lit-monitor discovery export-md"
+    uv run lit-monitor discovery export-md --run latest --to /tmp/test_p11_digest.md || true
+
+    # --help smoke confirms the subcommand is registered (fatal if missing)
+    info "[smoke] lit-monitor obsidian sync --help"
+    uv run lit-monitor obsidian sync --help > /dev/null
+
     pass "Tier 1 OK"
 }
 
