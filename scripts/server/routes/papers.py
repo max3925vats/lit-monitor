@@ -1,19 +1,21 @@
-"""H4 + H5 + H7: paper-related HTTP endpoints.
+"""H4 + H5 + H7 + Bundle B: paper-related HTTP endpoints.
 
 H4: GET  /api/papers/{doi}            — full paper snapshot.
 H5: GET  /api/papers/{doi}/related    — related papers (vector / graph / hybrid).
 H7: POST /api/papers/{doi}/relink     — re-run Obsidian note relink.
 H7: POST /api/papers/{doi}/re-extract — re-run LLM extraction + rerender.
+B:  GET  /api/papers/{doi}/score-breakdown — per-signal score decomposition.
 
 The graph backend is constructed lazily via safe_graph_db() so the server
 can start without a kuzu installation; requests hit 503 instead of an
 import error at boot time.
 
 Route registration order (suffixed routes registered BEFORE the catch-all):
-  1. /api/papers/{doi:path}/related     — GET
-  2. /api/papers/{doi:path}/relink      — POST  (H7)
-  3. /api/papers/{doi:path}/re-extract  — POST  (H7)
-  4. /api/papers/{doi:path}             — GET   (catch-all; must be LAST)
+  1. /api/papers/{doi:path}/related          — GET
+  2. /api/papers/{doi:path}/score-breakdown  — GET   (Bundle B)
+  3. /api/papers/{doi:path}/relink           — POST  (H7)
+  4. /api/papers/{doi:path}/re-extract       — POST  (H7)
+  5. /api/papers/{doi:path}                  — GET   (catch-all; must be LAST)
 """
 from __future__ import annotations
 
@@ -83,6 +85,65 @@ def related_papers(
     if results is None:
         raise HTTPException(status_code=404, detail=f"paper {doi!r} not found")
     return results
+
+
+# ---------------------------------------------------------------------------
+# Bundle B: GET /api/papers/{doi:path}/score-breakdown
+# Returns the most recent per-signal score decomposition for a paper.
+# Registered BEFORE the bare {doi:path} catch-all so the suffix matches first.
+# ---------------------------------------------------------------------------
+
+
+def _get_score_breakdown_db():
+    """Return the StateDB instance for score-breakdown lookups.
+
+    Thin lazy-import wrapper so tests can monkeypatch this name to inject a
+    temporary StateDB without touching the full server runtime.
+    """
+    from scripts.server.runtime import get_runtime
+
+    return get_runtime().state_db
+
+
+@router.get("/api/papers/{doi:path}/score-breakdown")
+def get_score_breakdown(doi: str) -> dict:
+    """Bundle B: return the most recent per-signal score decomposition for a paper.
+
+    Path parameters:
+        doi: DOI string (may contain slashes — captured by {doi:path}).
+
+    Returns:
+        200 — {doi, run_id, breakdown: {signal: float, ...}}
+        404 — no breakdown stored for this DOI (paper not in discovery results,
+              or run predates Bundle B deployment).
+        422 — doi does not match ^10.\\d{4,9}/\\S+$ (rejected before hitting DB).
+    """
+    if not _DOI_RE.match(doi):
+        raise HTTPException(status_code=422, detail=f"invalid DOI: {doi!r}")
+
+    import json as _json
+
+    state_db = _get_score_breakdown_db()
+    with state_db._connect() as conn:
+        row = conn.execute(
+            "SELECT score_breakdown_json, run_id, doi "
+            "FROM discovery_paper_results "
+            "WHERE doi = ? AND score_breakdown_json IS NOT NULL "
+            "ORDER BY id DESC LIMIT 1",
+            (doi,),
+        ).fetchone()
+
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No score breakdown for {doi!r}",
+        )
+
+    return {
+        "doi": row[2],
+        "run_id": row[1],
+        "breakdown": _json.loads(row[0]),
+    }
 
 
 # ---------------------------------------------------------------------------

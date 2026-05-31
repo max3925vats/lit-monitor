@@ -228,6 +228,11 @@ class StateDB:
                 # Set to 1 by `lit-monitor obsidian sync` when flag is false.
                 ("papers", "notes_synced",
                  "ALTER TABLE papers ADD COLUMN notes_synced INTEGER DEFAULT 0"),
+                # Bundle B: per-ranked-paper JSON blob of per-signal score contributions.
+                # NULL when the row was written before Bundle B; set by add_discovery_paper
+                # when a score_breakdown dict is provided.
+                ("discovery_paper_results", "score_breakdown_json",
+                 "ALTER TABLE discovery_paper_results ADD COLUMN score_breakdown_json TEXT"),
             ]
             for table, column, sql in additive_migrations:
                 if self._column_exists(conn, table, column):
@@ -912,6 +917,7 @@ class StateDB:
         score: float,
         rationale: str,
         ingested: bool,
+        score_breakdown: dict | None = None,
     ) -> None:
         """P1: record a ranked candidate paper associated with a discovery run.
 
@@ -923,14 +929,24 @@ class StateDB:
             rationale: LLM-generated rationale string (may be empty).
             ingested: True when the paper was successfully ingested this run;
                       ingested_at timestamp is set only in that case.
+            score_breakdown: Bundle B — optional dict mapping signal name to
+                             float contribution.  Serialized as JSON and stored
+                             in score_breakdown_json.  None → NULL (backward compat).
         """
+        import json as _json
+
+        breakdown_json: str | None = (
+            _json.dumps(score_breakdown) if score_breakdown is not None else None
+        )
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO discovery_paper_results "
-                "(run_id, doi, title, score, rationale, ingested, ingested_at) "
+                "(run_id, doi, title, score, rationale, ingested, ingested_at, "
+                " score_breakdown_json) "
                 "VALUES (?, ?, ?, ?, ?, ?, "
-                "CASE ? WHEN 1 THEN datetime('now') ELSE NULL END)",
-                (run_id, doi, title, score, rationale, int(ingested), int(ingested)),
+                "CASE ? WHEN 1 THEN datetime('now') ELSE NULL END, ?)",
+                (run_id, doi, title, score, rationale, int(ingested), int(ingested),
+                 breakdown_json),
             )
 
     # -- Insight discovery (G16) --

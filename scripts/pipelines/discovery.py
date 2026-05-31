@@ -201,6 +201,8 @@ def run_discovery(
                     # ingested is determined later; set False here — updated by ingestion
                     # tracking in _run_ingestion or subsequent passes (P2+).
                     ingested=False,
+                    # Bundle B: persist per-signal breakdown for the HTTP endpoint + web UI.
+                    score_breakdown=paper.get("score_breakdown"),
                 )
         # L2: fetch recent runs for Pipeline Run Summary prepended to digest
         recent_runs = state_db.get_recent_runs(limit=5) if not dry_run else []

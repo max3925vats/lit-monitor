@@ -529,7 +529,8 @@ def get_discovery_run_papers(
         ingested_at; ordered by score descending.  Empty list when
         run_id has no papers or does not exist.
     """
-    cols = ["doi", "title", "score", "rationale", "ingested", "ingested_at"]
+    cols = ["doi", "title", "score", "rationale", "ingested", "ingested_at",
+            "score_breakdown_json"]
     with state_db._connect() as conn:
         rows = conn.execute(
             "SELECT " + ", ".join(cols) + " FROM discovery_paper_results "

@@ -382,3 +382,114 @@ class TestReExtract:
         # Opus info-leak guard: no traceback in detail.
         assert "Traceback" not in body["detail"]
         assert "File " not in body["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Bundle B: GET /api/papers/{doi}/score-breakdown
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def client_with_db(tmp_path) -> TestClient:
+    """TestClient backed by a real create_app() with a real (empty) StateDB."""
+    import scripts.server.routes.papers as papers_route
+    from scripts.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+
+    # Monkeypatch _get_score_breakdown_db so the route uses our temp DB
+    import scripts.server.routes.papers as _papers_mod
+    _orig = getattr(_papers_mod, "_get_score_breakdown_db", None)
+
+    app = create_app()
+    client = TestClient(app)
+    # Patch the helper used by the endpoint to return our StateDB
+    with patch.object(_papers_mod, "_get_score_breakdown_db", return_value=db):
+        yield client
+
+
+@pytest.fixture()
+def client_with_seeded_run(tmp_path) -> TestClient:
+    """TestClient with a StateDB that has one run + one paper with score_breakdown."""
+    import json as _json
+
+    import scripts.server.routes.papers as _papers_mod
+    from scripts.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    run_id = db.start_discovery_run(run_params=None)
+    db.add_discovery_paper(
+        run_id=run_id,
+        doi="10.1234/seeded",
+        title="Seeded Paper",
+        score=0.85,
+        rationale="Important.",
+        ingested=False,
+        score_breakdown={"vector": 0.7, "domain_context": 0.15},
+    )
+
+    app = create_app()
+    client = TestClient(app)
+    with patch.object(_papers_mod, "_get_score_breakdown_db", return_value=db):
+        yield client
+
+
+@pytest.mark.unit
+class TestScoreBreakdownEndpoint:
+    """GET /api/papers/{doi}/score-breakdown — Bundle B HTTP endpoint."""
+
+    def test_returns_200_for_seeded_paper(self, client_with_seeded_run):
+        """Known DOI with stored breakdown → 200."""
+        r = client_with_seeded_run.get("/api/papers/10.1234/seeded/score-breakdown")
+        assert r.status_code == 200
+
+    def test_response_has_expected_keys(self, client_with_seeded_run):
+        """Response body has doi, run_id, breakdown, computed_at keys."""
+        r = client_with_seeded_run.get("/api/papers/10.1234/seeded/score-breakdown")
+        body = r.json()
+        for key in ("doi", "run_id", "breakdown"):
+            assert key in body, f"Expected key {key!r} missing from response"
+
+    def test_doi_echoed_back(self, client_with_seeded_run):
+        """doi in response matches the requested DOI."""
+        r = client_with_seeded_run.get("/api/papers/10.1234/seeded/score-breakdown")
+        assert r.json()["doi"] == "10.1234/seeded"
+
+    def test_breakdown_values_numeric(self, client_with_seeded_run):
+        """breakdown values are numeric (int or float)."""
+        r = client_with_seeded_run.get("/api/papers/10.1234/seeded/score-breakdown")
+        breakdown = r.json()["breakdown"]
+        for key, val in breakdown.items():
+            assert isinstance(val, (int, float)), (
+                f"breakdown[{key!r}] = {val!r} is not numeric"
+            )
+
+    def test_breakdown_has_vector_and_domain_context(self, client_with_seeded_run):
+        """breakdown contains both vector and domain_context signals."""
+        r = client_with_seeded_run.get("/api/papers/10.1234/seeded/score-breakdown")
+        breakdown = r.json()["breakdown"]
+        assert "vector" in breakdown
+        assert "domain_context" in breakdown
+
+    def test_404_for_unknown_doi(self, client_with_db):
+        """Unknown DOI → 404."""
+        r = client_with_db.get("/api/papers/10.9999/missing/score-breakdown")
+        assert r.status_code == 404
+
+    def test_404_detail_mentions_doi(self, client_with_db):
+        """404 detail message references the DOI."""
+        r = client_with_db.get("/api/papers/10.9999/ghost/score-breakdown")
+        assert r.status_code == 404
+        assert "10.9999/ghost" in r.json()["detail"]
+
+    def test_response_is_valid_json(self, client_with_seeded_run):
+        """Response Content-Type is JSON and body is parseable."""
+        r = client_with_seeded_run.get("/api/papers/10.1234/seeded/score-breakdown")
+        assert r.status_code == 200
+        # json() would have raised if not parseable; double-check content-type
+        assert "application/json" in r.headers.get("content-type", "")
+
+    def test_malformed_doi_422(self, client_with_db):
+        """Non-DOI path → 422 (regex guard)."""
+        r = client_with_db.get("/api/papers/not-a-doi/score-breakdown")
+        assert r.status_code == 422

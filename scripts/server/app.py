@@ -34,6 +34,12 @@ STATIC_DIR = HERE / "static"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
+# Bundle B: register a fromjson filter so run_detail.html can decode the
+# score_breakdown_json column inline without a dedicated route round-trip.
+import json as _json  # noqa: E402 — intentionally after globals block
+
+templates.env.filters["fromjson"] = _json.loads
+
 
 def _read_version() -> str:
     """Resolve the installed package version, falling back to ``dev``."""

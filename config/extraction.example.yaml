@@ -94,3 +94,15 @@ discovery:
     # discovery run.  Default true preserves existing behavior.
     # When false, use `lit-monitor discovery export-md --run latest` to render.
     auto_write: true
+
+    # ---------------------------------------------------------------------------
+    # Bundle B — score decomposition in the Markdown digest
+    # ---------------------------------------------------------------------------
+    score_decomposition:
+      # Set true to render a compact per-signal breakdown table after each paper's
+      # rationale in the Top Results section of the .md digest.
+      # Default false — preserves v0.8 / Bundle A digest format unchanged.
+      show_in_md: false
+      # The web UI /discovery paper cards always show the "Why this paper?" panel
+      # (native <details> element, default open). Set false to hide it.
+      show_in_web_ui: true

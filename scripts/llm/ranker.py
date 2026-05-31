@@ -115,9 +115,23 @@ def rank_papers(
             paper["_domain_score"] = domain_score
             paper["similarity_score"] = paper["similarity_score"] + domain_context_weight * domain_score
 
-    # 3. Sort descending by score
+    # 3. Bundle B: attach per-signal score_breakdown to every paper.
+    #    Defaults preserve v0.8 behavior — breakdown is additive metadata only.
+    for paper in scored:
+        # domain_context weighted contribution (0.0 when not used)
+        domain_raw = paper.get("_domain_score", 0.0)
+        domain_contribution = round(float(domain_raw * domain_context_weight), 3)
+        # Adjust vector to exclude the domain contribution so that
+        # vector + domain_context ≈ similarity_score (within rounding).
+        vector_only = round(float(paper.get("similarity_score", 0.0)) - domain_contribution, 3)
+        paper["score_breakdown"] = {
+            "vector": vector_only,
+            "domain_context": domain_contribution,
+        }
+
+    # 4. Sort descending by score
     scored.sort(key=lambda p: p.get("similarity_score", 0.0), reverse=True)
-    # 4. LLM rationale for top-K
+    # 5. LLM rationale for top-K
     top = scored[:top_k]
     rationales = _get_rationales(top, llm, domain_context)
     for paper in scored:

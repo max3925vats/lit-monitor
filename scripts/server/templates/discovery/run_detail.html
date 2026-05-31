@@ -37,6 +37,31 @@
       {% if p.rationale %}
         <p class="rationale">{{ p.rationale }}</p>
       {% endif %}
+      {#
+        Bundle B: collapsible "Why this paper?" panel — default open.
+        Uses native <details>/<summary> — no JS framework required.
+        Rendered only when score_breakdown_json is stored for this paper.
+      #}
+      {% if p.score_breakdown_json %}
+      {% set breakdown = p.score_breakdown_json | fromjson %}
+      <details class="why-panel" open>
+        <summary>Why this paper?</summary>
+        <table class="score-breakdown-table">
+          <thead>
+            <tr><th>Signal</th><th>Score</th></tr>
+          </thead>
+          <tbody>
+            {% for signal, score in breakdown.items() %}
+            <tr><td>{{ signal }}</td><td>{{ "%.3f" | format(score | float) }}</td></tr>
+            {% endfor %}
+            <tr class="total-row">
+              <td><strong>total</strong></td>
+              <td><strong>{{ "%.3f" | format(p.score or 0 | float) }}</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </details>
+      {% endif %}
       {% if p.doi %}
       {#
         DOI is embedded literally in the URL path — no urlencode — so that H7's

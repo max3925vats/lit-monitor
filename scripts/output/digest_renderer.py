@@ -34,6 +34,7 @@ def render_digest(
     sim_threshold: float = _DEFAULT_SIM_THRESHOLD,
     n_databases: int | None = None,
     recent_runs: list[dict] | None = None,
+    show_score_decomposition: bool = False,
     _today: str | None = None,
 ) -> str:
     """Render a discovery run as a Markdown digest note.
@@ -53,6 +54,11 @@ def render_digest(
                        line.  Defaults to ``_DEFAULT_N_DATABASES``.
         recent_runs:   If provided, a *Pipeline Run Summary* section is
                        prepended before the main digest body (L2 feature).
+        show_score_decomposition:
+                       Bundle B — when True, render a compact Markdown table of
+                       per-signal score contributions after each paper's rationale.
+                       Maps to ``digest.score_decomposition.show_in_md`` in config.
+                       Default False → v0.8 / Bundle A behavior unchanged.
         _today:        Override the date string used in the output.  Pass a
                        fixed ISO date string (``"YYYY-MM-DD"``) in tests so
                        the output is deterministic.
@@ -69,8 +75,14 @@ def render_digest(
         if p.get("similarity_score", p.get("score", 0.0)) >= sim_threshold
     ]
 
-    top_section = _format_paper_list(top_results[:20], include_rationale=True)
-    all_section = _format_paper_list(papers, include_rationale=False)
+    top_section = _format_paper_list(
+        top_results[:20], include_rationale=True,
+        show_score_decomposition=show_score_decomposition,
+    )
+    all_section = _format_paper_list(
+        papers, include_rationale=False,
+        show_score_decomposition=False,  # decomposition only in Top Results
+    )
 
     content = (
         f'---\n'
@@ -115,12 +127,25 @@ def _resolve_run_date(run: dict[str, Any], override: str | None) -> str:
     return started[:10]
 
 
-def _format_paper_list(papers: list[dict[str, Any]], *, include_rationale: bool) -> str:
+def _format_paper_list(
+    papers: list[dict[str, Any]],
+    *,
+    include_rationale: bool,
+    show_score_decomposition: bool = False,
+) -> str:
     """Format a list of paper dicts as a Markdown bullet list.
 
     Accepts both pipeline field names (``similarity_score``, ``llm_rationale``,
     ``authors``, ``year``) and the shorter CLI aliases (``score``,
     ``rationale``).  Pipeline names take priority.
+
+    Args:
+        papers: Paper dicts.
+        include_rationale: Append llm_rationale as a block quote when True.
+        show_score_decomposition: Bundle B — when True, append a compact Markdown
+            table of per-signal score contributions after the rationale for each
+            paper that has a ``score_breakdown`` key.  Papers without the key are
+            silently skipped (no table, no crash).
     """
     if not papers:
         return "*No results.*"
@@ -144,8 +169,42 @@ def _format_paper_list(papers: list[dict[str, Any]], *, include_rationale: bool)
             line += f" · {doi_link}"
         if include_rationale and rationale:
             line += f"\n  > {rationale}"
+        # Bundle B: opt-in per-paper breakdown table
+        if show_score_decomposition:
+            breakdown = p.get("score_breakdown")
+            if breakdown:
+                line += "\n" + _format_score_breakdown_table(breakdown, total=score)
         lines.append(line)
     return "\n".join(lines)
+
+
+def _format_score_breakdown_table(
+    breakdown: dict[str, float],
+    total: float,
+) -> str:
+    """Bundle B: render a compact Markdown table for per-signal score contributions.
+
+    Args:
+        breakdown: Dict mapping signal name → float contribution.
+        total:     The paper's overall similarity_score (shown in the total row).
+
+    Returns:
+        Markdown table string (indented 2 spaces for nesting inside a list item).
+
+    Example output::
+
+        | Signal | Score |
+        |---|---|
+        | vector | 0.847 |
+        | domain_context | 0.123 |
+        | **total** | **0.970** |
+    """
+    rows = ["| Signal | Score |", "|---|---|"]
+    for signal, val in breakdown.items():
+        rows.append(f"| {signal} | {val:.3f} |")
+    rows.append(f"| **total** | **{total:.3f}** |")
+    # Indent by 2 spaces so the table nests inside the bullet list item.
+    return "\n".join("  " + r for r in rows)
 
 
 def _format_pipeline_run_summary(recent_runs: list[dict]) -> str:
