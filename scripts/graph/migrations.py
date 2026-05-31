@@ -47,6 +47,28 @@ SCHEMA_VERSION: int = 3
 _DEFAULT_PROMPT_VERSION: str = "phase1.0"
 
 # ---------------------------------------------------------------------------
+# Canonical typed-relationship predicate lists (shared with scripts/api/queries.py).
+# Adding a new predicate here automatically surfaces it in the query layer.
+# ---------------------------------------------------------------------------
+# Paper → Entity predicates (5)
+TYPED_PAPER_TO_ENTITY_PREDS: tuple[str, ...] = (
+    "DEPENDS_ON",
+    "PROPOSES",
+    "LIMITED_BY",
+    "INTRODUCES",
+    "RAISES_QUESTION",
+)
+# Paper → Paper predicates (4)
+TYPED_PAPER_TO_PAPER_PREDS: tuple[str, ...] = (
+    "CITES",
+    "COMPARES_TO",
+    "EXTENDS",
+    "CONTRADICTS",
+)
+# Combined list for callers that need all predicates.
+TYPED_PREDICATES: tuple[str, ...] = TYPED_PAPER_TO_ENTITY_PREDS + TYPED_PAPER_TO_PAPER_PREDS
+
+# ---------------------------------------------------------------------------
 # Three provenance columns appended to every REL TABLE (G14).
 # Using a shared fragment keeps the DDL consistent and easy to audit.
 # NOTE: Kuzu 0.11.x does NOT support `COLUMN` keyword in ALTER TABLE ADD —

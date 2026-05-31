@@ -13,6 +13,13 @@ import logging
 import re
 from typing import Any
 
+from scripts.graph.migrations import (
+    TYPED_PAPER_TO_PAPER_PREDS as _PAPER_TO_PAPER_PREDS,
+)
+from scripts.graph.migrations import (
+    TYPED_PREDICATES as _TYPED_PREDS,
+)
+
 logger = logging.getLogger(__name__)
 
 # DOI pattern: prefix 10.N+/ suffix (non-whitespace).
@@ -71,23 +78,6 @@ def _coerce_jsonable(value: Any) -> Any:
             pass
     # Fallback: stringify anything Kuzu might return that we don't recognize.
     return str(value)
-
-
-# ---------------------------------------------------------------------------
-# Typed relationship predicates tracked in GraphDB.
-# Kept here so queries.py is self-contained; duplicates the constant in G6.
-# ---------------------------------------------------------------------------
-_TYPED_PREDS = (
-    "CITES",
-    "COMPARES_TO",
-    "DEPENDS_ON",
-    "PROPOSES",
-    "LIMITED_BY",
-    "INTRODUCES",
-    "RAISES_QUESTION",
-    "EXTENDS",
-    "CONTRADICTS",
-)
 
 
 # ---------------------------------------------------------------------------
@@ -165,8 +155,9 @@ def get_paper_snapshot(doi: str, graph_db: Any) -> dict[str, Any]:
     # --- Relationships in / out over all typed predicate tables -------------
     rels_in: list[dict[str, Any]] = []
     rels_out: list[dict[str, Any]] = []
+
+    # Outgoing: all 9 predicates (Paper→Entity and Paper→Paper).
     for pred in _TYPED_PREDS:
-        # Outgoing edges: this Paper → any target
         try:
             res = graph_db._conn.execute(
                 f"MATCH (p:Paper {{doi: $d}})-[r:{pred}]->(t) "
@@ -195,11 +186,16 @@ def get_paper_snapshot(doi: str, graph_db: Any) -> dict[str, Any]:
                         "prompt_version": str(row[4]) if row[4] else "",
                     }
                 )
-        except Exception:
+        except Exception as exc:
             # A predicate table may be empty or absent on older schema versions.
+            logger.warning(
+                "get_paper_snapshot: predicate %s outgoing query failed: %s", pred, exc
+            )
             continue
 
-        # Incoming edges: any Paper → this Paper (Paper–Paper predicates only)
+    # Incoming: only Paper→Paper predicates (5 structurally-impossible queries
+    # avoided by scoping to _PAPER_TO_PAPER_PREDS instead of all 9).
+    for pred in _PAPER_TO_PAPER_PREDS:
         try:
             res = graph_db._conn.execute(
                 f"MATCH (s:Paper)-[r:{pred}]->(p:Paper {{doi: $d}}) "
@@ -218,7 +214,10 @@ def get_paper_snapshot(doi: str, graph_db: Any) -> dict[str, Any]:
                         "prompt_version": str(row[3]) if row[3] else "",
                     }
                 )
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "get_paper_snapshot: predicate %s incoming query failed: %s", pred, exc
+            )
             continue
 
     return _coerce_jsonable(
@@ -390,7 +389,7 @@ def list_entities(
     try:
         res = graph_db._conn.execute(
             "MATCH (e:Entity {type: $t})<-[m:MENTIONS]-(p:Paper) "
-            "RETURN e.canonical_id, e.type, e.surface, count(p) AS mention_count "
+            "RETURN e.canonical_id, e.type, e.surface, count(DISTINCT p) AS mention_count "
             "ORDER BY mention_count DESC LIMIT $k",
             {"t": entity_type, "k": top_k},
         )
@@ -476,8 +475,10 @@ def get_schema_text(graph_db: Any) -> str:
         from scripts.graph.schema_describer import (  # type: ignore[import-not-found]  # noqa: PLC0415
             describe_schema,
         )
-    except (ImportError, ModuleNotFoundError):
+    except (ImportError, ModuleNotFoundError, TypeError):
         # A1 not yet built — return a recognisable placeholder.
+        # TypeError is caught because monkeypatching sys.modules[key] = None
+        # causes the import machinery to raise TypeError, not ImportError.
         return "(schema describer not yet built — see Phase 4a A1)"
 
     try:

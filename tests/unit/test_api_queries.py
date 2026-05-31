@@ -128,6 +128,43 @@ class TestListEntities:
         result = list_entities("method", top_k=10, graph_db=populated_graph)
         json.dumps(result)
 
+    def test_list_entities_counts_distinct_papers_not_edges(self, tmp_path):
+        """H1 I1: same canonical_id in two fields of ONE paper = 1 mention, not 2."""
+        db = GraphDB(persist_dir=str(tmp_path / "h1_distinct.kuzu"))
+        # Same entity appearing in two different fields of the same paper produces
+        # two MENTIONS edges. Without DISTINCT, count(p) would return 2.
+        entities = [
+            EntityTuple(
+                canonical_id="chromatography",
+                type="method",
+                surface="chromatography",
+                field="methods_summary",
+                span_start=0,
+                span_end=14,
+            ),
+            EntityTuple(
+                canonical_id="chromatography",
+                type="method",
+                surface="chromatography",
+                field="discovered_topics",
+                span_start=None,
+                span_end=None,
+            ),
+        ]
+        db.add_paper(
+            doi="10.0/dup",
+            entities=entities,
+            relationships=[],
+            paper_metadata={"title": "Dup", "year": 2024, "journal": "X"},
+        )
+
+        result = list_entities("method", top_k=10, graph_db=db)
+        chromato = next(e for e in result if e["canonical_id"] == "chromatography")
+        # Without DISTINCT: would be 2. With DISTINCT: 1.
+        assert chromato["mention_count"] == 1, (
+            f"expected 1 (DISTINCT papers), got {chromato['mention_count']}"
+        )
+
 
 class TestGetCorpusStats:
     def test_returns_dict(self, populated_graph):
