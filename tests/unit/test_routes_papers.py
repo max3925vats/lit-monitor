@@ -200,3 +200,74 @@ class TestPaperSnapshotBackendUnavailable:
             client.get("/api/papers/10.1234/x")
 
         mock_snapshot.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# H5: GET /api/papers/{doi}/related
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRelatedPapers:
+    def test_defaults_to_vector_k20(self, client):
+        """H5: default mode=vector, k=20 are forwarded to get_related_papers."""
+        from unittest.mock import patch
+
+        with patch(
+            "scripts.server.routes.papers.get_related_papers",
+            return_value=[{"doi": "10.1/r", "score": 0.9}],
+        ) as m:
+            r = client.get("/api/papers/10.1234/ok/related")
+
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+        # Confirm defaults passed through as keyword args.
+        kwargs = m.call_args.kwargs
+        assert kwargs.get("mode") == "vector"
+        assert kwargs.get("k") == 20
+
+    def test_mode_graph_passes_through(self, client):
+        """H5: explicit mode=graph and k=5 forwarded correctly."""
+        from unittest.mock import patch
+
+        with patch(
+            "scripts.server.routes.papers.get_related_papers",
+            return_value=[],
+        ) as m:
+            r = client.get("/api/papers/10.1234/ok/related?mode=graph&k=5")
+
+        assert r.status_code == 200
+        assert m.call_args.kwargs["mode"] == "graph"
+        assert m.call_args.kwargs["k"] == 5
+
+    def test_bad_mode_422(self, client):
+        """H5: unknown mode value → 422 (Pydantic Literal validation)."""
+        r = client.get("/api/papers/10.1234/ok/related?mode=bogus")
+        assert r.status_code == 422
+
+    def test_k_too_large_422(self, client):
+        """H5: k=200 exceeds upper bound of 100 → 422."""
+        r = client.get("/api/papers/10.1234/ok/related?k=200")
+        assert r.status_code == 422
+
+    def test_k_too_small_422(self, client):
+        """H5: k=0 below lower bound of 1 → 422."""
+        r = client.get("/api/papers/10.1234/ok/related?k=0")
+        assert r.status_code == 422
+
+    def test_malformed_doi_422(self, client):
+        """H5: non-DOI path segment before /related → 422."""
+        r = client.get("/api/papers/not-a-doi/related")
+        assert r.status_code == 422
+
+    def test_unknown_doi_404_when_returns_none(self, client):
+        """H5: get_related_papers returns None → 404."""
+        from unittest.mock import patch
+
+        with patch(
+            "scripts.server.routes.papers.get_related_papers",
+            return_value=None,
+        ):
+            r = client.get("/api/papers/10.1234/missing/related")
+
+        assert r.status_code == 404
