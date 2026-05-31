@@ -39,3 +39,15 @@ graph:
     llm_enabled: false
     # Cloud model used when llm_enabled=true.
     cloud_model: gemma2:27b-cloud
+
+# ---------------------------------------------------------------------------
+# P2 — OS notification on discovery completion.
+# Requires the [notify] extra: uv sync --extra notify
+# ---------------------------------------------------------------------------
+discovery:
+  notify:
+    enabled: true                # set false for headless/server installs
+    on_zero_results: false       # suppress notification when no new papers
+    min_papers_to_notify: 1      # placeholder for future filtering (P4)
+    preferred_viewer: ""         # set by P4 wizard or notify-handler: browser|obsidian|none
+    asked_user: false            # true once the P4 chooser page has been shown

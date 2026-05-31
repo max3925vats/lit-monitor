@@ -271,6 +271,24 @@ def run_discovery(
                 total_found=summary.new_papers_found,
                 total_ingested=summary.papers_ingested,
             )
+        # P2: fire OS notification after the run row is committed.
+        # Wrapped in try/except so any failure here is non-fatal.
+        try:
+            from scripts.notify.os_notification import notify_discovery_complete
+            # Defensive getattr chain: handles configs that predate the
+            # discovery.notify block — falls through with enabled=False.
+            notify_cfg = getattr(getattr(config, "discovery", None), "notify", None)
+            notify_discovery_complete(
+                run_id=_disc_run_id if _disc_run_id is not None else 0,
+                paper_count=summary.papers_ingested,
+                app_url="http://localhost:8765",  # P4 will replace with cfg.server.base_url
+                enabled=getattr(notify_cfg, "enabled", False) if notify_cfg else False,
+                on_zero_results=(
+                    getattr(notify_cfg, "on_zero_results", True) if notify_cfg else True
+                ),
+            )
+        except Exception as exc:
+            logger.warning("P2: notify dispatch failed (non-fatal): %s", exc)
     return summary
 
 # ---------------------------------------------------------------------------

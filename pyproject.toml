@@ -76,6 +76,9 @@ nlp = [
 mcp = [
     "mcp>=1.0",
 ]
+notify = [
+    "plyer>=2.1",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
