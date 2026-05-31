@@ -125,6 +125,9 @@ def create_app() -> FastAPI:
     from scripts.server.routes.brain_build import router as brain_build_router
     from scripts.server.routes.control import router as control_router
     from scripts.server.routes.discovery import router as discovery_router
+    from scripts.server.routes.discovery_notify import (  # noqa: PLC0415
+        router as discovery_notify_router,
+    )
     from scripts.server.routes.health import router as health_router
     from scripts.server.routes.ingest import router as ingest_router
     from scripts.server.routes.schedule import router as schedule_router
@@ -136,6 +139,9 @@ def create_app() -> FastAPI:
     app.include_router(control_router)
     app.include_router(sse_router)
     app.include_router(discovery_router)
+    # P3: notify-handler — must come after discovery_router so /discovery/{run_id}
+    # pattern does not swallow /discovery/notify-handler (FastAPI routes in order).
+    app.include_router(discovery_notify_router)
     app.include_router(schedule_router)
     app.include_router(health_router)
     # H2: POST /api/ingest — production ingest endpoint for Zotero plugin / web ingestors.
