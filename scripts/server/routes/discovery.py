@@ -1,12 +1,15 @@
-"""Discovery dashboard + process controls + SSE progress stream.
+"""Discovery dashboard + process controls + SSE progress stream + read API.
 
 Routes:
-    GET  /discovery             — dashboard (last run, history, today's digest)
-    POST /api/discovery/start   — spawn ``lit-monitor run [--dry-run]``
-    POST /api/discovery/stop    — SIGTERM the running subprocess
-    GET  /api/discovery/status  — JSON status for polling
-    GET  /api/discovery/controls — HTMX HTML fragment (5-second self-refresh)
-    GET  /api/discovery/stream  — SSE tail of newest discovery JSONL log
+    GET  /discovery                           — dashboard (last run, history, today's digest)
+    POST /api/discovery/start                 — spawn ``lit-monitor run [--dry-run]``
+    POST /api/discovery/stop                  — SIGTERM the running subprocess
+    GET  /api/discovery/status                — JSON status for polling
+    GET  /api/discovery/controls              — HTMX HTML fragment (5-second self-refresh)
+    GET  /api/discovery/stream                — SSE tail of newest discovery JSONL log
+    GET  /api/discovery/runs                  — paginated list of discovery_runs (P5)
+    GET  /api/discovery/runs/{run_id}         — full run dict + papers (P5)
+    GET  /api/discovery/runs/{run_id}/papers  — papers for run sorted by score (P5)
 """
 from __future__ import annotations
 
@@ -15,10 +18,15 @@ import logging
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
+from scripts.api.queries import (
+    get_discovery_run,
+    get_discovery_run_papers,
+    get_discovery_runs,
+)
 from scripts.server.app import templates
 from scripts.server.routes.sse import stream_log
 from scripts.server.runtime import get_runtime
@@ -233,3 +241,50 @@ async def discovery_controls(request: Request) -> HTMLResponse:
 async def discovery_stream(request: Request) -> EventSourceResponse:
     """SSE stream of the newest discovery JSONL log."""
     return stream_log(request, "discovery")
+
+
+# ---------------------------------------------------------------------------
+# P5: read endpoints for discovery_runs + discovery_paper_results
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/discovery/runs")
+def list_discovery_runs(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    """P5: paginated list of discovery runs.
+
+    Returns ``{runs: [...], total: N}``.  Each run contains id, started_at,
+    finished_at, status, total_found, total_ingested.
+    """
+    return get_discovery_runs(get_runtime().state_db, limit=limit, offset=offset)
+
+
+@router.get("/api/discovery/runs/{run_id}")
+def get_discovery_run_detail(run_id: int) -> dict:
+    """P5: full detail for a single discovery run including its papers.
+
+    Returns run dict + ``papers`` list sorted by score DESC.
+    404 when run_id does not exist.
+    """
+    state_db = get_runtime().state_db
+    run = get_discovery_run(state_db, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    # Attach papers (no top_k cap on detail view — callers use /papers for capped)
+    run["papers"] = get_discovery_run_papers(state_db, run_id)
+    return run
+
+
+@router.get("/api/discovery/runs/{run_id}/papers")
+def list_discovery_run_papers(
+    run_id: int,
+    top_k: int = Query(20, ge=1, le=100),
+) -> dict:
+    """P5: papers for a discovery run, sorted by score DESC.
+
+    Returns ``{papers: [...]}``.  Empty list when run_id has no results.
+    """
+    papers = get_discovery_run_papers(get_runtime().state_db, run_id, top_k=top_k)
+    return {"papers": papers}
