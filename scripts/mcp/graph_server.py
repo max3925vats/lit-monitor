@@ -60,7 +60,6 @@ def _build_server():
     from scripts.mcp import tools as _tools  # noqa: PLC0415
 
     # Dispatch table: maps MCP tool name → callable.
-    # semantic_search (B6) is not yet implemented.
     _DISPATCH = {
         "find_papers_by_entity": _tools.find_papers_by_entity,
         "find_papers_by_relationship": _tools.find_papers_by_relationship,
@@ -72,6 +71,8 @@ def _build_server():
         "find_papers_by_query_hybrid": _tools.find_papers_by_query_hybrid,
         # B3: read-only Cypher escape hatch with safety guard.
         "run_cypher": _tools.run_cypher,
+        # B6: ChromaDB vector retrieval (paper + chunk granularity).
+        "semantic_search": _tools.semantic_search,
     }
 
     server = Server("lit-monitor-graph")
@@ -104,15 +105,6 @@ def _build_server():
                 return [TextContent(type="text", text=f"Tool error: {exc}")]
             return [TextContent(type="text", text=json.dumps(result, default=str))]
 
-        if name == "semantic_search":
-            # B6 not yet shipped.
-            return [
-                TextContent(
-                    type="text",
-                    text="Tool 'semantic_search' not yet implemented (B6 pending)",
-                )
-            ]
-
         # Truly unknown tool name (should not happen if client uses list_tools).
         return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
@@ -132,6 +124,12 @@ def _install_signal_handlers() -> None:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("GraphDB close failed: %s", exc)
             _graph_db = None
+        # B6: drop the EmbeddingsDB handle so ChromaDB cleans itself up.
+        try:
+            from scripts.mcp.tools import close_embeddings_db  # noqa: PLC0415
+            close_embeddings_db()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("EmbeddingsDB close failed: %s", exc)
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, _shutdown)

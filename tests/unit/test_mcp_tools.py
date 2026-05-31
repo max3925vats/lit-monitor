@@ -422,3 +422,246 @@ class TestFindPapersByQueryHybrid:
         with patch.object(tools, "_get_graph_db", return_value=fake_db):
             result = tools.find_papers_by_query_hybrid("zzznomatch")
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# B6: semantic_search tests
+# ---------------------------------------------------------------------------
+
+# NOTE: We mock EmbeddingsDB rather than seeding a real ChromaDB instance,
+# because ChromaDB embeddings require Ollama to be running (no offline mode).
+# Mocking is the correct choice here — we're testing the tool's validation,
+# dispatch, coercion, and graceful-degradation logic, not EmbeddingsDB itself.
+
+
+class TestSemanticSearch:
+    """Tests for the semantic_search MCP tool (B6)."""
+
+    # -----------------------------------------------------------------------
+    # Validation tests (Step 1 — run RED before implementation)
+    # -----------------------------------------------------------------------
+
+    def test_bad_granularity_raises(self):
+        with pytest.raises(ValueError, match="granularity must be"):
+            tools.semantic_search("protein folding", granularity="sentence")
+
+    def test_granularity_case_sensitive(self):
+        with pytest.raises(ValueError, match="granularity must be"):
+            tools.semantic_search("query", granularity="Paper")
+
+    def test_top_k_too_small_raises(self):
+        with pytest.raises(ValueError, match="top_k must be int"):
+            tools.semantic_search("query", top_k=0)
+
+    def test_top_k_too_large_raises(self):
+        with pytest.raises(ValueError, match="top_k must be int"):
+            tools.semantic_search("query", top_k=101)
+
+    def test_top_k_must_be_int(self):
+        with pytest.raises(ValueError, match="top_k must be int"):
+            tools.semantic_search("query", top_k=5.0)
+
+    # -----------------------------------------------------------------------
+    # Empty-index test (Step 2)
+    # -----------------------------------------------------------------------
+
+    def test_missing_persist_dir_returns_empty(self, tmp_path, caplog):
+        """When persist_dir does not exist, returns [] without raising."""
+        import logging
+
+        nonexistent = str(tmp_path / "no_such_chroma")
+        # Reset module-level state so _get_embeddings_db re-evaluates.
+        tools._EMBEDDINGS_DB = None
+        tools._EMPTY_WARNED = False
+        with patch.object(tools, "_resolve_persist_dir", return_value=nonexistent):
+            with caplog.at_level(logging.WARNING, logger="scripts.mcp.tools"):
+                result = tools.semantic_search("query")
+        assert result == []
+        assert any("empty embeddings index" in r.message for r in caplog.records)
+
+    # -----------------------------------------------------------------------
+    # One-shot warning test (Step 3)
+    # -----------------------------------------------------------------------
+
+    def test_one_shot_warning_only_once(self, tmp_path, caplog):
+        """Missing persist dir logs exactly ONE warning across multiple calls."""
+        import logging
+
+        nonexistent = str(tmp_path / "no_such_chroma2")
+        tools._EMBEDDINGS_DB = None
+        tools._EMPTY_WARNED = False
+        with patch.object(tools, "_resolve_persist_dir", return_value=nonexistent):
+            with caplog.at_level(logging.WARNING, logger="scripts.mcp.tools"):
+                tools.semantic_search("query1")
+                tools.semantic_search("query2")
+        warning_count = sum(
+            1 for r in caplog.records if "empty embeddings index" in r.message
+        )
+        assert warning_count == 1
+
+    # -----------------------------------------------------------------------
+    # Happy-path: paper granularity (Step 4)
+    # -----------------------------------------------------------------------
+
+    def test_paper_granularity_shape(self, tmp_path):
+        """granularity='paper' returns [{doi, title, year, score}, ...] sorted desc."""
+        # Canned hits from EmbeddingsDB.find_similar_to_text
+        fake_hits = [
+            {"id": "10.0/a", "score": 0.9, "document": "text a", "metadata": {"title": "Paper A", "year": 2024}},
+            {"id": "10.0/b", "score": 0.7, "document": "text b", "metadata": {"title": "Paper B", "year": 2023}},
+            {"id": "10.0/c", "score": 0.5, "document": "text c", "metadata": {"title": "Paper C", "year": 2022}},
+        ]
+        fake_db = MagicMock()
+        fake_db.find_similar_to_text.return_value = fake_hits
+
+        tools._EMBEDDINGS_DB = None
+        tools._EMPTY_WARNED = False
+        persist_dir = str(tmp_path / "chroma")
+        import os
+        os.makedirs(persist_dir)
+
+        with patch.object(tools, "_resolve_persist_dir", return_value=persist_dir):
+            with patch.object(tools, "_get_embeddings_db", return_value=fake_db):
+                result = tools.semantic_search("chromatography", top_k=3, granularity="paper")
+
+        assert len(result) == 3
+        for item in result:
+            assert "doi" in item
+            assert "title" in item
+            assert "year" in item
+            assert "score" in item
+        # Scores must be float (not numpy float)
+        assert isinstance(result[0]["score"], float)
+        # Ordered descending
+        scores = [r["score"] for r in result]
+        assert scores == sorted(scores, reverse=True)
+
+    # -----------------------------------------------------------------------
+    # Happy-path: chunk granularity (Step 5)
+    # -----------------------------------------------------------------------
+
+    def test_chunk_granularity_shape(self, tmp_path):
+        """granularity='chunk' returns [{doi, chunk_id, snippet, score}, ...] sorted desc."""
+        long_text = "x" * 600  # longer than 500 chars — should be truncated
+        fake_hits = [
+            {
+                "id": "10.0/a#0",
+                "score": 0.85,
+                "document": long_text,
+                "metadata": {"doi": "10.0/a", "section_heading": "Methods", "chunk_index": 0},
+            },
+            {
+                "id": "10.0/b#1",
+                "score": 0.60,
+                "document": "short text",
+                "metadata": {"doi": "10.0/b", "section_heading": "Results", "chunk_index": 1},
+            },
+        ]
+        fake_db = MagicMock()
+        fake_db.find_similar_chunks.return_value = fake_hits
+
+        tools._EMBEDDINGS_DB = None
+        tools._EMPTY_WARNED = False
+        persist_dir = str(tmp_path / "chroma2")
+        import os
+        os.makedirs(persist_dir)
+
+        with patch.object(tools, "_resolve_persist_dir", return_value=persist_dir):
+            with patch.object(tools, "_get_embeddings_db", return_value=fake_db):
+                result = tools.semantic_search("chromatography", top_k=5, granularity="chunk")
+
+        assert len(result) == 2
+        for item in result:
+            assert "doi" in item
+            assert "chunk_id" in item
+            assert "snippet" in item
+            assert "score" in item
+        # Snippet truncated to 500 chars
+        assert len(result[0]["snippet"]) == 500
+        assert len(result[1]["snippet"]) == len("short text")
+        # Score is plain float
+        assert isinstance(result[0]["score"], float)
+        # Ordered descending
+        assert result[0]["score"] >= result[1]["score"]
+
+    # -----------------------------------------------------------------------
+    # JSON-serializability test (Step 6)
+    # -----------------------------------------------------------------------
+
+    def test_paper_result_json_serializable(self, tmp_path):
+        """json.dumps must not raise on paper-mode results."""
+        import json as _json
+
+        fake_hits = [
+            {"id": "10.0/a", "score": 0.9, "document": "text", "metadata": {"title": "A", "year": 2024}},
+        ]
+        fake_db = MagicMock()
+        fake_db.find_similar_to_text.return_value = fake_hits
+
+        tools._EMBEDDINGS_DB = None
+        tools._EMPTY_WARNED = False
+        persist_dir = str(tmp_path / "chroma3")
+        import os
+        os.makedirs(persist_dir)
+
+        with patch.object(tools, "_resolve_persist_dir", return_value=persist_dir):
+            with patch.object(tools, "_get_embeddings_db", return_value=fake_db):
+                result = tools.semantic_search("query", granularity="paper")
+        _json.dumps(result)  # must not raise
+
+    def test_chunk_result_json_serializable(self, tmp_path):
+        """json.dumps must not raise on chunk-mode results."""
+        import json as _json
+
+        fake_hits = [
+            {
+                "id": "10.0/a#0",
+                "score": 0.75,
+                "document": "text",
+                "metadata": {"doi": "10.0/a", "section_heading": "Intro", "chunk_index": 0},
+            },
+        ]
+        fake_db = MagicMock()
+        fake_db.find_similar_chunks.return_value = fake_hits
+
+        tools._EMBEDDINGS_DB = None
+        tools._EMPTY_WARNED = False
+        persist_dir = str(tmp_path / "chroma4")
+        import os
+        os.makedirs(persist_dir)
+
+        with patch.object(tools, "_resolve_persist_dir", return_value=persist_dir):
+            with patch.object(tools, "_get_embeddings_db", return_value=fake_db):
+                result = tools.semantic_search("query", granularity="chunk")
+        _json.dumps(result)  # must not raise
+
+    # -----------------------------------------------------------------------
+    # Lazy-load caching test (Step 7)
+    # -----------------------------------------------------------------------
+
+    def test_lazy_load_cached(self, tmp_path):
+        """_get_embeddings_db is only called once across two semantic_search calls."""
+        fake_hits = [
+            {"id": "10.0/a", "score": 0.9, "document": "t", "metadata": {"title": "A", "year": 2024}},
+        ]
+        fake_db = MagicMock()
+        fake_db.find_similar_to_text.return_value = fake_hits
+
+        tools._EMBEDDINGS_DB = None
+        tools._EMPTY_WARNED = False
+
+        # Seed the module-level cache directly to simulate a loaded DB.
+        # The real lazy-load path is exercised by _get_embeddings_db unit test;
+        # here we just confirm semantic_search doesn't bypass the cache.
+        tools._EMBEDDINGS_DB = fake_db
+
+        persist_dir = str(tmp_path / "chroma5")
+        with patch.object(tools, "_resolve_persist_dir", return_value=persist_dir):
+            tools.semantic_search("q1", granularity="paper")
+            tools.semantic_search("q2", granularity="paper")
+
+        # Both calls should have used the same db object (find_similar_to_text called twice)
+        assert fake_db.find_similar_to_text.call_count == 2
+
+        # Cleanup
+        tools._EMBEDDINGS_DB = None

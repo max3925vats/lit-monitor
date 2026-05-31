@@ -14,9 +14,11 @@ Tools implemented here (B2):
 - find_papers_by_query       — graph free-text query
 - find_papers_by_query_hybrid — RRF-fused graph + vector query
 
-Not here:
-- run_cypher      → B3 (safety-reviewed Cypher execution)
-- semantic_search → B6 (ChromaDB vector path)
+Also implemented (B3):
+- run_cypher      — safety-reviewed Cypher execution
+
+Also implemented (B6):
+- semantic_search — ChromaDB vector path (paper + chunk granularity)
 """
 from __future__ import annotations
 
@@ -505,3 +507,173 @@ def run_cypher(query: str, limit: int = 100) -> list[dict[str, Any]]:
         row = {col_names[i]: _coerce_jsonable(raw[i]) for i in range(len(col_names))}
         rows.append(row)
     return rows
+
+
+# ---------------------------------------------------------------------------
+# B6: semantic_search — ChromaDB vector retrieval
+# ---------------------------------------------------------------------------
+
+# Closed vocabulary for granularity parameter.
+_ALLOWED_GRANULARITY: frozenset[str] = frozenset(("paper", "chunk"))
+
+# Module-level EmbeddingsDB cache — lazy-loaded on first query.
+# Reset to None by close_embeddings_db() on SIGTERM.
+_EMBEDDINGS_DB: Any = None
+
+# One-shot warning flag: logs "empty index" at most once per server lifetime.
+_EMPTY_WARNED: bool = False
+
+
+def _resolve_persist_dir() -> str:
+    """Derive the ChromaDB persist dir from config.
+
+    Pure indirection so tests can monkeypatch this without touching disk.
+    Mirrors the canonical derivation in scripts/cli.py::_make_embeddings_db:
+    ``persist_dir = str(Path(config.state_db.path).parent / "chroma")``
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    from scripts.core.config import get_config  # noqa: PLC0415
+
+    cfg = get_config()
+    return str(Path(cfg.state_db.path).parent / "chroma")
+
+
+def _get_embeddings_db() -> Any:
+    """Lazy-load and cache an EmbeddingsDB instance.
+
+    Returns the cached instance on subsequent calls.
+    Returns None (with a one-shot WARNING) when the persist dir is missing —
+    callers treat None as "no embeddings index" and return [].
+
+    Lazy import keeps graph_server.py startup cheap (B1 requirement).
+    """
+    global _EMBEDDINGS_DB, _EMPTY_WARNED  # noqa: PLW0603
+
+    if _EMBEDDINGS_DB is not None:
+        return _EMBEDDINGS_DB
+
+    import os  # noqa: PLC0415
+
+    persist_dir = _resolve_persist_dir()
+    if not os.path.isdir(persist_dir):
+        if not _EMPTY_WARNED:
+            logger.warning("semantic_search: empty embeddings index at %s", persist_dir)
+            _EMPTY_WARNED = True
+        return None
+
+    # Lazy import — EmbeddingsDB triggers chromadb import which is expensive.
+    from scripts.core.config import get_config  # noqa: PLC0415
+    from scripts.output.embeddings import EmbeddingsDB  # noqa: PLC0415
+
+    cfg = get_config()
+    ollama_host = getattr(cfg.embeddings, "ollama_host", "http://localhost:11434")
+    # Config field is `embeddings.model`; EmbeddingsDB constructor param is `embed_model`.
+    embed_model = getattr(cfg.embeddings, "model", "mxbai-embed-large")
+
+    _EMBEDDINGS_DB = EmbeddingsDB(
+        persist_dir=persist_dir,
+        ollama_host=ollama_host,
+        embed_model=embed_model,
+    )
+    return _EMBEDDINGS_DB
+
+
+def close_embeddings_db() -> None:
+    """Drop the module-level EmbeddingsDB handle.
+
+    Called by graph_server SIGTERM handler before exit.  ChromaDB's
+    PersistentClient cleans up its own resources; we just release the handle
+    so the object can be GC-ed.
+    """
+    global _EMBEDDINGS_DB  # noqa: PLW0603
+    _EMBEDDINGS_DB = None
+
+
+def semantic_search(
+    query: str,
+    top_k: int = 10,
+    granularity: str = "paper",
+) -> list[dict[str, Any]]:
+    """Vector retrieval over the production ChromaDB persist dir.
+
+    Args:
+        query:       Free-text query string (embedded on the fly by EmbeddingsDB).
+        top_k:       Number of results to return.  Must be an int in [1, 100].
+        granularity: ``"paper"`` — paper-level hits with {doi, title, year, score}.
+                     ``"chunk"`` — chunk-level passages with {doi, chunk_id,
+                     snippet (≤500 chars), score}.
+
+    Returns:
+        List of result dicts ordered by similarity score descending.
+        Returns [] (without raising) when the persist dir is missing or the
+        collection is empty.
+
+    Raises:
+        ValueError: When ``granularity`` is not ``"paper"`` or ``"chunk"``.
+        ValueError: When ``top_k`` is not an int in [1, 100].
+    """
+    if granularity not in _ALLOWED_GRANULARITY:
+        raise ValueError("granularity must be 'paper' or 'chunk'")
+    if not isinstance(top_k, int) or not (1 <= top_k <= 100):
+        raise ValueError("top_k must be int in [1, 100]")
+
+    db = _get_embeddings_db()
+    if db is None:
+        return []
+
+    try:
+        if granularity == "paper":
+            raw = db.find_similar_to_text(query, top_k=top_k)
+        else:
+            raw = db.find_similar_chunks(query, top_k=top_k)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("semantic_search query failed: %s", exc)
+        return []
+
+    return _coerce_hits(raw, granularity)
+
+
+def _coerce_hits(raw: list[dict[str, Any]], granularity: str) -> list[dict[str, Any]]:
+    """Coerce EmbeddingsDB hits to JSON-serializable dicts.
+
+    Both find_similar_to_text and find_similar_chunks return:
+        [{id, score, document, metadata}, ...]
+    sorted by similarity descending.
+
+    For ``granularity="paper"``:
+        - id   → doi (paper DOI, used as ChromaDB document ID)
+        - metadata → {title, year, ...}  (title/year may be absent on old indices)
+    For ``granularity="chunk"``:
+        - id   → chunk_id  (format: "<doi>#<chunk_index>")
+        - metadata → {doi, section_heading, chunk_index}
+        - document → snippet (truncated to 500 chars)
+
+    score is cast to plain float() to strip numpy scalar wrappers.
+    """
+    out: list[dict[str, Any]] = []
+    for row in raw:
+        md = row.get("metadata") or {}
+        if granularity == "paper":
+            out.append(
+                {
+                    "doi": row.get("id") or md.get("doi", ""),
+                    "title": md.get("title", ""),
+                    "year": md.get("year"),
+                    "score": float(row.get("score", 0.0)),
+                }
+            )
+        else:
+            # chunk id format: "<doi>#<chunk_index>" — split on first '#'
+            raw_id = row.get("id", "")
+            doi = md.get("doi") or (raw_id.split("#")[0] if "#" in raw_id else raw_id)
+            snippet = (row.get("document") or "")[:500]
+            out.append(
+                {
+                    "doi": doi,
+                    "chunk_id": raw_id,
+                    "snippet": snippet,
+                    "score": float(row.get("score", 0.0)),
+                }
+            )
+    return out
