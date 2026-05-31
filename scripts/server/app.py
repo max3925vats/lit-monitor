@@ -138,10 +138,12 @@ def create_app() -> FastAPI:
     app.include_router(brain_build_router)
     app.include_router(control_router)
     app.include_router(sse_router)
-    app.include_router(discovery_router)
-    # P3: notify-handler — must come after discovery_router so /discovery/{run_id}
-    # pattern does not swallow /discovery/notify-handler (FastAPI routes in order).
+    # P3 notify-handler MUST register BEFORE discovery_router so that
+    # /discovery/notify-handler is matched first. Otherwise P8's
+    # /discovery/{run_id:int} route is checked first and FastAPI returns
+    # 422 (can't coerce "notify-handler" to int) without falling through.
     app.include_router(discovery_notify_router)
+    app.include_router(discovery_router)
     app.include_router(schedule_router)
     app.include_router(health_router)
     # H2: POST /api/ingest — production ingest endpoint for Zotero plugin / web ingestors.
