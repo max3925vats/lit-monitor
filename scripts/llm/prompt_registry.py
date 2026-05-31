@@ -195,6 +195,10 @@ _REQUIRED_PLACEHOLDERS: dict[str, frozenset[str]] = {
     "relationship_extraction": frozenset(
         {"fulltext", "paper_doi", "extraction_summary"}
     ),
+    # A2 (Phase 4a): NL→Cypher generator for `lit-monitor ask`.
+    # {schema} carries the live KuzuDB schema (from A1); {examples} carries
+    # the canonical worked-example block; {question} is the user input.
+    "ask_cypher": frozenset({"question", "schema", "examples"}),
 }
 
 
