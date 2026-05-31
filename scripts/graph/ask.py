@@ -395,3 +395,153 @@ def render_rows(rows: list[dict], *, max_rows: int = 20) -> str:
         lines.append(f"_(showing first {max_rows} of {total} rows)_")
 
     return "\n".join(lines)
+
+
+# =============================================================================
+# A4: summarize_results
+# =============================================================================
+#
+# Turn the Cypher result rows (markdown table from render_rows) into 1-3
+# paragraphs of prose that answer the user's natural-language question.
+# Single LLM call. Defensive perimeter — returns None on any failure;
+# never raises. The A5 CLI is expected to fall back to "I ran this Cypher
+# but couldn't summarize — here's the raw table" on a None return.
+#
+# Empty-result short-circuit: when render_rows returned `_(no results)_`,
+# we skip the LLM call entirely and emit a deterministic
+# "No matching results were found for: {question}." message. This saves a
+# token round-trip and — more importantly — prevents the model from
+# hallucinating rows that aren't there.
+#
+# The prompt YAML at config/prompts/ask_summarize.example.yaml is the
+# long-lived asset; the code here is mechanical.
+
+# Token used by render_rows() to signal an empty result set. Kept as a
+# module-level constant so the short-circuit check has a single canonical
+# source. If render_rows() ever changes its empty-set sentinel, update
+# both call sites together.
+_EMPTY_RESULTS_TOKEN = "_(no results)_"
+
+
+def summarize_results(
+    question: str,
+    cypher: str,
+    rendered_rows: str,
+    *,
+    client: _Any = None,
+    model: str | None = None,
+    cfg: _Any = None,
+    prompt: _Any = None,
+) -> str | None:
+    """A4: turn Cypher result rows into a 1-3 paragraph prose answer.
+
+    Args:
+        question: the user's original natural-language question.
+        cypher: the Cypher query that A3 executed (passed to the LLM for
+            situational awareness only — the prompt forbids the model
+            from explaining or referencing it in the prose output).
+        rendered_rows: the markdown table returned by ``render_rows``.
+            The special token ``"_(no results)_"`` triggers a
+            deterministic short-circuit response WITHOUT an LLM call.
+        client: optional pre-built LLM client (test injection). When
+            ``None``, the function constructs an ``OllamaClient`` ONLY
+            if ``OLLAMA_API_KEY`` is set.
+        model: optional model-id override; mutates ``client.model`` if
+            set. Useful for ad-hoc model switching in tests.
+        cfg: optional pre-loaded config (test injection). Forwarded to
+            ``_maybe_construct_client``. When set, the summarize-specific
+            model knob ``cfg.graph.ask.summarize_model`` is preferred
+            over the generic ``cfg.graph.ask.model``.
+        prompt: optional pre-loaded ``Prompt`` instance (test injection).
+            When ``None``, loaded via
+            ``prompt_registry.load_prompt('ask_summarize')``.
+
+    Returns:
+        The prose answer (1-3 paragraphs), or ``None`` on any failure
+        (LLM error, empty response, prompt load error, empty question).
+        NEVER raises.
+
+    The function emits:
+        - INFO log on empty input / empty response / LLM call failure /
+          prompt load/render failure.
+    """
+    # Cheap-out on empty input — don't burn an LLM call.
+    if not question or not question.strip():
+        logger.info("A4: empty question; nothing to summarize")
+        return None
+
+    # Empty-result short-circuit. A3 emits the literal token
+    # "_(no results)_" when the query returned zero rows. We skip the
+    # LLM entirely and return a deterministic message — saves a token
+    # round-trip and avoids the model hallucinating content for an
+    # empty table. The .strip() tolerates accidental padding by callers.
+    if rendered_rows is None or rendered_rows.strip() == _EMPTY_RESULTS_TOKEN:
+        return f"No matching results were found for: {question}."
+
+    # Construct client if not injected.
+    if client is None:
+        client = _maybe_construct_client(cfg=cfg)
+        if client is None:
+            return None
+
+    # Model resolution:
+    #   1. explicit `model=` kwarg (highest precedence — test injection)
+    #   2. cfg.graph.ask.summarize_model (summarize-specific override)
+    #   3. whatever the client was constructed with (which already
+    #      honored cfg.graph.ask.model → cfg.graph.ner.cloud_model →
+    #      'gemma2:27b-cloud' via _maybe_construct_client).
+    if model is not None and hasattr(client, "model"):
+        client.model = model
+    elif cfg is not None and hasattr(client, "model"):
+        summarize_model = getattr(
+            getattr(getattr(cfg, "graph", None), "ask", None),
+            "summarize_model",
+            None,
+        )
+        if summarize_model:
+            client.model = summarize_model
+
+    # Load the prompt (registry or override).
+    if prompt is None:
+        try:
+            from scripts.llm.prompt_registry import load_prompt  # noqa: PLC0415
+
+            prompt = load_prompt("ask_summarize")
+        except Exception as exc:  # noqa: BLE001 — defensive perimeter
+            logger.info("A4: prompt load failed: %s", exc)
+            return None
+
+    # Render placeholders. Mirrors A2's render path.
+    try:
+        system_msg = prompt.system
+        user_msg = prompt.render_user(
+            question=question,
+            cypher=cypher,
+            rows=rendered_rows,
+        )
+    except (KeyError, AttributeError, TypeError) as exc:
+        logger.info("A4: prompt render failed: %s", exc)
+        return None
+
+    # ONE LLM call.
+    try:
+        max_tokens = int(getattr(prompt, "max_tokens", 500))
+        response = client.complete(
+            system=system_msg, user=user_msg, max_tokens=max_tokens
+        )
+    except TypeError:
+        # Tolerate simple test clients whose .complete() lacks max_tokens.
+        try:
+            response = client.complete(system=system_msg, user=user_msg)
+        except Exception as exc:  # noqa: BLE001 — defensive perimeter
+            logger.info("A4: client.complete failed: %s", exc)
+            return None
+    except Exception as exc:  # noqa: BLE001 — defensive perimeter
+        logger.info("A4: client.complete failed: %s", exc)
+        return None
+
+    if not response or not str(response).strip():
+        logger.info("A4: empty response from LLM")
+        return None
+
+    return str(response).strip()
