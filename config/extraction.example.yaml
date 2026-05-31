@@ -51,3 +51,8 @@ discovery:
     min_papers_to_notify: 1      # placeholder for future filtering (P4)
     preferred_viewer: ""         # set by P4 wizard or notify-handler: browser|obsidian|none
     asked_user: false            # true once the P4 chooser page has been shown
+  notes:
+    # P10: set false to skip the inline note write during ingest and batch-render
+    # later via `lit-monitor obsidian sync --all`.  Default true preserves
+    # existing behavior — notes are written immediately on paper ingest.
+    auto_write_per_paper: true

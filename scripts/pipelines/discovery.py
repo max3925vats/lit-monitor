@@ -686,8 +686,36 @@ def _run_ingestion(
                     "extraction_provider": _llm_provider_str(llm),
                     "extraction_model": _llm_model_str(llm),
                 }
-                note_path = write_paper_note(paper_record, extraction, config)
-                note_title = Path(note_path).stem
+                # P10: gate the inline note write on discovery.notes.auto_write_per_paper
+                # (default TRUE — no behaviour change on upgrade).  When false, note
+                # write is deferred to `lit-monitor obsidian sync`; notes_synced stays 0.
+                # R28 GUARD: this block sits BEFORE index_embeddings_and_mark_phases so
+                # the embed/graph phase marks are always written regardless of the flag.
+                _auto_write = True
+                try:
+                    _auto_write = bool(
+                        getattr(
+                            getattr(
+                                getattr(config, "discovery", None), "notes", None
+                            ),
+                            "auto_write_per_paper",
+                            True,
+                        )
+                    )
+                except Exception:
+                    _auto_write = True  # safe default
+
+                note_path: str = ""
+                note_title: str = ""
+                if _auto_write:
+                    note_path = write_paper_note(paper_record, extraction, config)
+                    note_title = Path(note_path).stem
+                else:
+                    logger.debug(
+                        "P10: auto_write_per_paper=false — deferred note for %s; "
+                        "run `lit-monitor obsidian sync --all` to render.",
+                        doi,
+                    )
                 embed_text = _paper_embed_text(title, abstract, extraction)
                 # Each ingested item embeds into ChromaDB here — this is the "embeddings grow
                 # on every run" mechanic the README leans on.
@@ -767,11 +795,16 @@ def _run_ingestion(
                     "embeddings_indexed": 1,
                     "last_updated": _now(),
                 })
-                # Relink this note only
-                try:
-                    relink_note(note_path, embeddings_db, state_db, config=config)
-                except Exception as exc:
-                    logger.warning("Relink failed for %s: %s", doi, exc)
+                # P10: record that the note has been written so `obsidian sync` skips it.
+                # Only set when auto_write=true AND write_paper_note succeeded.
+                if _auto_write and note_path:
+                    state_db.set_notes_synced(doi, 1)
+                # Relink this note only (skip when note was deferred — no path to link)
+                if note_path:
+                    try:
+                        relink_note(note_path, embeddings_db, state_db, config=config)
+                    except Exception as exc:
+                        logger.warning("Relink failed for %s: %s", doi, exc)
 
                 # M4: collect discovered_topics for end-of-run vocabulary merge.
                 _raw_topics = extraction.get("discovered_topics")

@@ -131,6 +131,21 @@ class Config:
         self.comparison_models: list[dict] = [
             m.model_dump() for m in validated_extraction.comparison_models
         ]
+        # --- P10: Discovery config (notify + per-paper notes control) ---
+        # Read directly from raw_extraction so the block is optional; missing
+        # keys default to safe values.  Nested dicts become _Namespace objects
+        # so callers can use dot-access (config.discovery.notes.auto_write_per_paper).
+        raw_discovery = raw_extraction.get("discovery", {}) or {}
+        _raw_disc_notes = raw_discovery.get("notes", {}) or {}
+        self.discovery = _Namespace({
+            "notify": raw_discovery.get("notify", {}) or {},
+            "notes": _Namespace({
+                # Default TRUE — preserves existing inline write behaviour.
+                "auto_write_per_paper": bool(
+                    _raw_disc_notes.get("auto_write_per_paper", True)
+                ),
+            }),
+        })
         # --- G9: Retrieval config (default_mode + graph_db location) ---
         raw_retrieval = raw_extraction.get("retrieval", {})
         _ret_mode = raw_retrieval.get("default_mode", "vector")

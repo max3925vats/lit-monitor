@@ -221,6 +221,13 @@ class StateDB:
                 # retried by `lit-monitor chunks backfill`.
                 ("papers", "chunks_indexed",
                  "ALTER TABLE papers ADD COLUMN chunks_indexed INTEGER DEFAULT 0"),
+                # P10: per-paper flag for Obsidian note (re-)render.
+                # 0 = note not yet written (or deferred); 1 = current.
+                # Set to 1 inline by brain_build/_process_paper when
+                # discovery.notes.auto_write_per_paper=true (default).
+                # Set to 1 by `lit-monitor obsidian sync` when flag is false.
+                ("papers", "notes_synced",
+                 "ALTER TABLE papers ADD COLUMN notes_synced INTEGER DEFAULT 0"),
             ]
             for table, column, sql in additive_migrations:
                 if self._column_exists(conn, table, column):
@@ -594,6 +601,64 @@ class StateDB:
                 "UPDATE papers SET chunks_indexed = ? WHERE doi = ?",
                 (int(val), doi),
             )
+
+    def set_notes_synced(self, doi: str, val: int) -> None:
+        """P10: mark whether the Obsidian note has been (re-)rendered for this paper.
+
+        Mirrors set_chunks_indexed / set_graph_indexed.
+
+        Parameters
+        ----------
+        doi:
+            Paper DOI (primary key of ``papers``).
+        val:
+            0 or 1.  Coerced via ``int(val)`` so callers passing bools
+            still produce an INTEGER column value.
+
+        Notes
+        -----
+        - UPDATE on a missing DOI silently affects 0 rows; this is intentional
+          so callers do not need a pre-existence check.
+        - This method intentionally does NOT touch ``last_updated`` — the
+          column is a side-channel flag, not a content-bearing update.
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE papers SET notes_synced = ? WHERE doi = ?",
+                (int(val), doi),
+            )
+
+    def get_notes_pending(self, limit: int | None = None) -> list[str]:
+        """P10: DOIs where embeddings_indexed=1 AND notes_synced=0.
+
+        Uses ``embeddings_indexed=1`` as the "ready to render" gate — the
+        same gate CB1 uses for chunks backfill.  Papers are ordered by
+        ``last_updated DESC`` so the most recently ingested papers are
+        processed first.
+
+        Parameters
+        ----------
+        limit:
+            Optional cap on result count.  ``None`` (default) returns all
+            pending DOIs.
+
+        Returns
+        -------
+        list[str]
+            DOIs that are ready for note rendering but not yet synced.
+        """
+        query = (
+            "SELECT doi FROM papers "
+            "WHERE embeddings_indexed = 1 AND notes_synced = 0 "
+            "ORDER BY last_updated DESC"
+        )
+        params: tuple = ()
+        if limit is not None and limit > 0:
+            query += " LIMIT ?"
+            params = (limit,)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [r[0] for r in rows if r[0]]
 
     def reset_embeddings_indexed(self) -> None:
         """Set embeddings_indexed = 0 for every row in the papers table.

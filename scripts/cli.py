@@ -2042,6 +2042,77 @@ def obsidian_rebuild_citations(
 
 
 # ---------------------------------------------------------------------------
+# P10: obsidian sync — bulk note renderer for deferred write mode
+# ---------------------------------------------------------------------------
+
+@obsidian.command("sync")
+@click.option(
+    "--all",
+    "all_flag",
+    is_flag=True,
+    default=False,
+    help="Sync all papers where embeddings_indexed=1 and notes_synced=0.",
+)
+@click.option(
+    "--doi",
+    default=None,
+    help="Sync a specific DOI (re-renders regardless of current notes_synced flag).",
+)
+@click.option(
+    "--since",
+    default=None,
+    help=(
+        "ISO date (YYYY-MM-DD or datetime) — sync papers updated on or after "
+        "this date that have notes_synced=0."
+    ),
+)
+@click.option(
+    "--limit",
+    default=None,
+    type=int,
+    help="Maximum number of papers to process in this run.",
+)
+@click.pass_context
+def obsidian_sync(
+    ctx: click.Context,
+    all_flag: bool,
+    doi: str | None,
+    since: str | None,
+    limit: int | None,
+) -> None:
+    """Bulk-sync pending Obsidian notes from state.db to the vault (P10).
+
+    Used when discovery.notes.auto_write_per_paper=false — notes accumulate
+    with notes_synced=0 and this command renders them in a controlled batch.
+    Re-running on already-synced papers is a no-op (they are filtered out
+    unless --doi is used to force a specific paper).
+
+    Exits with code 1 if any note failed to render.
+    """
+    if not all_flag and not doi and not since:
+        click.echo(
+            "Error: specify at least one of --all, --doi, or --since to scope the sync.",
+            err=True,
+        )
+        raise click.exceptions.Exit(2)
+
+    _setup_logging("obsidian_sync", verbose=ctx.obj.get("verbose", False))
+    config = _make_config()
+    state_db = _make_state_db(config)
+
+    from scripts.obsidian_tools.sync import sync_notes
+
+    result = sync_notes(state_db, config, doi=doi, since=since, limit=limit)
+    click.echo(
+        f"processed={result['processed']} "
+        f"succeeded={result['succeeded']} "
+        f"failed={result['failed']}"
+    )
+    if result["failed"] > 0:
+        raise click.exceptions.Exit(1)
+
+
+# ---------------------------------------------------------------------------
 # db — database maintenance commands
 # ---------------------------------------------------------------------------
 

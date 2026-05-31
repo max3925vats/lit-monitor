@@ -558,18 +558,43 @@ def _process_paper(
         "extraction_provider": _llm_provider_str(llm),
         "extraction_model": _llm_model_str(llm),
     }
-    # H1: mirror discovery's broad protection around note writing so a vault
-    # I/O failure or template bug surfaces as a single 'error' write from the
-    # outer handler rather than crashing mid-pipeline.  Narrowed to the
-    # realistic failure modes from Jinja2 template rendering + filesystem
-    # writes; outer handler logs the full traceback, so we only add the
-    # 'write_paper_note failed' context label here.
+    # P10: gate the inline note write on discovery.notes.auto_write_per_paper
+    # (default TRUE — no behaviour change on upgrade).  When false, the note
+    # write is deferred to `lit-monitor obsidian sync`; notes_synced stays 0.
+    # R28 GUARD: this block sits BEFORE index_embeddings_and_mark_phases so
+    # the embed/graph phase marks are always written regardless of the flag.
+    _auto_write = True
     try:
-        note_path = write_paper_note_fn(paper_record, extraction, config)
-    except (OSError, RuntimeError, ValueError) as exc:
-        logger.error("write_paper_note failed for %s: %s", doi, exc)
-        raise
-    note_title = Path(note_path).stem
+        _auto_write = bool(
+            getattr(
+                getattr(getattr(config, "discovery", None), "notes", None),
+                "auto_write_per_paper",
+                True,
+            )
+        )
+    except Exception:
+        _auto_write = True  # safe default — never silently stop writing notes
+
+    note_path: str = ""
+    note_title: str = ""
+    if _auto_write:
+        # H1: mirror discovery's broad protection around note writing so a vault
+        # I/O failure or template bug surfaces as a single 'error' write from the
+        # outer handler rather than crashing mid-pipeline.  Narrowed to the
+        # realistic failure modes from Jinja2 template rendering + filesystem
+        # writes; outer handler logs the full traceback.
+        try:
+            note_path = write_paper_note_fn(paper_record, extraction, config)
+            note_title = Path(note_path).stem
+        except (OSError, RuntimeError, ValueError) as exc:
+            logger.error("write_paper_note failed for %s: %s", doi, exc)
+            raise
+    else:
+        logger.debug(
+            "P10: auto_write_per_paper=false — deferred note for %s; "
+            "run `lit-monitor obsidian sync --all` to render.",
+            doi,
+        )
     # Index in ChromaDB — paper-level and chunk-level
     embed_text = _paper_embed_text(title, abstract, extraction)
     chunks: list = []
@@ -659,7 +684,13 @@ def _process_paper(
         "embeddings_indexed": 1,
         "last_updated": _now(),
     })
-    logger.debug("Paper complete: %s → %s", doi, note_path)
+    # P10: record that the note has been written so `obsidian sync` skips it.
+    # Only set when auto_write=true AND write_paper_note_fn succeeded (no exception
+    # was raised above).  If deferred (auto_write=false), stays 0 so sync picks
+    # it up.
+    if _auto_write and note_path:
+        state_db.set_notes_synced(doi, 1)
+    logger.debug("Paper complete: %s → %s", doi, note_path or "(deferred)")
     # M4: collect discovered_topics for end-of-run vocabulary merge.
     _raw_topics = extraction.get("discovered_topics")
     _discovered: list[str] = (
