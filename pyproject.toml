@@ -73,6 +73,9 @@ nlp = [
     "torch>=2.2",
     "accelerate>=0.30",
 ]
+mcp = [
+    "mcp>=1.0",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
