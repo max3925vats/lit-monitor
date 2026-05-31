@@ -665,3 +665,77 @@ class TestSemanticSearch:
 
         # Cleanup
         tools._EMBEDDINGS_DB = None
+
+
+# ---------------------------------------------------------------------------
+# P9: Discovery run MCP tools
+# ---------------------------------------------------------------------------
+
+
+class TestDiscoveryMcpTools:
+    """P9: tests for get_recent_discovery_runs and get_discovery_run_papers."""
+
+    def test_get_recent_discovery_runs_returns_list(
+        self, tmp_path: "Path", monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        from scripts.core.state_db import StateDB
+        from scripts.mcp import tools
+
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({})
+        db.finish_discovery_run(run_id, "success", 3, 2)
+        monkeypatch.setattr(tools, "_get_state_db", lambda: db)
+
+        result = tools.get_recent_discovery_runs(limit=5)
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0]["id"] == run_id
+        assert result[0]["status"] == "success"
+
+    def test_get_recent_discovery_runs_limit(
+        self, tmp_path: "Path", monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        from scripts.core.state_db import StateDB
+        from scripts.mcp import tools
+
+        db = StateDB(tmp_path / "state.db")
+        for _ in range(3):
+            rid = db.start_discovery_run({})
+            db.finish_discovery_run(rid, "success", 1, 1)
+        monkeypatch.setattr(tools, "_get_state_db", lambda: db)
+
+        assert len(tools.get_recent_discovery_runs(limit=2)) == 2
+
+    def test_get_discovery_run_papers_sorted_by_score(
+        self, tmp_path: "Path", monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        from scripts.core.state_db import StateDB
+        from scripts.mcp import tools
+
+        db = StateDB(tmp_path / "state.db")
+        rid = db.start_discovery_run({})
+        db.add_discovery_paper(rid, "10/lo", "Lo", 0.1, "", False)
+        db.add_discovery_paper(rid, "10/hi", "Hi", 0.9, "", True)
+        db.finish_discovery_run(rid, "success", 2, 1)
+        monkeypatch.setattr(tools, "_get_state_db", lambda: db)
+
+        papers = tools.get_discovery_run_papers(run_id=rid, top_k=10)
+        assert [p["doi"] for p in papers] == ["10/hi", "10/lo"]
+
+    def test_returns_jsonable(
+        self, tmp_path: "Path", monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
+        """P9: results must be json.dumps-safe."""
+        import json
+
+        from scripts.core.state_db import StateDB
+        from scripts.mcp import tools
+
+        db = StateDB(tmp_path / "state.db")
+        rid = db.start_discovery_run({})
+        db.add_discovery_paper(rid, "10/x", "X", 0.5, "r", True)
+        db.finish_discovery_run(rid, "success", 1, 1)
+        monkeypatch.setattr(tools, "_get_state_db", lambda: db)
+
+        json.dumps(tools.get_recent_discovery_runs())
+        json.dumps(tools.get_discovery_run_papers(run_id=rid))

@@ -16,12 +16,12 @@ from scripts.mcp.graph_server import SERVER_HOST, TOOL_NAMES, _build_server
 
 
 def test_tool_names_count() -> None:
-    """B1: exactly 10 tools in the registry."""
-    assert len(TOOL_NAMES) == 10
+    """P9: exactly 12 tools in the registry (10 from Phase 4b + 2 discovery)."""
+    assert len(TOOL_NAMES) == 12
 
 
 def test_tool_names_exact_set() -> None:
-    """B1: the 10 tool names match the Phase 4b plan exactly."""
+    """P9: the 12 tool names match the Phase 4b plan + P9 discovery tools exactly."""
     expected = {
         "find_papers_by_entity",
         "find_papers_by_relationship",
@@ -33,6 +33,9 @@ def test_tool_names_exact_set() -> None:
         "semantic_search",
         "find_papers_by_query",
         "find_papers_by_query_hybrid",
+        # P9:
+        "get_recent_discovery_runs",
+        "get_discovery_run_papers",
     }
     assert set(TOOL_NAMES) == expected
 
