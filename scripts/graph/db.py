@@ -267,6 +267,17 @@ class GraphDB:
             for rel in relationships:
                 self._upsert_typed_edge(rel, prompt_version)
             conn.execute("COMMIT")
+            # A1: invalidate schema cache after any successful write so that
+            # subsequent describe_schema calls reflect the current graph state.
+            # Best-effort: an import failure here must never break the R28
+            # ingest invariant — schema cache staleness is benign.
+            try:
+                from scripts.graph.schema_describer import (  # noqa: PLC0415
+                    invalidate_schema_cache,
+                )
+                invalidate_schema_cache(self)
+            except Exception:  # pragma: no cover — defensive
+                pass
         except Exception as exc:
             # Best-effort rollback — if the rollback itself raises, log and
             # re-raise the ORIGINAL exception so the caller sees the real cause.

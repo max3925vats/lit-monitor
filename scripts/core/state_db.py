@@ -114,6 +114,16 @@ CREATE TABLE IF NOT EXISTS citation_edges (
     created_at     TEXT DEFAULT (datetime('now')),
     PRIMARY KEY (source_doi, ref_id)
 );
+CREATE TABLE IF NOT EXISTS ingest_queue (
+    -- H2: tracks external ingest requests (POST /api/ingest).
+    -- doi is the natural PK — duplicate-DOI check in the route relies on it.
+    doi          TEXT PRIMARY KEY,
+    status       TEXT NOT NULL DEFAULT 'queued',
+    -- Values: queued | done | failed
+    queued_at    TEXT NOT NULL,
+    completed_at TEXT,   -- NULL until pipeline finishes or fails
+    error        TEXT    -- populated by R28 hardening path if _process_paper raises
+);
 """
 # ---------------------------------------------------------------------------
 # StateDB class
@@ -184,6 +194,12 @@ class StateDB:
                 # NULL = never rel-processed; set by backfill_relationships() after success.
                 ("papers", "rel_processed_at",
                  "ALTER TABLE papers ADD COLUMN rel_processed_at TEXT NULL"),
+                # CB1: per-paper flag for chunk-level ChromaDB embeddings.
+                # 0 = not yet indexed (or failed); 1 = current.
+                # Set to 1 by index_embeddings_and_mark_phases on success;
+                # retried by `lit-monitor chunks backfill`.
+                ("papers", "chunks_indexed",
+                 "ALTER TABLE papers ADD COLUMN chunks_indexed INTEGER DEFAULT 0"),
             ]
             for table, column, sql in additive_migrations:
                 if self._column_exists(conn, table, column):
@@ -529,6 +545,33 @@ class StateDB:
             conn.execute(
                 "UPDATE papers SET graph_indexed = ? WHERE doi = ?",
                 (int(value), doi),
+            )
+
+    def set_chunks_indexed(self, doi: str, val: int) -> None:
+        """CB1: mark whether ChromaDB chunk embeddings are current for this paper.
+
+        Mirrors set_graph_indexed. R28 invariant: only set to 1 after add_chunks
+        succeeds; failure leaves the value at 0 so chunks backfill can retry.
+
+        Parameters
+        ----------
+        doi:
+            Paper DOI (primary key of ``papers``).
+        val:
+            0 or 1. Coerced via ``int(val)`` so callers passing bools
+            still produce an INTEGER column value.
+
+        Notes
+        -----
+        - UPDATE on a missing DOI silently affects 0 rows; this is intentional
+          so the ingest helper can call it without a pre-existence check.
+        - This method intentionally does NOT touch ``last_updated`` — the
+          column is a side-channel flag, not a content-bearing update.
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE papers SET chunks_indexed = ? WHERE doi = ?",
+                (int(val), doi),
             )
 
     def reset_embeddings_indexed(self) -> None:

@@ -1,0 +1,517 @@
+"""H2: POST /api/ingest endpoint tests.
+
+Covers:
+- Happy path: 202 + {status: queued, paper_id: doi}
+- Bad DOI: 422 (Pydantic validator)
+- Missing title: 422
+- Duplicate DOI: 409
+- R28 hardening: _process_paper failure → 500 + queue row marked 'failed', NOT 'queued'
+- StateDB migration: ingest_queue table created additively
+"""
+from __future__ import annotations
+
+import sqlite3
+from unittest.mock import MagicMock
+
+import pytest
+from fastapi.testclient import TestClient
+
+from scripts.core.state_db import StateDB
+from scripts.server.app import create_app
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_runtime(state_db: StateDB) -> MagicMock:
+    """Return a minimal MagicMock runtime that serves the given StateDB."""
+    runtime = MagicMock()
+    runtime.state_db = state_db
+    return runtime
+
+
+@pytest.fixture()
+def db(tmp_path) -> StateDB:
+    """Isolated StateDB in tmp_path for each test."""
+    return StateDB(tmp_path / "state.db")
+
+
+@pytest.fixture()
+def client(db, monkeypatch) -> TestClient:
+    """TestClient with runtime.state_db wired to an isolated StateDB.
+
+    Monkeypatches get_runtime on the ingest route module (where it's
+    imported) — same pattern as test_brain_build_dashboard.py.
+    """
+    from scripts.server.routes import ingest as ingest_route
+
+    fake_runtime = _make_fake_runtime(db)
+    monkeypatch.setattr(ingest_route, "get_runtime", lambda: fake_runtime)
+    return TestClient(create_app())
+
+
+# ---------------------------------------------------------------------------
+# Happy path
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestHappyPath:
+    def test_returns_202_and_queued_status(self, client, db, monkeypatch):
+        """H2: valid request returns 202 with status=queued and paper_id=doi."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+
+        r = client.post(
+            "/api/ingest",
+            json={"doi": "10.1234/test.001", "title": "Test Paper"},
+        )
+        assert r.status_code == 202
+        body = r.json()
+        assert body["status"] == "queued"
+        assert body["paper_id"] == "10.1234/test.001"
+
+    def test_queue_row_marked_done_after_success(self, client, db, monkeypatch):
+        """H2: after _process_paper succeeds, ingest_queue row has status='done'."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+
+        client.post(
+            "/api/ingest",
+            json={"doi": "10.1234/done.001", "title": "Done Paper"},
+        )
+
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT status, completed_at FROM ingest_queue WHERE doi = ?",
+                ("10.1234/done.001",),
+            ).fetchone()
+
+        assert row is not None
+        assert row[0] == "done"
+        assert row[1] is not None  # completed_at was stamped
+
+    def test_optional_fields_accepted(self, client, db, monkeypatch):
+        """H2: optional fields (authors, year, abstract, zotero_key) are accepted."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+
+        r = client.post(
+            "/api/ingest",
+            json={
+                "doi": "10.1234/full.001",
+                "title": "Full Paper",
+                "authors": ["Alice", "Bob"],
+                "year": 2024,
+                "abstract": "An abstract.",
+                "zotero_key": "ZOT123",
+            },
+        )
+        assert r.status_code == 202
+
+
+# ---------------------------------------------------------------------------
+# Validation (422)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestValidation:
+    def test_bad_doi_returns_422(self, client):
+        """H2: malformed DOI (no 10. prefix) → 422."""
+        r = client.post("/api/ingest", json={"doi": "not-a-doi", "title": "T"})
+        assert r.status_code == 422
+
+    def test_doi_without_10_prefix_returns_422(self, client):
+        """H2: DOI must start with '10.' → anything else is 422."""
+        r = client.post("/api/ingest", json={"doi": "12.1234/x", "title": "T"})
+        assert r.status_code == 422
+
+    def test_missing_title_returns_422(self, client):
+        """H2: title is required — missing key → 422."""
+        r = client.post("/api/ingest", json={"doi": "10.1234/x"})
+        assert r.status_code == 422
+
+    def test_empty_title_returns_422(self, client):
+        """H2: empty-string title → 422 (validator rejects blank)."""
+        r = client.post("/api/ingest", json={"doi": "10.1234/x", "title": ""})
+        assert r.status_code == 422
+
+    def test_whitespace_only_title_returns_422(self, client):
+        """H2: whitespace-only title → 422."""
+        r = client.post("/api/ingest", json={"doi": "10.1234/x", "title": "   "})
+        assert r.status_code == 422
+
+    def test_valid_doi_formats_accepted(self, client, monkeypatch):
+        """H2: DOIs with long suffixes and slashes are accepted."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+
+        r = client.post(
+            "/api/ingest",
+            json={"doi": "10.1016/j.biomaterials.2006.09.036", "title": "T"},
+        )
+        assert r.status_code == 202
+
+
+# ---------------------------------------------------------------------------
+# Duplicate DOI (409)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDuplicateDOI:
+    def test_duplicate_doi_returns_409(self, client, db, monkeypatch):
+        """H2: second POST with same DOI returns 409."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+
+        # First ingest — should succeed.
+        r1 = client.post(
+            "/api/ingest",
+            json={"doi": "10.1234/dup.001", "title": "T"},
+        )
+        assert r1.status_code == 202
+
+        # Second ingest with the same DOI — must 409.
+        r2 = client.post(
+            "/api/ingest",
+            json={"doi": "10.1234/dup.001", "title": "T"},
+        )
+        assert r2.status_code == 409
+
+    def test_duplicate_response_body(self, client, db, monkeypatch):
+        """H2: 409 body contains status=duplicate and the paper_id."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+
+        client.post("/api/ingest", json={"doi": "10.1234/dup.002", "title": "T"})
+        r2 = client.post(
+            "/api/ingest",
+            json={"doi": "10.1234/dup.002", "title": "T"},
+        )
+        body = r2.json()
+        assert body.get("paper_id") == "10.1234/dup.002"
+
+
+# ---------------------------------------------------------------------------
+# R28 hardening — pipeline failure must mark queue row 'failed'
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestR28FailureSemantics:
+    """H2: if _process_paper raises, the queue row MUST be marked 'failed',
+    not left orphaned in 'queued'. This is the R28 hardening the Opus reviewer
+    will specifically check.
+    """
+
+    def test_process_paper_failure_returns_500(self, client, db, monkeypatch):
+        """H2: a pipeline exception surfaces as HTTP 500 (not a silent 202)."""
+        from scripts.server.routes import ingest as ingest_route
+
+        def boom(*a, **kw):
+            raise RuntimeError("simulated pipeline failure")
+
+        monkeypatch.setattr(ingest_route, "_process_paper", boom)
+
+        r = client.post(
+            "/api/ingest",
+            json={"doi": "10.1234/fail.001", "title": "T"},
+        )
+        assert r.status_code == 500, f"expected 500, got {r.status_code}: {r.text}"
+
+    def test_process_paper_failure_marks_queue_row_failed(self, client, db, monkeypatch):
+        """H2: after _process_paper raises, ingest_queue.status='failed' (not 'queued').
+
+        R28 invariant: the queue must reflect ground truth — a 'queued' row
+        that never transitions to 'done' or 'failed' is invisible corruption
+        that H3's queue listing would present as an active job.
+        """
+        from scripts.server.routes import ingest as ingest_route
+
+        def boom(*a, **kw):
+            raise RuntimeError("simulated pipeline failure")
+
+        monkeypatch.setattr(ingest_route, "_process_paper", boom)
+
+        client.post(
+            "/api/ingest",
+            json={"doi": "10.1234/fail.002", "title": "T"},
+        )
+
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT status, error FROM ingest_queue WHERE doi = ?",
+                ("10.1234/fail.002",),
+            ).fetchone()
+
+        assert row is not None, "ingest_queue row must exist"
+        assert row[0] == "failed", (
+            f"Expected status='failed', got {row[0]!r}. "
+            "Orphaned 'queued' rows are the R28 reviewer trap."
+        )
+
+    def test_process_paper_failure_records_error_text(self, client, db, monkeypatch):
+        """H2: the error column must contain the exception message."""
+        from scripts.server.routes import ingest as ingest_route
+
+        def boom(*a, **kw):
+            raise RuntimeError("simulated pipeline failure")
+
+        monkeypatch.setattr(ingest_route, "_process_paper", boom)
+
+        client.post(
+            "/api/ingest",
+            json={"doi": "10.1234/fail.003", "title": "T"},
+        )
+
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT error FROM ingest_queue WHERE doi = ?",
+                ("10.1234/fail.003",),
+            ).fetchone()
+
+        assert row is not None
+        assert row[0] and "simulated pipeline failure" in row[0]
+
+    def test_queue_row_not_orphaned_in_queued_on_failure(self, client, db, monkeypatch):
+        """H2: status is never left as 'queued' after _process_paper raises.
+
+        Explicitly asserts the negation (not 'queued') separate from the
+        positive assertion (is 'failed') so test failures are maximally clear.
+        """
+        from scripts.server.routes import ingest as ingest_route
+
+        def boom(*a, **kw):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(ingest_route, "_process_paper", boom)
+
+        client.post(
+            "/api/ingest",
+            json={"doi": "10.1234/fail.004", "title": "T"},
+        )
+
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT status FROM ingest_queue WHERE doi = ?",
+                ("10.1234/fail.004",),
+            ).fetchone()
+
+        assert row is not None
+        assert row[0] != "queued", (
+            "Queue row is STILL 'queued' after _process_paper raised — "
+            "this is the orphaned-row bug the R28 hardening must prevent."
+        )
+
+
+# ---------------------------------------------------------------------------
+# StateDB migration tests (ingest_queue additive creation)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestStateDBMigration:
+    def test_ingest_queue_table_created_on_fresh_db(self, tmp_path):
+        """H2: StateDB init creates the ingest_queue table additively."""
+        StateDB(tmp_path / "state.db")
+
+        conn = sqlite3.connect(str(tmp_path / "state.db"))
+        try:
+            row = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='ingest_queue'"
+            ).fetchone()
+        finally:
+            conn.close()
+
+        assert row is not None, "ingest_queue table was not created"
+
+    def test_ingest_queue_schema_columns(self, tmp_path):
+        """H2: ingest_queue has the required columns (doi, status, queued_at, completed_at, error)."""
+        StateDB(tmp_path / "state.db")
+
+        conn = sqlite3.connect(str(tmp_path / "state.db"))
+        try:
+            cols = {
+                row[1]: {"type": row[2], "notnull": row[3], "dflt": row[4]}
+                for row in conn.execute("PRAGMA table_info(ingest_queue)").fetchall()
+            }
+        finally:
+            conn.close()
+
+        assert "doi" in cols, "ingest_queue missing 'doi' column"
+        assert "status" in cols, "ingest_queue missing 'status' column"
+        assert "queued_at" in cols, "ingest_queue missing 'queued_at' column"
+        assert "completed_at" in cols, "ingest_queue missing 'completed_at' column"
+        assert "error" in cols, "ingest_queue missing 'error' column"
+
+        # doi is the PK — notnull must be enforced by PK constraint
+        # status has a NOT NULL default
+        assert cols["status"]["notnull"] == 1, "status must be NOT NULL"
+        assert cols["queued_at"]["notnull"] == 1, "queued_at must be NOT NULL"
+        # completed_at and error are nullable
+        assert cols["completed_at"]["notnull"] == 0, "completed_at must be nullable"
+        assert cols["error"]["notnull"] == 0, "error must be nullable"
+
+    def test_existing_db_migration_is_additive(self, tmp_path):
+        """H2: opening an existing DB without ingest_queue adds it without destroying tables."""
+        legacy_path = tmp_path / "legacy.db"
+
+        # Simulate a pre-H2 state DB with papers but no ingest_queue.
+        conn = sqlite3.connect(str(legacy_path))
+        conn.execute(
+            "CREATE TABLE papers (doi TEXT PRIMARY KEY, title TEXT)"
+        )
+        conn.execute("INSERT INTO papers (doi, title) VALUES ('10.0/legacy', 'Old Paper')")
+        conn.commit()
+        conn.close()
+
+        # Open via StateDB — migration must add ingest_queue without touching papers.
+        StateDB(legacy_path)
+
+        conn2 = sqlite3.connect(str(legacy_path))
+        try:
+            # ingest_queue must now exist.
+            tbl = conn2.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='ingest_queue'"
+            ).fetchone()
+            assert tbl is not None, "ingest_queue not added by additive migration"
+
+            # Legacy data must be preserved.
+            row = conn2.execute(
+                "SELECT title FROM papers WHERE doi='10.0/legacy'"
+            ).fetchone()
+            assert row is not None, "Legacy papers row was destroyed by migration"
+            assert row[0] == "Old Paper"
+        finally:
+            conn2.close()
+
+    def test_migration_is_idempotent(self, tmp_path):
+        """H2: re-opening a DB that already has ingest_queue doesn't raise or duplicate."""
+        db_path = tmp_path / "state.db"
+        StateDB(db_path)  # first open — creates ingest_queue
+        StateDB(db_path)  # second open — must not fail or duplicate table
+
+        conn = sqlite3.connect(str(db_path))
+        try:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='ingest_queue'"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+
+        assert count == 1, f"Expected exactly 1 ingest_queue table, got {count}"
+
+
+# ---------------------------------------------------------------------------
+# H3: GET /api/ingest/queue
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestQueueListing:
+    def test_empty_queue_returns_empty_list(self, client):
+        """H3: no rows in ingest_queue → 200 with empty list."""
+        r = client.get("/api/ingest/queue")
+        assert r.status_code == 200
+        assert r.json() == []
+
+    def test_two_items_ordered_descending(self, client, monkeypatch):
+        """H3: two ingests → list ordered newest-first (queued_at DESC)."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        client.post("/api/ingest", json={"doi": "10.1234/a", "title": "A"})
+        client.post("/api/ingest", json={"doi": "10.1234/b", "title": "B"})
+
+        r = client.get("/api/ingest/queue")
+        assert r.status_code == 200
+        items = r.json()
+        assert len(items) == 2
+        # B was added after A — DESC ordering puts B first.
+        assert items[0]["doi"] == "10.1234/b"
+        assert items[1]["doi"] == "10.1234/a"
+
+    def test_response_shape(self, client, monkeypatch):
+        """H3: each item in the queue list has the expected keys."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        client.post("/api/ingest", json={"doi": "10.1234/shape", "title": "S"})
+
+        r = client.get("/api/ingest/queue")
+        assert r.status_code == 200
+        item = r.json()[0]
+        for key in ("doi", "status", "queued_at", "completed_at", "error"):
+            assert key in item, f"Expected key {key!r} missing from queue item"
+
+
+# ---------------------------------------------------------------------------
+# H3: GET /api/ingest/{doi:path}/status
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDoiStatus:
+    def test_unknown_doi_404(self, client):
+        """H3: DOI not in queue → 404."""
+        r = client.get("/api/ingest/10.1234/missing/status")
+        assert r.status_code == 404
+
+    def test_known_doi_returns_row(self, client, monkeypatch):
+        """H3: known DOI → 200 with correct doi and status."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        client.post("/api/ingest", json={"doi": "10.1234/known", "title": "K"})
+
+        r = client.get("/api/ingest/10.1234/known/status")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["doi"] == "10.1234/known"
+        assert body["status"] == "done"
+
+    def test_known_doi_response_has_all_fields(self, client, monkeypatch):
+        """H3: status response includes all five expected keys."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        client.post("/api/ingest", json={"doi": "10.1234/fields", "title": "F"})
+
+        r = client.get("/api/ingest/10.1234/fields/status")
+        assert r.status_code == 200
+        body = r.json()
+        for key in ("doi", "status", "queued_at", "completed_at", "error"):
+            assert key in body, f"Expected key {key!r} missing from status response"
+
+
+# ---------------------------------------------------------------------------
+# H3: routing disambiguation — 'queue' must not match as {doi:path}
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestQueueRouteDoesNotMatchAsDoi:
+    def test_queue_path_resolves_to_listing_not_doi_status(self, client):
+        """H3 routing trap: 'queue' must not be captured by {doi:path}/status.
+
+        FastAPI routes are matched in registration order.  The explicit
+        /api/ingest/queue endpoint is registered before the wildcard
+        /api/ingest/{doi:path}/status route, so 'queue' should hit the
+        listing handler (200 + list), not the status handler (404 "DOI not
+        in queue").
+        """
+        r = client.get("/api/ingest/queue")
+        assert r.status_code == 200, (
+            f"Got {r.status_code} — 'queue' was matched as a DOI path segment. "
+            "Ensure the /queue route is registered BEFORE {doi:path}/status."
+        )
+        assert isinstance(r.json(), list)

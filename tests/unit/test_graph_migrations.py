@@ -335,13 +335,15 @@ class TestExtendsContradictsTablesV3:
 
 @pytest.mark.unit
 class TestSchemaVersionV3:
-    """R1: SCHEMA_VERSION is 3 and migration dispatcher handles v1/v2→v3."""
+    """R1: SCHEMA_VERSION >= 3; migration dispatcher handles v1/v2→v3 (now v4)."""
 
-    def test_schema_version_is_3(self):
-        """SCHEMA_VERSION constant must equal 3 after R1."""
+    def test_schema_version_is_at_least_4(self):
+        """SCHEMA_VERSION must be 4 after Phase 4 CITES column parity fix."""
         from scripts.graph.migrations import SCHEMA_VERSION
 
-        assert SCHEMA_VERSION == 3
+        assert SCHEMA_VERSION == 4, (
+            f"Expected SCHEMA_VERSION == 4 (Phase 4 CITES fix), got {SCHEMA_VERSION}"
+        )
 
     def test_migrate_v2_to_v3_adds_new_tables(self, tmp_path):
         """R1: migrate_v2_to_v3 on a v2-shaped DB adds EXTENDS + CONTRADICTS."""
@@ -370,16 +372,16 @@ class TestSchemaVersionV3:
         assert "EXTENDS" in after, f"EXTENDS missing after migrate_v2_to_v3: {after}"
         assert "CONTRADICTS" in after, f"CONTRADICTS missing: {after}"
 
-    def test_apply_migrations_v1_reaches_v3(self, tmp_path):
-        """apply_migrations from v1 chains v1→v2→v3 and returns SCHEMA_VERSION."""
+    def test_apply_migrations_v1_reaches_current_version(self, tmp_path):
+        """apply_migrations from v1 chains all steps and returns SCHEMA_VERSION."""
         from scripts.graph.migrations import SCHEMA_VERSION, apply_migrations
 
-        _, conn = _build_v1_kuzu_db(str(tmp_path / "v1_to_v3.kuzu"))
+        _, conn = _build_v1_kuzu_db(str(tmp_path / "v1_to_current.kuzu"))
         new_version = apply_migrations(conn, current_version=1)
-        assert new_version == SCHEMA_VERSION == 3
+        assert new_version == SCHEMA_VERSION
 
-    def test_apply_migrations_v2_reaches_v3(self, tmp_path):
-        """apply_migrations from v2 adds only EXTENDS+CONTRADICTS and returns 3."""
+    def test_apply_migrations_v2_reaches_current_version(self, tmp_path):
+        """apply_migrations from v2 chains v2→v3→v4 and returns SCHEMA_VERSION."""
         import kuzu
 
         from scripts.graph import GraphDB
@@ -389,7 +391,7 @@ class TestSchemaVersionV3:
             migrate_v2_to_v3,
         )
 
-        db = GraphDB(persist_dir=str(tmp_path / "v2_to_v3.kuzu"))
+        db = GraphDB(persist_dir=str(tmp_path / "v2_to_current.kuzu"))
         # Simulate v2 by dropping v3 tables.
         for name in ("EXTENDS", "CONTRADICTS"):
             try:
@@ -398,11 +400,11 @@ class TestSchemaVersionV3:
                 pass
 
         # Open a fresh connection to the same on-disk DB (simulate re-open at v2).
-        db2 = kuzu.Database(str(tmp_path / "v2_to_v3.kuzu"))
+        db2 = kuzu.Database(str(tmp_path / "v2_to_current.kuzu"))
         conn2 = kuzu.Connection(db2)
 
         new_version = apply_migrations(conn2, current_version=2)
-        assert new_version == SCHEMA_VERSION == 3
+        assert new_version == SCHEMA_VERSION
         after = _table_names(conn2)
         assert "EXTENDS" in after
         assert "CONTRADICTS" in after

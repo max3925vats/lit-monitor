@@ -2678,6 +2678,267 @@ def graph_status(by_source: bool) -> None:
 
 
 # ---------------------------------------------------------------------------
+# A5: lit-monitor ask — NL → Cypher → execute → summarize
+# ---------------------------------------------------------------------------
+@main.command("ask")
+@click.argument("question_words", nargs=-1, required=True)
+@click.option(
+    "--verbose", "-v",
+    is_flag=True, default=False,
+    help="Print stage labels (Generating Cypher, Executing, Summarizing).",
+)
+@click.option(
+    "--cypher-only",
+    is_flag=True, default=False,
+    help="Print only the generated Cypher; skip execution + summary.",
+)
+@click.option(
+    "--rag-mode",
+    type=click.Choice(["auto", "graph"]),
+    default="graph",
+    help="Backend mode. Only 'graph' is supported for ask.",
+)
+@click.option(
+    "--max-rows",
+    type=int, default=20,
+    help="Max rows to render in the markdown table.",
+)
+def ask_command(
+    question_words: tuple[str, ...],
+    verbose: bool,
+    cypher_only: bool,
+    rag_mode: str,
+    max_rows: int,
+) -> None:
+    """Ask a natural-language question against the literature graph.
+
+    Translates your question to Cypher, executes it against the KuzuDB
+    knowledge graph, and summarizes the results in prose.
+
+    The question is passed as one or more words — no quotes needed:
+
+        lit-monitor ask how many papers are from 2023
+    """
+    # Lazy imports — keeps CLI startup fast for non-ask commands.
+    from scripts.core.config import get_config
+    from scripts.graph import safe_graph_db
+    from scripts.graph.ask import (
+        execute_cypher,
+        generate_cypher,
+        render_rows,
+        summarize_results,
+    )
+    from scripts.graph.schema_describer import describe_schema
+
+    question = " ".join(question_words).strip()
+    if not question:
+        click.echo("No question provided.", err=True)
+        raise click.exceptions.Exit(1)
+
+    cfg = get_config()
+    graph_db = safe_graph_db()
+    if graph_db is None:
+        click.echo(
+            "Graph backend unavailable. Run 'lit-monitor graph build' first.",
+            err=True,
+        )
+        raise click.exceptions.Exit(1)
+
+    # === A1: introspect the live graph schema ===
+    if verbose:
+        click.echo(">> Describing schema…", err=True)
+    schema_text = describe_schema(graph_db)
+    if not schema_text or not schema_text.strip():
+        click.echo("Failed to introspect graph schema.", err=True)
+        raise click.exceptions.Exit(1)
+
+    # === A2: translate natural-language question → Cypher ===
+    if verbose:
+        click.echo(">> Generating Cypher…", err=True)
+    cypher = generate_cypher(question, schema_text, cfg=cfg)
+    if cypher is None:
+        click.echo(
+            "I couldn't translate your question into a query. "
+            "Try rephrasing, or use --verbose to see why.",
+            err=True,
+        )
+        raise click.exceptions.Exit(1)
+
+    if verbose or cypher_only:
+        click.echo(f"\nCypher:\n  {cypher}\n")
+
+    if cypher_only:
+        return
+
+    # === A3: execute the Cypher and render rows as a markdown table ===
+    if verbose:
+        click.echo(">> Executing Cypher…", err=True)
+    rows = execute_cypher(graph_db, cypher)
+    if rows is None:
+        click.echo(
+            f"I generated a query but it failed to execute.\n"
+            f"  Cypher: {cypher}\n"
+            "Try rephrasing.",
+            err=True,
+        )
+        raise click.exceptions.Exit(1)
+
+    rendered = render_rows(rows, max_rows=max_rows)
+
+    # === A4: prose summarization ===
+    if verbose:
+        click.echo(">> Summarizing…", err=True)
+    prose = summarize_results(question, cypher, rendered, cfg=cfg)
+
+    if prose is None:
+        # We still have data — show the table with a note and exit clean.
+        click.echo(rendered)
+        click.echo("\n(Summarization failed — raw results above.)")
+        return
+
+    # Happy path: prose summary followed by the raw table.
+    click.echo(prose)
+    click.echo()
+    click.echo(rendered)
+
+
+# ---------------------------------------------------------------------------
+# B4: mcp group — lit-monitor mcp serve
+# ---------------------------------------------------------------------------
+# Note: The original Phase 4b brief described an SSE-over-HTTP transport with
+# --host / --port flags. We deliberately chose stdio transport instead because:
+#   (a) Claude Desktop / Continue / Cursor all expect stdio out of the box.
+#   (b) SSE would require uvicorn + a separate /sse endpoint — unnecessary
+#       complexity for the current consumer surface.
+# If SSE is needed later, add a second subcommand (e.g. `lit-monitor mcp sse`).
+# ---------------------------------------------------------------------------
+
+@main.group("mcp")
+def mcp_group() -> None:
+    """Manage the MCP server (knowledge-graph + vector RAG over Model Context Protocol)."""
+
+
+@mcp_group.command("serve")
+def mcp_serve_command() -> None:
+    """Run the lit-monitor MCP server (stdio transport).
+
+    Starts the MCP server using stdio transport so any MCP client
+    (Claude Desktop, Continue, Cursor, …) can launch this command as a
+    subprocess and communicate over stdin/stdout.
+
+    IMPORTANT: stdout is the MCP wire protocol. Do NOT redirect stdout to a
+    file or pipe it into a pager — that breaks the client handshake.  All
+    human-readable output goes to stderr.
+
+    Add to your MCP client config:
+
+    \b
+        "lit-monitor-graph": {
+          "command": "lit-monitor",
+          "args": ["mcp", "serve"]
+        }
+    """
+    # Probe for the [mcp] extra before doing anything else.
+    # Lazy check — the mcp SDK is only required when this subcommand runs.
+    try:
+        import mcp  # noqa: F401
+    except ImportError:
+        click.echo(
+            "MCP server requires the [mcp] extra. "
+            "Install with: uv sync --extra mcp",
+            err=True,
+        )
+        raise click.exceptions.Exit(1)
+
+    # -----------------------------------------------------------------------
+    # Banner — goes to STDERR.
+    # With stdio transport stdout carries the MCP wire protocol; printing
+    # anything there would corrupt the client handshake.
+    # -----------------------------------------------------------------------
+    click.echo(">> lit-monitor MCP server starting (stdio transport)", err=True)
+    click.echo(
+        ">> Register in your MCP client config (Claude Desktop / Continue / Cursor):",
+        err=True,
+    )
+    click.echo('>>   "lit-monitor-graph": {', err=True)
+    click.echo('>>     "command": "lit-monitor",', err=True)
+    click.echo('>>     "args": ["mcp", "serve"]', err=True)
+    click.echo(">>   }", err=True)
+    click.echo("", err=True)
+
+    # Lazy import — only triggered when running `mcp serve`, so CLI startup
+    # for all other commands is unaffected by the [mcp] extra being present
+    # or absent.
+    from scripts.mcp.graph_server import main as server_main  # noqa: PLC0415
+
+    try:
+        server_main()
+    except KeyboardInterrupt:
+        click.echo(">> MCP server shutting down (Ctrl-C)", err=True)
+
+
+# ---------------------------------------------------------------------------
+# chunks — chunk-level ChromaDB embedding operator commands (CB1)
+# ---------------------------------------------------------------------------
+@main.group("chunks")
+def chunks_cmd() -> None:
+    """Manage chunk-level (passage) ChromaDB embeddings."""
+
+
+@chunks_cmd.command("backfill")
+@click.option(
+    "--all", "all_flag",
+    is_flag=True, default=False,
+    help="Backfill all papers with chunks_indexed=0 AND fully_complete=1.",
+)
+@click.option("--doi", default=None, help="Backfill only this DOI.")
+@click.option(
+    "--since", default=None,
+    help="Backfill only papers with last_updated >= DATE (ISO format).",
+)
+@click.option(
+    "--limit", type=int, default=None,
+    help="Cap the number of papers processed in this run.",
+)
+def chunks_backfill_cmd(
+    all_flag: bool,
+    doi: str | None,
+    since: str | None,
+    limit: int | None,
+) -> None:
+    """Re-chunk + re-index papers whose chunks have not been indexed (CB1).
+
+    Walks state.db for papers WHERE chunks_indexed=0 AND fully_complete=1,
+    reads their stored fulltext_path, runs chunk_markdown, and calls
+    EmbeddingsDB.add_chunks.  No LLM calls — pure re-chunking.
+
+    Exit code 1 if any papers failed; 0 if all succeeded.
+    """
+    if not all_flag and not doi:
+        click.echo(
+            "Specify --all or --doi to scope the backfill.", err=True
+        )
+        raise click.exceptions.Exit(2)
+
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+    from scripts.pipelines.chunks_backfill import backfill_chunks
+
+    config = get_config()
+    state_db = StateDB(config.state_db.path)
+    embeddings_db = _make_embeddings_db(config)
+
+    summary = backfill_chunks(state_db, embeddings_db, doi=doi, since=since, limit=limit)
+    click.echo(
+        f"processed={summary['processed']} "
+        f"succeeded={summary['succeeded']} "
+        f"failed={summary['failed']}"
+    )
+    if summary["failed"] > 0:
+        raise click.exceptions.Exit(1)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":

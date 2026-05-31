@@ -126,6 +126,7 @@ def create_app() -> FastAPI:
     from scripts.server.routes.control import router as control_router
     from scripts.server.routes.discovery import router as discovery_router
     from scripts.server.routes.health import router as health_router
+    from scripts.server.routes.ingest import router as ingest_router
     from scripts.server.routes.schedule import router as schedule_router
     from scripts.server.routes.setup import router as setup_router
     from scripts.server.routes.sse import router as sse_router
@@ -137,6 +138,30 @@ def create_app() -> FastAPI:
     app.include_router(discovery_router)
     app.include_router(schedule_router)
     app.include_router(health_router)
+    # H2: POST /api/ingest — production ingest endpoint for Zotero plugin / web ingestors.
+    app.include_router(ingest_router)
+
+    # H4: GET /api/papers/{doi} — paper snapshot (wraps H1 get_paper_snapshot).
+    # H5: GET /api/papers/{doi}/related — related papers (vector/graph/hybrid).
+    from scripts.server.routes.papers import router as papers_router  # noqa: PLC0415
+
+    app.include_router(papers_router)
+
+    # H6: GET /api/entities — listing; GET /api/entities/{id} — neighborhood.
+    from scripts.server.routes.entities import router as entities_router  # noqa: PLC0415
+
+    app.include_router(entities_router)
+
+    # H8: POST /api/ask — NL→Cypher→execute→summarize pipeline.
+    #     POST /api/cypher — read-only Cypher escape hatch with B3's guard.
+    from scripts.server.routes.query import router as query_router  # noqa: PLC0415
+
+    app.include_router(query_router)
+
+    # H10: POST /api/search — free-text paper retrieval (vector/graph/hybrid).
+    from scripts.server.routes.search import router as search_router  # noqa: PLC0415
+
+    app.include_router(search_router)
 
     # Dev-only /dev test surface. Wrapped in try/except so a syntax error or
     # import-time failure inside routes/dev.py downgrades to a warning rather

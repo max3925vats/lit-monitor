@@ -30,6 +30,11 @@ Every REL TABLE carries three optional provenance properties introduced in G14
 Phase 3 R1 adds EXTENDS + CONTRADICTS (schema v3):
   EXTENDS     — paper A builds on / refines paper B's work
   CONTRADICTS — paper A disputes paper B's claim
+
+Phase 4 (schema v4):
+  CITES: renames 'resolution' column to 'evidence' so it matches all other
+  typed Paper→Paper REL tables (EXTENDS, CONTRADICTS, COMPARES_TO).  The
+  generic _upsert_typed_edge writes 'evidence'; CITES had diverged at G1.
 """
 from __future__ import annotations
 
@@ -37,14 +42,37 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Bumped to 3 (Phase 3 R1): adds EXTENDS + CONTRADICTS REL TABLEs.
-# History: v1 (G1) → v2 (G14, provenance cols) → v3 (Phase 3 R1, new Paper→Paper RELs).
-SCHEMA_VERSION: int = 3
+# Bumped to 4 (Phase 4): renames CITES.resolution → CITES.evidence.
+# History: v1 (G1) → v2 (G14, provenance cols) → v3 (Phase 3 R1, new Paper→Paper RELs)
+#          → v4 (Phase 4, CITES column parity fix).
+SCHEMA_VERSION: int = 4
 
 # Default prompt version tag written to all REL TABLE edges by the DDL DEFAULT
 # and used as the migration column default.  Centralised here so DDL and
 # migration stay in sync when the tag is bumped.
 _DEFAULT_PROMPT_VERSION: str = "phase1.0"
+
+# ---------------------------------------------------------------------------
+# Canonical typed-relationship predicate lists (shared with scripts/api/queries.py).
+# Adding a new predicate here automatically surfaces it in the query layer.
+# ---------------------------------------------------------------------------
+# Paper → Entity predicates (5)
+TYPED_PAPER_TO_ENTITY_PREDS: tuple[str, ...] = (
+    "DEPENDS_ON",
+    "PROPOSES",
+    "LIMITED_BY",
+    "INTRODUCES",
+    "RAISES_QUESTION",
+)
+# Paper → Paper predicates (4)
+TYPED_PAPER_TO_PAPER_PREDS: tuple[str, ...] = (
+    "CITES",
+    "COMPARES_TO",
+    "EXTENDS",
+    "CONTRADICTS",
+)
+# Combined list for callers that need all predicates.
+TYPED_PREDICATES: tuple[str, ...] = TYPED_PAPER_TO_ENTITY_PREDS + TYPED_PAPER_TO_PAPER_PREDS
 
 # ---------------------------------------------------------------------------
 # Three provenance columns appended to every REL TABLE (G14).
@@ -104,9 +132,12 @@ DDL_STATEMENTS: list[str] = [
         f"FROM Paper TO Entity, evidence STRING, {_REL_PROVENANCE})"
     ),
     # --- Relationship tables: Paper → Paper ---
+    # v4: uses 'evidence' (matches EXTENDS / CONTRADICTS / COMPARES_TO); the
+    # original v1 DDL mistakenly used 'resolution'. Fresh installs get 'evidence'
+    # directly; existing DBs get it via the v3→v4 migration (RENAME).
     (
         "CREATE REL TABLE IF NOT EXISTS CITES("
-        f"FROM Paper TO Paper, resolution STRING, {_REL_PROVENANCE})"
+        f"FROM Paper TO Paper, evidence STRING, {_REL_PROVENANCE})"
     ),
     (
         "CREATE REL TABLE IF NOT EXISTS COMPARES_TO("
@@ -294,6 +325,76 @@ def migrate_v2_to_v3(conn) -> int:  # type: ignore[type-arg]
     return 3
 
 
+def migrate_v3_to_v4(conn) -> int:  # type: ignore[type-arg]
+    """Rename CITES.resolution → CITES.evidence (schema v3 → v4).
+
+    CITES diverged from every other typed Paper→Paper REL table at G1 by
+    using a ``resolution`` column instead of ``evidence``.  The generic
+    ``_upsert_typed_edge`` writes ``evidence``, so calling
+    ``add_paper(..., relationships=[("CITES", ...)])`` raised a Kuzu
+    RuntimeError on v3 graphs.
+
+    Implementation note (Kuzu 0.11.x)
+    ----------------------------------
+    Kuzu 0.11.x supports ``ALTER TABLE <T> RENAME <old> TO <new>``.
+    Confirmed empirically: ADD, DROP, and RENAME all work on REL TABLEs
+    in 0.11.x.  RENAME is the cleanest path — no data copy needed.
+
+    Idempotency
+    -----------
+    If ``resolution`` is already gone (fresh install that got the fixed DDL,
+    or migration re-run), the RENAME is skipped rather than raising.
+    We inspect ``table_info('CITES')`` before acting.
+
+    Parameters
+    ----------
+    conn:
+        An open ``kuzu.Connection`` pointing at a v3-schema KuzuDB database.
+
+    Returns
+    -------
+    int
+        The new schema version: ``4``.
+    """
+    try:
+        res = conn.execute("CALL table_info('CITES') RETURN *")
+        cols: list[str] = []
+        while res.has_next():
+            row = res.get_next()
+            # row layout: (property_id, name, type, default, direction)
+            cols.append(row[1])
+
+        if "resolution" in cols and "evidence" not in cols:
+            # Rename the divergent column to match the rest.
+            conn.execute("ALTER TABLE CITES RENAME resolution TO evidence")
+            logger.info("migrate_v3_to_v4: CITES.resolution renamed to evidence.")
+        elif "evidence" in cols:
+            logger.debug(
+                "migrate_v3_to_v4: CITES already has 'evidence' column, skipping (idempotent)."
+            )
+        else:
+            # Neither column present — table was dropped/recreated elsewhere.
+            # Not our problem to resolve; log and continue.
+            logger.warning(
+                "migrate_v3_to_v4: CITES has neither 'resolution' nor 'evidence'. "
+                "Columns found: %s. Skipping rename.",
+                cols,
+            )
+    except RuntimeError as exc:
+        msg = str(exc).lower()
+        # If CITES doesn't exist yet (fresh install still running apply_schema),
+        # the table_info call will fail.  That's fine — apply_schema will create
+        # CITES with 'evidence' from scratch.
+        if "does not exist" in msg or "not exist" in msg or "cannot find" in msg:
+            logger.debug(
+                "migrate_v3_to_v4: CITES table not present yet (will be created by apply_schema), skipping."
+            )
+        else:
+            raise
+
+    return 4
+
+
 def apply_migrations(conn, current_version: int) -> int:  # type: ignore[type-arg]
     """Run any pending schema migrations and return the new schema version.
 
@@ -327,6 +428,11 @@ def apply_migrations(conn, current_version: int) -> int:  # type: ignore[type-ar
         )
         current_version = migrate_v2_to_v3(conn)
 
-    # Future migrations: if current_version < 4: migrate_v3_to_v4(conn) …
+    if current_version < 4:
+        logger.info(
+            "apply_migrations: v%d → v4 (renaming CITES.resolution → evidence).",
+            current_version,
+        )
+        current_version = migrate_v3_to_v4(conn)
 
     return current_version
