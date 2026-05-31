@@ -1,8 +1,9 @@
 """P3: notify-handler endpoint + chooser tests."""
 from __future__ import annotations
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 from fastapi.testclient import TestClient
 
 

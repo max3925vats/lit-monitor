@@ -495,8 +495,10 @@ class TestSafeSavePreference:
 
     def test_writes_preferred_viewer_and_asked_user(self, tmp_path):
         import shutil
-        import yaml
         from pathlib import Path
+
+        import yaml
+
         from scripts.server.config_io import safe_save_preference
 
         src = Path("config/extraction.example.yaml")
@@ -509,8 +511,9 @@ class TestSafeSavePreference:
 
     def test_enabled_optional_kwarg(self, tmp_path):
         import shutil
+
         import yaml
-        from pathlib import Path
+
         from scripts.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
@@ -522,8 +525,9 @@ class TestSafeSavePreference:
 
     def test_enabled_true_kwarg(self, tmp_path):
         import shutil
+
         import yaml
-        from pathlib import Path
+
         from scripts.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
@@ -534,7 +538,7 @@ class TestSafeSavePreference:
 
     def test_invalid_viewer_raises(self, tmp_path):
         import shutil
-        from pathlib import Path
+
         from scripts.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
@@ -545,8 +549,9 @@ class TestSafeSavePreference:
     def test_atomic_write_no_corruption(self, tmp_path):
         """P4: a successful write leaves the file as valid YAML with other keys intact."""
         import shutil
+
         import yaml
-        from pathlib import Path
+
         from scripts.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
@@ -563,7 +568,7 @@ class TestSafeSavePreference:
 
     def test_does_not_leave_tmp_file(self, tmp_path):
         import shutil
-        from pathlib import Path
+
         from scripts.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
@@ -576,8 +581,9 @@ class TestSafeSavePreference:
     def test_none_viewer_valid(self, tmp_path):
         """'none' is a valid viewer value (user opts out of viewer preference)."""
         import shutil
+
         import yaml
-        from pathlib import Path
+
         from scripts.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
@@ -598,6 +604,7 @@ class TestSetupCompleteNotifyPanel:
 
     def _make_client(self):
         from fastapi.testclient import TestClient
+
         from scripts.server.app import create_app
         from scripts.server.runtime import reset_runtime
 
@@ -681,6 +688,7 @@ class TestDigestAutoWriteCheckbox:
 
     def _make_client(self):
         from fastapi.testclient import TestClient
+
         from scripts.server.app import create_app
         from scripts.server.runtime import reset_runtime
 
@@ -690,7 +698,9 @@ class TestDigestAutoWriteCheckbox:
     def test_safe_save_digest_auto_write_writes_yaml(self, tmp_path):
         """P10b: safe_save_digest_auto_write toggles the flag and round-trips."""
         import shutil
+
         import yaml
+
         from scripts.server.config_io import safe_save_digest_auto_write
 
         dst = tmp_path / "extraction.yaml"

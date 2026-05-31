@@ -1,9 +1,8 @@
 """P10: per-paper note decoupling + obsidian sync tests."""
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 
 class TestNotesSyncedColumn:
@@ -250,6 +249,7 @@ class TestPipelineGate:
 class TestCliObsidianSync:
     def test_obsidian_sync_subcommand_registered(self):
         from click.testing import CliRunner
+
         from scripts.cli import main
         runner = CliRunner()
         result = runner.invoke(main, ["obsidian", "sync", "--help"])
@@ -259,6 +259,7 @@ class TestCliObsidianSync:
     def test_obsidian_sync_no_args_errors(self):
         """Without --all/--doi/--since, should exit non-zero."""
         from click.testing import CliRunner
+
         from scripts.cli import main
         runner = CliRunner()
         result = runner.invoke(main, ["obsidian", "sync"])

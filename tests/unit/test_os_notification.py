@@ -1,10 +1,9 @@
 """P2: OS notification tests."""
 from __future__ import annotations
+
 import importlib
 import logging
-import sys
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 
 class TestNotifyEnabled:

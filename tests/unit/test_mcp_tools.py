@@ -9,6 +9,7 @@ Covers:
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -676,7 +677,7 @@ class TestDiscoveryMcpTools:
     """P9: tests for get_recent_discovery_runs and get_discovery_run_papers."""
 
     def test_get_recent_discovery_runs_returns_list(
-        self, tmp_path: "Path", monkeypatch: "pytest.MonkeyPatch"
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from scripts.core.state_db import StateDB
         from scripts.mcp import tools
@@ -693,7 +694,7 @@ class TestDiscoveryMcpTools:
         assert result[0]["status"] == "success"
 
     def test_get_recent_discovery_runs_limit(
-        self, tmp_path: "Path", monkeypatch: "pytest.MonkeyPatch"
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from scripts.core.state_db import StateDB
         from scripts.mcp import tools
@@ -707,7 +708,7 @@ class TestDiscoveryMcpTools:
         assert len(tools.get_recent_discovery_runs(limit=2)) == 2
 
     def test_get_discovery_run_papers_sorted_by_score(
-        self, tmp_path: "Path", monkeypatch: "pytest.MonkeyPatch"
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from scripts.core.state_db import StateDB
         from scripts.mcp import tools
@@ -723,7 +724,7 @@ class TestDiscoveryMcpTools:
         assert [p["doi"] for p in papers] == ["10/hi", "10/lo"]
 
     def test_returns_jsonable(
-        self, tmp_path: "Path", monkeypatch: "pytest.MonkeyPatch"
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """P9: results must be json.dumps-safe."""
         import json
