@@ -222,6 +222,30 @@ New flags:
   corpus-aware graph context.
 - `lit-monitor graph status --by-source` — MENTIONS counts per source.
 
+### MCP server — graph + vector RAG over Model Context Protocol (v0.7.0+)
+
+The MCP server exposes 10 tools that AI clients (Claude Desktop, Continue,
+Cursor) can call to query the lit-monitor knowledge graph and vector index.
+
+```bash
+uv sync --extra mcp --extra graph
+lit-monitor mcp serve
+```
+
+The server uses stdio transport. Register it in your MCP client's config:
+
+```json
+"lit-monitor-graph": {
+  "command": "lit-monitor",
+  "args": ["mcp", "serve"]
+}
+```
+
+Tools include `find_papers_by_entity`, `get_paper_details`,
+`find_papers_by_query_hybrid` (RRF-fused graph + vector),
+`run_cypher` (read-only with safety guard), `semantic_search`, and 5 more.
+See [`docs/MCP_TOOLS.md`](docs/MCP_TOOLS.md) for the full reference.
+
 ### Phase 3 LLM relationships (v0.6.0+, optional)
 
 Phase 3 adds `EXTENDS` / `CONTRADICTS` edges + LLM-augmented schema
