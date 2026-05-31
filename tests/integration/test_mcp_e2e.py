@@ -34,13 +34,12 @@ def fixture_graph(tmp_path):
     Papers:
         10.0/a  "Alpha"  2024  J1
         10.0/b  "Beta"   2023  J1  — EXTENDS Alpha
-        10.0/c  "Gamma"  2024  J2  — EXTENDS Alpha
+        10.0/c  "Gamma"  2024  J2  — EXTENDS Alpha, CITES Alpha
 
-    Note: CITES uses a `resolution` column (not `evidence`) in the Kuzu
-    schema, which is incompatible with the generic _upsert_typed_edge path.
-    We use EXTENDS (which has `evidence`) for Paper→Paper relationships in
-    this fixture to exercise the generic predicate path without hitting that
-    mismatch.
+    Schema v4 fix: CITES now uses 'evidence' (matching all other typed
+    Paper→Paper RELs), so CITES edges can be created via the generic
+    _upsert_typed_edge path. The workaround that avoided CITES here has
+    been removed.
 
     Entities:
         monoclonal antibody (topic)  — Alpha, Beta
@@ -122,7 +121,7 @@ def fixture_graph(tmp_path):
         ],
     )
 
-    # Paper C: high throughput screen + EXTENDS Alpha
+    # Paper C: high throughput screen + EXTENDS Alpha + CITES Alpha
     db.add_paper(
         doi="10.0/c",
         paper_metadata={"title": "Gamma", "year": 2024, "journal": "J2"},
@@ -145,6 +144,16 @@ def fixture_graph(tmp_path):
                 evidence="extends the Alpha framework",
                 confidence=1.0,
                 field="abstract",
+            ),
+            # CITES edge — validates schema v4 fix (resolution → evidence).
+            RelationshipTuple(
+                source_doi="10.0/c",
+                predicate="CITES",
+                target_id="10.0/a",
+                target_kind="Paper",
+                evidence="directly cites Alpha methodology",
+                confidence=0.95,
+                field="references",
             ),
         ],
     )

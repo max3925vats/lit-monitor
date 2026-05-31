@@ -135,14 +135,21 @@ def mirror_citations(
             skipped_dup += 1
             continue
 
-        # Use the DB resolution value, or fall back to a sensible default.
-        resolution = edge.get("resolution") or "state_db_mirror"
+        # v4 schema: CITES uses 'evidence' (was 'resolution' before schema v4).
+        # Prefer the 'evidence' key from the edge dict; fall back to 'resolution'
+        # for backward-compat with any callers still passing the old key, then
+        # default to a descriptive sentinel so the column is never NULL.
+        evidence = (
+            edge.get("evidence")
+            or edge.get("resolution")
+            or "state_db_mirror"
+        )
 
         try:
             conn.execute(
                 "MATCH (s:Paper {doi: $src}), (t:Paper {doi: $tgt}) "
-                "CREATE (s)-[r:CITES {resolution: $res}]->(t)",
-                {"src": src, "tgt": tgt, "res": resolution},
+                "CREATE (s)-[r:CITES {evidence: $ev}]->(t)",
+                {"src": src, "tgt": tgt, "ev": evidence},
             )
             added += 1
         except Exception as exc:
