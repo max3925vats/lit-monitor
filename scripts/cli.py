@@ -2803,6 +2803,81 @@ def ask_command(
 
 
 # ---------------------------------------------------------------------------
+# B4: mcp group — lit-monitor mcp serve
+# ---------------------------------------------------------------------------
+# Note: The original Phase 4b brief described an SSE-over-HTTP transport with
+# --host / --port flags. We deliberately chose stdio transport instead because:
+#   (a) Claude Desktop / Continue / Cursor all expect stdio out of the box.
+#   (b) SSE would require uvicorn + a separate /sse endpoint — unnecessary
+#       complexity for the current consumer surface.
+# If SSE is needed later, add a second subcommand (e.g. `lit-monitor mcp sse`).
+# ---------------------------------------------------------------------------
+
+@main.group("mcp")
+def mcp_group() -> None:
+    """Manage the MCP server (knowledge-graph + vector RAG over Model Context Protocol)."""
+
+
+@mcp_group.command("serve")
+def mcp_serve_command() -> None:
+    """Run the lit-monitor MCP server (stdio transport).
+
+    Starts the MCP server using stdio transport so any MCP client
+    (Claude Desktop, Continue, Cursor, …) can launch this command as a
+    subprocess and communicate over stdin/stdout.
+
+    IMPORTANT: stdout is the MCP wire protocol. Do NOT redirect stdout to a
+    file or pipe it into a pager — that breaks the client handshake.  All
+    human-readable output goes to stderr.
+
+    Add to your MCP client config:
+
+    \b
+        "lit-monitor-graph": {
+          "command": "lit-monitor",
+          "args": ["mcp", "serve"]
+        }
+    """
+    # Probe for the [mcp] extra before doing anything else.
+    # Lazy check — the mcp SDK is only required when this subcommand runs.
+    try:
+        import mcp  # noqa: F401
+    except ImportError:
+        click.echo(
+            "MCP server requires the [mcp] extra. "
+            "Install with: uv sync --extra mcp",
+            err=True,
+        )
+        raise click.exceptions.Exit(1)
+
+    # -----------------------------------------------------------------------
+    # Banner — goes to STDERR.
+    # With stdio transport stdout carries the MCP wire protocol; printing
+    # anything there would corrupt the client handshake.
+    # -----------------------------------------------------------------------
+    click.echo(">> lit-monitor MCP server starting (stdio transport)", err=True)
+    click.echo(
+        ">> Register in your MCP client config (Claude Desktop / Continue / Cursor):",
+        err=True,
+    )
+    click.echo('>>   "lit-monitor-graph": {', err=True)
+    click.echo('>>     "command": "lit-monitor",', err=True)
+    click.echo('>>     "args": ["mcp", "serve"]', err=True)
+    click.echo(">>   }", err=True)
+    click.echo("", err=True)
+
+    # Lazy import — only triggered when running `mcp serve`, so CLI startup
+    # for all other commands is unaffected by the [mcp] extra being present
+    # or absent.
+    from scripts.mcp.graph_server import main as server_main  # noqa: PLC0415
+
+    try:
+        server_main()
+    except KeyboardInterrupt:
+        click.echo(">> MCP server shutting down (Ctrl-C)", err=True)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
