@@ -126,6 +126,7 @@ def create_app() -> FastAPI:
     from scripts.server.routes.control import router as control_router
     from scripts.server.routes.discovery import router as discovery_router
     from scripts.server.routes.health import router as health_router
+    from scripts.server.routes.ingest import router as ingest_router
     from scripts.server.routes.schedule import router as schedule_router
     from scripts.server.routes.setup import router as setup_router
     from scripts.server.routes.sse import router as sse_router
@@ -137,6 +138,8 @@ def create_app() -> FastAPI:
     app.include_router(discovery_router)
     app.include_router(schedule_router)
     app.include_router(health_router)
+    # H2: POST /api/ingest — production ingest endpoint for Zotero plugin / web ingestors.
+    app.include_router(ingest_router)
 
     # Dev-only /dev test surface. Wrapped in try/except so a syntax error or
     # import-time failure inside routes/dev.py downgrades to a warning rather

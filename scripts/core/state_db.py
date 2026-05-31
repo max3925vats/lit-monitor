@@ -114,6 +114,16 @@ CREATE TABLE IF NOT EXISTS citation_edges (
     created_at     TEXT DEFAULT (datetime('now')),
     PRIMARY KEY (source_doi, ref_id)
 );
+CREATE TABLE IF NOT EXISTS ingest_queue (
+    -- H2: tracks external ingest requests (POST /api/ingest).
+    -- doi is the natural PK — duplicate-DOI check in the route relies on it.
+    doi          TEXT PRIMARY KEY,
+    status       TEXT NOT NULL DEFAULT 'queued',
+    -- Values: queued | done | failed
+    queued_at    TEXT NOT NULL,
+    completed_at TEXT,   -- NULL until pipeline finishes or fails
+    error        TEXT    -- populated by R28 hardening path if _process_paper raises
+);
 """
 # ---------------------------------------------------------------------------
 # StateDB class
