@@ -197,6 +197,9 @@ def index_embeddings_and_mark_phases(
 
     try:
         embeddings_db.add_chunks(doi, chunks)
+        # CB1: flag set only on success; failure leaves 0 so backfill can retry.
+        state_db.set_chunks_indexed(doi, 1)
+        logger.debug("CB1: chunks_indexed=1 for %s", doi)
     except Exception as exc:
         # Non-fatal: chunks are an enrichment, not a correctness gate.
         # Matches existing behaviour in discovery.py and brain_build.py.

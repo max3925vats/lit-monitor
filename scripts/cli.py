@@ -2878,6 +2878,67 @@ def mcp_serve_command() -> None:
 
 
 # ---------------------------------------------------------------------------
+# chunks — chunk-level ChromaDB embedding operator commands (CB1)
+# ---------------------------------------------------------------------------
+@main.group("chunks")
+def chunks_cmd() -> None:
+    """Manage chunk-level (passage) ChromaDB embeddings."""
+
+
+@chunks_cmd.command("backfill")
+@click.option(
+    "--all", "all_flag",
+    is_flag=True, default=False,
+    help="Backfill all papers with chunks_indexed=0 AND fully_complete=1.",
+)
+@click.option("--doi", default=None, help="Backfill only this DOI.")
+@click.option(
+    "--since", default=None,
+    help="Backfill only papers with last_updated >= DATE (ISO format).",
+)
+@click.option(
+    "--limit", type=int, default=None,
+    help="Cap the number of papers processed in this run.",
+)
+def chunks_backfill_cmd(
+    all_flag: bool,
+    doi: str | None,
+    since: str | None,
+    limit: int | None,
+) -> None:
+    """Re-chunk + re-index papers whose chunks have not been indexed (CB1).
+
+    Walks state.db for papers WHERE chunks_indexed=0 AND fully_complete=1,
+    reads their stored fulltext_path, runs chunk_markdown, and calls
+    EmbeddingsDB.add_chunks.  No LLM calls — pure re-chunking.
+
+    Exit code 1 if any papers failed; 0 if all succeeded.
+    """
+    if not all_flag and not doi:
+        click.echo(
+            "Specify --all or --doi to scope the backfill.", err=True
+        )
+        raise click.exceptions.Exit(2)
+
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+    from scripts.pipelines.chunks_backfill import backfill_chunks
+
+    config = get_config()
+    state_db = StateDB(config.state_db.path)
+    embeddings_db = _make_embeddings_db(config)
+
+    summary = backfill_chunks(state_db, embeddings_db, doi=doi, since=since, limit=limit)
+    click.echo(
+        f"processed={summary['processed']} "
+        f"succeeded={summary['succeeded']} "
+        f"failed={summary['failed']}"
+    )
+    if summary["failed"] > 0:
+        raise click.exceptions.Exit(1)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
