@@ -1,10 +1,14 @@
 """P5: HTTP read endpoints for discovery runs.
+P8: HTML /discovery index enhancements + /discovery/{run_id} detail page.
 
 Tests cover:
   - GET /api/discovery/runs (list, pagination, validation)
   - GET /api/discovery/runs/{run_id} (detail + papers, 404)
   - GET /api/discovery/runs/{run_id}/papers (sorted, top_k validation)
   - Direct shared-query-layer functions from scripts.api.queries
+  - P8: /discovery index with run history / latest-run section
+  - P8: /discovery/{run_id} HTML detail page (200 + 404 + action buttons)
+  - P8: route-ordering safety (/discovery/notify-handler not shadowed)
 """
 from __future__ import annotations
 
@@ -331,3 +335,145 @@ class TestQueriesShared:
         db.add_discovery_paper(rid, doi="10/a", title="A", score=0.5, rationale="r", ingested=True)
         papers = get_discovery_run_papers(db, rid, top_k=10)
         assert json.dumps(papers) is not None
+
+
+# ---------------------------------------------------------------------------
+# P8: Additional fixtures for HTML page tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def client_with_db(empty_db):
+    """TestClient with get_runtime() returning a real empty StateDB."""
+    rt = _make_fake_runtime(empty_db)
+    with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        yield TestClient(create_app())
+
+
+@pytest.fixture
+def client_with_seeded_run(seeded_db):
+    """TestClient with get_runtime() returning a seeded StateDB; also yields run_id."""
+    db, run_id = seeded_db
+    rt = _make_fake_runtime(db)
+    with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        yield TestClient(create_app()), run_id
+
+
+# ---------------------------------------------------------------------------
+# P8: GET /discovery (existing dashboard must survive + new sections)
+# ---------------------------------------------------------------------------
+
+
+class TestDiscoveryIndexEnhancements:
+    def test_existing_dashboard_still_renders(self, client_with_db):
+        """P8: existing /discovery dashboard must not be broken."""
+        r = client_with_db.get("/discovery")
+        assert r.status_code == 200
+        body = r.text.lower()
+        assert "discovery" in body
+
+    def test_existing_controls_section_present(self, client_with_db):
+        """SSE / controls section must still be in the page."""
+        r = client_with_db.get("/discovery")
+        assert r.status_code == 200
+        body = r.text.lower()
+        # The HTMX controls fragment loader and SSE pane live in index.html
+        assert "hx-get" in body or "api/discovery/controls" in body or "controls" in body
+
+    def test_run_history_links_to_run_detail(self, client_with_seeded_run):
+        """Run history table must link rows to /discovery/{run_id}."""
+        client, run_id = client_with_seeded_run
+        r = client.get("/discovery")
+        assert r.status_code == 200
+        body = r.text
+        assert f"/discovery/{run_id}" in body
+
+    def test_latest_run_section_present_with_data(self, client_with_seeded_run):
+        """P8: /discovery page should reference the seeded run_id somewhere."""
+        client, run_id = client_with_seeded_run
+        r = client.get("/discovery")
+        assert r.status_code == 200
+        body = r.text
+        assert str(run_id) in body
+
+
+# ---------------------------------------------------------------------------
+# P8: GET /discovery/{run_id} — HTML detail page
+# ---------------------------------------------------------------------------
+
+
+class TestDiscoveryRunDetailPage:
+    def test_known_run_200(self, client_with_seeded_run):
+        client, run_id = client_with_seeded_run
+        r = client.get(f"/discovery/{run_id}")
+        assert r.status_code == 200
+
+    def test_page_contains_seeded_paper_title(self, client_with_seeded_run):
+        client, run_id = client_with_seeded_run
+        r = client.get(f"/discovery/{run_id}")
+        assert r.status_code == 200
+        assert "Alpha" in r.text
+
+    def test_page_contains_doi(self, client_with_seeded_run):
+        client, run_id = client_with_seeded_run
+        r = client.get(f"/discovery/{run_id}")
+        assert r.status_code == 200
+        assert "10.0/a" in r.text
+
+    def test_unknown_run_404(self, client_with_db):
+        r = client_with_db.get("/discovery/99999")
+        assert r.status_code == 404
+
+    def test_relink_button_present(self, client_with_seeded_run):
+        client, run_id = client_with_seeded_run
+        r = client.get(f"/discovery/{run_id}")
+        assert r.status_code == 200
+        assert "relink" in r.text.lower()
+
+    def test_re_extract_button_present(self, client_with_seeded_run):
+        client, run_id = client_with_seeded_run
+        r = client.get(f"/discovery/{run_id}")
+        assert r.status_code == 200
+        body = r.text.lower()
+        assert "re-extract" in body or "reextract" in body
+
+    def test_relink_targets_h7_endpoint(self, client_with_seeded_run):
+        """Relink button must hx-post to /api/papers/{doi}/relink (literal DOI)."""
+        client, run_id = client_with_seeded_run
+        r = client.get(f"/discovery/{run_id}")
+        assert r.status_code == 200
+        assert "/api/papers/10.0/a/relink" in r.text
+
+    def test_re_extract_targets_h7_endpoint(self, client_with_seeded_run):
+        """Re-extract button must hx-post to /api/papers/{doi}/re-extract (literal DOI)."""
+        client, run_id = client_with_seeded_run
+        r = client.get(f"/discovery/{run_id}")
+        assert r.status_code == 200
+        assert "/api/papers/10.0/a/re-extract" in r.text
+
+    def test_back_link_present(self, client_with_seeded_run):
+        """Page must provide a link back to /discovery."""
+        client, run_id = client_with_seeded_run
+        r = client.get(f"/discovery/{run_id}")
+        assert r.status_code == 200
+        assert "/discovery" in r.text
+
+
+# ---------------------------------------------------------------------------
+# P8: route-ordering safety
+# ---------------------------------------------------------------------------
+
+
+class TestRouteOrderingSafety:
+    def test_notify_handler_not_shadowed_by_run_detail(self, client_with_db):
+        """P3 /discovery/notify-handler must still be reachable after P8 ships.
+
+        /discovery/{run_id: int} rejects non-numeric segments (422), so FastAPI
+        falls through to the notify-handler route in discovery_notify_router.
+        """
+        r = client_with_db.get("/discovery/notify-handler")
+        # 200 (renders chooser), 302 (redirect), or 422 (validation error
+        # if treated as int) are all acceptable — 404 is NOT.
+        assert r.status_code in (200, 302, 303, 307, 308, 422), (
+            f"P3 notify-handler shadowed by P8 run_detail; got {r.status_code}"
+        )

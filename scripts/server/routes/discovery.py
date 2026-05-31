@@ -2,6 +2,7 @@
 
 Routes:
     GET  /discovery                           — dashboard (last run, history, today's digest)
+    GET  /discovery/{run_id}                  — per-run HTML detail page with paper cards (P8)
     POST /api/discovery/start                 — spawn ``lit-monitor run [--dry-run]``
     POST /api/discovery/stop                  — SIGTERM the running subprocess
     GET  /api/discovery/status                — JSON status for polling
@@ -128,6 +129,19 @@ def dashboard(request: Request) -> HTMLResponse:
         except Exception:
             logger.warning("get_recent_runs_by_type failed", exc_info=True)
 
+    # P8: also fetch structured discovery_runs (have id, total_found, total_ingested)
+    # to populate the run-history table with links to /discovery/{run_id}.
+    discovery_runs: list[dict] = []
+    latest_discovery_run: dict | None = None
+    if db is not None:
+        try:
+            result = get_discovery_runs(get_runtime().state_db, limit=10, offset=0)
+            discovery_runs = result.get("runs", [])
+            if discovery_runs:
+                latest_discovery_run = discovery_runs[0]
+        except Exception:
+            logger.warning("get_discovery_runs failed", exc_info=True)
+
     digest_path, digest_content = _todays_digest()
     return templates.TemplateResponse(
         request,
@@ -135,10 +149,46 @@ def dashboard(request: Request) -> HTMLResponse:
         {
             "last_run": last_run,
             "recent_runs": recent_runs,
+            # P8: structured discovery_runs with id field for linking
+            "discovery_runs": discovery_runs,
+            "latest_discovery_run": latest_discovery_run,
             "digest_path": str(digest_path) if digest_path else None,
             "digest_content": digest_content,
             "db_unavailable": db is None,
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# P8: per-run HTML detail page
+# ---------------------------------------------------------------------------
+
+
+@router.get("/discovery/{run_id}", response_class=HTMLResponse)
+def discovery_run_detail(request: Request, run_id: int) -> HTMLResponse:
+    """P8: per-run HTML detail page with paper cards + Relink / Re-extract buttons.
+
+    Route ordering note: the ``run_id: int`` type annotation causes FastAPI to
+    reject non-numeric path segments with 422, so this route does NOT swallow
+    P3's ``/discovery/notify-handler`` path — that falls through to the
+    separately registered ``discovery_notify_router``.
+
+    Args:
+        request: FastAPI request object.
+        run_id:  Primary key of the discovery_runs row.
+
+    Returns:
+        HTML page with paper cards, or 404 when run_id does not exist.
+    """
+    state_db = get_runtime().state_db
+    run = get_discovery_run(state_db, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    papers = get_discovery_run_papers(state_db, run_id, top_k=100)
+    return templates.TemplateResponse(
+        request,
+        "discovery/run_detail.html",
+        {"run": run, "papers": papers},
     )
 
 

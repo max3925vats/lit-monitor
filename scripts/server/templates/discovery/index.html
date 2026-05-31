@@ -66,6 +66,43 @@
   <p class="field-note">No history.</p>
   {% endif %}
 
+  {# P8: discovery runs table with links to per-run paper cards (/discovery/{id}) #}
+  {% if discovery_runs %}
+  <h2>Discovery runs</h2>
+  {% if latest_discovery_run %}
+  <div class="card" id="latest-run-summary">
+    <h3>Latest run &mdash; #{{ latest_discovery_run.id }}</h3>
+    <p class="field-note">
+      {{ (latest_discovery_run.started_at or "")[:19] or "—" }}
+      &middot;
+      <span class="status-{{ latest_discovery_run.status }}">{{ latest_discovery_run.status or "unknown" }}</span>
+      &middot;
+      {{ latest_discovery_run.total_ingested or 0 }} ingested /
+      {{ latest_discovery_run.total_found or 0 }} found
+      &middot;
+      <a href="/discovery/{{ latest_discovery_run.id }}">View papers &rarr;</a>
+    </p>
+  </div>
+  {% endif %}
+  <table class="runs-table" id="run-history-table">
+    <thead>
+      <tr><th>Run</th><th>Started</th><th>Status</th><th>Found</th><th>Ingested</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for run in discovery_runs %}
+      <tr>
+        <td><code>#{{ run.id }}</code></td>
+        <td>{{ (run.started_at or "")[:19] or "—" }}</td>
+        <td>{{ run.status or "—" }}</td>
+        <td>{{ run.total_found or 0 }}</td>
+        <td>{{ run.total_ingested or 0 }}</td>
+        <td><a href="/discovery/{{ run.id }}">Papers &rarr;</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
   <h2>Today's digest</h2>
   {% if digest_path %}
   <p class="field-note">Source: <code>{{ digest_path }}</code></p>
