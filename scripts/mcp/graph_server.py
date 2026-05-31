@@ -1,7 +1,7 @@
 """MCP server exposing lit-monitor graph + vector RAG as 10 tools.
 
-Phase 4b B1: scaffold only. Tool bodies stub NotImplementedError;
-B2/B3/B6 fill them in.
+Phase 4b B1: scaffold.  B2 fills in the 8 high-level tools.
+B3/B6 fill in run_cypher / semantic_search.
 
 Architecture:
 - stdio transport (matches Claude Desktop's MCP client expectation).
@@ -11,6 +11,7 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import signal
 import sys
@@ -53,16 +54,31 @@ def _build_server():
     from mcp.server import Server
     from mcp.types import TextContent, Tool
 
+    # B2 tool implementations; imported lazily so the module can be
+    # imported without triggering GraphDB I/O.
+    from scripts.mcp import tools as _tools  # noqa: PLC0415
+
+    # Dispatch table: maps MCP tool name → callable.
+    # run_cypher (B3) and semantic_search (B6) are not yet implemented.
+    _DISPATCH = {
+        "find_papers_by_entity": _tools.find_papers_by_entity,
+        "find_papers_by_relationship": _tools.find_papers_by_relationship,
+        "get_paper_details": _tools.get_paper_details,
+        "get_corpus_stats": _tools.get_corpus_stats,
+        "list_entities_by_type": _tools.list_entities_by_type,
+        "get_schema": _tools.get_schema,
+        "find_papers_by_query": _tools.find_papers_by_query,
+        "find_papers_by_query_hybrid": _tools.find_papers_by_query_hybrid,
+    }
+
     server = Server("lit-monitor-graph")
 
     @server.list_tools()
     async def _list_tools() -> list[Tool]:
-        # Skeleton: minimal inputSchema; B2/B3/B6 will refine descriptions
-        # and property schemas per tool.
         return [
             Tool(
                 name=name,
-                description=f"(B1 scaffold — implementation pending) {name}",
+                description=f"lit-monitor graph tool: {name}",
                 inputSchema={
                     "type": "object",
                     "properties": {},
@@ -74,12 +90,29 @@ def _build_server():
 
     @server.call_tool()
     async def _call_tool(name: str, arguments: dict) -> list[TextContent]:
-        if name not in TOOL_NAMES:
-            # Return error text rather than raising so the client gets a
-            # well-formed CallToolResult with isError semantics.
-            return [TextContent(type="text", text=f"Unknown tool: {name}")]
-        # B2/B3/B6 will dispatch to actual implementations here.
-        raise NotImplementedError(f"Tool {name} not yet implemented (B1 scaffold)")
+        if name in _DISPATCH:
+            try:
+                result = _DISPATCH[name](**arguments)
+            except ValueError as exc:
+                # Validation errors are user-actionable; return as error text.
+                return [TextContent(type="text", text=f"Error: {exc}")]
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("MCP tool %s failed: %s", name, exc)
+                return [TextContent(type="text", text=f"Tool error: {exc}")]
+            return [TextContent(type="text", text=json.dumps(result, default=str))]
+
+        if name in ("run_cypher", "semantic_search"):
+            # B3 / B6 not yet shipped.
+            pending = {"run_cypher": "B3", "semantic_search": "B6"}
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Tool {name!r} not yet implemented ({pending[name]} pending)",
+                )
+            ]
+
+        # Truly unknown tool name (should not happen if client uses list_tools).
+        return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
     return server
 

@@ -486,3 +486,132 @@ def get_schema_text(graph_db: Any) -> str:
     except Exception as exc:
         logger.warning("get_schema_text: describe_schema failed: %s", exc)
         return f"(schema describer error: {exc})"
+
+
+def get_papers_by_query(
+    query: str,
+    *,
+    mode: str = "graph",
+    k: int = 20,
+    cfg: Any = None,
+    graph_db: Any = None,
+    embeddings_db: Any = None,
+) -> list[dict[str, Any]]:
+    """Free-text query → list of paper snapshots.
+
+    Minimal implementation for B2; H10 will expand the vector/hybrid legs
+    with full EmbeddingsDB wiring and cross-encoder reranking.
+
+    Mode 'graph':  Resolve query as entity (Phase 2 alias chain), return
+                   papers MENTIONS-linked to that entity.
+    Mode 'hybrid': Graph leg (entity-resolve) + optional vector leg
+                   (ChromaDB), RRF-fused.  When embeddings_db is None the
+                   vector leg is silently skipped and graph results are
+                   returned ranked by entity overlap count.
+    Mode 'vector': Pure ChromaDB semantic search.  Requires embeddings_db.
+                   Returns [] when embeddings_db is None.
+
+    Args:
+        query:        Free-text search string.
+        mode:         One of "graph", "hybrid", "vector".
+        k:            Maximum number of results.
+        cfg:          Optional config object (reserved for H10 expansion).
+        graph_db:     GraphDB instance.  When None, a process-global instance
+                      is acquired via safe_graph_db().
+        embeddings_db: Optional EmbeddingsDB for vector/hybrid modes.
+
+    Returns:
+        list of {doi, title, year, journal} dicts, top-k by relevance.
+
+    Raises:
+        ValueError: When mode is unrecognised.
+    """
+    if mode not in ("graph", "hybrid", "vector"):
+        raise ValueError(f"unknown mode: {mode!r}; expected graph/hybrid/vector")
+
+    # Acquire graph_db if not injected (lazy — avoids I/O when not needed).
+    if graph_db is None and mode in ("graph", "hybrid"):
+        try:
+            from scripts.graph.import_citations import safe_graph_db  # noqa: PLC0415
+            graph_db = safe_graph_db()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("get_papers_by_query: could not acquire graph_db: %s", exc)
+
+    # --- Vector-only path -------------------------------------------------------
+    if mode == "vector":
+        if embeddings_db is None:
+            logger.debug("get_papers_by_query: vector mode but no embeddings_db")
+            return []
+        try:
+            results = embeddings_db.find_similar_to_text(query, top_k=k)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("get_papers_by_query: vector query failed: %s", exc)
+            return []
+        return _coerce_jsonable(
+            [
+                {"doi": r.get("id") or r.get("doi", "")}
+                for r in (results or [])
+                if r.get("id") or r.get("doi")
+            ][:k]
+        )
+
+    # --- Graph leg (used by both "graph" and "hybrid") --------------------------
+    graph_results: list[tuple[str, float]] = []
+    if graph_db is not None:
+        try:
+            canonical_id = graph_db.resolve_query_entity(query, type_=None)
+            if canonical_id is not None:
+                graph_results = graph_db.find_papers_by_entities([canonical_id], k=k)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("get_papers_by_query: graph leg failed: %s", exc)
+
+    if mode == "graph":
+        doi_scores = graph_results
+    else:
+        # --- Hybrid: RRF-fuse graph + vector ------------------------------------
+        from scripts.retrieval.rrf import reciprocal_rank_fusion  # noqa: PLC0415
+
+        vector_results: list[tuple[str, float]] = []
+        if embeddings_db is not None:
+            try:
+                raw = embeddings_db.find_similar_to_text(query, top_k=k)
+                vector_results = [
+                    (r.get("id") or r.get("doi", ""), float(r.get("score", 0.0)))
+                    for r in (raw or [])
+                    if r.get("id") or r.get("doi")
+                ]
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "get_papers_by_query: hybrid vector leg failed: %s", exc
+                )
+
+        g_ids = [d for d, _ in graph_results]
+        v_ids = [d for d, _ in vector_results]
+        fused = reciprocal_rank_fusion([g_ids, v_ids]) if (g_ids or v_ids) else []
+        doi_scores = fused[:k]
+
+    # --- Enrich with metadata --------------------------------------------------
+    out: list[dict[str, Any]] = []
+    if graph_db is not None:
+        for doi, _score in doi_scores[:k]:
+            entry: dict[str, Any] = {"doi": doi}
+            try:
+                res = graph_db._conn.execute(
+                    "MATCH (p:Paper {doi: $d}) RETURN p.title, p.year, p.journal",
+                    {"d": doi},
+                )
+                if res.has_next():
+                    row = res.get_next()
+                    entry["title"] = str(row[0]) if row[0] else ""
+                    entry["year"] = int(row[1]) if row[1] is not None else None
+                    entry["journal"] = str(row[2]) if row[2] else ""
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "get_papers_by_query: metadata fetch failed for %s: %s", doi, exc
+                )
+            out.append(entry)
+    else:
+        # No graph_db — return bare doi list
+        out = [{"doi": d} for d, _ in doi_scores[:k]]
+
+    return _coerce_jsonable(out)
