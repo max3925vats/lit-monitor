@@ -9,13 +9,10 @@ Covers:
 """
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 from fastapi.testclient import TestClient
 
 from scripts.server.app import create_app
-
 
 # ---------------------------------------------------------------------------
 # Fixture

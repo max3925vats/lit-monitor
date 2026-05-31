@@ -288,6 +288,7 @@ class TestGetPapersByQuery:
     def test_vector_mode_returns_doi_title_score(self) -> None:
         """Vector mode: results include doi, title, and score fields."""
         from unittest.mock import MagicMock
+
         from scripts.api.queries import get_papers_by_query
 
         mock_edb = MagicMock()
@@ -308,6 +309,7 @@ class TestGetPapersByQuery:
     def test_graph_mode_returns_score(self) -> None:
         """Graph mode: score field is present in output."""
         from unittest.mock import MagicMock
+
         from scripts.api.queries import get_papers_by_query
 
         mock_gdb = MagicMock()
@@ -337,6 +339,7 @@ class TestGetPapersByQuery:
     def test_graph_mode_no_entity_returns_empty(self) -> None:
         """Graph mode: query that resolves to no entity → []."""
         from unittest.mock import MagicMock
+
         from scripts.api.queries import get_papers_by_query
 
         mock_gdb = MagicMock()
@@ -350,6 +353,7 @@ class TestGetPapersByQuery:
     def test_hybrid_mode_with_no_backends_returns_empty(self) -> None:
         """Hybrid with graph resolving to None and no vector backend → []."""
         from unittest.mock import MagicMock
+
         from scripts.api.queries import get_papers_by_query
 
         # Provide graph_db directly so no real kuzu is opened; entity resolves
