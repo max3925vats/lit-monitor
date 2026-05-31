@@ -245,3 +245,153 @@ def generate_cypher(
         return None
 
     return cypher
+
+
+# =============================================================================
+# A3: execute_cypher + render_rows
+# =============================================================================
+
+import datetime as _dt  # noqa: E402
+from typing import Any as _Any  # noqa: E402
+
+
+def _coerce_jsonable(value: _Any) -> _Any:
+    """A3: coerce Kuzu return values to JSON-serializable Python types.
+
+    Mirrors the helper in scripts/api/queries.py — kept local here to avoid
+    a cross-package import cycle between graph and api.
+
+    Handles: None, primitives, list/tuple, dict, datetime/date/time,
+    bytes/bytearray, and a catch-all str() fallback.
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_coerce_jsonable(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _coerce_jsonable(v) for k, v in value.items()}
+    if isinstance(value, (_dt.datetime, _dt.date, _dt.time)):
+        return value.isoformat()
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            return value.decode("utf-8")
+        except UnicodeDecodeError:
+            return value.hex()
+    # Catch-all: str() so json.dumps never chokes on unknown Kuzu types.
+    return str(value)
+
+
+def execute_cypher(
+    graph_db: _Any,
+    cypher: str,
+    *,
+    row_cap: int = 100,
+) -> list[dict] | None:
+    """A3: execute a (presumed read-only — validated by A2) Cypher query.
+
+    Args:
+        graph_db: a ``GraphDB`` instance (or any object exposing ``_conn``).
+        cypher: the Cypher string to execute.
+        row_cap: hard upper limit on rows consumed. Defense-in-depth against
+            LLMs that forget LIMIT in their generated query.
+
+    Returns:
+        A list of dicts (one per result row) on success; ``None`` + an INFO
+        log on any failure. NEVER raises.
+
+    Each dict's keys come from Kuzu's ``get_column_names()`` for the result.
+    Values are JSON-serializable: datetime → ISO string, bytes → decoded/hex,
+    unknown objects → str().
+    """
+    if not cypher or not cypher.strip():
+        logger.info("A3: empty cypher; nothing to execute")
+        return None
+
+    try:
+        conn = graph_db._conn
+        result = conn.execute(cypher)
+    except Exception as exc:  # noqa: BLE001 — defensive perimeter
+        logger.info("A3: execute failed: %s", exc)
+        return None
+
+    try:
+        col_names = result.get_column_names()
+    except Exception as exc:  # noqa: BLE001 — defensive perimeter
+        logger.info("A3: get_column_names failed: %s", exc)
+        return None
+
+    rows: list[dict] = []
+    try:
+        while result.has_next():
+            if len(rows) >= row_cap:
+                logger.info("A3: row_cap=%d reached; truncating result", row_cap)
+                break
+            raw = result.get_next()
+            row = {col_names[i]: _coerce_jsonable(raw[i]) for i in range(len(col_names))}
+            rows.append(row)
+    except Exception as exc:  # noqa: BLE001 — defensive perimeter
+        logger.info("A3: row iteration failed: %s", exc)
+        return None
+
+    return rows
+
+
+def render_rows(rows: list[dict], *, max_rows: int = 20) -> str:
+    """A3: render result rows as a markdown table for human display.
+
+    Args:
+        rows: list of dicts as returned by ``execute_cypher``.
+        max_rows: maximum number of data rows to include. When the total
+            exceeds this, a ``_(showing first M of N rows)_`` footnote is
+            appended.
+
+    Returns:
+        A markdown table string. Empty list → ``"_(no results)_"``.
+
+    Rendering rules:
+        - Header keys: union of all row keys, stable insertion order
+          (first row's keys, then any new keys from later rows).
+        - ``None`` values render as an empty cell (not the string "None").
+        - Cell values longer than 80 chars are truncated at 79 + "…".
+        - Pipe characters inside cell values are backslash-escaped.
+        - Newlines inside cell values are collapsed to a space.
+    """
+    if not rows:
+        return "_(no results)_"
+
+    # Build header — union of keys across all rows, stable insertion order.
+    keys: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        for k in row.keys():
+            if k not in seen:
+                seen.add(k)
+                keys.append(k)
+
+    total = len(rows)
+    shown_rows = rows[:max_rows]
+
+    lines: list[str] = []
+    lines.append("| " + " | ".join(keys) + " |")
+    lines.append("| " + " | ".join(["---"] * len(keys)) + " |")
+
+    for row in shown_rows:
+        cells = []
+        for k in keys:
+            val = row.get(k)
+            if val is None:
+                cells.append("")
+            else:
+                s = str(val)
+                if len(s) > 80:
+                    s = s[:79] + "…"
+                # Escape pipes and collapse newlines to keep table valid.
+                s = s.replace("|", "\\|").replace("\n", " ")
+                cells.append(s)
+        lines.append("| " + " | ".join(cells) + " |")
+
+    if total > max_rows:
+        lines.append("")
+        lines.append(f"_(showing first {max_rows} of {total} rows)_")
+
+    return "\n".join(lines)
