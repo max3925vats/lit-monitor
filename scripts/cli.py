@@ -2678,6 +2678,131 @@ def graph_status(by_source: bool) -> None:
 
 
 # ---------------------------------------------------------------------------
+# A5: lit-monitor ask — NL → Cypher → execute → summarize
+# ---------------------------------------------------------------------------
+@main.command("ask")
+@click.argument("question_words", nargs=-1, required=True)
+@click.option(
+    "--verbose", "-v",
+    is_flag=True, default=False,
+    help="Print stage labels (Generating Cypher, Executing, Summarizing).",
+)
+@click.option(
+    "--cypher-only",
+    is_flag=True, default=False,
+    help="Print only the generated Cypher; skip execution + summary.",
+)
+@click.option(
+    "--rag-mode",
+    type=click.Choice(["auto", "graph"]),
+    default="graph",
+    help="Backend mode. Only 'graph' is supported for ask.",
+)
+@click.option(
+    "--max-rows",
+    type=int, default=20,
+    help="Max rows to render in the markdown table.",
+)
+def ask_command(
+    question_words: tuple[str, ...],
+    verbose: bool,
+    cypher_only: bool,
+    rag_mode: str,
+    max_rows: int,
+) -> None:
+    """Ask a natural-language question against the literature graph.
+
+    Translates your question to Cypher, executes it against the KuzuDB
+    knowledge graph, and summarizes the results in prose.
+
+    The question is passed as one or more words — no quotes needed:
+
+        lit-monitor ask how many papers are from 2023
+    """
+    # Lazy imports — keeps CLI startup fast for non-ask commands.
+    from scripts.core.config import get_config
+    from scripts.graph import safe_graph_db
+    from scripts.graph.ask import (
+        execute_cypher,
+        generate_cypher,
+        render_rows,
+        summarize_results,
+    )
+    from scripts.graph.schema_describer import describe_schema
+
+    question = " ".join(question_words).strip()
+    if not question:
+        click.echo("No question provided.", err=True)
+        raise click.exceptions.Exit(1)
+
+    cfg = get_config()
+    graph_db = safe_graph_db()
+    if graph_db is None:
+        click.echo(
+            "Graph backend unavailable. Run 'lit-monitor graph build' first.",
+            err=True,
+        )
+        raise click.exceptions.Exit(1)
+
+    # === A1: introspect the live graph schema ===
+    if verbose:
+        click.echo(">> Describing schema…", err=True)
+    schema_text = describe_schema(graph_db)
+    if not schema_text or not schema_text.strip():
+        click.echo("Failed to introspect graph schema.", err=True)
+        raise click.exceptions.Exit(1)
+
+    # === A2: translate natural-language question → Cypher ===
+    if verbose:
+        click.echo(">> Generating Cypher…", err=True)
+    cypher = generate_cypher(question, schema_text, cfg=cfg)
+    if cypher is None:
+        click.echo(
+            "I couldn't translate your question into a query. "
+            "Try rephrasing, or use --verbose to see why.",
+            err=True,
+        )
+        raise click.exceptions.Exit(1)
+
+    if verbose or cypher_only:
+        click.echo(f"\nCypher:\n  {cypher}\n")
+
+    if cypher_only:
+        return
+
+    # === A3: execute the Cypher and render rows as a markdown table ===
+    if verbose:
+        click.echo(">> Executing Cypher…", err=True)
+    rows = execute_cypher(graph_db, cypher)
+    if rows is None:
+        click.echo(
+            f"I generated a query but it failed to execute.\n"
+            f"  Cypher: {cypher}\n"
+            "Try rephrasing.",
+            err=True,
+        )
+        raise click.exceptions.Exit(1)
+
+    rendered = render_rows(rows, max_rows=max_rows)
+
+    # === A4: prose summarization ===
+    if verbose:
+        click.echo(">> Summarizing…", err=True)
+    prose = summarize_results(question, cypher, rendered, cfg=cfg)
+
+    if prose is None:
+        # We still have data — show the table with a note and exit clean.
+        click.echo(rendered)
+        click.echo("\n(Summarization failed — raw results above.)")
+        return
+
+    # Happy path: prose summary followed by the raw table.
+    click.echo(prose)
+    click.echo()
+    click.echo(rendered)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
