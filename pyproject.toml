@@ -1,6 +1,6 @@
 [project]
 name = "lit-monitor"
-version = "0.7.0"
+version = "0.8.0"
 requires-python = ">=3.11"
 dependencies = [
     # Search
@@ -53,8 +53,12 @@ dev = [
     "responses",
     "mypy",
 ]
-cloud = [
+litellm = [
     "litellm",          # multi-provider LLM routing (Anthropic, OpenAI, Vertex AI, etc.)
+]
+# Deprecated alias — keep so existing `uv sync --extra cloud` recipes keep working.
+cloud = [
+    "litellm",
 ]
 server = [
     "fastapi>=0.115",
@@ -75,6 +79,9 @@ nlp = [
 ]
 mcp = [
     "mcp>=1.0",
+]
+notify = [
+    "plyer>=2.1",
 ]
 
 [build-system]

@@ -21,7 +21,14 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from scripts.server.app import templates
-from scripts.server.config_io import load_config, load_secrets, save_config, save_secrets
+from scripts.server.config_io import (
+    load_config,
+    load_secrets,
+    safe_save_digest_auto_write,
+    safe_save_preference,
+    save_config,
+    save_secrets,
+)
 from scripts.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
@@ -1266,10 +1273,70 @@ def _check_vault() -> dict[str, tuple[bool, str]]:
 
 @router.get("/complete", response_class=HTMLResponse)
 def step_complete(request: Request) -> HTMLResponse:
-    """Setup completion landing — each row polls its own status endpoint."""
+    """Setup completion landing.
+
+    Renders status check rows (each polls its own HTMX endpoint) plus a
+    P4 "Notification preferences" panel pre-populated from the current
+    extraction.yaml values.
+    """
+    # Load current notify prefs; fall back gracefully if the file is absent
+    # or the notify block doesn't exist yet.
+    notify_enabled: bool = True
+    preferred_viewer: str = ""
+    # P10b: read current digest auto-write flag; default True (preserves existing behaviour).
+    digest_auto_write: bool = True
+    try:
+        ext = load_config("extraction")
+        notify_block = (ext.get("discovery") or {}).get("notify") or {}
+        notify_enabled = bool(notify_block.get("enabled", True))
+        preferred_viewer = str(notify_block.get("preferred_viewer", "") or "")
+        digest_block = (ext.get("discovery") or {}).get("digest") or {}
+        digest_auto_write = bool(digest_block.get("auto_write", True))
+    except Exception:  # noqa: BLE001 — defensive; page must still render
+        pass
+
     return templates.TemplateResponse(
-        request, "setup/complete.html", {"current_step": 8}
+        request,
+        "setup/complete.html",
+        {
+            "current_step": 8,
+            "notify_enabled": notify_enabled,
+            "preferred_viewer": preferred_viewer,
+            "digest_auto_write": digest_auto_write,
+        },
     )
+
+
+@router.post("/complete/notify", response_class=HTMLResponse)
+def save_notify_preference(
+    request: Request,
+    viewer: str = Form(""),
+    enabled: str = Form(""),
+    digest_auto_write: str = Form(""),
+) -> HTMLResponse:
+    """P4 + P10b: persist notification + digest preferences from the wizard complete page.
+
+    ``enabled`` and ``digest_auto_write`` are ``"on"`` when the checkbox is ticked;
+    anything else (including absent) is treated as ``False`` — standard HTML checkbox
+    behaviour.
+    """
+    enabled_bool: bool = enabled.strip().lower() == "on"
+    try:
+        safe_save_preference(viewer, enabled=enabled_bool)
+    except ValueError as exc:
+        return HTMLResponse(
+            f'<p class="error">{exc}</p>',
+            status_code=400,
+        )
+
+    # P10b: persist digest auto-write flag independently of the viewer choice.
+    digest_bool: bool = digest_auto_write.strip().lower() == "on"
+    safe_save_digest_auto_write(digest_bool)
+
+    # Redirect back to the complete page so the panel reflects the saved value.
+    from fastapi.responses import RedirectResponse  # local import keeps it lazy
+
+    return RedirectResponse(url="/setup/complete", status_code=303)
 
 
 @router.get("/api/check/{name}", response_class=HTMLResponse)

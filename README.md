@@ -69,13 +69,14 @@ If you prefer to drive `uv` yourself:
 
 ```bash
 uv venv && source .venv/bin/activate
-uv sync --extra dev --extra cloud --extra server
+uv sync --extra dev --extra litellm --extra server
 for f in config/*.example.yaml; do cp -n "$f" "${f%.example.yaml}.yaml"; done
 ```
 
-Drop `--extra cloud` if you do not need LiteLLM routing. The `--extra server`
-brings in FastAPI + uvicorn for `lit-monitor serve`; drop it only if you plan
-to run CLI-only and never touch the web UI.
+Drop `--extra litellm` if you do not need LiteLLM routing (`--extra cloud` also
+works as a deprecated alias). The `--extra server` brings in FastAPI + uvicorn
+for `lit-monitor serve`; drop it only if you plan to run CLI-only and never
+touch the web UI.
 
 ## Quickstart — web UI
 
@@ -246,6 +247,38 @@ Tools include `find_papers_by_entity`, `get_paper_details`,
 `run_cypher` (read-only with safety guard), `semantic_search`, and 5 more.
 See [`docs/MCP_TOOLS.md`](docs/MCP_TOOLS.md) for the full reference.
 
+### Discovery + notifications (v0.8.0)
+
+The discovery pipeline writes structured results (runs + per-paper scores) into
+`state.db`. Multiple surfaces render them on demand.
+
+```bash
+# Rich-formatted table for the most recent run
+lit-monitor discovery view --run latest
+
+# On-demand Markdown export
+lit-monitor discovery export-md --run latest --to ~/discovery.md
+
+# Per-paper Obsidian notes deferred from the discovery pipeline can be synced later
+lit-monitor obsidian sync --all
+```
+
+**Optional OS notifications** — install with `uv sync --extra notify`. On run
+completion an OS notification fires (macOS Notification Center, Linux
+`notify-send`, Windows toast). Clicking the notification opens
+`http://localhost:8765/discovery/notify-handler?run_id=N` — a chooser page on
+first use, or a direct redirect to your preferred surface (browser / Obsidian /
+dismiss) after you save a preference.
+
+**Config flags** (under `discovery:` in `config/extraction.yaml`):
+
+| Key | Default | Effect |
+|---|---|---|
+| `notify.enabled` | `true` | Fire OS notification at run end |
+| `notify.preferred_viewer` | `""` | Skip the chooser when set to `browser`, `obsidian`, or `none` |
+| `notes.auto_write_per_paper` | `true` | `false` → defer per-paper notes to `obsidian sync` |
+| `digest.auto_write` | `true` | `false` → no inline digest .md; use `discovery export-md` |
+
 ### Phase 3 LLM relationships (v0.6.0+, optional)
 
 Phase 3 adds `EXTENDS` / `CONTRADICTS` edges + LLM-augmented schema
@@ -293,6 +326,34 @@ lit-monitor diagnose
 `OK` or `FAIL`. Use it when `lit-monitor check` returns OK but something
 feels wrong (e.g. a corrupt `domain_context.yaml` silently becomes `""` and
 the LLM gets no domain context — `diagnose` catches it).
+
+### LLM providers — Ollama (default) or LiteLLM
+
+`lit-monitor` defaults to a local Ollama instance for all LLM extraction
+calls. To use a cloud provider (Anthropic, OpenAI, Vertex AI, etc.) via
+LiteLLM, install the extra and configure `extraction.yaml`:
+
+```bash
+uv sync --extra litellm
+```
+
+Then in `config/extraction.yaml`, set `provider` and `litellm_model` for each
+mode you want to route through the cloud:
+
+```yaml
+modes:
+  simple:
+    provider: litellm
+    litellm_model: claude-3-5-sonnet-20241022   # any LiteLLM-compatible model string
+    # ... existing keys unchanged ...
+  complex:
+    provider: litellm
+    litellm_model: claude-opus-4-5
+```
+
+Ollama and LiteLLM can be mixed per-mode — for example, local Ollama for
+`simple` and cloud Claude for `complex`. API keys are read from your
+environment per [LiteLLM's provider docs](https://docs.litellm.ai/docs/providers).
 
 ## Running tests
 

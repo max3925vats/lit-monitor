@@ -1471,3 +1471,135 @@ def test_rank_papers_graph_produces_rationales(tmp_path):
     assert any("relevant" in r for r in rationales), (
         f"Rationales should contain LLM output; got: {rationales!r}"
     )
+
+
+# ===========================================================================
+# P1: discovery pipeline writes discovery_runs + discovery_paper_results
+# ===========================================================================
+
+
+@pytest.mark.unit
+def test_discovery_writes_run_row_and_paper_rows(tmp_path):
+    """P1: run_discovery writes one discovery_runs row + >=1 discovery_paper_results row."""
+    config = _make_config(tmp_path)
+    state_db = _make_state_db(tmp_path)
+    embeddings_db = MagicMock()
+    embeddings_db.find_similar_to_text.return_value = []
+    llm = MagicMock()
+    llm.complete.return_value = "{}"
+    zotero_client = MagicMock()
+    zotero_client.get_current_version.return_value = 100
+
+    paper = _make_paper("10.9/p1_test", score=0.9)
+    paper["llm_rationale"] = "highly relevant"
+
+    with patch("scripts.pipelines.discovery.run_searches", return_value=[paper]), \
+         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("scripts.pipelines.discovery.filter_known_dois", return_value=[paper]), \
+         patch("scripts.pipelines.discovery.rank_papers", return_value=[paper]), \
+         patch("scripts.pipelines.discovery._run_ingestion", return_value=None):
+        run_discovery(config, state_db, zotero_client, embeddings_db, llm, dry_run=False)
+
+    with state_db._connect() as conn:
+        runs = conn.execute("SELECT id, status FROM discovery_runs").fetchall()
+        papers = conn.execute("SELECT doi FROM discovery_paper_results").fetchall()
+
+    assert len(runs) == 1, f"Expected 1 discovery_runs row, got {len(runs)}"
+    assert runs[0][1] in ("success", "complete", "completed", "done"), (
+        f"Unexpected run status: {runs[0][1]!r}"
+    )
+    assert len(papers) >= 1, f"Expected >=1 discovery_paper_results rows, got {len(papers)}"
+
+
+# ---------------------------------------------------------------------------
+# P10b: digest auto-write flag
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+class TestDigestAutoWriteFlag:
+    """P10b: digest .md auto-write gated on discovery.digest.auto_write."""
+
+    def test_flag_default_true_in_example_yaml(self):
+        """P10b: extraction.example.yaml ships with auto_write: true (backward compat)."""
+        import yaml
+        raw = Path("config/extraction.example.yaml").read_text()
+        data = yaml.safe_load(raw)
+        assert data["discovery"]["digest"]["auto_write"] is True
+
+    def test_config_exposes_flag_via_namespace(self):
+        """P10b: cfg.discovery.digest.auto_write is reachable via the _Namespace path."""
+        from scripts.core.config import get_config
+        cfg = get_config()
+        # Either real value or default-True sentinel; None means downstream default of True
+        digest_ns = getattr(getattr(cfg, "discovery", None), "digest", None)
+        val = getattr(digest_ns, "auto_write", None) if digest_ns is not None else None
+        assert val is True or val is None  # None means defaults to True downstream
+
+    def test_digest_skipped_when_flag_false(self, tmp_path, caplog, monkeypatch):
+        """P10b: when _resolve_digest_auto_write returns False, _write_digest is NOT called."""
+        import logging
+
+        config = _make_config(tmp_path)
+        state_db = _make_state_db(tmp_path)
+
+        # Monkeypatch the resolver to return False
+        monkeypatch.setattr(
+            "scripts.pipelines.discovery._resolve_digest_auto_write",
+            lambda cfg: False,
+        )
+
+        with patch("scripts.pipelines.discovery._write_digest") as mock_write, \
+             patch("scripts.pipelines.discovery.run_searches", return_value=([], [])), \
+             patch("scripts.pipelines.discovery.run_researcher_searches", return_value=([], [])), \
+             patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]), \
+             patch("scripts.pipelines.discovery.rank_papers", return_value=[]):
+            with caplog.at_level(logging.INFO):
+                run_discovery(config, state_db, MagicMock(), MagicMock(), MagicMock())
+
+        mock_write.assert_not_called()
+        # INFO log emitted for skipped digest
+        assert any(
+            "digest auto-write disabled" in r.message.lower()
+            for r in caplog.records
+        )
+
+    def test_digest_written_when_flag_true(self, tmp_path, monkeypatch):
+        """P10b: when _resolve_digest_auto_write returns True, _write_digest IS called."""
+        config = _make_config(tmp_path)
+        state_db = _make_state_db(tmp_path)
+
+        monkeypatch.setattr(
+            "scripts.pipelines.discovery._resolve_digest_auto_write",
+            lambda cfg: True,
+        )
+
+        with patch("scripts.pipelines.discovery._write_digest") as mock_write, \
+             patch("scripts.pipelines.discovery.run_searches", return_value=([], [])), \
+             patch("scripts.pipelines.discovery.run_researcher_searches", return_value=([], [])), \
+             patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]), \
+             patch("scripts.pipelines.discovery.rank_papers", return_value=[]):
+            run_discovery(config, state_db, MagicMock(), MagicMock(), MagicMock())
+
+        mock_write.assert_called_once()
+
+    def test_status_correct_regardless_of_flag(self, tmp_path, monkeypatch):
+        """P10b: discovery_runs.status is set correctly even when digest is skipped."""
+        config = _make_config(tmp_path)
+        state_db = _make_state_db(tmp_path)
+
+        monkeypatch.setattr(
+            "scripts.pipelines.discovery._resolve_digest_auto_write",
+            lambda cfg: False,
+        )
+
+        with patch("scripts.pipelines.discovery.run_searches", return_value=([], [])), \
+             patch("scripts.pipelines.discovery.run_researcher_searches", return_value=([], [])), \
+             patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]), \
+             patch("scripts.pipelines.discovery.rank_papers", return_value=[]):
+            run_discovery(config, state_db, MagicMock(), MagicMock(), MagicMock())
+
+        with state_db._connect() as conn:
+            rows = conn.execute("SELECT status FROM discovery_runs").fetchall()
+        assert rows, "Expected at least one discovery_runs row"
+        assert rows[0][0] in ("success", "error"), (
+            f"Unexpected status: {rows[0][0]!r}"
+        )

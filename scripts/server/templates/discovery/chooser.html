@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Open discovery results — lit-monitor{% endblock %}
+{% block content %}
+<section class="card" style="max-width:480px; margin:4rem auto;">
+  <h2>Discovery run complete</h2>
+  <p>Run #{{ run_id }} has finished. Where would you like to view the results?</p>
+
+  <form
+    id="chooser-form"
+    hx-post="/discovery/notify-handler/save-preference"
+    hx-target="#chooser-form"
+    hx-swap="outerHTML"
+    hx-ext="json-enc"
+  >
+    <div class="radio-group">
+      <label>
+        <input type="radio" name="viewer" value="browser" checked>
+        Browser (open in this app)
+      </label>
+      <label>
+        <input type="radio" name="viewer" value="obsidian">
+        Obsidian vault note
+      </label>
+      <label>
+        <input type="radio" name="viewer" value="none">
+        Dismiss (no preference)
+      </label>
+    </div>
+
+    <label class="checkbox-label" style="margin-top:1rem; display:block;">
+      <input type="checkbox" name="remember" value="true">
+      Remember my choice for future runs
+    </label>
+
+    <div class="button-row" style="margin-top:1.5rem; display:flex; gap:0.75rem; align-items:center;">
+      <button type="submit" class="btn-primary">Save &amp; open</button>
+      <a href="/discovery/{{ run_id }}" class="btn-secondary">Go directly to run</a>
+    </div>
+  </form>
+
+  <script>
+    // After HTMX posts the preference, redirect to the chosen surface.
+    document.getElementById("chooser-form").addEventListener("htmx:afterRequest", function (evt) {
+      if (evt.detail.xhr.status !== 200) return;
+      var resp;
+      try { resp = JSON.parse(evt.detail.xhr.responseText); } catch (e) { return; }
+      var viewer = resp.viewer;
+      if (viewer === "browser") {
+        window.location.href = "/discovery/{{ run_id }}";
+      } else if (viewer === "obsidian") {
+        // The server-side redirect handles Obsidian; just close the tab.
+        window.location.href = "/discovery/{{ run_id }}";
+      }
+      // viewer === "none": stay on page, nothing to open.
+    });
+  </script>
+</section>
+{% endblock %}

@@ -2042,6 +2042,77 @@ def obsidian_rebuild_citations(
 
 
 # ---------------------------------------------------------------------------
+# P10: obsidian sync — bulk note renderer for deferred write mode
+# ---------------------------------------------------------------------------
+
+@obsidian.command("sync")
+@click.option(
+    "--all",
+    "all_flag",
+    is_flag=True,
+    default=False,
+    help="Sync all papers where embeddings_indexed=1 and notes_synced=0.",
+)
+@click.option(
+    "--doi",
+    default=None,
+    help="Sync a specific DOI (re-renders regardless of current notes_synced flag).",
+)
+@click.option(
+    "--since",
+    default=None,
+    help=(
+        "ISO date (YYYY-MM-DD or datetime) — sync papers updated on or after "
+        "this date that have notes_synced=0."
+    ),
+)
+@click.option(
+    "--limit",
+    default=None,
+    type=int,
+    help="Maximum number of papers to process in this run.",
+)
+@click.pass_context
+def obsidian_sync(
+    ctx: click.Context,
+    all_flag: bool,
+    doi: str | None,
+    since: str | None,
+    limit: int | None,
+) -> None:
+    """Bulk-sync pending Obsidian notes from state.db to the vault (P10).
+
+    Used when discovery.notes.auto_write_per_paper=false — notes accumulate
+    with notes_synced=0 and this command renders them in a controlled batch.
+    Re-running on already-synced papers is a no-op (they are filtered out
+    unless --doi is used to force a specific paper).
+
+    Exits with code 1 if any note failed to render.
+    """
+    if not all_flag and not doi and not since:
+        click.echo(
+            "Error: specify at least one of --all, --doi, or --since to scope the sync.",
+            err=True,
+        )
+        raise click.exceptions.Exit(2)
+
+    _setup_logging("obsidian_sync", verbose=ctx.obj.get("verbose", False))
+    config = _make_config()
+    state_db = _make_state_db(config)
+
+    from scripts.obsidian_tools.sync import sync_notes
+
+    result = sync_notes(state_db, config, doi=doi, since=since, limit=limit)
+    click.echo(
+        f"processed={result['processed']} "
+        f"succeeded={result['succeeded']} "
+        f"failed={result['failed']}"
+    )
+    if result["failed"] > 0:
+        raise click.exceptions.Exit(1)
+
+
+# ---------------------------------------------------------------------------
 # db — database maintenance commands
 # ---------------------------------------------------------------------------
 
@@ -2936,6 +3007,142 @@ def chunks_backfill_cmd(
     )
     if summary["failed"] > 0:
         raise click.exceptions.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# discovery sub-group — P6 view, P7 export-md
+# ---------------------------------------------------------------------------
+
+
+@main.group("discovery")
+def discovery_group() -> None:
+    """View and export discovery run results."""
+
+
+@discovery_group.command("view")
+@click.option(
+    "--run",
+    "run_selector",
+    default="latest",
+    type=click.Choice(["latest"]),
+    show_default=True,
+)
+@click.option("--run-id", default=None, type=int)
+@click.option("--top-k", default=20, show_default=True, type=int)
+def discovery_view(run_selector: str, run_id: int | None, top_k: int) -> None:
+    """Print discovery run results as a Rich table (P6)."""
+    from pathlib import Path
+
+    from rich.console import Console
+    from rich.table import Table
+
+    from scripts.api.queries import get_discovery_run, get_discovery_run_papers
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+    console = Console()
+
+    if run_id is None:
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM discovery_runs ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        if not row:
+            console.print("[yellow]No discovery runs found in state.db.[/yellow]")
+            return
+        run_id = row[0]
+
+    run = get_discovery_run(db, run_id)
+    if run is None:
+        console.print(f"[red]Run {run_id} not found.[/red]")
+        raise click.exceptions.Exit(1)
+
+    papers = get_discovery_run_papers(db, run_id, top_k=top_k)
+    if not papers:
+        console.print(f"[yellow]No papers in run #{run_id}.[/yellow]")
+        return
+
+    date_str = (run.get("started_at") or "")[:10] or "unknown"
+    table = Table(
+        title=f"Discovery Run #{run_id} — {date_str}",
+        show_header=True,
+        header_style="bold cyan",
+    )
+    table.add_column("Rank", width=4, justify="right")
+    table.add_column("Title", min_width=30, max_width=60)
+    table.add_column("DOI", max_width=25)
+    table.add_column("Score", width=6, justify="right")
+    table.add_column("Rationale", max_width=50)
+
+    for i, p in enumerate(papers, 1):
+        rationale = p.get("rationale") or ""
+        if len(rationale) > 80:
+            rationale = rationale[:79] + "…"
+        table.add_row(
+            str(i),
+            p.get("title") or "",
+            p.get("doi") or "",
+            f"{p.get('score') or 0:.3f}",
+            rationale,
+        )
+
+    console.print(table)
+
+
+@discovery_group.command("export-md")
+@click.option(
+    "--run",
+    "run_selector",
+    default="latest",
+    type=click.Choice(["latest"]),
+    show_default=True,
+)
+@click.option("--run-id", default=None, type=int)
+@click.option(
+    "--to",
+    "output_path",
+    default=None,
+    type=click.Path(),
+    help="Output file path. Default: Discovery_{date}.md in cwd.",
+)
+def discovery_export_md(
+    run_selector: str, run_id: int | None, output_path: str | None
+) -> None:
+    """Export a discovery run as a Markdown digest file (P7)."""
+    from pathlib import Path
+
+    from scripts.api.queries import get_discovery_run, get_discovery_run_papers
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+    from scripts.output.digest_renderer import render_digest
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+
+    if run_id is None:
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT id FROM discovery_runs ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        if not row:
+            click.echo("No discovery runs found.", err=True)
+            raise click.exceptions.Exit(1)
+        run_id = row[0]
+
+    run = get_discovery_run(db, run_id)
+    if run is None:
+        click.echo(f"Run {run_id} not found.", err=True)
+        raise click.exceptions.Exit(1)
+
+    papers = get_discovery_run_papers(db, run_id, top_k=1000)
+    md = render_digest(run, papers)
+
+    date_str = (run.get("started_at") or "")[:10] or "unknown"
+    dest = Path(output_path) if output_path else Path(f"Discovery_{date_str}.md")
+    dest.write_text(md, encoding="utf-8")
+    click.echo(f"Written to {dest}")
 
 
 # ---------------------------------------------------------------------------

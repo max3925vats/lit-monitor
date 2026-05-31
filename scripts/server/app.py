@@ -125,6 +125,9 @@ def create_app() -> FastAPI:
     from scripts.server.routes.brain_build import router as brain_build_router
     from scripts.server.routes.control import router as control_router
     from scripts.server.routes.discovery import router as discovery_router
+    from scripts.server.routes.discovery_notify import (  # noqa: PLC0415
+        router as discovery_notify_router,
+    )
     from scripts.server.routes.health import router as health_router
     from scripts.server.routes.ingest import router as ingest_router
     from scripts.server.routes.schedule import router as schedule_router
@@ -135,6 +138,11 @@ def create_app() -> FastAPI:
     app.include_router(brain_build_router)
     app.include_router(control_router)
     app.include_router(sse_router)
+    # P3 notify-handler MUST register BEFORE discovery_router so that
+    # /discovery/notify-handler is matched first. Otherwise P8's
+    # /discovery/{run_id:int} route is checked first and FastAPI returns
+    # 422 (can't coerce "notify-handler" to int) without falling through.
+    app.include_router(discovery_notify_router)
     app.include_router(discovery_router)
     app.include_router(schedule_router)
     app.include_router(health_router)

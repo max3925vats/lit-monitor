@@ -444,12 +444,12 @@ class TestAllTenToolsViaDirectCall:
 # ---------------------------------------------------------------------------
 
 class TestDispatchCount:
-    """Confirm the server's TOOL_NAMES tuple stays at 10."""
+    """Confirm the server's TOOL_NAMES tuple stays at 12 (P9)."""
 
-    def test_ten_tools_in_dispatch(self) -> None:
+    def test_twelve_tools_in_dispatch(self) -> None:
         from scripts.mcp import graph_server
 
-        assert len(graph_server.TOOL_NAMES) == 10, (
-            f"Expected 10 tool names, got {len(graph_server.TOOL_NAMES)}: "
+        assert len(graph_server.TOOL_NAMES) == 12, (
+            f"Expected 12 tool names, got {len(graph_server.TOOL_NAMES)}: "
             f"{graph_server.TOOL_NAMES}"
         )

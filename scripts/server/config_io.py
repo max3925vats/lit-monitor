@@ -114,6 +114,109 @@ def save_server_config(host: str, port: int, open_browser: bool) -> None:
     save_secrets(secrets)
 
 
+# P4: valid viewer identifiers for the notification-chooser preference.
+_VALID_VIEWERS: frozenset[str] = frozenset({"browser", "obsidian", "none"})
+
+
+def safe_save_preference(
+    viewer: str,
+    *,
+    enabled: bool | None = None,
+    config_path: Path | None = None,
+) -> None:
+    """P4: atomically update ``discovery.notify`` in ``extraction.yaml``.
+
+    Sets ``preferred_viewer`` to ``viewer`` and ``asked_user`` to ``True``.
+    If ``enabled`` is not ``None``, also updates the ``enabled`` flag.
+
+    Parameters
+    ----------
+    viewer:
+        One of ``{"browser", "obsidian", "none"}``.  Raises ``ValueError``
+        for any other value so callers get a clear error rather than silently
+        persisting garbage.
+    enabled:
+        When provided, overrides ``discovery.notify.enabled``.  ``None``
+        (default) leaves the existing value untouched.
+    config_path:
+        Explicit path to the YAML file.  Defaults to
+        ``config/extraction.yaml`` (the live config).  Override in tests to
+        point at a ``tmp_path`` copy.
+
+    Raises
+    ------
+    ValueError
+        If ``viewer`` is not in the valid set.
+    OSError
+        If the file cannot be read or written.
+    """
+    if viewer not in _VALID_VIEWERS:
+        raise ValueError(
+            f"invalid viewer: {viewer!r}; must be one of {sorted(_VALID_VIEWERS)}"
+        )
+
+    path = Path(config_path) if config_path is not None else CONFIG_DIR / "extraction.yaml"
+
+    raw = path.read_text(encoding="utf-8")
+    data: dict[str, Any] = yaml.safe_load(raw) or {}
+
+    # Navigate / create the nested structure defensively.
+    data.setdefault("discovery", {})
+    if not isinstance(data["discovery"], dict):
+        data["discovery"] = {}
+    data["discovery"].setdefault("notify", {})
+    if not isinstance(data["discovery"]["notify"], dict):
+        data["discovery"]["notify"] = {}
+
+    data["discovery"]["notify"]["preferred_viewer"] = viewer
+    data["discovery"]["notify"]["asked_user"] = True
+    if enabled is not None:
+        data["discovery"]["notify"]["enabled"] = bool(enabled)
+
+    rendered = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+    # Delegate to the same atomic helper used by save_config / save_secrets.
+    _atomic_write(path, rendered)
+
+
+def safe_save_digest_auto_write(
+    value: bool,
+    *,
+    config_path: Path | None = None,
+) -> None:
+    """P10b: atomically update ``discovery.digest.auto_write`` in ``extraction.yaml``.
+
+    Parameters
+    ----------
+    value:
+        ``True`` to enable automatic digest writes (default); ``False`` to disable.
+    config_path:
+        Explicit path to the YAML file.  Defaults to ``config/extraction.yaml``.
+        Override in tests to point at a ``tmp_path`` copy.
+
+    Raises
+    ------
+    OSError
+        If the file cannot be read or written.
+    """
+    path = Path(config_path) if config_path is not None else CONFIG_DIR / "extraction.yaml"
+
+    raw = path.read_text(encoding="utf-8")
+    data: dict[str, Any] = yaml.safe_load(raw) or {}
+
+    # Navigate / create the nested structure defensively.
+    data.setdefault("discovery", {})
+    if not isinstance(data["discovery"], dict):
+        data["discovery"] = {}
+    data["discovery"].setdefault("digest", {})
+    if not isinstance(data["discovery"]["digest"], dict):
+        data["discovery"]["digest"] = {}
+
+    data["discovery"]["digest"]["auto_write"] = bool(value)
+
+    rendered = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+    _atomic_write(path, rendered)
+
+
 def _atomic_write(target: Path, content: str) -> Path:
     """Atomically write text to ``target`` (delegates to scripts.core.atomic_write).
 

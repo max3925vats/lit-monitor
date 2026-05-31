@@ -46,9 +46,13 @@ jobs:
         # banner/server-main tests assume the package is importable;
         # without it, the friendly "install with --extra mcp" guard fires
         # before the real banner is printed and the tests fail.
+        # LiteLLM extra (v0.8.0+) brings the real litellm package so the two
+        # LiteLLMClient unit tests can import litellm.completion. Without it a
+        # phantom/stub namespace package from a transitive dep makes
+        # pytest.importorskip succeed but litellm.completion is missing.
         # [nlp] extra is NOT installed in CI — tests use the BiobertNERStub
         # fixture rather than the real transformers + torch stack.
-        run: uv sync --extra dev --extra server --extra graph --extra mcp
+        run: uv sync --extra dev --extra server --extra graph --extra mcp --extra litellm
 
       - name: Lint with ruff
         run: uv run ruff check .

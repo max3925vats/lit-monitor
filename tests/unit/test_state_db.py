@@ -509,3 +509,128 @@ class TestRelBackfillHelpers:
         assert len(result) == 1
         assert isinstance(result[0], dict)
         assert "doi" in result[0]
+
+
+# ===========================================================================
+# P1: discovery_runs + discovery_paper_results tables and helpers
+# ===========================================================================
+
+
+class TestDiscoveryRunsTable:
+    def test_discovery_runs_table_exists(self, tmp_path):
+        db = StateDB(tmp_path / "state.db")
+        with db._connect() as conn:
+            rows = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='discovery_runs'"
+            ).fetchall()
+        assert rows, "discovery_runs table missing"
+
+    def test_discovery_paper_results_table_exists(self, tmp_path):
+        db = StateDB(tmp_path / "state.db")
+        with db._connect() as conn:
+            rows = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='discovery_paper_results'"
+            ).fetchall()
+        assert rows, "discovery_paper_results table missing"
+
+
+class TestDiscoveryRunHelpers:
+    def test_start_run_returns_int(self, tmp_path):
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({"topics": ["antibody"]})
+        assert isinstance(run_id, int) and run_id > 0
+
+    def test_start_run_persists_params(self, tmp_path):
+        import json as _json
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({"topics": ["x"], "since_days": 7})
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT status, run_params_json FROM discovery_runs WHERE id=?",
+                (run_id,),
+            ).fetchone()
+        assert row[0] == "running"
+        params = _json.loads(row[1])
+        assert params["topics"] == ["x"]
+        assert params["since_days"] == 7
+
+    def test_finish_run_updates_status(self, tmp_path):
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({})
+        db.finish_discovery_run(run_id, status="success", total_found=5, total_ingested=2)
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT status, total_found, total_ingested, finished_at "
+                "FROM discovery_runs WHERE id=?",
+                (run_id,),
+            ).fetchone()
+        assert row[0] == "success"
+        assert row[1] == 5
+        assert row[2] == 2
+        assert row[3] is not None  # finished_at set
+
+    def test_add_discovery_paper(self, tmp_path):
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({})
+        db.add_discovery_paper(
+            run_id,
+            doi="10.1/abc",
+            title="Test Paper",
+            score=0.87,
+            rationale="High relevance",
+            ingested=True,
+        )
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT doi, title, score, rationale, ingested, ingested_at "
+                "FROM discovery_paper_results WHERE run_id=?",
+                (run_id,),
+            ).fetchone()
+        assert row[0] == "10.1/abc"
+        assert row[1] == "Test Paper"
+        assert abs(row[2] - 0.87) < 0.001
+        assert row[3] == "High relevance"
+        assert row[4] == 1
+        assert row[5] is not None  # ingested_at set when ingested=True
+
+    def test_add_discovery_paper_not_ingested_leaves_timestamp_null(self, tmp_path):
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({})
+        db.add_discovery_paper(
+            run_id,
+            doi="10.1/xyz",
+            title="X",
+            score=0.5,
+            rationale="",
+            ingested=False,
+        )
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT ingested, ingested_at FROM discovery_paper_results WHERE doi='10.1/xyz'",
+            ).fetchone()
+        assert row[0] == 0
+        assert row[1] is None
+
+    def test_existing_db_migration_additive(self, tmp_path):
+        """P1: opening an existing state.db without discovery_runs adds it without dropping anything."""
+        import sqlite3 as _sqlite3
+        legacy = tmp_path / "legacy.db"
+        conn = _sqlite3.connect(str(legacy))
+        conn.execute("CREATE TABLE papers (doi TEXT PRIMARY KEY)")
+        conn.execute("INSERT INTO papers (doi) VALUES ('10.0/legacy')")
+        conn.commit()
+        conn.close()
+        db = StateDB(legacy)
+        with db._connect() as conn:
+            # New tables created
+            assert conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='discovery_runs'"
+            ).fetchone()
+            assert conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='discovery_paper_results'"
+            ).fetchone()
+            # Legacy data preserved
+            row = conn.execute(
+                "SELECT doi FROM papers WHERE doi='10.0/legacy'"
+            ).fetchone()
+        assert row is not None

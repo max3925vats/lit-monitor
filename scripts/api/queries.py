@@ -455,6 +455,90 @@ def get_corpus_stats(graph_db: Any) -> dict[str, Any]:
     return _coerce_jsonable(stats)
 
 
+# ---------------------------------------------------------------------------
+# P5: discovery run read helpers (shared by HTTP routes + future MCP P9 + CLI
+# P6 + export-md P7)
+# ---------------------------------------------------------------------------
+
+
+def get_discovery_runs(
+    state_db: Any,
+    *,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """P5: paginated list of discovery_runs rows.
+
+    Returns a dict ``{runs: [...], total: N}`` where each run dict contains
+    id, started_at, finished_at, status, total_found, total_ingested.
+
+    Args:
+        state_db: StateDB instance.
+        limit:    Maximum number of rows to return (default 20).
+        offset:   Row offset for pagination (default 0).
+
+    Returns:
+        Dict with keys ``runs`` (list of run dicts) and ``total`` (int).
+    """
+    cols = ["id", "started_at", "finished_at", "status", "total_found", "total_ingested"]
+    with state_db._connect() as conn:
+        rows = conn.execute(
+            "SELECT " + ", ".join(cols) + " FROM discovery_runs "
+            "ORDER BY id DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        total: int = conn.execute("SELECT COUNT(*) FROM discovery_runs").fetchone()[0]
+    return {"runs": [dict(zip(cols, r)) for r in rows], "total": total}
+
+
+def get_discovery_run(state_db: Any, run_id: int) -> dict[str, Any] | None:
+    """P5: single discovery_runs row (without papers). None if not found.
+
+    Args:
+        state_db: StateDB instance.
+        run_id:   Primary key of the discovery_runs row.
+
+    Returns:
+        Dict with id, started_at, finished_at, status, total_found,
+        total_ingested; or None when run_id does not exist.
+    """
+    cols = ["id", "started_at", "finished_at", "status", "total_found", "total_ingested"]
+    with state_db._connect() as conn:
+        row = conn.execute(
+            "SELECT " + ", ".join(cols) + " FROM discovery_runs WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+    return dict(zip(cols, row)) if row else None
+
+
+def get_discovery_run_papers(
+    state_db: Any,
+    run_id: int,
+    *,
+    top_k: int = 20,
+) -> list[dict[str, Any]]:
+    """P5: paper results for a discovery run, sorted by score DESC.
+
+    Args:
+        state_db: StateDB instance.
+        run_id:   Primary key of the parent discovery_runs row.
+        top_k:    Maximum number of papers to return (default 20).
+
+    Returns:
+        List of dicts with doi, title, score, rationale, ingested,
+        ingested_at; ordered by score descending.  Empty list when
+        run_id has no papers or does not exist.
+    """
+    cols = ["doi", "title", "score", "rationale", "ingested", "ingested_at"]
+    with state_db._connect() as conn:
+        rows = conn.execute(
+            "SELECT " + ", ".join(cols) + " FROM discovery_paper_results "
+            "WHERE run_id = ? ORDER BY score DESC LIMIT ?",
+            (run_id, top_k),
+        ).fetchall()
+    return [dict(zip(cols, r)) for r in rows]
+
+
 def get_schema_text(graph_db: Any) -> str:
     """Markdown-formatted schema description for prompt inclusion.
 

@@ -34,6 +34,9 @@ TOOL_NAMES: tuple[str, ...] = (
     "semantic_search",
     "find_papers_by_query",
     "find_papers_by_query_hybrid",
+    # P9: discovery run inspection tools.
+    "get_recent_discovery_runs",
+    "get_discovery_run_papers",
 )
 
 # Server bind host — localhost only by design (matches lit-monitor serve)
@@ -73,6 +76,9 @@ def _build_server():
         "run_cypher": _tools.run_cypher,
         # B6: ChromaDB vector retrieval (paper + chunk granularity).
         "semantic_search": _tools.semantic_search,
+        # P9: discovery run inspection.
+        "get_recent_discovery_runs": _tools.get_recent_discovery_runs,
+        "get_discovery_run_papers": _tools.get_discovery_run_papers,
     }
 
     server = Server("lit-monitor-graph")

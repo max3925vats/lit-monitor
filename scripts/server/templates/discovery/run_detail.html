@@ -1,0 +1,64 @@
+{# P8: per-run discovery detail page — paper cards with Relink + Re-extract buttons. #}
+{% extends "base.html" %}
+{% block title %}Discovery Run #{{ run.id }} — lit-monitor{% endblock %}
+{% block content %}
+<section class="dashboard">
+  <div class="page-header">
+    <h1>Discovery Run #{{ run.id }}</h1>
+    <p class="field-note">
+      {{ (run.started_at or "")[:10] or "—" }}
+      &middot;
+      <span class="status-{{ run.status }}">{{ run.status or "unknown" }}</span>
+      &middot;
+      {{ run.total_ingested or 0 }} ingested / {{ run.total_found or 0 }} found
+    </p>
+    <a href="/discovery" class="btn btn-secondary">&larr; Back to discovery</a>
+  </div>
+
+  {% if not papers %}
+    <p class="field-note">No papers recorded for this run.</p>
+  {% else %}
+  <div class="paper-cards">
+    {% for p in papers %}
+    <div class="paper-card card" id="paper-{{ loop.index }}">
+      <h3>{{ p.title or "Untitled" }}</h3>
+      <p class="paper-meta">
+        {% if p.doi %}
+          <a class="doi" href="https://doi.org/{{ p.doi }}" target="_blank" rel="noopener">{{ p.doi }}</a>
+        {% else %}
+          <span class="doi">(no DOI)</span>
+        {% endif %}
+        &middot;
+        <span class="score">score {{ "%.3f"|format(p.score or 0) }}</span>
+        {% if p.ingested %}
+          &middot; <span class="badge ingested">ingested</span>
+        {% endif %}
+      </p>
+      {% if p.rationale %}
+        <p class="rationale">{{ p.rationale }}</p>
+      {% endif %}
+      {% if p.doi %}
+      {#
+        DOI is embedded literally in the URL path — no urlencode — so that H7's
+        {doi:path} route (which accepts "10.0/x" verbatim) matches correctly.
+        Double-encoding (Jinja urlencode + browser) would produce "%2F" in the
+        request path and break the H7 route match.
+      #}
+      <div class="action-row">
+        <button type="button" class="btn btn-secondary btn-sm"
+                hx-post="/api/papers/{{ p.doi }}/relink"
+                hx-target="#paper-{{ loop.index }} .action-result"
+                hx-swap="innerHTML">Relink</button>
+        <button type="button" class="btn btn-secondary btn-sm"
+                hx-post="/api/papers/{{ p.doi }}/re-extract"
+                hx-target="#paper-{{ loop.index }} .action-result"
+                hx-swap="innerHTML">Re-extract</button>
+        <span class="action-result"></span>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

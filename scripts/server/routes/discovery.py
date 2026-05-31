@@ -1,12 +1,16 @@
-"""Discovery dashboard + process controls + SSE progress stream.
+"""Discovery dashboard + process controls + SSE progress stream + read API.
 
 Routes:
-    GET  /discovery             — dashboard (last run, history, today's digest)
-    POST /api/discovery/start   — spawn ``lit-monitor run [--dry-run]``
-    POST /api/discovery/stop    — SIGTERM the running subprocess
-    GET  /api/discovery/status  — JSON status for polling
-    GET  /api/discovery/controls — HTMX HTML fragment (5-second self-refresh)
-    GET  /api/discovery/stream  — SSE tail of newest discovery JSONL log
+    GET  /discovery                           — dashboard (last run, history, today's digest)
+    GET  /discovery/{run_id}                  — per-run HTML detail page with paper cards (P8)
+    POST /api/discovery/start                 — spawn ``lit-monitor run [--dry-run]``
+    POST /api/discovery/stop                  — SIGTERM the running subprocess
+    GET  /api/discovery/status                — JSON status for polling
+    GET  /api/discovery/controls              — HTMX HTML fragment (5-second self-refresh)
+    GET  /api/discovery/stream                — SSE tail of newest discovery JSONL log
+    GET  /api/discovery/runs                  — paginated list of discovery_runs (P5)
+    GET  /api/discovery/runs/{run_id}         — full run dict + papers (P5)
+    GET  /api/discovery/runs/{run_id}/papers  — papers for run sorted by score (P5)
 """
 from __future__ import annotations
 
@@ -15,10 +19,15 @@ import logging
 from datetime import UTC, date, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
+from scripts.api.queries import (
+    get_discovery_run,
+    get_discovery_run_papers,
+    get_discovery_runs,
+)
 from scripts.server.app import templates
 from scripts.server.routes.sse import stream_log
 from scripts.server.runtime import get_runtime
@@ -120,6 +129,19 @@ def dashboard(request: Request) -> HTMLResponse:
         except Exception:
             logger.warning("get_recent_runs_by_type failed", exc_info=True)
 
+    # P8: also fetch structured discovery_runs (have id, total_found, total_ingested)
+    # to populate the run-history table with links to /discovery/{run_id}.
+    discovery_runs: list[dict] = []
+    latest_discovery_run: dict | None = None
+    if db is not None:
+        try:
+            result = get_discovery_runs(get_runtime().state_db, limit=10, offset=0)
+            discovery_runs = result.get("runs", [])
+            if discovery_runs:
+                latest_discovery_run = discovery_runs[0]
+        except Exception:
+            logger.warning("get_discovery_runs failed", exc_info=True)
+
     digest_path, digest_content = _todays_digest()
     return templates.TemplateResponse(
         request,
@@ -127,10 +149,46 @@ def dashboard(request: Request) -> HTMLResponse:
         {
             "last_run": last_run,
             "recent_runs": recent_runs,
+            # P8: structured discovery_runs with id field for linking
+            "discovery_runs": discovery_runs,
+            "latest_discovery_run": latest_discovery_run,
             "digest_path": str(digest_path) if digest_path else None,
             "digest_content": digest_content,
             "db_unavailable": db is None,
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# P8: per-run HTML detail page
+# ---------------------------------------------------------------------------
+
+
+@router.get("/discovery/{run_id}", response_class=HTMLResponse)
+def discovery_run_detail(request: Request, run_id: int) -> HTMLResponse:
+    """P8: per-run HTML detail page with paper cards + Relink / Re-extract buttons.
+
+    Route ordering note: the ``run_id: int`` type annotation causes FastAPI to
+    reject non-numeric path segments with 422, so this route does NOT swallow
+    P3's ``/discovery/notify-handler`` path — that falls through to the
+    separately registered ``discovery_notify_router``.
+
+    Args:
+        request: FastAPI request object.
+        run_id:  Primary key of the discovery_runs row.
+
+    Returns:
+        HTML page with paper cards, or 404 when run_id does not exist.
+    """
+    state_db = get_runtime().state_db
+    run = get_discovery_run(state_db, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    papers = get_discovery_run_papers(state_db, run_id, top_k=100)
+    return templates.TemplateResponse(
+        request,
+        "discovery/run_detail.html",
+        {"run": run, "papers": papers},
     )
 
 
@@ -233,3 +291,50 @@ async def discovery_controls(request: Request) -> HTMLResponse:
 async def discovery_stream(request: Request) -> EventSourceResponse:
     """SSE stream of the newest discovery JSONL log."""
     return stream_log(request, "discovery")
+
+
+# ---------------------------------------------------------------------------
+# P5: read endpoints for discovery_runs + discovery_paper_results
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/discovery/runs")
+def list_discovery_runs(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    """P5: paginated list of discovery runs.
+
+    Returns ``{runs: [...], total: N}``.  Each run contains id, started_at,
+    finished_at, status, total_found, total_ingested.
+    """
+    return get_discovery_runs(get_runtime().state_db, limit=limit, offset=offset)
+
+
+@router.get("/api/discovery/runs/{run_id}")
+def get_discovery_run_detail(run_id: int) -> dict:
+    """P5: full detail for a single discovery run including its papers.
+
+    Returns run dict + ``papers`` list sorted by score DESC.
+    404 when run_id does not exist.
+    """
+    state_db = get_runtime().state_db
+    run = get_discovery_run(state_db, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    # Attach papers (no top_k cap on detail view — callers use /papers for capped)
+    run["papers"] = get_discovery_run_papers(state_db, run_id)
+    return run
+
+
+@router.get("/api/discovery/runs/{run_id}/papers")
+def list_discovery_run_papers(
+    run_id: int,
+    top_k: int = Query(20, ge=1, le=100),
+) -> dict:
+    """P5: papers for a discovery run, sorted by score DESC.
+
+    Returns ``{papers: [...]}``.  Empty list when run_id has no results.
+    """
+    papers = get_discovery_run_papers(get_runtime().state_db, run_id, top_k=top_k)
+    return {"papers": papers}

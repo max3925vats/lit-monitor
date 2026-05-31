@@ -71,6 +71,20 @@ def _get_graph_db() -> Any:
     return safe_graph_db()
 
 
+def _get_state_db() -> Any:
+    """P9: lazy StateDB accessor — mirrors _get_graph_db's pattern.
+
+    Returns a StateDB instance pointed at the configured state_db path.
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    from scripts.core.config import get_config  # noqa: PLC0415
+    from scripts.core.state_db import StateDB  # noqa: PLC0415
+
+    cfg = get_config()
+    return StateDB(Path(cfg.state_db.path).expanduser())
+
+
 # ---------------------------------------------------------------------------
 # Internal paper-shape helper
 # ---------------------------------------------------------------------------
@@ -677,3 +691,57 @@ def _coerce_hits(raw: list[dict[str, Any]], granularity: str) -> list[dict[str, 
                 }
             )
     return out
+
+
+# ---------------------------------------------------------------------------
+# P9: Discovery run tools
+# ---------------------------------------------------------------------------
+
+
+def get_recent_discovery_runs(limit: int = 5) -> list[dict]:
+    """P9: most recent discovery runs (newest first).
+
+    Wraps queries.get_discovery_runs. Returns a list of run dicts, each
+    containing: id, started_at, finished_at, status, total_found,
+    total_ingested.
+
+    Args:
+        limit: Maximum number of runs to return (must be 1–100, default 5).
+
+    Returns:
+        List of run dicts ordered by id DESC.
+
+    Raises:
+        ValueError: When limit is out of bounds.
+    """
+    if not isinstance(limit, int) or limit < 1 or limit > 100:
+        raise ValueError("limit must be int in [1, 100]")
+    from scripts.api.queries import get_discovery_runs  # noqa: PLC0415
+
+    result = get_discovery_runs(_get_state_db(), limit=limit, offset=0)
+    return result.get("runs", [])
+
+
+def get_discovery_run_papers(run_id: int, top_k: int = 20) -> list[dict]:
+    """P9: paper results for a specific discovery run, sorted by score DESC.
+
+    Wraps queries.get_discovery_run_papers. Returns a list of paper dicts,
+    each containing: doi, title, score, rationale, ingested, ingested_at.
+
+    Args:
+        run_id: Primary key of the discovery_runs row (must be >= 1).
+        top_k:  Maximum number of papers to return (must be 1–100, default 20).
+
+    Returns:
+        List of paper dicts ordered by score descending.
+
+    Raises:
+        ValueError: When run_id or top_k are out of bounds.
+    """
+    if not isinstance(run_id, int) or run_id < 1:
+        raise ValueError("run_id must be positive int")
+    if not isinstance(top_k, int) or top_k < 1 or top_k > 100:
+        raise ValueError("top_k must be int in [1, 100]")
+    from scripts.api.queries import get_discovery_run_papers as _qpapers  # noqa: PLC0415
+
+    return _qpapers(_get_state_db(), run_id, top_k=top_k)

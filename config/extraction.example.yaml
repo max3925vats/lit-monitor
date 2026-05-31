@@ -39,3 +39,25 @@ graph:
     llm_enabled: false
     # Cloud model used when llm_enabled=true.
     cloud_model: gemma2:27b-cloud
+
+# ---------------------------------------------------------------------------
+# P2 — OS notification on discovery completion.
+# Requires the [notify] extra: uv sync --extra notify
+# ---------------------------------------------------------------------------
+discovery:
+  notify:
+    enabled: true                # set false for headless/server installs
+    on_zero_results: false       # suppress notification when no new papers
+    min_papers_to_notify: 1      # placeholder for future filtering (P4)
+    preferred_viewer: ""         # set by P4 wizard or notify-handler: browser|obsidian|none
+    asked_user: false            # true once the P4 chooser page has been shown
+  notes:
+    # P10: set false to skip the inline note write during ingest and batch-render
+    # later via `lit-monitor obsidian sync --all`.  Default true preserves
+    # existing behavior — notes are written immediately on paper ingest.
+    auto_write_per_paper: true
+  digest:
+    # P10b: set false to skip the inline digest .md write at the end of each
+    # discovery run.  Default true preserves existing behavior.
+    # When false, use `lit-monitor discovery export-md --run latest` to render.
+    auto_write: true
