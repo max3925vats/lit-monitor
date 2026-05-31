@@ -219,11 +219,17 @@ def run_discovery(
                 )
         # L2: fetch recent runs for Pipeline Run Summary prepended to digest
         recent_runs = state_db.get_recent_runs(limit=5) if not dry_run else []
-        # Write digest
-        digest_path = _write_digest(
-            ranked, config, sim_threshold, dry_run=dry_run, recent_runs=recent_runs,
-        )
-        summary.digest_path = digest_path
+        # P10b: gate the digest write on discovery.digest.auto_write (default True).
+        if _resolve_digest_auto_write(config):
+            digest_path = _write_digest(
+                ranked, config, sim_threshold, dry_run=dry_run, recent_runs=recent_runs,
+            )
+            summary.digest_path = digest_path
+        else:
+            logger.info(
+                "P10b: digest auto-write disabled; use "
+                "'lit-monitor discovery export-md --run latest' to render."
+            )
         # Persist discovered papers
         if not dry_run:
             for paper in new_papers:
@@ -403,6 +409,22 @@ def _run_discovery(
         elif not doi:
             deduped.append(p)  # keep no-DOI results (filtered later)
     return deduped, errors
+def _resolve_digest_auto_write(cfg: Any) -> bool:
+    """P10b: read discovery.digest.auto_write from config; default True.
+
+    Defensive: returns True on any AttributeError or missing key so the
+    default (write the digest) is preserved for all pre-P10b configs.
+    """
+    try:
+        digest_ns = getattr(getattr(cfg, "discovery", None), "digest", None)
+        if digest_ns is None:
+            return True
+        val = getattr(digest_ns, "auto_write", True)
+        return bool(val) if val is not None else True
+    except Exception:  # noqa: BLE001 — defensive; must never suppress digest write
+        return True
+
+
 def _write_digest(
     ranked: list[dict[str, Any]],
     config,

@@ -85,6 +85,21 @@
       </label>
     </fieldset>
 
+    <div class="field-row" style="margin-top:1rem;">
+      <label>
+        <input
+          type="checkbox"
+          name="digest_auto_write"
+          {% if digest_auto_write %}checked{% endif %}
+        >
+        Auto-write weekly digest .md file
+      </label>
+      <small style="color:#666;display:block;margin-top:0.25rem;">
+        Off: rely on OS notification + chooser, or run
+        <code>lit-monitor discovery export-md --run latest</code> on demand.
+      </small>
+    </div>
+
     <button type="submit" class="button">Save notification preferences</button>
     <a href="/" class="button-secondary">Skip</a>
   </form>

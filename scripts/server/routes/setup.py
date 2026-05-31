@@ -24,6 +24,7 @@ from scripts.server.app import templates
 from scripts.server.config_io import (
     load_config,
     load_secrets,
+    safe_save_digest_auto_write,
     safe_save_preference,
     save_config,
     save_secrets,
@@ -1282,11 +1283,15 @@ def step_complete(request: Request) -> HTMLResponse:
     # or the notify block doesn't exist yet.
     notify_enabled: bool = True
     preferred_viewer: str = ""
+    # P10b: read current digest auto-write flag; default True (preserves existing behaviour).
+    digest_auto_write: bool = True
     try:
         ext = load_config("extraction")
         notify_block = (ext.get("discovery") or {}).get("notify") or {}
         notify_enabled = bool(notify_block.get("enabled", True))
         preferred_viewer = str(notify_block.get("preferred_viewer", "") or "")
+        digest_block = (ext.get("discovery") or {}).get("digest") or {}
+        digest_auto_write = bool(digest_block.get("auto_write", True))
     except Exception:  # noqa: BLE001 — defensive; page must still render
         pass
 
@@ -1297,6 +1302,7 @@ def step_complete(request: Request) -> HTMLResponse:
             "current_step": 8,
             "notify_enabled": notify_enabled,
             "preferred_viewer": preferred_viewer,
+            "digest_auto_write": digest_auto_write,
         },
     )
 
@@ -1306,11 +1312,13 @@ def save_notify_preference(
     request: Request,
     viewer: str = Form(""),
     enabled: str = Form(""),
+    digest_auto_write: str = Form(""),
 ) -> HTMLResponse:
-    """P4: persist notification viewer preference from the wizard complete page.
+    """P4 + P10b: persist notification + digest preferences from the wizard complete page.
 
-    ``enabled`` is ``"on"`` when the checkbox is ticked; anything else (including
-    absent) is treated as ``False`` — matching standard HTML checkbox behaviour.
+    ``enabled`` and ``digest_auto_write`` are ``"on"`` when the checkbox is ticked;
+    anything else (including absent) is treated as ``False`` — standard HTML checkbox
+    behaviour.
     """
     enabled_bool: bool = enabled.strip().lower() == "on"
     try:
@@ -1320,6 +1328,10 @@ def save_notify_preference(
             f'<p class="error">{exc}</p>',
             status_code=400,
         )
+
+    # P10b: persist digest auto-write flag independently of the viewer choice.
+    digest_bool: bool = digest_auto_write.strip().lower() == "on"
+    safe_save_digest_auto_write(digest_bool)
 
     # Redirect back to the complete page so the panel reflects the saved value.
     from fastapi.responses import RedirectResponse  # local import keeps it lazy

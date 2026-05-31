@@ -178,6 +178,45 @@ def safe_save_preference(
     _atomic_write(path, rendered)
 
 
+def safe_save_digest_auto_write(
+    value: bool,
+    *,
+    config_path: Path | None = None,
+) -> None:
+    """P10b: atomically update ``discovery.digest.auto_write`` in ``extraction.yaml``.
+
+    Parameters
+    ----------
+    value:
+        ``True`` to enable automatic digest writes (default); ``False`` to disable.
+    config_path:
+        Explicit path to the YAML file.  Defaults to ``config/extraction.yaml``.
+        Override in tests to point at a ``tmp_path`` copy.
+
+    Raises
+    ------
+    OSError
+        If the file cannot be read or written.
+    """
+    path = Path(config_path) if config_path is not None else CONFIG_DIR / "extraction.yaml"
+
+    raw = path.read_text(encoding="utf-8")
+    data: dict[str, Any] = yaml.safe_load(raw) or {}
+
+    # Navigate / create the nested structure defensively.
+    data.setdefault("discovery", {})
+    if not isinstance(data["discovery"], dict):
+        data["discovery"] = {}
+    data["discovery"].setdefault("digest", {})
+    if not isinstance(data["discovery"]["digest"], dict):
+        data["discovery"]["digest"] = {}
+
+    data["discovery"]["digest"]["auto_write"] = bool(value)
+
+    rendered = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+    _atomic_write(path, rendered)
+
+
 def _atomic_write(target: Path, content: str) -> Path:
     """Atomically write text to ``target`` (delegates to scripts.core.atomic_write).
 

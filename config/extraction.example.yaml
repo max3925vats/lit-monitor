@@ -56,3 +56,8 @@ discovery:
     # later via `lit-monitor obsidian sync --all`.  Default true preserves
     # existing behavior — notes are written immediately on paper ingest.
     auto_write_per_paper: true
+  digest:
+    # P10b: set false to skip the inline digest .md write at the end of each
+    # discovery run.  Default true preserves existing behavior.
+    # When false, use `lit-monitor discovery export-md --run latest` to render.
+    auto_write: true

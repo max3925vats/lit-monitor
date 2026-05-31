@@ -670,3 +670,82 @@ class TestSetupCompleteNotifyPanel:
             data={"viewer": "bogus"},
         )
         assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# P10b: digest auto-write checkbox
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+class TestDigestAutoWriteCheckbox:
+    """P10b: safe_save_digest_auto_write + wizard checkbox round-trip."""
+
+    def _make_client(self):
+        from fastapi.testclient import TestClient
+        from scripts.server.app import create_app
+        from scripts.server.runtime import reset_runtime
+
+        reset_runtime()
+        return TestClient(create_app())
+
+    def test_safe_save_digest_auto_write_writes_yaml(self, tmp_path):
+        """P10b: safe_save_digest_auto_write toggles the flag and round-trips."""
+        import shutil
+        import yaml
+        from scripts.server.config_io import safe_save_digest_auto_write
+
+        dst = tmp_path / "extraction.yaml"
+        shutil.copy("config/extraction.example.yaml", dst)
+
+        safe_save_digest_auto_write(False, config_path=dst)
+        data = yaml.safe_load(dst.read_text())
+        assert data["discovery"]["digest"]["auto_write"] is False
+
+        # Round-trip back to True
+        safe_save_digest_auto_write(True, config_path=dst)
+        data = yaml.safe_load(dst.read_text())
+        assert data["discovery"]["digest"]["auto_write"] is True
+
+    def test_complete_page_renders_checkbox(self):
+        """P10b: GET /setup/complete includes the digest auto-write checkbox."""
+        client = self._make_client()
+        r = client.get("/setup/complete")
+        assert r.status_code == 200
+        body = r.text.lower()
+        assert "digest" in body
+        # Must contain some variant of the flag name
+        assert "auto-write" in body or "auto_write" in body or "auto write" in body
+
+    def test_post_persists_checkbox_value(self):
+        """P10b: POST /setup/complete/notify persists digest_auto_write=True when 'on'."""
+        client = self._make_client()
+        with patch("scripts.server.routes.setup.safe_save_digest_auto_write") as m, \
+             patch("scripts.server.routes.setup.safe_save_preference"):
+            r = client.post(
+                "/setup/complete/notify",
+                data={"viewer": "browser", "enabled": "on", "digest_auto_write": "on"},
+            )
+        assert r.status_code in (200, 303, 302), r.text
+        m.assert_called_once()
+        # Confirm the value passed is truthy True
+        called_val = (
+            m.call_args.args[0] if m.call_args.args
+            else m.call_args.kwargs.get("value")
+        )
+        assert called_val is True
+
+    def test_post_without_digest_flag_passes_false(self):
+        """P10b: POST without digest_auto_write field passes False (unchecked checkbox)."""
+        client = self._make_client()
+        with patch("scripts.server.routes.setup.safe_save_digest_auto_write") as m, \
+             patch("scripts.server.routes.setup.safe_save_preference"):
+            r = client.post(
+                "/setup/complete/notify",
+                data={"viewer": "browser"},
+            )
+        assert r.status_code in (200, 303, 302), r.text
+        m.assert_called_once()
+        called_val = (
+            m.call_args.args[0] if m.call_args.args
+            else m.call_args.kwargs.get("value")
+        )
+        assert called_val is False

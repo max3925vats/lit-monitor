@@ -137,12 +137,20 @@ class Config:
         # so callers can use dot-access (config.discovery.notes.auto_write_per_paper).
         raw_discovery = raw_extraction.get("discovery", {}) or {}
         _raw_disc_notes = raw_discovery.get("notes", {}) or {}
+        _raw_disc_digest = raw_discovery.get("digest", {}) or {}
         self.discovery = _Namespace({
             "notify": raw_discovery.get("notify", {}) or {},
             "notes": _Namespace({
                 # Default TRUE — preserves existing inline write behaviour.
                 "auto_write_per_paper": bool(
                     _raw_disc_notes.get("auto_write_per_paper", True)
+                ),
+            }),
+            # P10b: controls whether the weekly digest .md is written automatically.
+            "digest": _Namespace({
+                # Default TRUE — preserves existing run-end digest write behaviour.
+                "auto_write": bool(
+                    _raw_disc_digest.get("auto_write", True)
                 ),
             }),
         })
