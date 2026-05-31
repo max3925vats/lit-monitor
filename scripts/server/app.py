@@ -142,9 +142,15 @@ def create_app() -> FastAPI:
     app.include_router(ingest_router)
 
     # H4: GET /api/papers/{doi} — paper snapshot (wraps H1 get_paper_snapshot).
+    # H5: GET /api/papers/{doi}/related — related papers (vector/graph/hybrid).
     from scripts.server.routes.papers import router as papers_router  # noqa: PLC0415
 
     app.include_router(papers_router)
+
+    # H6: GET /api/entities — listing; GET /api/entities/{id} — neighborhood.
+    from scripts.server.routes.entities import router as entities_router  # noqa: PLC0415
+
+    app.include_router(entities_router)
 
     # Dev-only /dev test surface. Wrapped in try/except so a syntax error or
     # import-time failure inside routes/dev.py downgrades to a warning rather
