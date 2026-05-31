@@ -160,10 +160,10 @@ def main() -> None:
     # Lazy-construct the GraphDB so import-only tests don't trigger I/O.
     global _graph_db
     try:
-        from scripts.core.config import load_config
+        from scripts.core.config import get_config
         from scripts.graph import GraphDB, safe_graph_db  # noqa: F401
 
-        cfg = load_config()
+        cfg = get_config()
         _graph_db = safe_graph_db(cfg)
         if _graph_db is None:
             logger.warning(
