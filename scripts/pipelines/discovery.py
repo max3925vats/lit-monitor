@@ -137,8 +137,17 @@ def run_discovery(
     _rag_mode = rag_mode or _cfg_mode or "vector"
     summary = _RunSummary()
     run_id = str(uuid.uuid4())
+    # P1: track structured discovery-run row id (None in dry_run mode).
+    _disc_run_id: int | None = None
     if not dry_run:
         state_db.start_run(run_id, "discovery")
+        # P1: open the structured discovery_runs row; finish in finally below.
+        _disc_run_id = state_db.start_discovery_run({
+            "rag_mode": _rag_mode,
+            "top_k": top_k,
+            "screen_all": screen_all,
+            "sim_threshold": sim_threshold,
+        })
 
     # A4: compute search window from last successful run date.
     # Cap at 90 days to avoid overwhelming databases after a long gap.
@@ -160,84 +169,108 @@ def run_discovery(
     # Discovery block
     # ----------------------------------------------------------------
     try:
-        raw_papers, search_errors = _run_discovery(config, since_days=since_days)
-        summary.errors.extend(search_errors)
-        # A4: advance date after successful discovery so subsequent runs compute
-        # the correct search window.
-        # H1: dry_run is supposed to be DB-read-only (per module docstring) — gate
-        # the write so dry runs do not silently mutate kv_store.
+        try:
+            raw_papers, search_errors = _run_discovery(config, since_days=since_days)
+            summary.errors.extend(search_errors)
+            # A4: advance date after successful discovery so subsequent runs compute
+            # the correct search window.
+            # H1: dry_run is supposed to be DB-read-only (per module docstring) — gate
+            # the write so dry runs do not silently mutate kv_store.
+            if not dry_run:
+                state_db.set_kv("last_run_date", str(date.today()))
+        except Exception as exc:
+            logger.error("Discovery searches failed: %s", exc, exc_info=True)
+            summary.errors.append(f"discovery: {exc}")
+            raw_papers = []
+        new_papers = filter_known_dois(raw_papers, state_db)
+        summary.new_papers_found = len(new_papers)
+        logger.warning("Discovery: %d new results after dedup", len(new_papers))
+        # G9: rank by similarity — vector path is unchanged; graph/hybrid path uses
+        # the branch helper to score candidates by knowledge-graph proximity.
+        if _rag_mode == "vector":
+            ranked = rank_papers(
+                new_papers,
+                embeddings_db,
+                llm,
+                top_k=len(new_papers) if screen_all else top_k,
+            )
+        else:
+            # graph or hybrid: score each new paper against the knowledge graph,
+            # then add LLM rationale for the top results.
+            ranked = _rank_papers_graph(
+                new_papers,
+                embeddings_db=embeddings_db,
+                llm=llm,
+                top_k=len(new_papers) if screen_all else top_k,
+                rag_mode=_rag_mode,
+            )
+        # P1: record each ranked candidate in discovery_paper_results (non-dry only).
+        if not dry_run and _disc_run_id is not None:
+            for paper in ranked:
+                state_db.add_discovery_paper(
+                    run_id=_disc_run_id,
+                    doi=paper.get("doi", ""),
+                    title=paper.get("title", ""),
+                    score=float(paper.get("similarity_score", 0.0)),
+                    rationale=paper.get("llm_rationale", ""),
+                    # ingested is determined later; set False here — updated by ingestion
+                    # tracking in _run_ingestion or subsequent passes (P2+).
+                    ingested=False,
+                )
+        # L2: fetch recent runs for Pipeline Run Summary prepended to digest
+        recent_runs = state_db.get_recent_runs(limit=5) if not dry_run else []
+        # Write digest
+        digest_path = _write_digest(
+            ranked, config, sim_threshold, dry_run=dry_run, recent_runs=recent_runs,
+        )
+        summary.digest_path = digest_path
+        # Persist discovered papers
         if not dry_run:
-            state_db.set_kv("last_run_date", str(date.today()))
-    except Exception as exc:
-        logger.error("Discovery searches failed: %s", exc, exc_info=True)
-        summary.errors.append(f"discovery: {exc}")
-        raw_papers = []
-    new_papers = filter_known_dois(raw_papers, state_db)
-    summary.new_papers_found = len(new_papers)
-    logger.warning("Discovery: %d new results after dedup", len(new_papers))
-    # G9: rank by similarity — vector path is unchanged; graph/hybrid path uses
-    # the branch helper to score candidates by knowledge-graph proximity.
-    if _rag_mode == "vector":
-        ranked = rank_papers(
-            new_papers,
-            embeddings_db,
-            llm,
-            top_k=len(new_papers) if screen_all else top_k,
-        )
-    else:
-        # graph or hybrid: score each new paper against the knowledge graph,
-        # then add LLM rationale for the top results.
-        ranked = _rank_papers_graph(
-            new_papers,
-            embeddings_db=embeddings_db,
-            llm=llm,
-            top_k=len(new_papers) if screen_all else top_k,
-            rag_mode=_rag_mode,
-        )
-    # L2: fetch recent runs for Pipeline Run Summary prepended to digest
-    recent_runs = state_db.get_recent_runs(limit=5) if not dry_run else []
-    # Write digest
-    digest_path = _write_digest(
-        ranked, config, sim_threshold, dry_run=dry_run, recent_runs=recent_runs,
-    )
-    summary.digest_path = digest_path
-    # Persist discovered papers
-    if not dry_run:
-        for paper in new_papers:
-            doi = paper.get("doi", "")
-            if doi:
-                state_db.upsert_paper({
-                    "doi": doi,
-                    "title": paper.get("title", ""),
-                    "authors": paper.get("authors", []),
-                    "year": paper.get("year", 0),
-                    "status": "discovered",
-                    "source_type": "paper",
-                    "first_seen_date": str(date.today()),
-                    "similarity_score": paper.get("similarity_score", 0.0),
-                    "llm_rationale": paper.get("llm_rationale", ""),
-                    "last_updated": _now(),
-                })
-    # ----------------------------------------------------------------
-    # Ingestion block
-    # ----------------------------------------------------------------
-    if not dry_run:
-        _run_ingestion(
-            config=config,
-            state_db=state_db,
-            zotero_client=zotero_client,
-            embeddings_db=embeddings_db,
-            llm=llm,
-            summary=summary,
-            run_id=run_id,
-        )
-        state_db.finish_run(
-            run_id,
-            status="complete",
-            processed=summary.papers_ingested,
-            failed=summary.papers_failed,
-            errors=summary.errors,
-        )
+            for paper in new_papers:
+                doi = paper.get("doi", "")
+                if doi:
+                    state_db.upsert_paper({
+                        "doi": doi,
+                        "title": paper.get("title", ""),
+                        "authors": paper.get("authors", []),
+                        "year": paper.get("year", 0),
+                        "status": "discovered",
+                        "source_type": "paper",
+                        "first_seen_date": str(date.today()),
+                        "similarity_score": paper.get("similarity_score", 0.0),
+                        "llm_rationale": paper.get("llm_rationale", ""),
+                        "last_updated": _now(),
+                    })
+        # ----------------------------------------------------------------
+        # Ingestion block
+        # ----------------------------------------------------------------
+        if not dry_run:
+            _run_ingestion(
+                config=config,
+                state_db=state_db,
+                zotero_client=zotero_client,
+                embeddings_db=embeddings_db,
+                llm=llm,
+                summary=summary,
+                run_id=run_id,
+            )
+            state_db.finish_run(
+                run_id,
+                status="complete",
+                processed=summary.papers_ingested,
+                failed=summary.papers_failed,
+                errors=summary.errors,
+            )
+    finally:
+        # P1: always close the structured discovery_runs row, even on exception.
+        if not dry_run and _disc_run_id is not None:
+            _disc_status = "success" if not summary.errors else "error"
+            state_db.finish_discovery_run(
+                _disc_run_id,
+                status=_disc_status,
+                total_found=summary.new_papers_found,
+                total_ingested=summary.papers_ingested,
+            )
     return summary
 
 # ---------------------------------------------------------------------------

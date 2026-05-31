@@ -1471,3 +1471,41 @@ def test_rank_papers_graph_produces_rationales(tmp_path):
     assert any("relevant" in r for r in rationales), (
         f"Rationales should contain LLM output; got: {rationales!r}"
     )
+
+
+# ===========================================================================
+# P1: discovery pipeline writes discovery_runs + discovery_paper_results
+# ===========================================================================
+
+
+@pytest.mark.unit
+def test_discovery_writes_run_row_and_paper_rows(tmp_path):
+    """P1: run_discovery writes one discovery_runs row + >=1 discovery_paper_results row."""
+    config = _make_config(tmp_path)
+    state_db = _make_state_db(tmp_path)
+    embeddings_db = MagicMock()
+    embeddings_db.find_similar_to_text.return_value = []
+    llm = MagicMock()
+    llm.complete.return_value = "{}"
+    zotero_client = MagicMock()
+    zotero_client.get_current_version.return_value = 100
+
+    paper = _make_paper("10.9/p1_test", score=0.9)
+    paper["llm_rationale"] = "highly relevant"
+
+    with patch("scripts.pipelines.discovery.run_searches", return_value=[paper]), \
+         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("scripts.pipelines.discovery.filter_known_dois", return_value=[paper]), \
+         patch("scripts.pipelines.discovery.rank_papers", return_value=[paper]), \
+         patch("scripts.pipelines.discovery._run_ingestion", return_value=None):
+        run_discovery(config, state_db, zotero_client, embeddings_db, llm, dry_run=False)
+
+    with state_db._connect() as conn:
+        runs = conn.execute("SELECT id, status FROM discovery_runs").fetchall()
+        papers = conn.execute("SELECT doi FROM discovery_paper_results").fetchall()
+
+    assert len(runs) == 1, f"Expected 1 discovery_runs row, got {len(runs)}"
+    assert runs[0][1] in ("success", "complete", "completed", "done"), (
+        f"Unexpected run status: {runs[0][1]!r}"
+    )
+    assert len(papers) >= 1, f"Expected >=1 discovery_paper_results rows, got {len(papers)}"

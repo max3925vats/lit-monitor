@@ -124,6 +124,27 @@ CREATE TABLE IF NOT EXISTS ingest_queue (
     completed_at TEXT,   -- NULL until pipeline finishes or fails
     error        TEXT    -- populated by R28 hardening path if _process_paper raises
 );
+CREATE TABLE IF NOT EXISTS discovery_runs (
+    -- P1: one row per run_discovery() invocation; P2-P10b query this table.
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at      TEXT,
+    status           TEXT NOT NULL DEFAULT 'running',
+    total_found      INTEGER DEFAULT 0,
+    total_ingested   INTEGER DEFAULT 0,
+    run_params_json  TEXT
+);
+CREATE TABLE IF NOT EXISTS discovery_paper_results (
+    -- P1: one row per ranked candidate seen by a discovery run.
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id       INTEGER NOT NULL REFERENCES discovery_runs(id),
+    doi          TEXT,
+    title        TEXT,
+    score        REAL,
+    rationale    TEXT,
+    ingested     INTEGER DEFAULT 0,
+    ingested_at  TEXT    -- NULL when ingested=0
+);
 """
 # ---------------------------------------------------------------------------
 # StateDB class
@@ -771,6 +792,81 @@ class StateDB:
                 (run_type, limit),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    # -- P1: structured discovery-run tracking --
+
+    def start_discovery_run(self, run_params: dict) -> int:
+        """P1: insert a discovery_runs row with status='running'; return new run_id.
+
+        Args:
+            run_params: Arbitrary dict of run parameters (topics, since_days,
+                rag_mode, etc.) serialised as JSON for later auditing.
+
+        Returns:
+            Integer primary-key of the newly inserted row.
+        """
+        import json as _json
+        with self._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO discovery_runs (run_params_json) VALUES (?)",
+                (_json.dumps(run_params),),
+            )
+            # _connect() commits on context-manager exit, but we need lastrowid
+            # before that happens — SQLite guarantees it is set after execute().
+            return cur.lastrowid  # type: ignore[return-value]
+
+    def finish_discovery_run(
+        self,
+        run_id: int,
+        status: str,
+        total_found: int,
+        total_ingested: int,
+    ) -> None:
+        """P1: mark a discovery run as finished.
+
+        Args:
+            run_id: Row id returned by start_discovery_run().
+            status: Terminal status string, e.g. 'success' or 'error'.
+            total_found: Number of candidate papers found before filtering.
+            total_ingested: Number of papers actually written to Zotero/DB.
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE discovery_runs "
+                "SET status=?, total_found=?, total_ingested=?, "
+                "    finished_at=datetime('now') "
+                "WHERE id=?",
+                (status, total_found, total_ingested, run_id),
+            )
+
+    def add_discovery_paper(
+        self,
+        run_id: int,
+        doi: str,
+        title: str,
+        score: float,
+        rationale: str,
+        ingested: bool,
+    ) -> None:
+        """P1: record a ranked candidate paper associated with a discovery run.
+
+        Args:
+            run_id: Row id returned by start_discovery_run().
+            doi: Paper DOI (may be empty string when unknown).
+            title: Paper title.
+            score: Similarity / relevance score in [0, 1].
+            rationale: LLM-generated rationale string (may be empty).
+            ingested: True when the paper was successfully ingested this run;
+                      ingested_at timestamp is set only in that case.
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO discovery_paper_results "
+                "(run_id, doi, title, score, rationale, ingested, ingested_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, "
+                "CASE ? WHEN 1 THEN datetime('now') ELSE NULL END)",
+                (run_id, doi, title, score, rationale, int(ingested), int(ingested)),
+            )
 
     # -- Insight discovery (G16) --
 
