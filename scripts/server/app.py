@@ -152,6 +152,12 @@ def create_app() -> FastAPI:
 
     app.include_router(entities_router)
 
+    # H8: POST /api/ask — NL→Cypher→execute→summarize pipeline.
+    #     POST /api/cypher — read-only Cypher escape hatch with B3's guard.
+    from scripts.server.routes.query import router as query_router  # noqa: PLC0415
+
+    app.include_router(query_router)
+
     # Dev-only /dev test surface. Wrapped in try/except so a syntax error or
     # import-time failure inside routes/dev.py downgrades to a warning rather
     # than killing the whole server.
