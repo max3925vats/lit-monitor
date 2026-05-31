@@ -42,9 +42,13 @@ jobs:
         # normalizer (scripts/graph/normalizer.py) imports inflect at
         # module level; without it, conftest.py + every graph test file
         # fails collection with ModuleNotFoundError: No module named 'inflect'.
+        # MCP extra (v0.7.0+, Phase 4b) brings the mcp SDK. test_cli_mcp's
+        # banner/server-main tests assume the package is importable;
+        # without it, the friendly "install with --extra mcp" guard fires
+        # before the real banner is printed and the tests fail.
         # [nlp] extra is NOT installed in CI — tests use the BiobertNERStub
         # fixture rather than the real transformers + torch stack.
-        run: uv sync --extra dev --extra server --extra graph
+        run: uv sync --extra dev --extra server --extra graph --extra mcp
 
       - name: Lint with ruff
         run: uv run ruff check .
