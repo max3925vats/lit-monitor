@@ -4,7 +4,7 @@ All LLM calls in lit-monitor route through this module.
 Classes:
     LLMClient       — abstract base
     OllamaClient    — production client (macOS with Ollama running)
-    LiteLLMClient   — optional cloud client via LiteLLM (requires pip install lit-monitor[cloud])
+    LiteLLMClient   — optional cloud client via LiteLLM (requires pip install lit-monitor[litellm])
     MockLLMClient   — test/dev client (returns canned JSON responses)
 Factories:
     get_client(config, mode)            — single client for a pipeline mode
@@ -13,7 +13,7 @@ Factories:
 
 Provider routing (extraction.yaml `provider:` field):
     'ollama'   → OllamaClient   (default; no extra deps)
-    'litellm'  → LiteLLMClient  (requires [cloud] extra; set litellm_model in config)
+    'litellm'  → LiteLLMClient  (requires [litellm] extra; set litellm_model in config)
 
 Per-pass model selection (F15):
     Set pass1_model / pass2_model / pass3_model in any mode section to use different
@@ -266,7 +266,7 @@ class LiteLLMClient(LLMClient):
     LLM client that routes calls through LiteLLM, supporting any provider
     that LiteLLM understands (Anthropic, OpenAI, Vertex AI, etc.).
 
-    Requires: ``pip install 'lit-monitor[cloud]'``
+    Requires: ``pip install 'lit-monitor[litellm]'`` (``[cloud]`` also works as a deprecated alias)
 
     Parameters
     ----------
@@ -304,7 +304,7 @@ class LiteLLMClient(LLMClient):
         except ImportError as exc:
             raise ImportError(
                 "litellm is not installed. "
-                "Enable cloud provider support with: pip install 'lit-monitor[cloud]'"
+                "Enable cloud provider support with: pip install 'lit-monitor[litellm]'"
             ) from exc
         messages = [
             {"role": "system", "content": system},
@@ -471,7 +471,7 @@ def get_client(config, mode: str = "ingestion", think: bool = True) -> LLMClient
 
     Supported providers (set via ``provider:`` in extraction.yaml):
         ``'ollama'``   → OllamaClient (default)
-        ``'litellm'``  → LiteLLMClient (requires ``pip install lit-monitor[cloud]``;
+        ``'litellm'``  → LiteLLMClient (requires ``pip install lit-monitor[litellm]``;
                          also set ``litellm_model:`` in the mode's config block)
     """
     mode_config = getattr(config, mode, None)
@@ -493,8 +493,8 @@ def get_client(config, mode: str = "ingestion", think: bool = True) -> LLMClient
             import litellm  # noqa: F401
         except ImportError as exc:
             raise ImportError(
-                "provider='litellm' requires the [cloud] optional dependency. "
-                "Install with: pip install 'lit-monitor[cloud]'"
+                "provider='litellm' requires the [litellm] optional dependency. "
+                "Install with: pip install 'lit-monitor[litellm]'"
             ) from exc
         litellm_model = getattr(mode_config, "litellm_model", None)
         if not litellm_model:
@@ -516,7 +516,7 @@ def get_client(config, mode: str = "ingestion", think: bool = True) -> LLMClient
     if provider != "ollama":
         raise ValueError(
             f"Unsupported LLM provider: {provider!r}. "
-            "Valid values: 'ollama' (default) or 'litellm' (requires [cloud] extra)."
+            "Valid values: 'ollama' (default) or 'litellm' (requires [litellm] extra)."
         )
     # Per-mode YAML config can override think.  'think: false' in extraction.yaml for a mode
     # beats the caller's think=True default — used for models that don't support Ollama's
@@ -634,8 +634,8 @@ def get_clients_for_passes(
                 import litellm  # noqa: F401
             except ImportError as exc:
                 raise ImportError(
-                    "provider='litellm' requires the [cloud] optional dependency. "
-                    "Install with: pip install 'lit-monitor[cloud]'"
+                    "provider='litellm' requires the [litellm] optional dependency. "
+                    "Install with: pip install 'lit-monitor[litellm]'"
                 ) from exc
             context_window = getattr(mode_config, "context_window", None)
             clients[pass_num] = LiteLLMClient(

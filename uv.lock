@@ -1631,7 +1631,7 @@ wheels = [
 
 [[package]]
 name = "lit-monitor"
-version = "0.7.0"
+version = "0.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "bibtexparser" },
@@ -1666,6 +1666,9 @@ graph = [
     { name = "inflect" },
     { name = "kuzu" },
 ]
+litellm = [
+    { name = "litellm" },
+]
 mcp = [
     { name = "mcp" },
 ]
@@ -1698,6 +1701,7 @@ requires-dist = [
     { name = "jinja2" },
     { name = "kuzu", marker = "extra == 'graph'", specifier = ">=0.6" },
     { name = "litellm", marker = "extra == 'cloud'" },
+    { name = "litellm", marker = "extra == 'litellm'" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0" },
     { name = "mypy", marker = "extra == 'dev'" },
     { name = "plyer", marker = "extra == 'notify'", specifier = ">=2.1" },
@@ -1721,7 +1725,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'nlp'", specifier = ">=4.40" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'server'", specifier = ">=0.30" },
 ]
-provides-extras = ["dev", "cloud", "server", "graph", "nlp", "mcp", "notify"]
+provides-extras = ["dev", "litellm", "cloud", "server", "graph", "nlp", "mcp", "notify"]
 
 [[package]]
 name = "litellm"

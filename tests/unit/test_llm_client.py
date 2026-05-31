@@ -399,7 +399,9 @@ def test_get_client_factory_passes_ollama_host():
 @pytest.mark.unit
 def test_litellm_client_complete_calls_litellm():
     """LiteLLMClient.complete() delegates to litellm.completion with correct args."""
-    pytest.importorskip("litellm")
+    _litellm = pytest.importorskip("litellm")
+    if not hasattr(_litellm, "completion"):
+        pytest.skip("litellm installed but missing 'completion' attribute (stub/partial install)")
     from scripts.llm.llm_client import LiteLLMClient
 
     mock_resp = MagicMock()
@@ -473,7 +475,9 @@ def test_litellm_client_non_429_raises_runtime_error():
 @pytest.mark.unit
 def test_litellm_client_stores_num_ctx():
     """LiteLLMClient.num_ctx is set for extractor._available_input_chars()."""
-    pytest.importorskip("litellm")
+    _litellm = pytest.importorskip("litellm")
+    if not hasattr(_litellm, "completion"):
+        pytest.skip("litellm installed but missing 'completion' attribute (stub/partial install)")
     from scripts.llm.llm_client import LiteLLMClient
 
     client = LiteLLMClient(model="anthropic/claude-sonnet-4-5", num_ctx=200000)
@@ -483,7 +487,9 @@ def test_litellm_client_stores_num_ctx():
 @pytest.mark.unit
 def test_get_client_routes_to_litellm():
     """get_client() returns LiteLLMClient when provider='litellm'."""
-    pytest.importorskip("litellm")
+    _litellm = pytest.importorskip("litellm")
+    if not hasattr(_litellm, "completion"):
+        pytest.skip("litellm installed but missing 'completion' attribute (stub/partial install)")
     from types import SimpleNamespace
 
     from scripts.llm.llm_client import LiteLLMClient, get_client
@@ -507,7 +513,9 @@ def test_get_client_routes_to_litellm():
 @pytest.mark.unit
 def test_get_client_litellm_raises_without_litellm_model():
     """get_client() raises ValueError when litellm_model is absent from config."""
-    pytest.importorskip("litellm")
+    _litellm = pytest.importorskip("litellm")
+    if not hasattr(_litellm, "completion"):
+        pytest.skip("litellm installed but missing 'completion' attribute (stub/partial install)")
     from types import SimpleNamespace
 
     from scripts.llm.llm_client import get_client
@@ -535,14 +543,16 @@ def test_litellm_client_raises_importerror_when_not_installed():
     # Setting sys.modules["litellm"] = None causes `import litellm` to raise ImportError.
     # This is documented CPython behaviour — the canonical way to simulate a missing module.
     with patch.dict(sys.modules, {"litellm": None}):
-        with pytest.raises(ImportError, match=r"lit-monitor\[cloud\]"):
+        with pytest.raises(ImportError, match=r"lit-monitor\[litellm\]"):
             client.complete("system", "user")
 
 
 @pytest.mark.unit
 def test_litellm_client_wraps_provider_errors_as_runtimeerror():
     """Exceptions from litellm.completion() are wrapped in RuntimeError with model name."""
-    pytest.importorskip("litellm")
+    _litellm = pytest.importorskip("litellm")
+    if not hasattr(_litellm, "completion"):
+        pytest.skip("litellm installed but missing 'completion' attribute (stub/partial install)")
     from scripts.llm.llm_client import LiteLLMClient
 
     client = LiteLLMClient(model="anthropic/claude-haiku-4-5")
@@ -653,7 +663,9 @@ def test_get_clients_for_passes_inherits_shared_settings():
 @pytest.mark.unit
 def test_get_clients_for_passes_litellm_returns_dict():
     """LiteLLM per-pass model keys produce a dict of LiteLLMClient instances."""
-    pytest.importorskip("litellm")
+    _litellm = pytest.importorskip("litellm")
+    if not hasattr(_litellm, "completion"):
+        pytest.skip("litellm installed but missing 'completion' attribute (stub/partial install)")
     from types import SimpleNamespace
 
     from scripts.llm.llm_client import LiteLLMClient, get_clients_for_passes

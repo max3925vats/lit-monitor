@@ -69,13 +69,14 @@ If you prefer to drive `uv` yourself:
 
 ```bash
 uv venv && source .venv/bin/activate
-uv sync --extra dev --extra cloud --extra server
+uv sync --extra dev --extra litellm --extra server
 for f in config/*.example.yaml; do cp -n "$f" "${f%.example.yaml}.yaml"; done
 ```
 
-Drop `--extra cloud` if you do not need LiteLLM routing. The `--extra server`
-brings in FastAPI + uvicorn for `lit-monitor serve`; drop it only if you plan
-to run CLI-only and never touch the web UI.
+Drop `--extra litellm` if you do not need LiteLLM routing (`--extra cloud` also
+works as a deprecated alias). The `--extra server` brings in FastAPI + uvicorn
+for `lit-monitor serve`; drop it only if you plan to run CLI-only and never
+touch the web UI.
 
 ## Quickstart — web UI
 
@@ -325,6 +326,34 @@ lit-monitor diagnose
 `OK` or `FAIL`. Use it when `lit-monitor check` returns OK but something
 feels wrong (e.g. a corrupt `domain_context.yaml` silently becomes `""` and
 the LLM gets no domain context — `diagnose` catches it).
+
+### LLM providers — Ollama (default) or LiteLLM
+
+`lit-monitor` defaults to a local Ollama instance for all LLM extraction
+calls. To use a cloud provider (Anthropic, OpenAI, Vertex AI, etc.) via
+LiteLLM, install the extra and configure `extraction.yaml`:
+
+```bash
+uv sync --extra litellm
+```
+
+Then in `config/extraction.yaml`, set `provider` and `litellm_model` for each
+mode you want to route through the cloud:
+
+```yaml
+modes:
+  simple:
+    provider: litellm
+    litellm_model: claude-3-5-sonnet-20241022   # any LiteLLM-compatible model string
+    # ... existing keys unchanged ...
+  complex:
+    provider: litellm
+    litellm_model: claude-opus-4-5
+```
+
+Ollama and LiteLLM can be mixed per-mode — for example, local Ollama for
+`simple` and cloud Claude for `complex`. API keys are read from your
+environment per [LiteLLM's provider docs](https://docs.litellm.ai/docs/providers).
 
 ## Running tests
 

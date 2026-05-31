@@ -116,7 +116,7 @@ def run_model_comparison(
                     import litellm  # noqa: F401
                 except ImportError:
                     logger.warning(
-                        "Skipping %s: litellm not installed (pip install 'lit-monitor[cloud]')",
+                        "Skipping %s: litellm not installed (pip install 'lit-monitor[litellm]')",
                         model_spec,
                     )
                     continue
