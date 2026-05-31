@@ -20,7 +20,6 @@ from fastapi.testclient import TestClient
 from scripts.server.app import create_app
 from scripts.server.runtime import reset_runtime
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -468,12 +467,29 @@ class TestRouteOrderingSafety:
     def test_notify_handler_not_shadowed_by_run_detail(self, client_with_db):
         """P3 /discovery/notify-handler must still be reachable after P8 ships.
 
-        /discovery/{run_id: int} rejects non-numeric segments (422), so FastAPI
-        falls through to the notify-handler route in discovery_notify_router.
+        FastAPI matches routes in registration order. If P8's
+        /discovery/{run_id:int} is registered BEFORE P3's
+        /discovery/notify-handler, FastAPI will try to coerce "notify-handler"
+        to int, fail, and return 422 WITHOUT falling through to P3's handler.
+        A 422 response here is the bug signal — not an acceptable pass.
         """
-        r = client_with_db.get("/discovery/notify-handler")
-        # 200 (renders chooser), 302 (redirect), or 422 (validation error
-        # if treated as int) are all acceptable — 404 is NOT.
-        assert r.status_code in (200, 302, 303, 307, 308, 422), (
-            f"P3 notify-handler shadowed by P8 run_detail; got {r.status_code}"
+        # Pass ?run_id=1 so the notify-handler's own required query param is
+        # satisfied. This ensures a 422 here can only come from route shadowing
+        # (FastAPI tried to coerce "notify-handler" as the {run_id:int} path
+        # param and failed) rather than the handler's own validation (missing
+        # query param). Without ?run_id the handler itself returns 422 for a
+        # different reason — making the two failure modes indistinguishable.
+        r = client_with_db.get("/discovery/notify-handler?run_id=1")
+        # 422 means P3's handler is shadowed by P8's {run_id:int} pattern —
+        # that is exactly the regression R1 guards against. Not a pass.
+        assert r.status_code != 422, (
+            "P3 /discovery/notify-handler is shadowed by P8's "
+            "/discovery/{run_id:int}. Ensure discovery_notify_router is "
+            "registered BEFORE discovery_router in scripts/server/app.py."
+        )
+        # P3 handler returns 200 (chooser HTML), 302/307 (redirect to viewer),
+        # or 204 (no-content for preferred_viewer='none'). 404 is not expected
+        # here either but is a distinct failure mode from 422.
+        assert r.status_code in (200, 204, 302, 303, 307, 308), (
+            f"unexpected status {r.status_code} from /discovery/notify-handler"
         )
