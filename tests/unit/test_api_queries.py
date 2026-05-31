@@ -1,0 +1,201 @@
+"""H1: shared query layer tests."""
+from __future__ import annotations
+
+import json
+import sys
+
+import pytest
+
+from scripts.api.queries import (
+    _validate_doi,
+    get_corpus_stats,
+    get_entity_neighborhood,
+    get_paper_snapshot,
+    get_related_papers,
+    get_schema_text,
+    list_entities,
+)
+from scripts.graph import GraphDB
+from scripts.graph.entity_extractor import EntityTuple
+
+
+@pytest.fixture
+def populated_graph(tmp_path):
+    db = GraphDB(persist_dir=str(tmp_path / "h1.kuzu"))
+    entities = [
+        EntityTuple(
+            canonical_id="ion exchange",
+            type="method",
+            surface="ion exchange",
+            field="methods_summary",
+            span_start=0,
+            span_end=12,
+        ),
+        EntityTuple(
+            canonical_id="monoclonal antibody",
+            type="material",
+            surface="monoclonal antibody",
+            field="materials_systems",
+            span_start=0,
+            span_end=20,
+        ),
+    ]
+    db.add_paper(
+        doi="10.0/a",
+        entities=entities,
+        relationships=[],
+        paper_metadata={"title": "A", "year": 2024, "journal": "X"},
+    )
+    db.add_paper(
+        doi="10.0/b",
+        entities=entities[:1],
+        relationships=[],
+        paper_metadata={"title": "B", "year": 2024, "journal": "X"},
+    )
+    return db
+
+
+class TestValidateDoi:
+    def test_valid_doi_passes(self):
+        _validate_doi("10.1234/test.123")  # no exception
+
+    def test_bad_doi_raises(self):
+        with pytest.raises(ValueError, match="invalid DOI"):
+            _validate_doi("not-a-doi")
+
+    def test_empty_doi_raises(self):
+        with pytest.raises(ValueError, match="invalid DOI"):
+            _validate_doi("")
+
+
+class TestGetPaperSnapshot:
+    def test_returns_required_keys(self, populated_graph):
+        result = get_paper_snapshot("10.0/a", populated_graph)
+        assert "metadata" in result
+        assert "entities_by_type" in result
+        assert "relationships_in" in result
+        assert "relationships_out" in result
+
+    def test_json_serializable(self, populated_graph):
+        result = get_paper_snapshot("10.0/a", populated_graph)
+        json.dumps(result)  # must not raise
+
+    def test_unknown_doi_returns_empty_shapes(self, populated_graph):
+        result = get_paper_snapshot("10.0/missing", populated_graph)
+        # Empty metadata + empty entity / relationship lists, but keys present
+        assert result["metadata"] in ({}, None) or not result["metadata"]
+        assert result["entities_by_type"] in ({}, [])
+
+    def test_bad_doi_raises_value_error(self, populated_graph):
+        with pytest.raises(ValueError):
+            get_paper_snapshot("not-a-doi", populated_graph)
+
+    def test_entities_grouped_by_type(self, populated_graph):
+        result = get_paper_snapshot("10.0/a", populated_graph)
+        ents = result["entities_by_type"]
+        # ion exchange (method) + monoclonal antibody (material) — 2 types
+        assert isinstance(ents, dict)
+        assert len(ents) == 2
+
+
+class TestGetEntityNeighborhood:
+    def test_returns_papers_mentioning(self, populated_graph):
+        result = get_entity_neighborhood("ion exchange", populated_graph)
+        assert "canonical_id" in result
+        assert "papers" in result
+        # Two papers mention ion exchange
+        assert len(result["papers"]) == 2
+
+    def test_json_serializable(self, populated_graph):
+        result = get_entity_neighborhood("ion exchange", populated_graph)
+        json.dumps(result)
+
+    def test_empty_id_raises(self):
+        with pytest.raises(ValueError):
+            get_entity_neighborhood("", None)
+
+
+class TestListEntities:
+    def test_filters_by_type(self, populated_graph):
+        methods = list_entities("method", top_k=10, graph_db=populated_graph)
+        assert all(e.get("type") == "method" for e in methods)
+
+    def test_respects_top_k(self, populated_graph):
+        result = list_entities("method", top_k=1, graph_db=populated_graph)
+        assert len(result) <= 1
+
+    def test_json_serializable(self, populated_graph):
+        result = list_entities("method", top_k=10, graph_db=populated_graph)
+        json.dumps(result)
+
+
+class TestGetCorpusStats:
+    def test_returns_dict(self, populated_graph):
+        result = get_corpus_stats(populated_graph)
+        assert isinstance(result, dict)
+
+    def test_json_serializable(self, populated_graph):
+        json.dumps(get_corpus_stats(populated_graph))
+
+    def test_contains_paper_count(self, populated_graph):
+        result = get_corpus_stats(populated_graph)
+        assert "paper_count" in result
+        assert result["paper_count"] == 2
+
+
+class TestGetSchemaText:
+    def test_returns_string(self, populated_graph):
+        result = get_schema_text(populated_graph)
+        assert isinstance(result, str)
+        # Either real schema or the fallback message
+        assert len(result) > 0
+
+    def test_fallback_when_a1_not_built(self, monkeypatch, populated_graph):
+        """H1: when scripts.graph.schema_describer doesn't exist, get_schema_text falls back."""
+        # Block the import by setting the module key to None in sys.modules
+        monkeypatch.setitem(sys.modules, "scripts.graph.schema_describer", None)
+        result = get_schema_text(populated_graph)
+        assert isinstance(result, str)
+        assert (
+            "schema describer" in result.lower()
+            or "phase 4a" in result.lower()
+            or "a1" in result.lower()
+        )
+
+
+class TestGetRelatedPapers:
+    def test_returns_list(self, populated_graph, monkeypatch):
+        """get_related_papers wraps retrieve_doi_candidates; monkeypatch to avoid embeddings."""
+        from scripts.retrieval import branch as branch_mod
+
+        def fake_retrieve(
+            rag_mode: str,
+            *,
+            seed_doi=None,
+            query_text=None,
+            entity_ids=None,
+            embeddings_db=None,
+            graph_db=None,
+            k=20,
+            **kw,
+        ):
+            return [("10.0/b", 0.9)]
+
+        monkeypatch.setattr(branch_mod, "retrieve_doi_candidates", fake_retrieve)
+        # Re-import inside the test so monkeypatch is active
+        from importlib import reload
+
+        import scripts.api.queries as q_mod
+
+        reload(q_mod)
+        result = q_mod.get_related_papers("10.0/a", mode="graph", k=10, cfg=None)
+        assert isinstance(result, list)
+        json.dumps(result)
+
+    def test_invalid_mode_raises(self, populated_graph):
+        with pytest.raises(ValueError, match="mode must be"):
+            get_related_papers("10.0/a", mode="invalid", k=5, cfg=None)
+
+    def test_bad_doi_raises(self, populated_graph):
+        with pytest.raises(ValueError):
+            get_related_papers("not-a-doi", mode="graph", k=5, cfg=None)
