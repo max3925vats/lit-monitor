@@ -271,3 +271,114 @@ class TestRelatedPapers:
             r = client.get("/api/papers/10.1234/missing/related")
 
         assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# H7: POST /api/papers/{doi}/relink
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRelink:
+    def test_relink_happy_200(self, client, monkeypatch):
+        """H7: valid DOI + known paper + successful tool → 200 with ok status."""
+        from unittest.mock import patch
+
+        # _doi_exists must return True for the route to invoke the tool
+        monkeypatch.setattr("scripts.server.routes.papers._doi_exists", lambda doi: True)
+        with patch(
+            "scripts.server.routes.papers._invoke_relink",
+            return_value={"relinked": 3, "added": 2},
+        ) as m:
+            r = client.post("/api/papers/10.1234/ok/relink")
+
+        assert r.status_code == 200
+        body = r.json()
+        assert body["doi"] == "10.1234/ok"
+        assert body["status"] == "ok"
+        assert body["summary"]["relinked"] == 3
+        m.assert_called_once_with("10.1234/ok")
+
+    def test_relink_unknown_doi_404(self, client, monkeypatch):
+        """H7: DOI not found in state.db → 404."""
+        monkeypatch.setattr("scripts.server.routes.papers._doi_exists", lambda doi: False)
+        r = client.post("/api/papers/10.1234/missing/relink")
+        assert r.status_code == 404
+
+    def test_relink_malformed_doi_422(self, client):
+        """H7: path segment that is not a DOI → 422 (regex guard fires first)."""
+        r = client.post("/api/papers/not-a-doi/relink")
+        assert r.status_code == 422
+
+    def test_relink_tool_exception_returns_500_with_str_only(self, client, monkeypatch):
+        """H7: tool raises → 500 with detail=str(exc) only, no traceback."""
+        from unittest.mock import patch
+
+        monkeypatch.setattr("scripts.server.routes.papers._doi_exists", lambda doi: True)
+        with patch(
+            "scripts.server.routes.papers._invoke_relink",
+            side_effect=RuntimeError("vault locked"),
+        ):
+            r = client.post("/api/papers/10.1234/ok/relink")
+
+        assert r.status_code == 500
+        body = r.json()
+        assert body["status"] == "error"
+        assert body["detail"] == "vault locked"
+        # Opus info-leak guard: detail must NOT contain a traceback.
+        assert "Traceback" not in body["detail"]
+        assert "File " not in body["detail"]
+
+
+# ---------------------------------------------------------------------------
+# H7: POST /api/papers/{doi}/re-extract
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestReExtract:
+    def test_re_extract_happy_200(self, client, monkeypatch):
+        """H7: valid DOI + known paper + successful tool → 200 with ok status."""
+        from unittest.mock import patch
+
+        monkeypatch.setattr("scripts.server.routes.papers._doi_exists", lambda doi: True)
+        with patch(
+            "scripts.server.routes.papers._invoke_re_extract",
+            return_value={"phase1": "ok", "phase2": "ok"},
+        ):
+            r = client.post("/api/papers/10.1234/ok/re-extract")
+
+        assert r.status_code == 200
+        body = r.json()
+        assert body["doi"] == "10.1234/ok"
+        assert body["status"] == "ok"
+
+    def test_re_extract_unknown_404(self, client, monkeypatch):
+        """H7: DOI not found in state.db → 404."""
+        monkeypatch.setattr("scripts.server.routes.papers._doi_exists", lambda doi: False)
+        r = client.post("/api/papers/10.1234/missing/re-extract")
+        assert r.status_code == 404
+
+    def test_re_extract_malformed_doi_422(self, client):
+        """H7: path segment that is not a DOI → 422."""
+        r = client.post("/api/papers/not-a-doi/re-extract")
+        assert r.status_code == 422
+
+    def test_re_extract_tool_error_500(self, client, monkeypatch):
+        """H7: tool raises → 500 with detail=str(exc) only, no traceback."""
+        from unittest.mock import patch
+
+        monkeypatch.setattr("scripts.server.routes.papers._doi_exists", lambda doi: True)
+        with patch(
+            "scripts.server.routes.papers._invoke_re_extract",
+            side_effect=RuntimeError("LLM timeout"),
+        ):
+            r = client.post("/api/papers/10.1234/ok/re-extract")
+
+        assert r.status_code == 500
+        body = r.json()
+        assert body["status"] == "error"
+        assert "LLM timeout" in body["detail"]
+        # Opus info-leak guard: no traceback in detail.
+        assert "Traceback" not in body["detail"]
+        assert "File " not in body["detail"]

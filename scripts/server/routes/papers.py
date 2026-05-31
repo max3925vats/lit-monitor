@@ -1,24 +1,28 @@
-"""H4 + H5: paper-related HTTP endpoints.
+"""H4 + H5 + H7: paper-related HTTP endpoints.
 
-H4: GET /api/papers/{doi}            — full paper snapshot.
-H5: GET /api/papers/{doi}/related    — related papers (vector / graph / hybrid).
+H4: GET  /api/papers/{doi}            — full paper snapshot.
+H5: GET  /api/papers/{doi}/related    — related papers (vector / graph / hybrid).
+H7: POST /api/papers/{doi}/relink     — re-run Obsidian note relink.
+H7: POST /api/papers/{doi}/re-extract — re-run LLM extraction + rerender.
 
 The graph backend is constructed lazily via safe_graph_db() so the server
 can start without a kuzu installation; requests hit 503 instead of an
 import error at boot time.
 
-Route registration order:
-  1. /api/papers/{doi:path}/related   ← more-specific suffix registered FIRST
-  2. /api/papers/{doi:path}           ← catch-all registered SECOND
-FastAPI resolves /api/papers/10.x/y/related against route 1 before 2, so
-the suffix wins without ambiguity.
+Route registration order (suffixed routes registered BEFORE the catch-all):
+  1. /api/papers/{doi:path}/related     — GET
+  2. /api/papers/{doi:path}/relink      — POST  (H7)
+  3. /api/papers/{doi:path}/re-extract  — POST  (H7)
+  4. /api/papers/{doi:path}             — GET   (catch-all; must be LAST)
 """
 from __future__ import annotations
 
+import logging
 import re
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 from scripts.api.queries import get_paper_snapshot, get_related_papers
 
@@ -27,6 +31,8 @@ from scripts.api.queries import get_paper_snapshot, get_related_papers
 from scripts.graph.import_citations import safe_graph_db
 
 _DOI_RE = re.compile(r"^10\.\d{4,9}/\S+$")
+
+_logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["papers"])
 
@@ -113,6 +119,138 @@ def paper_snapshot(doi: str) -> dict:
         raise HTTPException(status_code=404, detail=f"paper {doi!r} not found")
 
     return snapshot
+
+
+# ---------------------------------------------------------------------------
+# H7: POST /api/papers/{doi:path}/relink + /re-extract trigger endpoints
+#
+# Design notes:
+#   - The HTTP layer NEVER touches .md files directly.  Persist-zone safety
+#     is enforced inside obsidian_tools.{relink,re_extract}.
+#   - _doi_exists / _invoke_relink / _invoke_re_extract are thin helpers so
+#     tests can monkeypatch each concern in isolation.
+#   - 500 detail = str(exc) only — never a traceback (info-leak guard).
+#   - No concurrent-trigger guard: two simultaneous POSTs for the same DOI
+#     race inside the tool layer; this is a pre-existing concern, not
+#     introduced here.
+# ---------------------------------------------------------------------------
+
+
+def _doi_exists(doi: str) -> bool:
+    """Return True when *doi* exists in the state.db papers table.
+
+    Uses the public StateDB.get_paper() helper (which opens its own
+    connection) so we don't need _connect() directly.
+    """
+    from scripts.server.runtime import get_runtime
+
+    runtime = get_runtime()
+    return runtime.state_db.get_paper(doi) is not None
+
+
+def _invoke_relink(doi: str) -> dict:
+    """Wire up runtime dependencies and call relink_note for *doi*.
+
+    Thin lazy-import wrapper — monkeypatched in tests so the Ollama /
+    Obsidian stack is never touched during unit tests.
+
+    Note: DOI normalization (case, whitespace) is the caller's
+    responsibility; this function passes *doi* verbatim to the tool.
+    """
+    from scripts.obsidian_tools.relink import relink_note
+    from scripts.server.runtime import get_runtime
+
+    runtime = get_runtime()
+    record = runtime.state_db.get_paper(doi)
+    # note_path must be set; if missing the tool will raise — that becomes a 500.
+    note_path = record.get("note_path") if record else None
+    result = relink_note(
+        note_path=note_path,
+        embeddings_db=runtime.embeddings_db,
+        state_db=runtime.state_db,
+        config=runtime.config,
+    )
+    # relink_note returns None; return a minimal summary dict so the JSON
+    # body is always a dict (consistent with re_extract which returns a dict).
+    return result if isinstance(result, dict) else {}
+
+
+def _invoke_re_extract(doi: str) -> dict:
+    """Wire up runtime dependencies and call re_extract for *doi*.
+
+    Thin lazy-import wrapper — monkeypatched in tests.
+    """
+    from scripts.llm.llm_client import get_client
+    from scripts.obsidian_tools.re_extract import re_extract
+    from scripts.server.runtime import get_runtime
+
+    runtime = get_runtime()
+    cfg = runtime.config
+    llm = get_client(cfg, mode="brain_build")
+    return re_extract(
+        doi=doi,
+        config=cfg,
+        state_db=runtime.state_db,
+        llm=llm,
+        rerender=True,
+    )
+
+
+@router.post("/api/papers/{doi:path}/relink")
+def trigger_relink(doi: str) -> JSONResponse:
+    """H7: re-link an Obsidian note's Related Work + reverse-citation block.
+
+    Path parameters:
+        doi: DOI string (may contain slashes — captured by {doi:path}).
+
+    Returns:
+        200 — {doi, status: "ok", summary: <tool return>}
+        404 — DOI not in state.db papers table.
+        422 — malformed DOI (fails ^10.\\d{4,9}/\\S+$ check).
+        500 — tool raised; detail = str(exc) only, no traceback.
+    """
+    if not _DOI_RE.match(doi):
+        raise HTTPException(status_code=422, detail=f"invalid DOI: {doi!r}")
+    if not _doi_exists(doi):
+        raise HTTPException(status_code=404, detail=f"paper {doi!r} not found")
+    try:
+        summary = _invoke_relink(doi)
+    except Exception as exc:
+        # str(exc) only — never traceback (Opus info-leak guard).
+        _logger.warning("H7 relink failed doi=%s: %s", doi, exc)
+        return JSONResponse(
+            {"doi": doi, "status": "error", "detail": str(exc)},
+            status_code=500,
+        )
+    return JSONResponse({"doi": doi, "status": "ok", "summary": summary})
+
+
+@router.post("/api/papers/{doi:path}/re-extract")
+def trigger_re_extract(doi: str) -> JSONResponse:
+    """H7: re-extract structured fields and re-render the Obsidian note.
+
+    Path parameters:
+        doi: DOI string (may contain slashes — captured by {doi:path}).
+
+    Returns:
+        200 — {doi, status: "ok", summary: <tool return>}
+        404 — DOI not in state.db papers table.
+        422 — malformed DOI.
+        500 — tool raised; detail = str(exc) only, no traceback.
+    """
+    if not _DOI_RE.match(doi):
+        raise HTTPException(status_code=422, detail=f"invalid DOI: {doi!r}")
+    if not _doi_exists(doi):
+        raise HTTPException(status_code=404, detail=f"paper {doi!r} not found")
+    try:
+        summary = _invoke_re_extract(doi)
+    except Exception as exc:
+        _logger.warning("H7 re-extract failed doi=%s: %s", doi, exc)
+        return JSONResponse(
+            {"doi": doi, "status": "error", "detail": str(exc)},
+            status_code=500,
+        )
+    return JSONResponse({"doi": doi, "status": "ok", "summary": summary})
 
 
 __all__ = ["router"]
