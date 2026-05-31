@@ -31,6 +31,66 @@
 </table>
 
 <hr>
+
+{# P4: Notification preferences panel — skippable, pre-populated from config #}
+<section class="wizard-panel" id="notify-panel">
+  <h2>Notification preferences</h2>
+  <p>Choose how lit-monitor opens papers when a discovery notification fires.
+     You can skip this and change it later.</p>
+
+  <form method="post" action="/setup/complete/notify">
+    <div class="field-row">
+      <label>
+        <input
+          type="checkbox"
+          name="enabled"
+          value="on"
+          {% if notify_enabled %}checked{% endif %}
+        >
+        Enable desktop notifications when new papers are found
+      </label>
+    </div>
+
+    <fieldset>
+      <legend>Preferred viewer</legend>
+
+      <label>
+        <input
+          type="radio"
+          name="viewer"
+          value="browser"
+          {% if preferred_viewer == "browser" %}checked{% endif %}
+        >
+        Browser — open papers in your default web browser
+      </label>
+
+      <label>
+        <input
+          type="radio"
+          name="viewer"
+          value="obsidian"
+          {% if preferred_viewer == "obsidian" %}checked{% endif %}
+        >
+        Obsidian — open notes in the Obsidian vault
+      </label>
+
+      <label>
+        <input
+          type="radio"
+          name="viewer"
+          value="none"
+          {% if preferred_viewer == "none" or not preferred_viewer %}checked{% endif %}
+        >
+        None — just notify, don't open anything automatically
+      </label>
+    </fieldset>
+
+    <button type="submit" class="button">Save notification preferences</button>
+    <a href="/" class="button-secondary">Skip</a>
+  </form>
+</section>
+
+<hr>
 <p><a href="/" class="button">Done — open dashboard</a></p>
 <p><a href="/setup">← Back to setup overview</a></p>
 {% endblock %}

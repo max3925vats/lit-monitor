@@ -482,3 +482,191 @@ def test_update_collection_returns_400_when_paths_missing():
             "/setup/api/paths/collection", data={"collection_name": "X"}
         )
     assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# P4: safe_save_preference — unit tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSafeSavePreference:
+    """P4: atomic preference write via safe_save_preference."""
+
+    def test_writes_preferred_viewer_and_asked_user(self, tmp_path):
+        import shutil
+        import yaml
+        from pathlib import Path
+        from scripts.server.config_io import safe_save_preference
+
+        src = Path("config/extraction.example.yaml")
+        dst = tmp_path / "extraction.yaml"
+        shutil.copy(src, dst)
+        safe_save_preference("browser", config_path=dst)
+        data = yaml.safe_load(dst.read_text())
+        assert data["discovery"]["notify"]["preferred_viewer"] == "browser"
+        assert data["discovery"]["notify"]["asked_user"] is True
+
+    def test_enabled_optional_kwarg(self, tmp_path):
+        import shutil
+        import yaml
+        from pathlib import Path
+        from scripts.server.config_io import safe_save_preference
+
+        dst = tmp_path / "extraction.yaml"
+        shutil.copy("config/extraction.example.yaml", dst)
+        safe_save_preference("obsidian", enabled=False, config_path=dst)
+        data = yaml.safe_load(dst.read_text())
+        assert data["discovery"]["notify"]["enabled"] is False
+        assert data["discovery"]["notify"]["preferred_viewer"] == "obsidian"
+
+    def test_enabled_true_kwarg(self, tmp_path):
+        import shutil
+        import yaml
+        from pathlib import Path
+        from scripts.server.config_io import safe_save_preference
+
+        dst = tmp_path / "extraction.yaml"
+        shutil.copy("config/extraction.example.yaml", dst)
+        safe_save_preference("none", enabled=True, config_path=dst)
+        data = yaml.safe_load(dst.read_text())
+        assert data["discovery"]["notify"]["enabled"] is True
+
+    def test_invalid_viewer_raises(self, tmp_path):
+        import shutil
+        from pathlib import Path
+        from scripts.server.config_io import safe_save_preference
+
+        dst = tmp_path / "extraction.yaml"
+        shutil.copy("config/extraction.example.yaml", dst)
+        with pytest.raises(ValueError):
+            safe_save_preference("bogus", config_path=dst)
+
+    def test_atomic_write_no_corruption(self, tmp_path):
+        """P4: a successful write leaves the file as valid YAML with other keys intact."""
+        import shutil
+        import yaml
+        from pathlib import Path
+        from scripts.server.config_io import safe_save_preference
+
+        dst = tmp_path / "extraction.yaml"
+        shutil.copy("config/extraction.example.yaml", dst)
+        before = yaml.safe_load(dst.read_text())
+        safe_save_preference("none", config_path=dst)
+        after = yaml.safe_load(dst.read_text())
+        # Non-notify top-level keys preserved
+        before_keys = set(before.keys())
+        after_keys = set(after.keys())
+        assert before_keys.issubset(after_keys), (
+            f"missing keys after write: {before_keys - after_keys}"
+        )
+
+    def test_does_not_leave_tmp_file(self, tmp_path):
+        import shutil
+        from pathlib import Path
+        from scripts.server.config_io import safe_save_preference
+
+        dst = tmp_path / "extraction.yaml"
+        shutil.copy("config/extraction.example.yaml", dst)
+        safe_save_preference("browser", config_path=dst)
+        # No .tmp files left behind
+        leftover = list(tmp_path.glob("*.tmp"))
+        assert leftover == [], f"tmp files left: {leftover}"
+
+    def test_none_viewer_valid(self, tmp_path):
+        """'none' is a valid viewer value (user opts out of viewer preference)."""
+        import shutil
+        import yaml
+        from pathlib import Path
+        from scripts.server.config_io import safe_save_preference
+
+        dst = tmp_path / "extraction.yaml"
+        shutil.copy("config/extraction.example.yaml", dst)
+        safe_save_preference("none", config_path=dst)
+        data = yaml.safe_load(dst.read_text())
+        assert data["discovery"]["notify"]["preferred_viewer"] == "none"
+
+
+# ---------------------------------------------------------------------------
+# P4: setup wizard /complete notify panel — integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSetupCompleteNotifyPanel:
+    """P4: GET /setup/complete renders the notify panel; POST persists the choice."""
+
+    def _make_client(self):
+        from fastapi.testclient import TestClient
+        from scripts.server.app import create_app
+        from scripts.server.runtime import reset_runtime
+
+        reset_runtime()
+        return TestClient(create_app())
+
+    def test_panel_renders(self):
+        """P4: GET /setup/complete includes the notification-preferences panel."""
+        client = self._make_client()
+        r = client.get("/setup/complete")
+        assert r.status_code == 200
+        body = r.text.lower()
+        assert "notification" in body or "notify" in body
+        # 3 radio options present
+        for opt in ("browser", "obsidian", "none"):
+            assert opt in body
+
+    def test_panel_reflects_current_config(self):
+        """P4: GET /setup/complete reflects the current extraction.yaml values."""
+        client = self._make_client()
+        fake_extraction = {
+            "discovery": {
+                "notify": {
+                    "enabled": True,
+                    "preferred_viewer": "obsidian",
+                    "asked_user": True,
+                }
+            }
+        }
+        with patch("scripts.server.routes.setup.load_config", return_value=fake_extraction):
+            r = client.get("/setup/complete")
+        assert r.status_code == 200
+        # The selected viewer value should appear somewhere in the rendered page
+        assert "obsidian" in r.text.lower()
+
+    def test_post_persists_choice(self):
+        """P4: POST /setup/complete/notify calls safe_save_preference."""
+        client = self._make_client()
+        with patch("scripts.server.routes.setup.safe_save_preference") as m:
+            r = client.post(
+                "/setup/complete/notify",
+                data={"viewer": "browser", "enabled": "on"},
+            )
+        assert r.status_code in (200, 303, 302), r.text
+        m.assert_called_once()
+        call_args = m.call_args.args
+        call_kwargs = m.call_args.kwargs
+        # viewer must be first positional arg or explicit kwarg
+        viewer_sent = call_args[0] if call_args else call_kwargs.get("viewer")
+        assert viewer_sent == "browser"
+
+    def test_post_without_enabled_flag(self):
+        """P4: POST /setup/complete/notify without enabled=on sets enabled=False."""
+        client = self._make_client()
+        with patch("scripts.server.routes.setup.safe_save_preference") as m:
+            r = client.post(
+                "/setup/complete/notify",
+                data={"viewer": "obsidian"},
+            )
+        assert r.status_code in (200, 303, 302), r.text
+        m.assert_called_once()
+        call_kwargs = m.call_args.kwargs
+        assert call_kwargs.get("enabled") is False
+
+    def test_post_invalid_viewer_returns_400(self):
+        """P4: POST /setup/complete/notify with invalid viewer returns 400."""
+        client = self._make_client()
+        r = client.post(
+            "/setup/complete/notify",
+            data={"viewer": "bogus"},
+        )
+        assert r.status_code == 400
