@@ -33,19 +33,37 @@ dependencies = [
     # Output
     "jinja2",
     "pyyaml",
-    "pydantic>=2.0",   # required by litellm [cloud] and planned D1 config validation
+    "pydantic>=2.0",
 
     # CLI
     "click>=8.0",
 
-    # Progress bars (brain-build, textbook-build)
+    # Progress bars (brain-build, etc.)
     "rich>=13.0",
+
+    # Web UI — FastAPI app + dashboards + setup wizard
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sse-starlette>=2.1",
+    "tomli_w>=1.0",
+    "python-multipart>=0.0.29",
+
+    # Knowledge graph — KuzuDB + entity normalization
+    "kuzu>=0.6",
+    "inflect>=7",
+
+    # MCP server — Claude Desktop / Cursor / Continue integration
+    "mcp>=1.0",
+
+    # OS notifications on discovery completion
+    "plyer>=2.1",
 ]
 
 [project.scripts]
 lit-monitor = "scripts.cli:main"
 
 [project.optional-dependencies]
+# Contributor tooling — ruff, pytest, mypy.
 dev = [
     "ruff",
     "pytest",
@@ -53,36 +71,32 @@ dev = [
     "responses",
     "mypy",
 ]
+# Multi-provider LLM routing (Anthropic, OpenAI, Vertex AI, etc.).
+# Default LLM provider is local Ollama; install this extra only to route
+# through cloud providers. See README "LLM providers" section.
 litellm = [
-    "litellm",          # multi-provider LLM routing (Anthropic, OpenAI, Vertex AI, etc.)
+    "litellm",
 ]
-# Deprecated alias — keep so existing `uv sync --extra cloud` recipes keep working.
+# Deprecated alias for `[litellm]` — kept so older `uv sync --extra cloud`
+# recipes keep working.
 cloud = [
     "litellm",
 ]
-server = [
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.30",
-    "sse-starlette>=2.1",
-    "tomli_w>=1.0",
-    # Web UI — FastAPI Form() data parsing (F2.4 setup wizard POST endpoints)
-    "python-multipart>=0.0.29",
-]
-graph = [
-    "kuzu>=0.6",
-    "inflect>=7",
-]
+# BiobertNER for entity extraction (~3 GB; torch + transformers + accelerate).
+# Without this extra the LLM fallback handles entities. Install only if you
+# specifically want the BioBERT pipeline.
 nlp = [
     "transformers>=4.40",
     "torch>=2.2",
     "accelerate>=0.30",
 ]
-mcp = [
-    "mcp>=1.0",
-]
-notify = [
-    "plyer>=2.1",
-]
+# Backward-compat no-op aliases. The packages below moved into core
+# dependencies as of v0.8.1; these stubs let existing `uv sync --extra server`
+# (etc.) recipes continue to resolve cleanly.
+server = []
+graph = []
+mcp = []
+notify = []
 
 [build-system]
 requires = ["setuptools>=68"]

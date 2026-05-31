@@ -38,21 +38,16 @@ jobs:
         # python-multipart that the F2.x wizard tests import. Without it,
         # 11 of the unit test files fail at collection time with
         # ModuleNotFoundError: No module named 'fastapi'.
-        # Graph extra (v0.4.0+, Phase 1) brings kuzu + inflect. The
-        # normalizer (scripts/graph/normalizer.py) imports inflect at
-        # module level; without it, conftest.py + every graph test file
-        # fails collection with ModuleNotFoundError: No module named 'inflect'.
-        # MCP extra (v0.7.0+, Phase 4b) brings the mcp SDK. test_cli_mcp's
-        # banner/server-main tests assume the package is importable;
-        # without it, the friendly "install with --extra mcp" guard fires
-        # before the real banner is printed and the tests fail.
-        # LiteLLM extra (v0.8.0+) brings the real litellm package so the two
-        # LiteLLMClient unit tests can import litellm.completion. Without it a
-        # phantom/stub namespace package from a transitive dep makes
-        # pytest.importorskip succeed but litellm.completion is missing.
+        # Web UI (fastapi/uvicorn/sse-starlette/tomli_w/python-multipart),
+        # graph (kuzu/inflect), MCP (mcp SDK), and notifications (plyer) are
+        # core dependencies as of v0.8.1+ — no extras needed.
+        # LiteLLM extra brings the real litellm package so the LiteLLMClient
+        # unit tests can find litellm.completion. Without it a phantom/stub
+        # namespace package from a transitive dep makes pytest.importorskip
+        # succeed but litellm.completion is missing.
         # [nlp] extra is NOT installed in CI — tests use the BiobertNERStub
         # fixture rather than the real transformers + torch stack.
-        run: uv sync --extra dev --extra server --extra graph --extra mcp --extra litellm
+        run: uv sync --extra dev --extra litellm
 
       - name: Lint with ruff
         run: uv run ruff check .

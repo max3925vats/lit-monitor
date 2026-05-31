@@ -1,51 +1,59 @@
 # lit-monitor
 
-> **Status: Alpha (v0.2.0).** Working MVP, used personally by the author. The
-> web UI shipped in v0.2.0 makes setup + day-to-day operation point-and-click;
-> APIs, configs, and on-disk state layout may still change without notice. No
-> backwards-compatibility guarantees pre-1.0. Feedback and issues welcome.
+> **Status: Alpha.** Working tool, used personally by the author. APIs, configs,
+> and on-disk state may still change without notice. No backwards-compat
+> guarantees pre-1.0. Issues + feedback welcome.
 
-A personal literature tracker that ranks new papers by **semantic similarity
-to your existing Zotero library** — find what matters, written into Obsidian.
-Automate the discovery on a schedule (weekly works) to stay current.
+A personal literature tracker for biopharmaceutical research. It searches
+PubMed, arXiv, and Scopus on a schedule, ranks new papers by **semantic
+similarity to your existing Zotero library**, extracts structured fields with
+an LLM, builds a knowledge graph of entities and relationships, and writes
+everything into your Obsidian vault. Ask natural-language questions of the
+corpus from the terminal, a browser, or any MCP-compatible AI client.
 
-Drive it from a **localhost web UI** (`lit-monitor serve`) or — for scripted /
-power-user work — from the **CLI** (`lit-monitor --help`). Same pipeline either
-way; the web UI is just a thin layer on top of the same Click commands.
+Drive it from a **localhost web UI** (`lit-monitor serve`) for setup and
+day-to-day operation, or from the **CLI** (`lit-monitor --help`) for scripted
+work. Same pipeline either way.
 
-## What it does
+## What you get
 
-- **Topic search + relevance ranking** — searches PubMed, arXiv, and Scopus
-  for papers matching configured topics, then **ranks results by cosine
-  similarity to embeddings of your existing Zotero library**. The relevance
-  signal that makes the digest worth reading. Embeddings run locally via
+- **Topic search + relevance ranking.** Recurring searches across PubMed,
+  arXiv, and Scopus. Each candidate ranked by cosine similarity to embeddings
+  of your existing Zotero library. Embeddings run locally via
   `mxbai-embed-large` against a per-machine ChromaDB store.
-- **Obsidian-native output** — every paper becomes a structured Markdown note
-  with persist zones for your own annotations, two-phase LLM extraction (simple
-  regurgitative fields, then complex synthesis fields), chunk-level RAG for
-  cross-paper synthesis (`obsidian synthesize`), cross-encoder reranking for
-  "show me what I should read next" (`obsidian relink`), and a citation-graph
-  rebuilder (`rebuild-citations`).
-- **Run on any schedule** — once a week is a sensible default; `lit-monitor
-  serve` exposes a one-click schedule installer (launchd on macOS, systemd
-  user timer on Linux). Run ad-hoc from the dashboard's "Run now" button
+- **Obsidian-native output.** Every paper becomes a structured Markdown note
+  with persist zones for your own annotations, two-phase LLM extraction
+  (simple regurgitative fields + complex synthesis fields), and a citation
+  graph rebuild path.
+- **Knowledge graph + ask interface.** A KuzuDB graph stores entities (topics,
+  methods, materials, authors, journals, keywords) and ten typed
+  relationships across the corpus. Ask questions in plain English from the
+  CLI (`lit-monitor ask "what methods extend Carta 2009?"`) or via HTTP /
+  MCP. The pipeline writes both the vector and the graph backends atomically
+  per paper.
+- **Three retrieval modes** — vector (semantic), graph (entity-typed), and
+  hybrid (reciprocal-rank fusion). Switch per-command with
+  `--rag-mode {vector,graph,hybrid}`.
+- **MCP server for AI clients.** Twelve tools that Claude Desktop, Cursor,
+  Continue, and any other MCP-capable agent can call to query the graph and
+  vector index. Includes a read-only Cypher escape hatch with a regex safety
+  guard.
+- **Notifications + flexible delivery.** OS notification when a discovery run
+  finishes. Click it to land in your preferred viewer (browser, Obsidian, or
+  dismiss). Weekly digest as `.md`, on-demand Markdown export, or rich
+  table in the terminal — your choice.
+- **Run on any schedule.** One-click installer for launchd (macOS) or
+  systemd user timers (Linux). Weekly works. Run ad-hoc from the dashboard
   whenever you want.
-- **Optional accelerators** (cost real LLM tokens) — `brain-build` batches
-  your existing Zotero library into the embedding index in one pass;
-  `build-vocabulary` clusters Zotero tags into theme labels. Both are
-  **skippable** — the embedding index also grows organically from week 1 if you
-  just configure topics and `lit-monitor run`. Use these to front-load
-  relevance ranking if you already have a populated Zotero library.
 
-LLM calls default to **Ollama Cloud** (`gemma4:31b-cloud`). Switch to local
-Ollama or any LiteLLM-compatible provider (Anthropic, OpenAI, Vertex AI) from
-the web UI's setup wizard, or by editing `config/extraction.yaml` directly.
-Embeddings always run locally via Ollama.
+LLM calls default to local **Ollama**. Switch to Ollama Cloud or any LiteLLM-
+compatible provider (Anthropic, OpenAI, Vertex AI) from the setup wizard or
+by editing `config/extraction.yaml`. Embeddings always run locally.
 
 ## Requirements
 
-- macOS or Linux (developed on an M2 MacBook Air; ARM Linux including Raspberry
-  Pi 4/5 works for cloud-Ollama configurations)
+- macOS or Linux (developed on an M2 MacBook Air; ARM Linux including
+  Raspberry Pi 4/5 works for cloud-Ollama configurations)
 - Python 3.11+
 - [Ollama](https://ollama.com) installed locally for embeddings
   (`ollama pull mxbai-embed-large`)
@@ -61,67 +69,52 @@ cd lit-monitor
 ```
 
 The script installs [`uv`](https://docs.astral.sh/uv/) if needed, creates a
-project-local `.venv`, resolves all dependencies (`uv` routes around a known
-`findpapers`/`chromadb` metadata conflict via a `[tool.uv]` override in
-`pyproject.toml`), and seeds the personal configs from `config/*.example.yaml`.
+project-local `.venv`, resolves all dependencies, and seeds personal configs
+from `config/*.example.yaml`.
 
 If you prefer to drive `uv` yourself:
 
 ```bash
 uv venv && source .venv/bin/activate
-uv sync --extra dev --extra litellm --extra server
+uv sync                                  # web UI, graph, MCP, notifications all included
 for f in config/*.example.yaml; do cp -n "$f" "${f%.example.yaml}.yaml"; done
 ```
 
-Drop `--extra litellm` if you do not need LiteLLM routing (`--extra cloud` also
-works as a deprecated alias). The `--extra server` brings in FastAPI + uvicorn
-for `lit-monitor serve`; drop it only if you plan to run CLI-only and never
-touch the web UI.
+Optional extras:
+
+- `--extra nlp` — BiobertNER for entity extraction (~3 GB; transformers +
+  torch). Without it, the LLM fallback handles entities.
+- `--extra litellm` — multi-provider LLM routing (Anthropic, OpenAI, Vertex
+  AI, etc.). Without it, you're on Ollama only.
+- `--extra dev` — contributor tooling (ruff, pytest, mypy).
 
 ## Quickstart — web UI
-
-The fastest path to a working install. Walks you through every config file,
-runs live credential checks, and ships you to the dashboard when you're done.
 
 ```bash
 lit-monitor serve
 ```
 
-Then open **`http://127.0.0.1:8765/setup`** in any browser. The 8-step wizard
-covers:
+Open **`http://127.0.0.1:8765/setup`** in any browser. An 8-step wizard
+covers credentials, paths, extraction config, topics, domain context, theme
+vocabulary, tracked researchers, and item routing. Live credential checks at
+each step.
 
-1. **Credentials** — Zotero API key + library ID, PubMed email, optional
-   Ollama Cloud key. Stored at `~/.config/lit-monitor/config.toml` (mode 0600).
-   Live Zotero ping after save.
-2. **Paths** — Obsidian vault picker (server-side folder browser modal) +
-   Zotero collection dropdown (live-loaded from your library).
-3. **Extraction** — LLM provider/model/temperature/timeout per mode, with a
-   live "Test Ollama" button per host.
-4. **Topics** — recurring search queries (add/remove rows).
-5. **Domain context** — short paragraph telling the LLM what your field is.
-6. **Concepts** — view the theme vocabulary; one-click "Regenerate" runs
-   `lit-monitor build-vocabulary` with live log streaming.
-7. **Researchers** — optional tracked-author list.
-8. **Item routing** — read-only view of how Zotero item types map to
-   pipelines; advanced YAML editor underneath.
-
-After the wizard, the dashboards take over:
+After setup, the dashboards take over:
 
 | URL | What |
 |---|---|
-| `/brain-build` | Progress bar, per-paper table, recent runs, failed-papers expander. Start / Stop / Resume buttons. Live JSONL log streaming. Collection switcher. |
-| `/discovery` | Last-run summary, history, today's digest. Run-now / Dry-run / Stop buttons. |
-| `/schedule` | Install or remove a recurring schedule (launchd on macOS, systemd user timer on Linux). Weekly is a sensible default. |
+| `/brain-build` | Extract your existing Zotero library into the index. Progress bar, per-paper table, recent runs. Start / Stop / Resume. Live JSONL log stream. |
+| `/discovery` | Latest discovery run summary, run history, per-paper cards with one-click relink / re-extract actions. Run-now / Dry-run / Stop buttons. |
+| `/schedule` | Install or remove a recurring schedule (launchd / systemd). |
 
-The server binds to `127.0.0.1` by default. Pass `--host 0.0.0.0` if you want
-LAN access (e.g. running on a Pi, browsing from a laptop) — that is the only
-intended remote-access mode; the server has no authentication of its own.
+The server binds to `127.0.0.1` by default. Pass `--host 0.0.0.0` if you
+want LAN access; the server has no authentication of its own.
 
 ## Quickstart — CLI
 
-If you'd rather skip the web UI and edit the YAML configs by hand:
+If you'd rather edit YAML by hand:
 
-**1. Create the credentials file** at `~/.config/lit-monitor/config.toml`:
+**1. Create credentials** at `~/.config/lit-monitor/config.toml`:
 
 ```toml
 [zotero]
@@ -135,105 +128,56 @@ email = "you@example.com"
 api_key = "YOUR_OLLAMA_CLOUD_KEY"   # optional, only for cloud Ollama
 ```
 
-**2. Edit the seeded configs in `./config/`**: `paths.yaml`, `topics.yaml`,
-`domain_context.yaml`, `concepts.yaml`, `researchers.yaml`. The seeded
-`*.example.yaml` files in git document every field; the real `*.yaml` files
-are gitignored so `git pull` never touches them.
+**2. Edit the seeded YAMLs in `./config/`**: `paths.yaml`, `topics.yaml`,
+`domain_context.yaml`, `concepts.yaml`, `researchers.yaml`. The example
+files in git document every field; the real `.yaml` files are gitignored.
 
 **3. Verify** — `lit-monitor check`.
 
-## Power-user CLI
-
-The web UI is a thin wrapper; every action is also a Click command.
+## Day-to-day CLI
 
 ```bash
 # One-time setup
 lit-monitor build-vocabulary             # cluster Zotero tags into themes
-lit-monitor brain-build --resume         # extract every paper in the configured collection
+lit-monitor brain-build --resume         # extract every paper in the collection
 
-# Discovery (the recurring run — call it weekly if you schedule it weekly)
+# Discovery
 lit-monitor run                          # discover new papers + ingest new Zotero items
-lit-monitor run --dry-run                # preview discovery without writes
+lit-monitor run --dry-run                # preview without writes
+lit-monitor discovery view --run latest  # rich-table view of the latest results
+lit-monitor discovery export-md --to ~/digest.md   # on-demand Markdown export
+
+# Ask
+lit-monitor ask "what methods extend cation exchange?" --rag-mode hybrid
+
+# Knowledge graph
+lit-monitor graph status                 # node + edge counts
+lit-monitor graph backfill --all         # index existing papers into the graph
+lit-monitor graph propose-aliases        # suggest entity normalization rules
 
 # Obsidian helpers
-lit-monitor obsidian relink                       # update Related Work sections
-lit-monitor obsidian rerender                     # regenerate notes from stored extractions
-lit-monitor obsidian synthesize --topic "..."     # chunk-level RAG with reranking
+lit-monitor obsidian relink              # update Related Work sections
+lit-monitor obsidian rerender            # regenerate notes from stored extractions
+lit-monitor obsidian sync --all          # write deferred per-paper notes
+lit-monitor obsidian synthesize --topic "..."   # chunk-level RAG with reranking
 
-# Verification + diagnostics
-lit-monitor check                        # reachability check (config + Ollama + Zotero)
+# Health
+lit-monitor check                        # config + Ollama + Zotero reachability
 lit-monitor diagnose                     # strict-mode config audit
-lit-monitor status                       # extraction + embedding counts from state DB
-
-# Web UI
-lit-monitor serve [--port 8765] [--host 127.0.0.1] [--reload]
+lit-monitor status                       # extraction + embedding + graph counts
 ```
 
-A top-level `-v` / `--verbose` flag enables DEBUG-level console output. A full
-DEBUG log is always written to `logs/{date}_{command}.jsonl`. For the full
-command surface (model comparison, citation graph rebuild, targeted field
-re-extraction, `--all-library` mode, etc.) see `lit-monitor --help`.
+Top-level `-v` / `--verbose` enables DEBUG console output; a full DEBUG log
+is always written to `logs/{date}_{command}.jsonl`. See
+`lit-monitor --help` for the full command surface.
 
-### Graph RAG (optional — v0.4.0+)
-
-A KuzuDB knowledge graph runs alongside the ChromaDB vector store. Install the
-optional extra to enable it:
+## MCP server (for Claude Desktop / Cursor / Continue)
 
 ```bash
-uv sync --extra graph           # install kuzu
-
-lit-monitor graph backfill --all            # index all papers into the graph
-lit-monitor graph status                    # show node + edge counts
-lit-monitor graph propose-aliases           # suggest entity normalization rules
-
-# Use graph or hybrid retrieval (default is "vector"):
-lit-monitor ask "what methods compare X to Y" --rag-mode hybrid
-lit-monitor synthesize --rag-mode graph
-```
-
-When the `[graph]` extra is not installed, all graph-aware commands print a
-friendly install message and exit 0 — the rest of the pipeline is unaffected.
-`lit-monitor diagnose --config-only` includes a `graph` row showing extra
-availability and persist-dir reachability. `lit-monitor status` appends a
-`Graph: indexed=N / total=M  entities=K` line when the graph is active.
-
-### Graph RAG with NER (v0.5.0+, optional)
-
-Phase 2 layers domain-aware NER on top of Phase 1. Install:
-
-```bash
-uv sync --extra graph --extra nlp
-```
-
-Optional cloud-Ollama long-tail validation:
-
-```bash
-export OLLAMA_API_KEY=your_key
-# Edit config/extraction.yaml: set graph.ner.cloud_long_tail_enabled=true
-```
-
-New flags:
-
-- `lit-monitor graph backfill --ner` — process existing papers via BioBERT.
-- `lit-monitor graph backfill --ner-with-llm` — also use cloud-Ollama
-  long-tail (caps off the schema → BioBERT → LLM merge pipeline).
-- `lit-monitor graph propose-aliases --with-llm` — LLM-validated alias
-  consensus.
-- `lit-monitor obsidian re-extract --rag-mode graph` — re-extract with
-  corpus-aware graph context.
-- `lit-monitor graph status --by-source` — MENTIONS counts per source.
-
-### MCP server — graph + vector RAG over Model Context Protocol (v0.7.0+)
-
-The MCP server exposes 10 tools that AI clients (Claude Desktop, Continue,
-Cursor) can call to query the lit-monitor knowledge graph and vector index.
-
-```bash
-uv sync --extra mcp --extra graph
 lit-monitor mcp serve
 ```
 
-The server uses stdio transport. Register it in your MCP client's config:
+stdio transport. Register in your MCP client config:
 
 ```json
 "lit-monitor-graph": {
@@ -242,143 +186,92 @@ The server uses stdio transport. Register it in your MCP client's config:
 }
 ```
 
-Tools include `find_papers_by_entity`, `get_paper_details`,
-`find_papers_by_query_hybrid` (RRF-fused graph + vector),
-`run_cypher` (read-only with safety guard), `semantic_search`, and 5 more.
-See [`docs/MCP_TOOLS.md`](docs/MCP_TOOLS.md) for the full reference.
+Twelve tools — `find_papers_by_entity`, `find_papers_by_relationship`,
+`get_paper_details`, `find_papers_by_query_hybrid` (RRF-fused),
+`run_cypher` (read-only with safety guard), `semantic_search`,
+`get_recent_discovery_runs`, and 5 more. Run `lit-monitor mcp serve` to see
+the registry.
 
-### Discovery + notifications (v0.8.0)
+## HTTP API
 
-The discovery pipeline writes structured results (runs + per-paper scores) into
-`state.db`. Multiple surfaces render them on demand.
+`lit-monitor serve` exposes the same query layer over HTTP. FastAPI
+auto-docs at `http://127.0.0.1:8765/docs`. Endpoints include
+`POST /api/ingest`, `GET /api/papers/{doi}`, `POST /api/ask`,
+`POST /api/cypher`, `POST /api/search`, `GET /api/discovery/runs`, plus
+trigger endpoints for relink and re-extract.
 
-```bash
-# Rich-formatted table for the most recent run
-lit-monitor discovery view --run latest
+## Notifications + delivery
 
-# On-demand Markdown export
-lit-monitor discovery export-md --run latest --to ~/discovery.md
-
-# Per-paper Obsidian notes deferred from the discovery pipeline can be synced later
-lit-monitor obsidian sync --all
-```
-
-**Optional OS notifications** — install with `uv sync --extra notify`. On run
-completion an OS notification fires (macOS Notification Center, Linux
-`notify-send`, Windows toast). Clicking the notification opens
-`http://localhost:8765/discovery/notify-handler?run_id=N` — a chooser page on
-first use, or a direct redirect to your preferred surface (browser / Obsidian /
-dismiss) after you save a preference.
-
-**Config flags** (under `discovery:` in `config/extraction.yaml`):
+OS notification when a discovery run completes. Clicking the notification
+lands at the chooser page on first use, then remembers your preferred
+surface (browser / Obsidian / dismiss). Four delivery flags under
+`discovery:` in `config/extraction.yaml`:
 
 | Key | Default | Effect |
 |---|---|---|
 | `notify.enabled` | `true` | Fire OS notification at run end |
-| `notify.preferred_viewer` | `""` | Skip the chooser when set to `browser`, `obsidian`, or `none` |
+| `notify.preferred_viewer` | `""` | Skip the chooser when set |
 | `notes.auto_write_per_paper` | `true` | `false` → defer per-paper notes to `obsidian sync` |
-| `digest.auto_write` | `true` | `false` → no inline digest .md; use `discovery export-md` |
+| `digest.auto_write` | `true` | `false` → no inline digest; use `discovery export-md` |
 
-### Phase 3 LLM relationships (v0.6.0+, optional)
-
-Phase 3 adds `EXTENDS` / `CONTRADICTS` edges + LLM-augmented schema
-relationships. Enable via:
-
-```yaml
-# config/extraction.yaml
-graph:
-  relationships:
-    llm_enabled: true
-```
-
-Plus `OLLAMA_API_KEY` env var.
-
-New CLI:
-- `lit-monitor graph backfill --relationships` — schema-only relationship
-  extraction over existing corpus.
-- `lit-monitor graph backfill --relationships-with-llm` — also runs the
-  cloud-Ollama LLM extractor (EXTENDS + CONTRADICTS + LLM-augmented predicates).
-- `lit-monitor graph status` — now includes EXTENDS + CONTRADICTS edge counts.
-- `lit-monitor graph status --by-source` — typed-predicate counts broken
-  down by `prompt_version` (schema vs LLM split).
-
-### Strict mode
-
-`lit-monitor` has a strict mode that turns every silent fallback (corrupt
-config, unreadable attachment, unexpected API response) into a hard error
-instead of a logged warning:
+## Strict mode + diagnose
 
 ```bash
-# Activate via CLI flag (any subcommand):
-lit-monitor --strict run --dry-run
-
-# Activate via environment variable (useful in CI and scripts):
-LIT_MONITOR_STRICT=1 lit-monitor run --dry-run
-
-# Health check — validates all tracked config files without needing services:
-lit-monitor diagnose --config-only
-
-# Full health check including Ollama + Zotero reachability:
-lit-monitor diagnose
+lit-monitor --strict run --dry-run        # CLI flag
+LIT_MONITOR_STRICT=1 lit-monitor run      # env var
+lit-monitor diagnose --config-only        # validate every tracked config
+lit-monitor diagnose                      # full health (config + Ollama + Zotero)
 ```
 
-`diagnose` activates strict mode internally and reports each config file as
-`OK` or `FAIL`. Use it when `lit-monitor check` returns OK but something
-feels wrong (e.g. a corrupt `domain_context.yaml` silently becomes `""` and
-the LLM gets no domain context — `diagnose` catches it).
+Strict mode turns every silent fallback (corrupt config, unreadable
+attachment, unexpected API response) into a hard error.
 
-### LLM providers — Ollama (default) or LiteLLM
+## LLM providers — Ollama (default) or LiteLLM
 
-`lit-monitor` defaults to a local Ollama instance for all LLM extraction
-calls. To use a cloud provider (Anthropic, OpenAI, Vertex AI, etc.) via
-LiteLLM, install the extra and configure `extraction.yaml`:
+Local Ollama is the default. To route any mode through LiteLLM:
 
 ```bash
 uv sync --extra litellm
 ```
 
-Then in `config/extraction.yaml`, set `provider` and `litellm_model` for each
-mode you want to route through the cloud:
+Then per-mode in `config/extraction.yaml`:
 
 ```yaml
 modes:
   simple:
     provider: litellm
-    litellm_model: claude-3-5-sonnet-20241022   # any LiteLLM-compatible model string
-    # ... existing keys unchanged ...
+    litellm_model: claude-3-5-sonnet-20241022
+    # ... other keys unchanged ...
   complex:
     provider: litellm
     litellm_model: claude-opus-4-5
 ```
 
-Ollama and LiteLLM can be mixed per-mode — for example, local Ollama for
-`simple` and cloud Claude for `complex`. API keys are read from your
-environment per [LiteLLM's provider docs](https://docs.litellm.ai/docs/providers).
+Mix per-mode — local Ollama for `simple`, cloud Claude for `complex`. API
+keys come from your environment per
+[LiteLLM's provider docs](https://docs.litellm.ai/docs/providers).
 
 ## Running tests
 
 ```bash
-# Unit + LLM tests — no live services needed
 .venv/bin/python -m pytest tests/unit/ tests/llm/ -q
 
-# Integration tests — silently SKIP if Ollama / Zotero / vault are unavailable
+# Integration tests — SKIP if Ollama / Zotero / vault are unavailable
 lit-monitor check && .venv/bin/python -m pytest tests/integration/ -m integration -v
 
 # Integration tests in STRICT mode — missing services FAIL the run
-# (use this before tagging a release; the release-gate script invokes it for you)
 LIT_MONITOR_LIVE=1 .venv/bin/python -m pytest tests/integration/ -m integration -v
 ```
 
 ## Deployment
 
-Designed to run on a recurring schedule on a single workstation. The web UI
-installs the schedule directly from the `/schedule` page (launchd on macOS,
-systemd user timer on Linux). Weekly is a sensible default; any cadence works.
-Once the local state DB and ChromaDB store have been populated — either by
-brain-build in one shot, or organically by repeated `lit-monitor run` calls —
-the schedule can be handed off to a low-power node (Raspberry Pi 4/5, etc.)
-via the same mechanism, provided extraction is routed through cloud Ollama
-or LiteLLM.
+Runs on a recurring schedule on a single workstation. Install via
+`/schedule` (launchd on macOS, systemd user timer on Linux). Weekly is a
+sensible default; any cadence works. Once the local state DB and ChromaDB
+store have been populated — either by brain-build in one shot, or
+organically by repeated `lit-monitor run` calls — the schedule can be handed
+off to a low-power node (Raspberry Pi 4/5) provided extraction is routed
+through Ollama Cloud or LiteLLM.
 
 ## License
 

@@ -1637,10 +1637,16 @@ dependencies = [
     { name = "bibtexparser" },
     { name = "chromadb" },
     { name = "click" },
+    { name = "fastapi" },
     { name = "findpapers" },
     { name = "habanero" },
+    { name = "inflect" },
     { name = "jinja2" },
+    { name = "kuzu" },
+    { name = "mcp" },
+    { name = "plyer" },
     { name = "pydantic" },
+    { name = "python-multipart" },
     { name = "pyyaml" },
     { name = "pyzotero" },
     { name = "rapidfuzz" },
@@ -1648,7 +1654,10 @@ dependencies = [
     { name = "rich" },
     { name = "semanticscholar" },
     { name = "sentence-transformers" },
+    { name = "sse-starlette" },
     { name = "tenacity" },
+    { name = "tomli-w" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.optional-dependencies]
@@ -1662,30 +1671,13 @@ dev = [
     { name = "responses" },
     { name = "ruff" },
 ]
-graph = [
-    { name = "inflect" },
-    { name = "kuzu" },
-]
 litellm = [
     { name = "litellm" },
-]
-mcp = [
-    { name = "mcp" },
 ]
 nlp = [
     { name = "accelerate" },
     { name = "torch" },
     { name = "transformers" },
-]
-notify = [
-    { name = "plyer" },
-]
-server = [
-    { name = "fastapi" },
-    { name = "python-multipart" },
-    { name = "sse-starlette" },
-    { name = "tomli-w" },
-    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.metadata]
@@ -1694,21 +1686,21 @@ requires-dist = [
     { name = "bibtexparser" },
     { name = "chromadb", specifier = ">=0.5.3" },
     { name = "click", specifier = ">=8.0" },
-    { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.115" },
+    { name = "fastapi", specifier = ">=0.115" },
     { name = "findpapers" },
     { name = "habanero" },
-    { name = "inflect", marker = "extra == 'graph'", specifier = ">=7" },
+    { name = "inflect", specifier = ">=7" },
     { name = "jinja2" },
-    { name = "kuzu", marker = "extra == 'graph'", specifier = ">=0.6" },
+    { name = "kuzu", specifier = ">=0.6" },
     { name = "litellm", marker = "extra == 'cloud'" },
     { name = "litellm", marker = "extra == 'litellm'" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0" },
+    { name = "mcp", specifier = ">=1.0" },
     { name = "mypy", marker = "extra == 'dev'" },
-    { name = "plyer", marker = "extra == 'notify'", specifier = ">=2.1" },
+    { name = "plyer", specifier = ">=2.1" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
-    { name = "python-multipart", marker = "extra == 'server'", specifier = ">=0.0.29" },
+    { name = "python-multipart", specifier = ">=0.0.29" },
     { name = "pyyaml" },
     { name = "pyzotero" },
     { name = "rapidfuzz" },
@@ -1718,14 +1710,14 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "semanticscholar" },
     { name = "sentence-transformers", specifier = ">=3.0" },
-    { name = "sse-starlette", marker = "extra == 'server'", specifier = ">=2.1" },
+    { name = "sse-starlette", specifier = ">=2.1" },
     { name = "tenacity" },
-    { name = "tomli-w", marker = "extra == 'server'", specifier = ">=1.0" },
+    { name = "tomli-w", specifier = ">=1.0" },
     { name = "torch", marker = "extra == 'nlp'", specifier = ">=2.2" },
     { name = "transformers", marker = "extra == 'nlp'", specifier = ">=4.40" },
-    { name = "uvicorn", extras = ["standard"], marker = "extra == 'server'", specifier = ">=0.30" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
-provides-extras = ["dev", "litellm", "cloud", "server", "graph", "nlp", "mcp", "notify"]
+provides-extras = ["dev", "litellm", "cloud", "nlp", "server", "graph", "mcp", "notify"]
 
 [[package]]
 name = "litellm"
