@@ -141,6 +141,11 @@ def create_app() -> FastAPI:
     # H2: POST /api/ingest — production ingest endpoint for Zotero plugin / web ingestors.
     app.include_router(ingest_router)
 
+    # H4: GET /api/papers/{doi} — paper snapshot (wraps H1 get_paper_snapshot).
+    from scripts.server.routes.papers import router as papers_router  # noqa: PLC0415
+
+    app.include_router(papers_router)
+
     # Dev-only /dev test surface. Wrapped in try/except so a syntax error or
     # import-time failure inside routes/dev.py downgrades to a warning rather
     # than killing the whole server.
