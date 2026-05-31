@@ -195,4 +195,48 @@ def ingest(body: IngestRequest) -> JSONResponse:
     )
 
 
+# ---------------------------------------------------------------------------
+# H3: read-only queue status endpoints
+# ---------------------------------------------------------------------------
+
+_QUEUE_COLS = ["doi", "status", "queued_at", "completed_at", "error"]
+_QUEUE_SQL = (
+    "SELECT doi, status, queued_at, completed_at, error "
+    "FROM ingest_queue ORDER BY queued_at DESC LIMIT 100"
+)
+
+
+@router.get("/api/ingest/queue")
+def list_queue() -> list[dict]:
+    """H3: list up to 100 most-recent ingest_queue rows, newest first.
+
+    Empty queue returns an empty list (200).  The explicit /queue path is
+    registered BEFORE the {doi:path}/status wildcard so FastAPI's first-match
+    routing does not swallow 'queue' as a DOI segment.
+    """
+    state_db = get_runtime().state_db
+    with state_db._connect() as conn:
+        rows = conn.execute(_QUEUE_SQL).fetchall()
+    return [dict(zip(_QUEUE_COLS, r)) for r in rows]
+
+
+@router.get("/api/ingest/{doi:path}/status")
+def doi_status(doi: str) -> dict:
+    """H3: single-DOI status lookup.
+
+    Returns the ingest_queue row for *doi* or 404 if it is not in the queue.
+    The /status suffix disambiguates this route from the bare /queue listing.
+    """
+    state_db = get_runtime().state_db
+    with state_db._connect() as conn:
+        row = conn.execute(
+            "SELECT doi, status, queued_at, completed_at, error "
+            "FROM ingest_queue WHERE doi = ?",
+            (doi,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"DOI {doi!r} not in queue")
+    return dict(zip(_QUEUE_COLS, row))
+
+
 __all__ = ["router", "IngestRequest", "_process_paper"]

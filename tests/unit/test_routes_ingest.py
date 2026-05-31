@@ -19,7 +19,6 @@ from fastapi.testclient import TestClient
 from scripts.core.state_db import StateDB
 from scripts.server.app import create_app
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -410,3 +409,109 @@ class TestStateDBMigration:
             conn.close()
 
         assert count == 1, f"Expected exactly 1 ingest_queue table, got {count}"
+
+
+# ---------------------------------------------------------------------------
+# H3: GET /api/ingest/queue
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestQueueListing:
+    def test_empty_queue_returns_empty_list(self, client):
+        """H3: no rows in ingest_queue → 200 with empty list."""
+        r = client.get("/api/ingest/queue")
+        assert r.status_code == 200
+        assert r.json() == []
+
+    def test_two_items_ordered_descending(self, client, monkeypatch):
+        """H3: two ingests → list ordered newest-first (queued_at DESC)."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        client.post("/api/ingest", json={"doi": "10.1234/a", "title": "A"})
+        client.post("/api/ingest", json={"doi": "10.1234/b", "title": "B"})
+
+        r = client.get("/api/ingest/queue")
+        assert r.status_code == 200
+        items = r.json()
+        assert len(items) == 2
+        # B was added after A — DESC ordering puts B first.
+        assert items[0]["doi"] == "10.1234/b"
+        assert items[1]["doi"] == "10.1234/a"
+
+    def test_response_shape(self, client, monkeypatch):
+        """H3: each item in the queue list has the expected keys."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        client.post("/api/ingest", json={"doi": "10.1234/shape", "title": "S"})
+
+        r = client.get("/api/ingest/queue")
+        assert r.status_code == 200
+        item = r.json()[0]
+        for key in ("doi", "status", "queued_at", "completed_at", "error"):
+            assert key in item, f"Expected key {key!r} missing from queue item"
+
+
+# ---------------------------------------------------------------------------
+# H3: GET /api/ingest/{doi:path}/status
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDoiStatus:
+    def test_unknown_doi_404(self, client):
+        """H3: DOI not in queue → 404."""
+        r = client.get("/api/ingest/10.1234/missing/status")
+        assert r.status_code == 404
+
+    def test_known_doi_returns_row(self, client, monkeypatch):
+        """H3: known DOI → 200 with correct doi and status."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        client.post("/api/ingest", json={"doi": "10.1234/known", "title": "K"})
+
+        r = client.get("/api/ingest/10.1234/known/status")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["doi"] == "10.1234/known"
+        assert body["status"] == "done"
+
+    def test_known_doi_response_has_all_fields(self, client, monkeypatch):
+        """H3: status response includes all five expected keys."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        client.post("/api/ingest", json={"doi": "10.1234/fields", "title": "F"})
+
+        r = client.get("/api/ingest/10.1234/fields/status")
+        assert r.status_code == 200
+        body = r.json()
+        for key in ("doi", "status", "queued_at", "completed_at", "error"):
+            assert key in body, f"Expected key {key!r} missing from status response"
+
+
+# ---------------------------------------------------------------------------
+# H3: routing disambiguation — 'queue' must not match as {doi:path}
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestQueueRouteDoesNotMatchAsDoi:
+    def test_queue_path_resolves_to_listing_not_doi_status(self, client):
+        """H3 routing trap: 'queue' must not be captured by {doi:path}/status.
+
+        FastAPI routes are matched in registration order.  The explicit
+        /api/ingest/queue endpoint is registered before the wildcard
+        /api/ingest/{doi:path}/status route, so 'queue' should hit the
+        listing handler (200 + list), not the status handler (404 "DOI not
+        in queue").
+        """
+        r = client.get("/api/ingest/queue")
+        assert r.status_code == 200, (
+            f"Got {r.status_code} — 'queue' was matched as a DOI path segment. "
+            "Ensure the /queue route is registered BEFORE {doi:path}/status."
+        )
+        assert isinstance(r.json(), list)
