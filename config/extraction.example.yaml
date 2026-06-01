@@ -46,8 +46,18 @@ ranking:
     # 0.0 (default) = no cluster signal; today's behavior preserved on upgrade.
     # Recommended: 0.1–0.3 once clusters have been computed and validated.
     cluster_centroid: 0.0
-    # (Future bundles will add: graph_entity_overlap, graph_citation,
-    #  graph_shared_authors, feedback)
+    # Bundle D: graph-in-ranker signals (weighted sum, NOT RRF).
+    # All default to 0.0 — no behavior change until you opt in.
+    # entity_overlap: bonus for shared MENTIONS entities between candidate and library.
+    #   normalized: min(n_shared_entities / 5, 1.0). Try 0.1–0.2.
+    graph_entity_overlap: 0.0
+    # citation: bonus when candidate cites library papers (or is cited by them),
+    #   or EXTENDS/COMPARES_TO library papers.
+    #   normalized: min(citation_total / 3, 1.0). Try 0.1–0.2.
+    graph_citation: 0.0
+    # shared_authors: bonus for shared author names (case-insensitive, deduped).
+    #   normalized: min(n_shared_authors / 3, 1.0). Try 0.05–0.15.
+    graph_shared_authors: 0.0
 
   domain_filter:
     # Set true to enable the pre-rank semantic filter.

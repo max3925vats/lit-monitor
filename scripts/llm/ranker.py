@@ -40,6 +40,8 @@ def rank_papers(
     domain_context_weight: float = 0.0,
     cluster_centroids=None,         # list[Cluster] | None — Bundle C
     cluster_centroid_weight: float = 0.0,  # Bundle C
+    graph_signals: dict[str, dict] | None = None,   # Bundle D: doi → signals dict
+    graph_weights: dict[str, float] | None = None,  # Bundle D: entity_overlap/citation/shared_authors
 ) -> list[dict[str, Any]]:
     """
     Rank candidate papers by similarity to the existing knowledge base,
@@ -70,15 +72,28 @@ def rank_papers(
     cluster_centroid_weight:
         Bundle C: additive weight for max-cosine-to-nearest-centroid signal.
         0.0 (default) = no contribution → backward compatible.
+    graph_signals:
+        Bundle D: mapping from candidate DOI to a dict of graph signals as
+        returned by ``get_graph_signals_for_candidate()``.  When None or
+        all graph weights are 0.0, no graph contribution is added → backward
+        compatible with v0.8/A/B/C behavior.
+    graph_weights:
+        Bundle D: dict with keys ``entity_overlap``, ``citation``,
+        ``shared_authors``.  All default to 0.0 when absent.  Uses weighted
+        sum (NOT RRF) per the v0.9 locked design decision.
+
     Returns
     -------
     list[dict]
         Candidates sorted by similarity score (descending), each augmented
         with ``similarity_score`` and (for top-K) ``llm_rationale``.
         Each paper gets ``score_breakdown`` containing ``vector``,
-        ``domain_context``, and ``cluster_centroid`` keys.
+        ``domain_context``, ``cluster_centroid``, ``graph_entity_overlap``,
+        ``graph_citation``, and ``graph_shared_authors`` keys.
         When a cluster match is found, ``cluster_matched`` is set to the
         cluster's display_name (used by Bundle B's web UI).
+        When graph signals are present, ``graph_shared_authors_sample`` and
+        ``graph_shared_entities`` are set per-paper for the UI annotation panel.
     """
     if not candidates:
         return []
@@ -155,6 +170,54 @@ def rank_papers(
             # Annotate matched cluster name for Bundle B's web UI
             paper["cluster_matched"] = cluster_centroids[best_idx].display_name or ""
 
+    # 2c. Bundle D: optional graph-signal additive scores.
+    #     Runs only when graph_signals dict AND graph_weights are provided AND
+    #     at least one weight is non-zero.  Weighted sum (NOT RRF).
+    #     All weights default 0.0 → byte-for-byte regression preserved.
+    _gw_entity = 0.0
+    _gw_citation = 0.0
+    _gw_authors = 0.0
+    _graph_active = False
+    if graph_signals is not None and graph_weights is not None:
+        _gw_entity = float(graph_weights.get("entity_overlap", 0.0))
+        _gw_citation = float(graph_weights.get("citation", 0.0))
+        _gw_authors = float(graph_weights.get("shared_authors", 0.0))
+        _graph_active = (_gw_entity > 0.0 or _gw_citation > 0.0 or _gw_authors > 0.0)
+
+    if _graph_active:
+        for paper in scored:
+            doi = paper.get("doi") or paper.get("id", "")
+            sig = graph_signals.get(doi, {}) if graph_signals else {}  # type: ignore[union-attr]
+
+            # Normalize each raw count to [0, 1] before weighting.
+            # Caps are conservative v0.9 baselines; tune in later bundles.
+            entity_norm = min(float(sig.get("n_shared_entities", 0)) / 5.0, 1.0)
+            citation_total = (
+                float(sig.get("n_cites_in_library", 0))
+                + float(sig.get("n_cited_by_library", 0))
+                + float(sig.get("n_extends_in_library", 0))
+                + float(sig.get("n_compares_to_library", 0))
+            )
+            citation_norm = min(citation_total / 3.0, 1.0)
+            authors_norm = min(float(sig.get("n_shared_authors", 0)) / 3.0, 1.0)
+
+            # Store raw normalised values for score_breakdown assembly below.
+            paper["_graph_entity_norm"] = entity_norm
+            paper["_graph_citation_norm"] = citation_norm
+            paper["_graph_authors_norm"] = authors_norm
+
+            # Additive contribution to composite score (weighted sum).
+            paper["similarity_score"] = (
+                paper.get("similarity_score", 0.0)
+                + _gw_entity * entity_norm
+                + _gw_citation * citation_norm
+                + _gw_authors * authors_norm
+            )
+
+            # Annotations for Bundle B's "Why this paper?" panel.
+            paper["graph_shared_authors_sample"] = sig.get("shared_authors_sample", [])
+            paper["graph_shared_entities"] = sig.get("shared_entity_canonical_ids", [])
+
     # 3. Bundle B: attach per-signal score_breakdown to every paper.
     #    Defaults preserve v0.8 behavior — breakdown is additive metadata only.
     for paper in scored:
@@ -164,17 +227,33 @@ def rank_papers(
         # Bundle C: cluster_centroid contribution
         cluster_raw = paper.get("_cluster_score", 0.0)
         cluster_contribution = round(float(cluster_raw * cluster_centroid_weight), 3)
-        # vector = base score excluding additive signals
+        # Bundle D: graph signal contributions
+        graph_entity_contribution = round(
+            float(paper.get("_graph_entity_norm", 0.0)) * _gw_entity, 3
+        )
+        graph_citation_contribution = round(
+            float(paper.get("_graph_citation_norm", 0.0)) * _gw_citation, 3
+        )
+        graph_authors_contribution = round(
+            float(paper.get("_graph_authors_norm", 0.0)) * _gw_authors, 3
+        )
+        # vector = base score excluding all additive signals
         vector_only = round(
             float(paper.get("similarity_score", 0.0))
             - domain_contribution
-            - cluster_contribution,
+            - cluster_contribution
+            - graph_entity_contribution
+            - graph_citation_contribution
+            - graph_authors_contribution,
             3,
         )
         paper["score_breakdown"] = {
             "vector": vector_only,
             "domain_context": domain_contribution,
             "cluster_centroid": cluster_contribution,
+            "graph_entity_overlap": graph_entity_contribution,
+            "graph_citation": graph_citation_contribution,
+            "graph_shared_authors": graph_authors_contribution,
         }
 
     # 4. Sort descending by score

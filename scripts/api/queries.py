@@ -573,6 +573,241 @@ def get_schema_text(graph_db: Any) -> str:
         return f"(schema describer error: {exc})"
 
 
+def get_graph_signals_for_candidate(
+    candidate_doi: str,
+    graph_db: Any,
+    library_dois: list[str],
+) -> dict[str, Any]:
+    """Bundle D: extract graph signals for a single candidate relative to the library.
+
+    Returns a dict with raw counts and sample lists for all graph ranking signals.
+    Always returns a complete dict (never None, never raises).  All counts default
+    to 0 and all lists to [] when the graph is unavailable or the candidate is not
+    present.
+
+    Signal definitions
+    ------------------
+    n_shared_entities:
+        Number of Entity nodes that both the candidate and at least one library
+        paper mention via MENTIONS edges.
+    shared_entity_canonical_ids:
+        Canonical IDs of those shared entities (for explainability).
+    n_cites_in_library:
+        Count of library papers directly cited by the candidate (CITES edges
+        from candidate → library).
+    n_cited_by_library:
+        Count of library papers that cite the candidate (CITES edges from
+        library → candidate).
+    n_extends_in_library:
+        Count of library papers that the candidate EXTENDS.
+    n_compares_to_library:
+        Count of library papers that the candidate COMPARES_TO.
+    n_shared_authors:
+        Number of distinct author names (case-insensitive, stripped) that appear
+        in both the candidate and at least one library paper.
+    shared_authors_sample:
+        Up to 3 shared author names (original casing from candidate) for the
+        Bundle B score-decomposition UI.
+
+    Args:
+        candidate_doi: DOI of the candidate paper.
+        graph_db:      GraphDB instance.
+        library_dois:  List of DOIs that form the current library.
+
+    Returns:
+        Dict with all signal keys (see above).
+    """
+    result: dict[str, Any] = {
+        "n_shared_entities": 0,
+        "shared_entity_canonical_ids": [],
+        "n_cites_in_library": 0,
+        "n_cited_by_library": 0,
+        "n_extends_in_library": 0,
+        "n_compares_to_library": 0,
+        "n_shared_authors": 0,
+        "shared_authors_sample": [],
+    }
+
+    if graph_db is None or not library_dois:
+        return result
+
+    conn = graph_db._conn
+
+    try:
+        # ------------------------------------------------------------------
+        # 1. Shared MENTIONS entities
+        #    Find entities the candidate mentions that at least one library
+        #    paper also mentions.
+        # ------------------------------------------------------------------
+        res = conn.execute(
+            "MATCH (cand:Paper {doi: $cand_doi})-[:MENTIONS]->(e:Entity) "
+            "WHERE EXISTS { "
+            "  MATCH (lib:Paper)-[:MENTIONS]->(e) "
+            "  WHERE lib.doi IN $library_dois "
+            "} "
+            "RETURN DISTINCT e.canonical_id",
+            {"cand_doi": candidate_doi, "library_dois": library_dois},
+        )
+        shared_entity_ids: list[str] = []
+        while res.has_next():
+            row = res.get_next()
+            if row[0] is not None:
+                shared_entity_ids.append(str(row[0]))
+        result["n_shared_entities"] = len(shared_entity_ids)
+        result["shared_entity_canonical_ids"] = shared_entity_ids
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "get_graph_signals_for_candidate: entity query failed for %s: %s",
+            candidate_doi, exc,
+        )
+
+    try:
+        # ------------------------------------------------------------------
+        # 2. Citations: candidate → library  (n_cites_in_library)
+        # ------------------------------------------------------------------
+        res = conn.execute(
+            "MATCH (cand:Paper {doi: $cand_doi})-[:CITES]->(lib:Paper) "
+            "WHERE lib.doi IN $library_dois "
+            "RETURN count(lib)",
+            {"cand_doi": candidate_doi, "library_dois": library_dois},
+        )
+        if res.has_next():
+            result["n_cites_in_library"] = int(res.get_next()[0] or 0)
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "get_graph_signals_for_candidate: cites_in_library query failed for %s: %s",
+            candidate_doi, exc,
+        )
+
+    try:
+        # ------------------------------------------------------------------
+        # 3. Citations: library → candidate  (n_cited_by_library)
+        # ------------------------------------------------------------------
+        res = conn.execute(
+            "MATCH (lib:Paper)-[:CITES]->(cand:Paper {doi: $cand_doi}) "
+            "WHERE lib.doi IN $library_dois "
+            "RETURN count(lib)",
+            {"cand_doi": candidate_doi, "library_dois": library_dois},
+        )
+        if res.has_next():
+            result["n_cited_by_library"] = int(res.get_next()[0] or 0)
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "get_graph_signals_for_candidate: cited_by_library query failed for %s: %s",
+            candidate_doi, exc,
+        )
+
+    try:
+        # ------------------------------------------------------------------
+        # 4. EXTENDS: candidate EXTENDS → library  (n_extends_in_library)
+        # ------------------------------------------------------------------
+        res = conn.execute(
+            "MATCH (cand:Paper {doi: $cand_doi})-[:EXTENDS]->(lib:Paper) "
+            "WHERE lib.doi IN $library_dois "
+            "RETURN count(lib)",
+            {"cand_doi": candidate_doi, "library_dois": library_dois},
+        )
+        if res.has_next():
+            result["n_extends_in_library"] = int(res.get_next()[0] or 0)
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "get_graph_signals_for_candidate: extends query failed for %s: %s",
+            candidate_doi, exc,
+        )
+
+    try:
+        # ------------------------------------------------------------------
+        # 5. COMPARES_TO: candidate COMPARES_TO → library  (n_compares_to_library)
+        # ------------------------------------------------------------------
+        res = conn.execute(
+            "MATCH (cand:Paper {doi: $cand_doi})-[:COMPARES_TO]->(lib:Paper) "
+            "WHERE lib.doi IN $library_dois "
+            "RETURN count(lib)",
+            {"cand_doi": candidate_doi, "library_dois": library_dois},
+        )
+        if res.has_next():
+            result["n_compares_to_library"] = int(res.get_next()[0] or 0)
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "get_graph_signals_for_candidate: compares_to query failed for %s: %s",
+            candidate_doi, exc,
+        )
+
+    try:
+        # ------------------------------------------------------------------
+        # 6. Shared authors
+        #    Fetch candidate's authors and all library authors from Paper.authors
+        #    (v5 schema column), compute case-insensitive intersection.
+        # ------------------------------------------------------------------
+        # Candidate authors
+        cand_res = conn.execute(
+            "MATCH (p:Paper {doi: $d}) RETURN p.authors",
+            {"d": candidate_doi},
+        )
+        cand_authors_raw = ""
+        if cand_res.has_next():
+            row = cand_res.get_next()
+            cand_authors_raw = str(row[0]) if row[0] else ""
+
+        cand_names: set[str] = _parse_author_names(cand_authors_raw)
+
+        if cand_names:
+            # Library authors (one query for all library papers)
+            lib_res = conn.execute(
+                "MATCH (p:Paper) "
+                "WHERE p.doi IN $library_dois "
+                "RETURN p.authors",
+                {"library_dois": library_dois},
+            )
+            lib_names_lower: set[str] = set()
+            lib_names_display: dict[str, str] = {}  # lower → first display form
+            while lib_res.has_next():
+                row = lib_res.get_next()
+                for name in _parse_author_names(str(row[0]) if row[0] else ""):
+                    lower = name.lower()
+                    lib_names_lower.add(lower)
+                    lib_names_display.setdefault(lower, name)
+
+            # Intersection: candidate names that appear in library (case-insensitive)
+            shared: list[str] = [
+                n for n in cand_names if n.lower() in lib_names_lower
+            ]
+            result["n_shared_authors"] = len(shared)
+            # Return up to 3 names using the candidate's display form
+            result["shared_authors_sample"] = shared[:3]
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "get_graph_signals_for_candidate: authors query failed for %s: %s",
+            candidate_doi, exc,
+        )
+
+    return result
+
+
+def _parse_author_names(authors_str: str) -> set[str]:
+    """Parse a semicolon-separated authors string into a deduplicated set of names.
+
+    Handles both '; ' and ';' separators.  Strips whitespace.  Returns an
+    empty set for empty / whitespace-only input.
+
+    Used by get_graph_signals_for_candidate for author overlap computation.
+    """
+    if not authors_str or not authors_str.strip():
+        return set()
+    names: set[str] = set()
+    for part in authors_str.split(";"):
+        name = part.strip()
+        if name:
+            names.add(name)
+    return names
+
+
 def get_papers_by_query(
     query: str,
     *,

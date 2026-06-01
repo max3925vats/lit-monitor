@@ -36,6 +36,7 @@ from typing import Any
 import numpy as np
 import requests
 
+from scripts.api.queries import get_graph_signals_for_candidate
 from scripts.core.doi_resolver import resolve_doi
 from scripts.core.item_router import detect_review
 from scripts.core.strict_mode import strict_fallback
@@ -170,6 +171,11 @@ def run_discovery(
         new_papers = filter_known_dois(raw_papers, state_db)
         summary.new_papers_found = len(new_papers)
         logger.warning("Discovery: %d new results after dedup", len(new_papers))
+        # Bundle D: fetch graph signals once per candidate when any graph weight > 0.
+        _graph_signals, _graph_weights = _fetch_graph_signals_if_needed(
+            new_papers, config, state_db
+        )
+
         # G9: rank by similarity — vector path is unchanged; graph/hybrid path uses
         # the branch helper to score candidates by knowledge-graph proximity.
         if _rag_mode == "vector":
@@ -178,6 +184,8 @@ def run_discovery(
                 embeddings_db,
                 llm,
                 top_k=len(new_papers) if screen_all else top_k,
+                graph_signals=_graph_signals,
+                graph_weights=_graph_weights,
             )
         else:
             # graph or hybrid: score each new paper against the knowledge graph,
@@ -188,6 +196,8 @@ def run_discovery(
                 llm=llm,
                 top_k=len(new_papers) if screen_all else top_k,
                 rag_mode=_rag_mode,
+                graph_signals=_graph_signals,
+                graph_weights=_graph_weights,
             )
         # P1: record each ranked candidate in discovery_paper_results (non-dry only).
         if not dry_run and _disc_run_id is not None:
@@ -295,6 +305,8 @@ def _rank_papers_graph(
     llm,
     top_k: int,
     rag_mode: str,
+    graph_signals: dict[str, dict] | None = None,   # Bundle D
+    graph_weights: dict[str, float] | None = None,  # Bundle D
 ) -> list[dict]:
     """G9: rank candidates using graph or hybrid retrieval for the discovery loop.
 
@@ -304,6 +316,10 @@ def _rank_papers_graph(
     LLM rationale is generated for the top-K as in the vector path.
 
     Falls back to the standard rank_papers() if graph_db is unavailable.
+
+    Bundle D: graph_signals and graph_weights are forwarded to the underlying
+    rank_papers() fallback path and also applied to the graph-scored papers
+    via a synthetic rank_papers() call at the end.
     """
     from scripts.retrieval.branch import retrieve_doi_candidates
     graph_db = safe_graph_db()
@@ -313,7 +329,10 @@ def _rank_papers_graph(
                 "G9: graph_db unavailable for rag_mode=%r — falling back to vector ranking",
                 rag_mode,
             )
-            return rank_papers(candidates, embeddings_db, llm, top_k=top_k)
+            return rank_papers(
+                candidates, embeddings_db, llm, top_k=top_k,
+                graph_signals=graph_signals, graph_weights=graph_weights,
+            )
 
         scored: list[dict] = []
         for paper in candidates:
@@ -330,6 +349,14 @@ def _rank_papers_graph(
             )
             score = pairs[0][1] if pairs else 0.0
             scored.append({**paper, "similarity_score": score})
+
+        # Bundle D: apply graph signal additive weights to graph-ranked papers.
+        # We reuse rank_papers's graph-signal logic by delegating to _apply_graph_signals.
+        if graph_signals is not None and graph_weights is not None:
+            _apply_graph_signals_to_scored(scored, graph_signals, graph_weights)
+
+        # Attach score_breakdown to every paper (matches rank_papers behavior).
+        _attach_score_breakdown(scored, graph_weights=graph_weights)
 
         # Sort descending by score.
         scored.sort(key=lambda p: p.get("similarity_score", 0.0), reverse=True)
@@ -356,6 +383,166 @@ def _rank_papers_graph(
                 graph_db.close()
             except Exception:  # pragma: no cover
                 pass
+
+
+def _fetch_graph_signals_if_needed(
+    candidates: list[dict[str, Any]],
+    config: Any,
+    state_db: Any,
+) -> tuple[dict[str, dict] | None, dict[str, float] | None]:
+    """Bundle D: fetch graph signals for all candidates when any graph weight > 0.
+
+    Returns (graph_signals, graph_weights) where graph_signals maps each
+    candidate DOI to its signals dict.  Returns (None, None) when weights are
+    all zero or graph_db is unavailable — ensures zero overhead for users who
+    haven't opted in.
+
+    Parameters
+    ----------
+    candidates:
+        List of candidate paper dicts from the discovery search.
+    config:
+        Config object (used to read ranking.weights.*).
+    state_db:
+        StateDB instance (used to enumerate library DOIs).
+    """
+    # Read weights from config; default all to 0.0.
+    weights_ns = getattr(getattr(config, "ranking", None), "weights", None)
+    w_entity = float(getattr(weights_ns, "graph_entity_overlap", 0.0))
+    w_citation = float(getattr(weights_ns, "graph_citation", 0.0))
+    w_authors = float(getattr(weights_ns, "graph_shared_authors", 0.0))
+
+    if w_entity == 0.0 and w_citation == 0.0 and w_authors == 0.0:
+        # All weights zero — skip graph I/O entirely.
+        return None, None
+
+    graph_db = safe_graph_db()
+    if graph_db is None:
+        logger.debug("_fetch_graph_signals_if_needed: graph_db unavailable, skipping.")
+        return None, None
+
+    try:
+        # Fetch the current library DOIs (papers table, all known DOIs).
+        library_dois = list(state_db.known_dois())
+
+        graph_signals: dict[str, dict] = {}
+        for paper in candidates:
+            doi = paper.get("doi") or paper.get("id", "")
+            if doi:
+                graph_signals[doi] = get_graph_signals_for_candidate(
+                    doi, graph_db, library_dois
+                )
+
+        graph_weights: dict[str, float] = {
+            "entity_overlap": w_entity,
+            "citation": w_citation,
+            "shared_authors": w_authors,
+        }
+        return graph_signals, graph_weights
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "_fetch_graph_signals_if_needed: failed (non-fatal), skipping graph signals: %s",
+            exc,
+        )
+        return None, None
+    finally:
+        try:
+            graph_db.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _apply_graph_signals_to_scored(
+    scored: list[dict],
+    graph_signals: dict[str, dict],
+    graph_weights: dict[str, float],
+) -> None:
+    """Bundle D: in-place additive graph score application for _rank_papers_graph path.
+
+    Mirrors the logic in rank_papers() so the graph/hybrid code path produces
+    consistent score_breakdown shapes.
+
+    Parameters
+    ----------
+    scored:
+        List of paper dicts with similarity_score already set.
+    graph_signals:
+        Mapping from candidate DOI to signals dict.
+    graph_weights:
+        Mapping with keys entity_overlap, citation, shared_authors.
+    """
+    w_entity = float(graph_weights.get("entity_overlap", 0.0))
+    w_citation = float(graph_weights.get("citation", 0.0))
+    w_authors = float(graph_weights.get("shared_authors", 0.0))
+
+    for paper in scored:
+        doi = paper.get("doi") or paper.get("id", "")
+        sig = graph_signals.get(doi, {})
+
+        entity_norm = min(float(sig.get("n_shared_entities", 0)) / 5.0, 1.0)
+        citation_total = (
+            float(sig.get("n_cites_in_library", 0))
+            + float(sig.get("n_cited_by_library", 0))
+            + float(sig.get("n_extends_in_library", 0))
+            + float(sig.get("n_compares_to_library", 0))
+        )
+        citation_norm = min(citation_total / 3.0, 1.0)
+        authors_norm = min(float(sig.get("n_shared_authors", 0)) / 3.0, 1.0)
+
+        paper["_graph_entity_norm"] = entity_norm
+        paper["_graph_citation_norm"] = citation_norm
+        paper["_graph_authors_norm"] = authors_norm
+
+        paper["similarity_score"] = (
+            paper.get("similarity_score", 0.0)
+            + w_entity * entity_norm
+            + w_citation * citation_norm
+            + w_authors * authors_norm
+        )
+        paper["graph_shared_authors_sample"] = sig.get("shared_authors_sample", [])
+        paper["graph_shared_entities"] = sig.get("shared_entity_canonical_ids", [])
+
+
+def _attach_score_breakdown(
+    scored: list[dict],
+    *,
+    graph_weights: dict[str, float] | None = None,
+) -> None:
+    """Bundle D: attach score_breakdown to each paper after graph-path scoring.
+
+    Produces the same shape as rank_papers()'s Bundle B block so the HTTP
+    endpoint and UI see a consistent structure regardless of the ranking path.
+
+    Parameters
+    ----------
+    scored:
+        List of paper dicts already augmented by _apply_graph_signals_to_scored.
+    graph_weights:
+        Optional dict with entity_overlap/citation/shared_authors weights.
+    """
+    gw = graph_weights or {}
+    w_entity = float(gw.get("entity_overlap", 0.0))
+    w_citation = float(gw.get("citation", 0.0))
+    w_authors = float(gw.get("shared_authors", 0.0))
+
+    for paper in scored:
+        graph_entity = round(float(paper.get("_graph_entity_norm", 0.0)) * w_entity, 3)
+        graph_citation = round(float(paper.get("_graph_citation_norm", 0.0)) * w_citation, 3)
+        graph_auth = round(float(paper.get("_graph_authors_norm", 0.0)) * w_authors, 3)
+        vector_only = round(
+            float(paper.get("similarity_score", 0.0))
+            - graph_entity - graph_citation - graph_auth,
+            3,
+        )
+        paper["score_breakdown"] = {
+            "vector": vector_only,
+            "domain_context": 0.0,
+            "cluster_centroid": 0.0,
+            "graph_entity_overlap": graph_entity,
+            "graph_citation": graph_citation,
+            "graph_shared_authors": graph_auth,
+        }
 
 
 # ---------------------------------------------------------------------------

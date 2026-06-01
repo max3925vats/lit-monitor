@@ -53,6 +53,23 @@ _NULL_STRING = ""
 _NULL_INT = -1
 
 
+def _coerce_authors(authors: Any) -> str:
+    """Normalise the authors value from paper_metadata into a semicolon-separated string.
+
+    Accepts:
+    - str  → returned as-is (caller may use "; " or ";" as separator)
+    - list → joined with "; "
+    - None / falsy → empty string
+
+    Used by _upsert_paper_node (Bundle D: Paper.authors column v5).
+    """
+    if not authors:
+        return ""
+    if isinstance(authors, list):
+        return "; ".join(str(a) for a in authors if a)
+    return str(authors)
+
+
 class GraphDB:
     """Embedded KuzuDB knowledge graph for lit-monitor.
 
@@ -300,7 +317,12 @@ class GraphDB:
     def _upsert_paper_node(
         self, doi: str, paper_metadata: dict[str, Any]
     ) -> None:
-        """Create the Paper node iff missing.  Title/year/journal coerced safely."""
+        """Create the Paper node iff missing.  Title/year/journal/authors coerced safely.
+
+        Bundle D (v5): authors stored as a semicolon-separated STRING so
+        ``get_graph_signals_for_candidate`` can compute author overlap without
+        leaving the graph.  Empty string when caller provides no authors key.
+        """
         conn = self._conn
         res = conn.execute(
             "MATCH (p:Paper {doi: $d}) RETURN count(p)",
@@ -314,12 +336,14 @@ class GraphDB:
         except (TypeError, ValueError):
             year_int = 0
         conn.execute(
-            "CREATE (p:Paper {doi: $d, title: $t, year: $y, journal: $j})",
+            "CREATE (p:Paper {doi: $d, title: $t, year: $y, journal: $j, authors: $a})",
             {
                 "d": doi,
                 "t": str(paper_metadata.get("title") or ""),
                 "y": year_int,
                 "j": str(paper_metadata.get("journal") or ""),
+                # authors: accept list or semicolon-separated string; normalise to string
+                "a": _coerce_authors(paper_metadata.get("authors")),
             },
         )
 

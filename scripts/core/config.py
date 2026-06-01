@@ -255,6 +255,17 @@ class Config:
         self.ranking.weights.cluster_centroid = float(
             _raw_weights_c.get("cluster_centroid", 0.0)
         )
+        # --- Bundle D: extend ranking weights with graph signal weights ---
+        # All default 0.0 → byte-for-byte v0.8/A/B/C regression preserved.
+        self.ranking.weights.graph_entity_overlap = float(
+            _raw_weights_c.get("graph_entity_overlap", 0.0)
+        )
+        self.ranking.weights.graph_citation = float(
+            _raw_weights_c.get("graph_citation", 0.0)
+        )
+        self.ranking.weights.graph_shared_authors = float(
+            _raw_weights_c.get("graph_shared_authors", 0.0)
+        )
         # --- Optional configs (loaded lazily if files exist) ---
         self._topics: list[dict] | None = None
         self._discovery_top_k: int = 20

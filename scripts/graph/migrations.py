@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 # Bumped to 4 (Phase 4): renames CITES.resolution → CITES.evidence.
 # History: v1 (G1) → v2 (G14, provenance cols) → v3 (Phase 3 R1, new Paper→Paper RELs)
 #          → v4 (Phase 4, CITES column parity fix).
-SCHEMA_VERSION: int = 4
+SCHEMA_VERSION: int = 5
 
 # Default prompt version tag written to all REL TABLE edges by the DDL DEFAULT
 # and used as the migration column default.  Centralised here so DDL and
@@ -92,9 +92,12 @@ _REL_PROVENANCE = (
 # ---------------------------------------------------------------------------
 DDL_STATEMENTS: list[str] = [
     # --- Node tables ---
+    # v5: authors STRING column added (Bundle D graph-in-ranker).
+    # Semicolon-separated author names, e.g. "Smith; Jones; Lee".
+    # Empty string for papers where author data is unavailable.
     (
         "CREATE NODE TABLE IF NOT EXISTS Paper("
-        "doi STRING, title STRING, year INT64, journal STRING, "
+        "doi STRING, title STRING, year INT64, journal STRING, authors STRING, "
         "PRIMARY KEY(doi))"
     ),
     (
@@ -395,6 +398,51 @@ def migrate_v3_to_v4(conn) -> int:  # type: ignore[type-arg]
     return 4
 
 
+def migrate_v4_to_v5(conn) -> int:  # type: ignore[type-arg]
+    """Add Paper.authors STRING column to existing databases (schema v4 → v5).
+
+    Bundle D (graph-in-ranker) uses author overlap as a ranking signal.
+    The authors column stores a semicolon-separated list of author names.
+    Empty string for papers where author data was not available at ingest time.
+
+    Idempotency: if the column already exists (fresh install with v5 DDL),
+    the ALTER TABLE is skipped rather than raising.
+
+    Parameters
+    ----------
+    conn:
+        An open ``kuzu.Connection`` pointing at a v4-schema KuzuDB database.
+
+    Returns
+    -------
+    int
+        The new schema version: ``5``.
+    """
+    try:
+        res = conn.execute("CALL table_info('Paper') RETURN *")
+        cols: list[str] = []
+        while res.has_next():
+            row = res.get_next()
+            # row layout per Kuzu table_info: (property_id, name, type, ...)
+            cols.append(str(row[1]))
+
+        if "authors" not in cols:
+            conn.execute("ALTER TABLE Paper ADD authors STRING DEFAULT ''")
+            logger.info("migrate_v4_to_v5: Paper.authors column added.")
+        else:
+            logger.debug(
+                "migrate_v4_to_v5: Paper.authors already exists (idempotent)."
+            )
+    except RuntimeError as exc:
+        msg = str(exc).lower()
+        if "already has property" in msg or "already exists" in msg:
+            logger.debug("migrate_v4_to_v5: authors already present, skipping.")
+        else:
+            raise
+
+    return 5
+
+
 def apply_migrations(conn, current_version: int) -> int:  # type: ignore[type-arg]
     """Run any pending schema migrations and return the new schema version.
 
@@ -434,5 +482,12 @@ def apply_migrations(conn, current_version: int) -> int:  # type: ignore[type-ar
             current_version,
         )
         current_version = migrate_v3_to_v4(conn)
+
+    if current_version < 5:
+        logger.info(
+            "apply_migrations: v%d → v5 (adding Paper.authors column for Bundle D).",
+            current_version,
+        )
+        current_version = migrate_v4_to_v5(conn)
 
     return current_version
