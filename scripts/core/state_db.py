@@ -171,6 +171,30 @@ CREATE TABLE IF NOT EXISTS domain_focus_extracted (
     last_analyzed_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_dfe_field_type ON domain_focus_extracted(field_type);
+
+-- Bundle C (v0.9): theme-clustered library centroids.
+-- clusters stores k-means results; cluster_assignments maps each paper to its
+-- nearest centroid. archived=1 rows are soft-deleted at the next recompute —
+-- kept for audit trail and to allow stable-ID mapping across recomputes.
+CREATE TABLE IF NOT EXISTS clusters (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    display_name    TEXT NOT NULL,
+    n_papers        INTEGER NOT NULL DEFAULT 0,
+    cohesion_score  REAL,
+    centroid_blob   BLOB,           -- np.float32 bytes, shape (dim,)
+    computed_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    archived        INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS cluster_assignments (
+    doi                  TEXT NOT NULL,
+    cluster_id           INTEGER NOT NULL,
+    distance_to_centroid REAL,
+    assigned_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (doi, cluster_id),
+    FOREIGN KEY (cluster_id) REFERENCES clusters(id),
+    FOREIGN KEY (doi)        REFERENCES papers(doi)
+);
+CREATE INDEX IF NOT EXISTS idx_cluster_assignments_cluster ON cluster_assignments(cluster_id);
 """
 # ---------------------------------------------------------------------------
 # StateDB class
@@ -1364,3 +1388,144 @@ class StateDB:
 
     def update_status(self, doi: str, status: str) -> None:
         self.mark_status(doi, status)
+
+    # ------------------------------------------------------------------ #
+    # Bundle C: clustering helpers
+    # ------------------------------------------------------------------ #
+    def insert_cluster(
+        self,
+        display_name: str | None,
+        n_papers: int,
+        cohesion_score: float | None,
+        centroid_blob: bytes,
+    ) -> int:
+        """Insert a new cluster row and return its AUTOINCREMENT id.
+
+        Args:
+            display_name: Human-readable theme name (None → persisted as empty string).
+            n_papers: Number of papers assigned to this cluster.
+            cohesion_score: Mean silhouette score for the cluster.
+            centroid_blob: np.float32 bytes of the centroid vector.
+
+        Returns:
+            The new row's integer id.
+        """
+        name = display_name or ""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "INSERT INTO clusters (display_name, n_papers, cohesion_score, centroid_blob) "
+                "VALUES (?, ?, ?, ?)",
+                (name, n_papers, cohesion_score, centroid_blob),
+            )
+            return cursor.lastrowid
+
+    def upsert_cluster_by_id(
+        self,
+        cluster_id: int,
+        display_name: str | None,
+        n_papers: int,
+        cohesion_score: float | None,
+        centroid_blob: bytes,
+    ) -> None:
+        """Update an existing cluster row (reactivates archived rows).
+
+        Used when recompute finds a new cluster near an existing one:
+        the existing ID is preserved so user-applied tags don't drift.
+        """
+        name = display_name or ""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO clusters (id, display_name, n_papers, cohesion_score, "
+                "centroid_blob, archived, computed_at) "
+                "VALUES (?, ?, ?, ?, ?, 0, datetime('now')) "
+                "ON CONFLICT(id) DO UPDATE SET "
+                "  display_name=excluded.display_name, "
+                "  n_papers=excluded.n_papers, "
+                "  cohesion_score=excluded.cohesion_score, "
+                "  centroid_blob=excluded.centroid_blob, "
+                "  archived=0, "
+                "  computed_at=datetime('now')",
+                (cluster_id, name, n_papers, cohesion_score, centroid_blob),
+            )
+
+    def update_cluster_display_name(self, cluster_id: int, name: str) -> None:
+        """Update the display_name of an existing cluster (used for fallback labelling)."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE clusters SET display_name=? WHERE id=?",
+                (name, cluster_id),
+            )
+
+    def get_cluster(self, cluster_id: int) -> dict | None:
+        """Return a single cluster row as a dict, or None if not found."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM clusters WHERE id=?", (cluster_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_active_clusters(self) -> list[dict]:
+        """Return all non-archived cluster rows."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM clusters WHERE archived=0 ORDER BY id"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def archive_clusters(self, cluster_ids: list[int]) -> None:
+        """Mark the given cluster IDs as archived (soft delete).
+
+        Archived clusters are excluded from list_active_clusters() but kept
+        in the DB for stable-ID mapping in the next recompute.
+        """
+        if not cluster_ids:
+            return
+        placeholders = ",".join("?" * len(cluster_ids))
+        with self._connect() as conn:
+            conn.execute(
+                f"UPDATE clusters SET archived=1 WHERE id IN ({placeholders})",
+                cluster_ids,
+            )
+
+    def upsert_cluster_assignment(
+        self,
+        doi: str,
+        cluster_id: int,
+        *,
+        distance_to_centroid: float | None = None,
+    ) -> None:
+        """Write or update a cluster_assignments row.
+
+        Idempotent: re-assigning the same doi to the same cluster updates
+        distance and timestamp rather than creating a duplicate.
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO cluster_assignments (doi, cluster_id, distance_to_centroid, assigned_at) "
+                "VALUES (?, ?, ?, datetime('now')) "
+                "ON CONFLICT(doi, cluster_id) DO UPDATE SET "
+                "  distance_to_centroid=excluded.distance_to_centroid, "
+                "  assigned_at=datetime('now')",
+                (doi, cluster_id, distance_to_centroid),
+            )
+
+    def get_cluster_assignments(self, cluster_id: int) -> list[dict]:
+        """Return all cluster_assignments rows for the given cluster_id."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM cluster_assignments WHERE cluster_id=?",
+                (cluster_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_paper_cluster(self, doi: str) -> dict | None:
+        """Return the active cluster assignment for a paper (nearest centroid), or None."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT ca.*, c.display_name FROM cluster_assignments ca "
+                "JOIN clusters c ON ca.cluster_id = c.id "
+                "WHERE ca.doi=? AND c.archived=0 "
+                "ORDER BY ca.distance_to_centroid ASC LIMIT 1",
+                (doi,),
+            ).fetchone()
+        return dict(row) if row else None

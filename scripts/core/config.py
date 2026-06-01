@@ -216,6 +216,45 @@ class Config:
                 "min_relevance": float(_raw_s2_cap.get("min_relevance", 0.4)),
             }),
         })
+        # --- Bundle C: clustering config (default on; all write-backs opt-in) ---
+        # Gated by min_papers_threshold — feature is a no-op below threshold.
+        raw_clustering = raw_extraction.get("clustering", {}) or {}
+        _raw_wb = raw_clustering.get("write_back", {}) or {}
+        _raw_wb_tags = _raw_wb.get("tags", {}) or {}
+        _raw_wb_cols = _raw_wb.get("collections", {}) or {}
+        _raw_priors = raw_clustering.get("use_existing_collections_as_priors", {}) or {}
+        self.clustering = _Namespace({
+            # Feature gate — disabled gracefully below threshold.
+            "enabled": bool(raw_clustering.get("enabled", True)),
+            "min_papers_threshold": int(raw_clustering.get("min_papers_threshold", 100)),
+            "k_min": int(raw_clustering.get("k_min", 5)),
+            "k_max": int(raw_clustering.get("k_max", 15)),
+            "recompute_frequency": raw_clustering.get("recompute_frequency", "nightly"),
+            # Tier-3 opt-in: use named Zotero collections as cluster seeds.
+            "use_existing_collections_as_priors": _Namespace({
+                "enabled": bool(_raw_priors.get("enabled", False)),
+                "collection_names": list(_raw_priors.get("collection_names", [])),
+            }),
+            # Write-back: all opt-in (default off).
+            "write_back": _Namespace({
+                "tags": _Namespace({
+                    "enabled": bool(_raw_wb_tags.get("enabled", False)),
+                    "namespace": str(_raw_wb_tags.get("namespace", "lm")),
+                }),
+                "collections": _Namespace({
+                    "enabled": bool(_raw_wb_cols.get("enabled", False)),
+                    "parent_collection": str(
+                        _raw_wb_cols.get("parent_collection", "lit-monitor")
+                    ),
+                }),
+            }),
+        })
+        # --- Bundle C: extend ranking weights with cluster_centroid ---
+        # Inject after self.ranking is already built so we can safely .weights
+        _raw_weights_c = raw_ranking.get("weights", {}) or {}
+        self.ranking.weights.cluster_centroid = float(
+            _raw_weights_c.get("cluster_centroid", 0.0)
+        )
         # --- Optional configs (loaded lazily if files exist) ---
         self._topics: list[dict] | None = None
         self._discovery_top_k: int = 20

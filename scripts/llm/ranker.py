@@ -38,6 +38,8 @@ def rank_papers(
     *,
     domain_context_emb: np.ndarray | None = None,
     domain_context_weight: float = 0.0,
+    cluster_centroids=None,         # list[Cluster] | None — Bundle C
+    cluster_centroid_weight: float = 0.0,  # Bundle C
 ) -> list[dict[str, Any]]:
     """
     Rank candidate papers by similarity to the existing knowledge base,
@@ -62,13 +64,21 @@ def rank_papers(
     domain_context_weight:
         Bundle A: additive weight for the domain_context cosine score.
         0.0 (default) = no contribution → v0.8.0 behavior preserved.
+    cluster_centroids:
+        Bundle C: list of Cluster objects (with centroid_vec and display_name).
+        When None or cluster_centroid_weight == 0.0: no cluster signal added.
+    cluster_centroid_weight:
+        Bundle C: additive weight for max-cosine-to-nearest-centroid signal.
+        0.0 (default) = no contribution → backward compatible.
     Returns
     -------
     list[dict]
         Candidates sorted by similarity score (descending), each augmented
         with ``similarity_score`` and (for top-K) ``llm_rationale``.
-        When domain_context_emb is provided and weight > 0, each paper also
-        gets ``_domain_score`` (the raw cosine value before weighting).
+        Each paper gets ``score_breakdown`` containing ``vector``,
+        ``domain_context``, and ``cluster_centroid`` keys.
+        When a cluster match is found, ``cluster_matched`` is set to the
+        cluster's display_name (used by Bundle B's web UI).
     """
     if not candidates:
         return []
@@ -115,18 +125,56 @@ def rank_papers(
             paper["_domain_score"] = domain_score
             paper["similarity_score"] = paper["similarity_score"] + domain_context_weight * domain_score
 
+    # 2b. Bundle C: optional cluster-centroid additive score.
+    #     Runs only when both cluster_centroids AND non-zero weight are provided.
+    #     When either is absent/zero: no change to scores → backward compat.
+    if cluster_centroids and cluster_centroid_weight > 0.0:
+        _centroid_matrix = np.array(
+            [c.centroid_vec for c in cluster_centroids], dtype=np.float32
+        )  # (K, dim)
+        _cen_norms = np.linalg.norm(_centroid_matrix, axis=1) + 1e-9  # (K,)
+
+        for paper in scored:
+            cand_emb = paper.get("_embedding")
+            if cand_emb is None:
+                continue
+            cand_arr = np.asarray(cand_emb, dtype=np.float32)
+            cand_norm = float(np.linalg.norm(cand_arr))
+            if cand_norm < 1e-9:
+                continue
+            # Cosine similarities to all centroids; pick the max
+            dots = _centroid_matrix @ cand_arr          # (K,)
+            cosines = dots / (_cen_norms * cand_norm)   # (K,)
+            best_idx = int(np.argmax(cosines))
+            cluster_score = float(cosines[best_idx])
+            paper["_cluster_score"] = cluster_score
+            paper["_cluster_matched_idx"] = best_idx
+            paper["similarity_score"] = (
+                paper["similarity_score"] + cluster_centroid_weight * cluster_score
+            )
+            # Annotate matched cluster name for Bundle B's web UI
+            paper["cluster_matched"] = cluster_centroids[best_idx].display_name or ""
+
     # 3. Bundle B: attach per-signal score_breakdown to every paper.
     #    Defaults preserve v0.8 behavior — breakdown is additive metadata only.
     for paper in scored:
         # domain_context weighted contribution (0.0 when not used)
         domain_raw = paper.get("_domain_score", 0.0)
         domain_contribution = round(float(domain_raw * domain_context_weight), 3)
-        # Adjust vector to exclude the domain contribution so that
-        # vector + domain_context ≈ similarity_score (within rounding).
-        vector_only = round(float(paper.get("similarity_score", 0.0)) - domain_contribution, 3)
+        # Bundle C: cluster_centroid contribution
+        cluster_raw = paper.get("_cluster_score", 0.0)
+        cluster_contribution = round(float(cluster_raw * cluster_centroid_weight), 3)
+        # vector = base score excluding additive signals
+        vector_only = round(
+            float(paper.get("similarity_score", 0.0))
+            - domain_contribution
+            - cluster_contribution,
+            3,
+        )
         paper["score_breakdown"] = {
             "vector": vector_only,
             "domain_context": domain_contribution,
+            "cluster_centroid": cluster_contribution,
         }
 
     # 4. Sort descending by score

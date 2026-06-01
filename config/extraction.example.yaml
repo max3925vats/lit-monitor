@@ -42,8 +42,12 @@ ranking:
     # 0.0 = today's behavior (no domain_context contribution).
     # Set to 0.2–0.5 once you have a well-written domain_context.yaml.
     domain_context: 0.0
-    # (Future bundles will add: cluster_centroid, graph_entity_overlap,
-    #  graph_citation, graph_shared_authors, feedback)
+    # Bundle C: additive weight for max-cosine-to-nearest-centroid signal.
+    # 0.0 (default) = no cluster signal; today's behavior preserved on upgrade.
+    # Recommended: 0.1–0.3 once clusters have been computed and validated.
+    cluster_centroid: 0.0
+    # (Future bundles will add: graph_entity_overlap, graph_citation,
+    #  graph_shared_authors, feedback)
 
   domain_filter:
     # Set true to enable the pre-rank semantic filter.
@@ -135,3 +139,40 @@ discovery:
       # The web UI /discovery paper cards always show the "Why this paper?" panel
       # (native <details> element, default open). Set false to hide it.
       show_in_web_ui: true
+
+# ---------------------------------------------------------------------------
+# Bundle C — theme-clustered library centroids
+# Gated by min_papers_threshold: below that count the feature is a graceful
+# no-op and existing vector-only behaviour is preserved.
+# ---------------------------------------------------------------------------
+clustering:
+  # Master switch. When false the whole feature is disabled (no-op on upgrade).
+  enabled: true
+  # Library must have at least this many indexed papers before clustering runs.
+  # Below the threshold: feature is silently skipped.
+  min_papers_threshold: 100
+  # k-means K search range; silhouette score selects the best K in this window.
+  k_min: 5
+  k_max: 15
+  # How often to recompute clusters. Informational — used by nightly scheduler.
+  recompute_frequency: nightly
+
+  # Tier-3 opt-in: use existing named Zotero collections as cluster seeds.
+  # When enabled, papers already in the listed collections bias k-means init.
+  use_existing_collections_as_priors:
+    enabled: false               # disabled by default
+    collection_names: []         # e.g. ["Chromatography", "Filtration"]
+
+  # Write-back: all disabled by default. Opt in tier-by-tier.
+  write_back:
+    # Tier-1: add lm/<theme-name> tags to Zotero items for each cluster.
+    # Run: lit-monitor cluster write-back tags --confirm  (--dry-run is default)
+    tags:
+      enabled: false             # set true to enable automatic write-back after recompute
+      namespace: lm              # tag prefix: lm/<theme-name>
+
+    # Tier-2: create Zotero sub-collections under parent_collection for each theme.
+    # Run: lit-monitor cluster write-back collections --confirm
+    collections:
+      enabled: false             # set true to enable automatic write-back after recompute
+      parent_collection: lit-monitor  # top-level collection created if absent

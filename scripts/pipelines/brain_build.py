@@ -46,6 +46,13 @@ from scripts.pipelines._ingest import (
 )
 from scripts.search.semantic_scholar import enrich_paper
 
+# Bundle C: module-level import so tests can patch brain_build.recompute_clusters.
+# Wrapped in try/except so the module loads cleanly even before sklearn is installed.
+try:
+    from scripts.clustering.recompute import recompute_clusters
+except Exception:  # pragma: no cover
+    recompute_clusters = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 
@@ -360,6 +367,13 @@ def run_brain_build(
             summary.papers_skipped,
             summary.papers_failed,
         )
+        # Bundle C: trigger initial clustering when the library just crossed
+        # the threshold and no clusters exist yet. Non-fatal — never aborts.
+        try:
+            _maybe_trigger_initial_clustering(state_db, embeddings_db, config)
+        except Exception as exc:
+            logger.warning("C: initial clustering hook failed (non-fatal): %s", exc)
+
         return summary
     finally:
         # G6: release the KuzuDB connection at pipeline end.  ``close()`` is
@@ -828,3 +842,56 @@ def write_brain_build_report(config, summary: BuildSummary, model_str: str = "")
     report_path.write_text("\n".join(lines), encoding="utf-8")
     logger.debug("Wrote brain build report: %s", report_path)
     return str(report_path)
+
+
+# ---------------------------------------------------------------------------
+# Bundle C: end-of-brain-build clustering hook
+# ---------------------------------------------------------------------------
+
+def _maybe_trigger_initial_clustering(state_db, embeddings_db, cfg) -> None:
+    """Trigger one-shot cluster recompute when the library crosses the threshold.
+
+    Idempotent: only runs when clusters table is empty AND the ChromaDB
+    collection has at least min_papers_threshold indexed papers.
+
+    Args:
+        state_db: StateDB instance.
+        embeddings_db: EmbeddingsDB instance.
+        cfg: Config object. Must have cfg.clustering block.
+    """
+    # recompute_clusters is imported at module level so tests can patch
+    # scripts.pipelines.brain_build.recompute_clusters. The name lookup at
+    # call time uses the module globals dict — patching works correctly.
+    clustering_cfg = getattr(cfg, "clustering", None)
+    if clustering_cfg is None or not getattr(clustering_cfg, "enabled", True):
+        return
+
+    # Check if any clusters already exist — if so, don't re-trigger.
+    existing = state_db.list_active_clusters()
+    if existing:
+        return
+
+    threshold = int(getattr(clustering_cfg, "min_papers_threshold", 100))
+    n_papers = embeddings_db._collection.count()
+
+    if n_papers < threshold:
+        logger.debug(
+            "C: library has %d papers (threshold=%d) — initial clustering deferred.",
+            n_papers, threshold,
+        )
+        return
+
+    logger.info(
+        "C: library crossed clustering threshold (%d ≥ %d); running initial recompute.",
+        n_papers, threshold,
+    )
+    try:
+        n_clusters = recompute_clusters(state_db, embeddings_db, cfg)
+        if n_clusters > 0:
+            import click
+            click.echo(
+                f">> Clustering enabled — {n_clusters} themes identified. "
+                "Run `lit-monitor cluster view` to explore."
+            )
+    except Exception as exc:
+        logger.warning("C: initial clustering failed (non-fatal): %s", exc)

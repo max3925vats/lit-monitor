@@ -57,6 +57,9 @@ dependencies = [
 
     # OS notifications on discovery completion
     "plyer>=2.1",
+
+    # Bundle C: k-means clustering + silhouette-score K selection (~30 MB, cross-platform)
+    "scikit-learn>=1.3",
 ]
 
 [project.scripts]

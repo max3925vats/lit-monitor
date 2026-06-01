@@ -3420,6 +3420,248 @@ def domain_clear_cmd() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Bundle C: cluster commands
+# ---------------------------------------------------------------------------
+
+@main.group("cluster")
+def cluster_group() -> None:
+    """Manage library theme clustering (Bundle C)."""
+
+
+@cluster_group.command("recompute")
+@click.option(
+    "--threshold",
+    default=None,
+    type=int,
+    help="Override min_papers_threshold from config (default: use config value).",
+)
+@click.pass_context
+def cluster_recompute_cmd(ctx: click.Context, threshold: int | None) -> None:
+    """Recompute k-means clusters from all library embeddings.
+
+    Silhouette score automatically selects K in [k_min, k_max].
+    Below min_papers_threshold the command exits with a message.
+    """
+    from pathlib import Path
+
+    from scripts.clustering.recompute import recompute_clusters
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+    edb = _make_embeddings_db(cfg)
+
+    clustering_cfg = getattr(cfg, "clustering", None)
+    if clustering_cfg is None or not getattr(clustering_cfg, "enabled", True):
+        click.echo("Clustering is disabled in config (clustering.enabled=false).")
+        return
+
+    effective_threshold = threshold or int(getattr(clustering_cfg, "min_papers_threshold", 100))
+    n_indexed = edb._collection.count()
+
+    if n_indexed < effective_threshold:
+        click.echo(
+            f"Library has {n_indexed} indexed papers (threshold={effective_threshold}). "
+            "Clustering requires more papers — import more and run brain-build first."
+        )
+        return
+
+    click.echo(f"Recomputing clusters for {n_indexed} papers…")
+    n = recompute_clusters(db, edb, cfg)
+    click.echo(f"Done — {n} theme clusters created/updated.")
+    click.echo("Run `lit-monitor cluster view` to inspect them.")
+
+
+@cluster_group.command("view")
+@click.pass_context
+def cluster_view_cmd(ctx: click.Context) -> None:
+    """Display active library clusters in a rich table."""
+    from pathlib import Path
+
+    from rich.console import Console
+    from rich.table import Table
+
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+    clusters = db.list_active_clusters()
+
+    if not clusters:
+        click.echo(
+            "No clusters found. Run `lit-monitor cluster recompute` to build them."
+        )
+        return
+
+    console = Console()
+    table = Table(title="Library Theme Clusters", show_header=True, header_style="bold cyan")
+    table.add_column("ID", style="dim", width=6)
+    table.add_column("Theme", min_width=20)
+    table.add_column("Papers", justify="right", width=8)
+    table.add_column("Cohesion", justify="right", width=10)
+    table.add_column("Computed", width=20)
+
+    for c in clusters:
+        cohesion = c.get("cohesion_score")
+        cohesion_str = f"{cohesion:.3f}" if cohesion is not None else "—"
+        computed = (c.get("computed_at") or "")[:16]
+        table.add_row(
+            str(c["id"]),
+            c.get("display_name") or "(unnamed)",
+            str(c.get("n_papers", 0)),
+            cohesion_str,
+            computed,
+        )
+
+    console.print(table)
+
+
+@cluster_group.command("assign")
+@click.pass_context
+def cluster_assign_cmd(ctx: click.Context) -> None:
+    """Re-assign all papers to clusters without recomputing centroids.
+
+    Useful after adding new papers to the library — existing centroids are
+    kept but assignments are refreshed to include the new papers.
+    """
+    from pathlib import Path
+
+    import numpy as np
+
+    from scripts.clustering.assign import assign_papers_to_clusters
+    from scripts.clustering.kmeans import Cluster
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+    edb = _make_embeddings_db(cfg)
+
+    active = db.list_active_clusters()
+    if not active:
+        click.echo("No clusters found. Run `lit-monitor cluster recompute` first.")
+        return
+
+    clusters: list[Cluster] = []
+    for row in active:
+        blob = row.get("centroid_blob")
+        if not blob:
+            continue
+        try:
+            vec = np.frombuffer(blob, dtype=np.float32).copy()
+            clusters.append(Cluster(
+                id=row["id"],
+                display_name=row.get("display_name"),
+                centroid_vec=vec,
+                members=[],
+                cohesion_score=row.get("cohesion_score") or 0.0,
+            ))
+        except Exception as exc:
+            click.echo(f"Warning: could not parse centroid for cluster {row['id']}: {exc}")
+
+    click.echo(f"Assigning papers to {len(clusters)} existing clusters…")
+    n = assign_papers_to_clusters(db, edb, clusters)
+    click.echo(f"Done — {n} assignments written.")
+
+
+@cluster_group.group("write-back")
+def cluster_write_back_group() -> None:
+    """Write cluster themes back to Zotero as tags or sub-collections."""
+
+
+@cluster_write_back_group.command("tags")
+@click.option(
+    "--dry-run/--confirm",
+    default=True,
+    help="Preview changes (--dry-run, default) or apply them (--confirm).",
+)
+@click.pass_context
+def cluster_writeback_tags_cmd(ctx: click.Context, dry_run: bool) -> None:
+    """Add lm/<theme-name> tags to Zotero items for each cluster.
+
+    Default: dry-run mode. Pass --confirm to actually write.
+    Strictly additive — never removes existing tags.
+    """
+    from pathlib import Path
+
+    from scripts.clustering.write_back import push_tags_to_zotero
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+    secrets = _load_secrets()
+    zot = _make_zotero_client(cfg, secrets)
+
+    if dry_run:
+        click.echo("Dry-run mode — no changes will be made. Pass --confirm to write.")
+
+    report = push_tags_to_zotero(db, zot, dry_run=dry_run)
+
+    if dry_run:
+        click.echo(
+            f"Would add {report['tags_added']} tags across {report['papers_processed']} papers."
+        )
+    else:
+        click.echo(
+            f"Added {report['tags_added']} tags across {report['papers_processed']} papers."
+        )
+        if report.get("papers_skipped"):
+            click.echo(f"  (Skipped {report['papers_skipped']} papers — no Zotero key.)")
+
+
+@cluster_write_back_group.command("collections")
+@click.option(
+    "--dry-run/--confirm",
+    default=True,
+    help="Preview changes (--dry-run, default) or apply them (--confirm).",
+)
+@click.option(
+    "--parent",
+    default="lit-monitor",
+    show_default=True,
+    help="Name of the top-level Zotero collection to create sub-collections under.",
+)
+@click.pass_context
+def cluster_writeback_collections_cmd(
+    ctx: click.Context, dry_run: bool, parent: str
+) -> None:
+    """Create Zotero sub-collections under parent for each cluster theme.
+
+    Default: dry-run mode. Pass --confirm to write.
+    Strictly additive — existing collections and memberships are preserved.
+    """
+    from pathlib import Path
+
+    from scripts.clustering.write_back import push_collections_to_zotero
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+    secrets = _load_secrets()
+    zot = _make_zotero_client(cfg, secrets)
+
+    if dry_run:
+        click.echo("Dry-run mode — no changes will be made. Pass --confirm to write.")
+
+    report = push_collections_to_zotero(db, zot, parent_name=parent, dry_run=dry_run)
+
+    if dry_run:
+        click.echo(
+            f"Would create {report['collections_to_create']} collections, "
+            f"add {report['items_to_add']} items."
+        )
+    else:
+        click.echo(
+            f"Created {report['collections_to_create']} collections, "
+            f"added {report['items_to_add']} items."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":

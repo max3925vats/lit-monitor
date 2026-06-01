@@ -209,6 +209,10 @@ _REQUIRED_PLACEHOLDERS: dict[str, frozenset[str]] = {
     # from config/domain_context.yaml. Filled by
     # scripts/domain/extract.py::analyze_domain.
     "domain_extraction": frozenset({"domain_context"}),
+    # Bundle C (v0.9): short theme-name generation for k-means clusters.
+    # Single LLM call. {paper_samples} is a bullet list of paper titles from
+    # the cluster. Called by scripts/clustering/naming.py::name_cluster.
+    "cluster_naming": frozenset({"paper_samples"}),
 }
 
 
