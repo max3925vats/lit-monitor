@@ -19,6 +19,8 @@ import os
 import re
 from typing import Any
 
+import numpy as np  # Bundle I: cosine similarity for cluster-aware ask
+
 logger = logging.getLogger(__name__)
 
 
@@ -398,6 +400,111 @@ def render_rows(rows: list[dict], *, max_rows: int = 20) -> str:
 
 
 # =============================================================================
+# Bundle I: cluster-aware ask helpers
+# =============================================================================
+#
+# _identify_relevant_cluster embeds the user's question and finds the cluster
+# whose centroid is most cosine-similar. Returns a small dict for injection
+# into the summarize_results prompt, or None when no cluster is relevant.
+#
+# Graceful-degradation guarantees:
+#   - missing state_db / embeddings_db → returns None, no exception
+#   - empty cluster table → returns None
+#   - similarity below threshold → returns None
+#   - any unexpected exception → warns + returns None
+
+
+def _deserialize_centroid(blob: bytes | None) -> np.ndarray | None:
+    """Deserialise a float32 centroid BLOB stored by Bundle C.
+
+    Args:
+        blob: raw bytes stored in clusters.centroid_blob (np.float32 array).
+
+    Returns:
+        1-D float32 ndarray, or ``None`` if ``blob`` is empty / unparseable.
+    """
+    if not blob:
+        return None
+    try:
+        return np.frombuffer(blob, dtype=np.float32)
+    except Exception as exc:  # noqa: BLE001 — defensive
+        logger.debug("I: centroid deserialise failed: %s", exc)
+        return None
+
+
+def _identify_relevant_cluster(
+    question: str,
+    state_db: Any,
+    embeddings_db: Any,
+    *,
+    threshold: float = 0.3,
+) -> dict | None:
+    """Bundle I: find the cluster whose centroid is most similar to the question.
+
+    Embeds the question with the configured embedding provider and computes
+    cosine similarity against every active cluster centroid.  Returns a dict
+    with display_name, n_papers, and similarity if the best score is above
+    ``threshold``; otherwise returns ``None``.
+
+    Args:
+        question: the user's raw natural-language question.
+        state_db: a live ``StateDB`` instance (not None — caller checks).
+        embeddings_db: a live ``EmbeddingsDB`` instance (not None — caller
+            checks).
+        threshold: minimum cosine similarity to annotate the response.
+            Default 0.3 avoids spurious cluster labels on very weak matches.
+
+    Returns:
+        ``{"display_name": str, "n_papers": int, "similarity": float}`` when
+        a cluster matches above threshold, else ``None``.  NEVER raises.
+    """
+    try:
+        clusters = state_db.list_active_clusters()
+        if not clusters:
+            return None
+
+        # Embed the question through the configured provider (Ollama or LiteLLM).
+        question_emb = embeddings_db.embed_text(question)
+
+        best_cluster: dict | None = None
+        best_score = -1.0
+
+        for cluster in clusters:
+            centroid = _deserialize_centroid(cluster.get("centroid_blob"))
+            if centroid is None:
+                continue
+            # Guard against dimension mismatch (schema drift between embed models).
+            if centroid.shape != question_emb.shape:
+                logger.debug(
+                    "I: centroid shape %s != question_emb shape %s; skipping cluster %s",
+                    centroid.shape,
+                    question_emb.shape,
+                    cluster.get("id"),
+                )
+                continue
+            norm_c = np.linalg.norm(centroid)
+            norm_q = np.linalg.norm(question_emb)
+            if norm_c < 1e-9 or norm_q < 1e-9:
+                continue  # zero vectors — skip
+            sim = float(np.dot(centroid, question_emb) / (norm_c * norm_q))
+            if sim > best_score:
+                best_score = sim
+                best_cluster = cluster
+
+        if best_cluster is not None and best_score >= threshold:
+            return {
+                "display_name": best_cluster.get("display_name") or "Cluster",
+                "n_papers": best_cluster.get("n_papers", 0),
+                "similarity": round(best_score, 3),
+            }
+
+    except Exception as exc:  # noqa: BLE001 — defensive perimeter
+        logger.warning("I: cluster-aware ask failed: %s", exc)
+
+    return None
+
+
+# =============================================================================
 # A4: summarize_results
 # =============================================================================
 #
@@ -432,6 +539,7 @@ def summarize_results(
     model: str | None = None,
     cfg: _Any = None,
     prompt: _Any = None,
+    cluster_context: dict | None = None,
 ) -> str | None:
     """A4: turn Cypher result rows into a 1-3 paragraph prose answer.
 
@@ -455,6 +563,12 @@ def summarize_results(
         prompt: optional pre-loaded ``Prompt`` instance (test injection).
             When ``None``, loaded via
             ``prompt_registry.load_prompt('ask_summarize')``.
+        cluster_context: optional dict from
+            :func:`_identify_relevant_cluster` containing
+            ``display_name``, ``n_papers``, and ``similarity``.
+            When provided, a cluster-framing sentence is injected into the
+            prompt so the LLM opens its answer referencing the dominant
+            theme.  ``None`` → plain summarisation, unchanged behavior.
 
     Returns:
         The prose answer (1-3 paragraphs), or ``None`` on any failure
@@ -511,6 +625,19 @@ def summarize_results(
             logger.info("A4: prompt load failed: %s", exc)
             return None
 
+    # Bundle I: build optional cluster-framing blurb.
+    # Empty string when no cluster context — the {cluster_context} placeholder
+    # in the YAML is always filled; the LLM simply sees nothing extra.
+    cluster_blurb = ""
+    if cluster_context:
+        cluster_blurb = (
+            f"The user's question is most aligned with their "
+            f"'{cluster_context['display_name']}' theme "
+            f"({cluster_context['n_papers']} papers). "
+            f"Begin your response with: "
+            f"'Based on your {cluster_context['display_name']} theme:'"
+        )
+
     # Render placeholders. Mirrors A2's render path.
     try:
         system_msg = prompt.system
@@ -518,6 +645,7 @@ def summarize_results(
             question=question,
             cypher=cypher,
             rows=rendered_rows,
+            cluster_context=cluster_blurb,
         )
     except (KeyError, AttributeError, TypeError) as exc:
         logger.info("A4: prompt render failed: %s", exc)
@@ -590,21 +718,31 @@ def run_pipeline(
     model: str | None = None,
     summarize: bool = True,
     max_rows: int = 20,
+    state_db: _Any = None,
+    embeddings_db: _Any = None,
 ) -> AskResult:
     """H8: end-to-end ask pipeline returning a structured AskResult.
 
     Used by both A5 CLI and H8 HTTP route to ensure shape parity.
 
     Args:
-        question:  Natural-language question from the user.
-        graph_db:  Optional pre-built GraphDB instance (test injection).
-                   When ``None``, acquired via ``safe_graph_db()``.
-        cfg:       Optional pre-loaded config (test injection).
-                   When ``None``, loaded via ``get_config()``.
-        model:     Optional model-id override forwarded to generate_cypher
-                   and summarize_results.
-        summarize: When ``False``, A4 is skipped and ``prose`` is ``None``.
-        max_rows:  Passed to ``render_rows`` as the display row cap.
+        question:      Natural-language question from the user.
+        graph_db:      Optional pre-built GraphDB instance (test injection).
+                       When ``None``, acquired via ``safe_graph_db()``.
+        cfg:           Optional pre-loaded config (test injection).
+                       When ``None``, loaded via ``get_config()``.
+        model:         Optional model-id override forwarded to
+                       generate_cypher and summarize_results.
+        summarize:     When ``False``, A4 is skipped and ``prose`` is
+                       ``None``.
+        max_rows:      Passed to ``render_rows`` as the display row cap.
+        state_db:      Optional pre-built ``StateDB`` instance (Bundle I).
+                       When ``None`` AND clusters cannot be loaded, cluster
+                       annotation is silently skipped.
+        embeddings_db: Optional pre-built ``EmbeddingsDB`` instance
+                       (Bundle I).  Required alongside ``state_db`` for
+                       cluster-aware annotation; missing either → no
+                       annotation, no exception.
 
     Returns:
         An :class:`AskResult` with partial values on any stage failure.
@@ -676,9 +814,26 @@ def run_pipeline(
 
     rendered = render_rows(rows, max_rows=max_rows)
 
+    # --- Bundle I: cluster-aware context injection ----------------------------
+    # Identify which theme cluster is most similar to the user's question.
+    # Requires both state_db and embeddings_db; degrades gracefully on either
+    # missing. Only runs when summarize=True (A4 will consume the context).
+    cluster_context: dict | None = None
+    if summarize and state_db is not None and embeddings_db is not None:
+        cluster_context = _identify_relevant_cluster(
+            question, state_db, embeddings_db
+        )
+
     # --- A4: summarize ---------------------------------------------------------
     prose: str | None = None
     if summarize:
-        prose = summarize_results(question, cypher, rendered, cfg=cfg, model=model)
+        prose = summarize_results(
+            question,
+            cypher,
+            rendered,
+            cfg=cfg,
+            model=model,
+            cluster_context=cluster_context,
+        )
 
     return AskResult(cypher=cypher, rows=rows, rendered=rendered, prose=prose)

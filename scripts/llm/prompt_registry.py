@@ -203,7 +203,9 @@ _REQUIRED_PLACEHOLDERS: dict[str, frozenset[str]] = {
     # {question} is the original NL question; {cypher} is the executed query
     # (for the model's situational awareness only — it must not explain it);
     # {rows} is A3.render_rows()'s markdown table.
-    "ask_summarize": frozenset({"question", "cypher", "rows"}),
+    # Bundle I: {cluster_context} is a framing blurb injected when the
+    # question matches an active cluster above threshold; empty string otherwise.
+    "ask_summarize": frozenset({"question", "cypher", "rows", "cluster_context"}),
     # Bundle G (v0.9): domain_context free-text → structured focus areas.
     # Single LLM call. {domain_context} is the user's domain_focus paragraph
     # from config/domain_context.yaml. Filled by

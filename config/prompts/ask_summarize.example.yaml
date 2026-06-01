@@ -87,6 +87,8 @@ user_template: |
   Result rows (markdown table — these are the ONLY facts you may use):
   {rows}
 
+  {cluster_context}
+
   Write the prose answer to the user's question. Open with the
   substantive answer; do not describe the query.
 
@@ -100,7 +102,13 @@ max_tokens: 500
 # scripts/llm/prompt_registry.py at load time — documents which
 # placeholders the user_template MUST receive at call time. Surfaces
 # typos at review rather than at the call site.
+#
+# Bundle I: cluster_context is now a required placeholder. It is
+# always filled (empty string when no cluster context matches) so the
+# existing empty-result short-circuit and all existing call sites
+# continue to work without change.
 required_placeholders:
   - question
   - cypher
   - rows
+  - cluster_context

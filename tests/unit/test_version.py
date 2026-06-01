@@ -10,8 +10,8 @@ from pathlib import Path
 
 
 def test_version_is_0_8_0() -> None:
-    """P11: pyproject.toml version is 0.8.0."""
+    """P11 / Bundle I: pyproject.toml version is 0.9.0 (bumped from 0.8.0 in Bundle I)."""
     raw = Path("pyproject.toml").read_text()
     match = re.search(r'^version\s*=\s*"([^"]+)"', raw, re.MULTILINE)
     assert match is not None, "version field not found in pyproject.toml"
-    assert match.group(1) == "0.8.0", f"expected 0.8.0, got {match.group(1)}"
+    assert match.group(1) == "0.9.0", f"expected 0.9.0, got {match.group(1)}"

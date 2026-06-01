@@ -20,7 +20,8 @@ work. Same pipeline either way.
 - **Topic search + relevance ranking.** Recurring searches across PubMed,
   arXiv, and Scopus. Each candidate ranked by cosine similarity to embeddings
   of your existing Zotero library. Embeddings run locally via
-  `mxbai-embed-large` against a per-machine ChromaDB store.
+  `mxbai-embed-large` (or any LiteLLM-compatible provider) against a
+  per-machine ChromaDB store.
 - **Obsidian-native output.** Every paper becomes a structured Markdown note
   with persist zones for your own annotations, two-phase LLM extraction
   (simple regurgitative fields + complex synthesis fields), and a citation
@@ -30,7 +31,8 @@ work. Same pipeline either way.
   relationships across the corpus. Ask questions in plain English from the
   CLI (`lit-monitor ask "what methods extend Carta 2009?"`) or via HTTP /
   MCP. The pipeline writes both the vector and the graph backends atomically
-  per paper.
+  per paper. `ask` is cluster-aware: when your library has been theme-clustered,
+  responses are automatically contextualised to the most relevant theme.
 - **Three retrieval modes** — vector (semantic), graph (entity-typed), and
   hybrid (reciprocal-rank fusion). Switch per-command with
   `--rag-mode {vector,graph,hybrid}`.
@@ -42,6 +44,141 @@ work. Same pipeline either way.
   finishes. Click it to land in your preferred viewer (browser, Obsidian, or
   dismiss). Weekly digest as `.md`, on-demand Markdown export, or rich
   table in the terminal — your choice.
+
+## How it works
+
+### Library-as-signal
+
+Every paper in your Zotero collection is embedded and stored in a per-machine
+ChromaDB instance.  When a discovery run finds a candidate, its abstract is
+embedded and compared against your library — the cosine similarity is the base
+relevance score.  Papers that are already close to what you've read rank
+higher; papers in a completely different domain rank lower.
+
+### Score decomposition
+
+The final ranking score is a weighted sum of six signals:
+
+| Signal | What it measures |
+|---|---|
+| `vector` | Cosine similarity of the candidate to your Zotero library centroid |
+| `domain_context` | Cosine similarity to the optional free-text domain focus paragraph |
+| `cluster_centroid` | Similarity to the nearest theme cluster in your library |
+| `graph_entity_overlap` | How many named entities the candidate shares with your graph |
+| `graph_citation` | Citation edges (CITES / EXTENDS) to papers already in the graph |
+| `graph_shared_authors` | Authors appearing in both the candidate and your graph |
+
+Every paper in a discovery result carries a `score_breakdown` dict with all
+six values.  The web UI's paper card shows the decomposition as a stacked bar.
+
+### Theme clustering
+
+Once your library reaches ~100 papers (configurable), `lit-monitor` runs
+K-means over the embedding space and asks the LLM to name each cluster.  The
+named clusters (themes) are written back to Zotero as tags or collections on
+request.  Clusters update automatically on each subsequent brain-build.
+
+### Domain extraction
+
+`domain_context.yaml` accepts a free-text paragraph describing your focus
+areas.  The `domain analyze` command uses a single LLM call to extract
+structured concepts (techniques, targets, assay types, keywords) and stores
+them in `state.db`.  These feed the `domain_context` ranking signal without
+any manual tagging.
+
+### Trending concepts and query expansion
+
+The graph tracks which entity types are mentioned most in recently accepted
+papers.  `lit-monitor trending suggest` surfaces new concepts that are rising
+in frequency.  Accept a suggestion to add it to your active topics; dismiss
+it to suppress it until the next review cycle.
+
+### Embedding providers
+
+Embeddings default to local Ollama (`mxbai-embed-large`).  Switch to any
+LiteLLM-compatible provider (OpenAI `text-embedding-3-small`, Anthropic, etc.)
+without changing the rest of the pipeline:
+
+```bash
+uv sync --extra litellm
+lit-monitor embeddings switch --provider litellm --model text-embedding-3-small
+lit-monitor embeddings rebuild   # re-embed your whole library under the new model
+```
+
+The `embeddings status` command shows current provider, model, and how many
+papers are already embedded.
+
+## Setup the way you work
+
+Three common configurations, from zero to fully customised.
+
+### (a) Just run it — minimal config
+
+Enough to get a weekly discovery feed and Obsidian notes.
+
+1. `cp config/*.example.yaml config/` (if you didn't run `install.sh`).
+2. Add Zotero credentials to `~/.config/lit-monitor/config.toml`.
+3. Set `obsidian_vault_path` and `zotero_library_id` in `config/paths.yaml`.
+4. Add 2-3 search topics in `config/topics.yaml`.
+5. `lit-monitor check` — verify connectivity.
+6. `lit-monitor brain-build` — index your existing library (one-time).
+7. `lit-monitor run` — first discovery run.
+8. `lit-monitor serve` to browse results at `http://127.0.0.1:8765`.
+
+No domain context, no clustering, no graph signals yet — all optional.
+The vector similarity signal works on its own.
+
+### (b) Clustering on — after 100 papers
+
+Enable after `brain-build` has indexed at least 100 papers.
+
+1. `lit-monitor cluster recompute` — run K-means and name clusters.
+2. `lit-monitor cluster view` — inspect the resulting themes.
+3. Optionally: `lit-monitor cluster write-back tags` to tag Zotero items.
+4. Set `cluster_centroid_weight: 0.2` under `ranking:` in
+   `config/extraction.yaml` to include the cluster signal in scoring.
+
+Clustering re-runs automatically on subsequent `brain-build` calls once
+`clustering.enabled: true` is set.  Adjust `clustering.n_clusters` for the
+right granularity (8-15 is a good starting range for a 500-paper library).
+
+```bash
+lit-monitor cluster recompute        # run K-means + LLM naming
+lit-monitor cluster view             # show cluster themes + paper counts
+lit-monitor cluster assign           # assign every paper to nearest cluster
+lit-monitor cluster write-back tags  # tag Zotero items with theme names
+```
+
+### (c) Graph signals — tuning the ranking mix
+
+Enable once the knowledge graph has been populated (`lit-monitor graph backfill
+--all`) and you want the citation and entity-overlap signals.
+
+1. Run `lit-monitor graph backfill --all` (first time only; incremental
+   thereafter).
+2. Set nonzero weights in `config/extraction.yaml`:
+
+```yaml
+ranking:
+  graph_entity_overlap_weight: 0.15
+  graph_citation_weight:       0.10
+  graph_shared_authors_weight: 0.05
+```
+
+3. (Optional) add a `domain_context.yaml` paragraph and run
+   `lit-monitor domain analyze` to activate the `domain_context` signal:
+
+```yaml
+ranking:
+  domain_context_weight: 0.20
+```
+
+4. Check the score decomposition in the discovery web UI or with
+   `lit-monitor discovery view --run latest --breakdown` to confirm all
+   signals are contributing as expected.
+
+Trending-concept suggestions and researcher gating are independent features —
+see `lit-monitor trending suggest` and `config/researchers.yaml` respectively.
 - **Run on any schedule.** One-click installer for launchd (macOS) or
   systemd user timers (Linux). Weekly works. Run ad-hoc from the dashboard
   whenever you want.
@@ -147,8 +284,32 @@ lit-monitor run --dry-run                # preview without writes
 lit-monitor discovery view --run latest  # rich-table view of the latest results
 lit-monitor discovery export-md --to ~/digest.md   # on-demand Markdown export
 
-# Ask
+# Ask (cluster-aware since v0.9)
 lit-monitor ask "what methods extend cation exchange?" --rag-mode hybrid
+# Responses are automatically contextualised to your dominant theme when clusters exist.
+
+# Domain focus extraction (v0.9)
+lit-monitor domain analyze               # LLM-extract structured concepts from domain_context.yaml
+lit-monitor domain view                  # show extracted focus areas
+lit-monitor domain clear                 # reset extracted domain focus
+
+# Theme clustering (v0.9, requires ~100 papers)
+lit-monitor cluster recompute            # run K-means + LLM naming
+lit-monitor cluster view                 # show cluster themes + paper counts
+lit-monitor cluster assign               # assign papers to nearest cluster
+lit-monitor cluster write-back tags      # tag Zotero items with theme names
+lit-monitor cluster write-back collections  # move Zotero items into per-theme collections
+
+# Trending concepts + query expansion (v0.9)
+lit-monitor trending suggest             # surface rising entity types
+lit-monitor trending view                # list pending / accepted / dismissed suggestions
+lit-monitor trending accept <id>         # add concept to active topics
+lit-monitor trending dismiss <id>        # suppress concept until next cycle
+
+# Embeddings (v0.9)
+lit-monitor embeddings status            # show provider, model, coverage
+lit-monitor embeddings switch --provider litellm --model text-embedding-3-small
+lit-monitor embeddings rebuild           # re-embed library under new model
 
 # Knowledge graph
 lit-monitor graph status                 # node + edge counts
@@ -228,7 +389,11 @@ attachment, unexpected API response) into a hard error.
 
 ## LLM providers — Ollama (default) or LiteLLM
 
-Local Ollama is the default. To route any mode through LiteLLM:
+Local Ollama is the default for both LLM inference and embeddings.
+
+### LLM routing
+
+To route any extraction mode through LiteLLM:
 
 ```bash
 uv sync --extra litellm
@@ -250,6 +415,21 @@ modes:
 Mix per-mode — local Ollama for `simple`, cloud Claude for `complex`. API
 keys come from your environment per
 [LiteLLM's provider docs](https://docs.litellm.ai/docs/providers).
+
+### Embedding routing (v0.9)
+
+Embeddings also support LiteLLM providers, letting you use OpenAI, Cohere,
+Vertex AI, or any other provider that exposes an embeddings endpoint:
+
+```bash
+lit-monitor embeddings switch --provider litellm --model text-embedding-3-small
+# Or switch back to local Ollama:
+lit-monitor embeddings switch --provider ollama --model mxbai-embed-large
+```
+
+After switching, run `lit-monitor embeddings rebuild` to re-embed your
+library under the new model.  The `embeddings status` command shows current
+provider, model, embedding dimensionality, and how many papers are indexed.
 
 ## Running tests
 
