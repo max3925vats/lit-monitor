@@ -259,6 +259,57 @@ def safe_save_topics(
     _atomic_write(path, rendered)
 
 
+def safe_save_settings_section(
+    section: str,
+    data: dict[str, Any],
+    *,
+    config_path: Path | None = None,
+) -> None:
+    """Bundle H: atomically update one top-level section of extraction.yaml.
+
+    Reads the current file, replaces the named section with ``data``, then
+    writes back atomically via tempfile + os.replace (delegated to
+    ``_atomic_write`` / ``atomic_write_text``).  All other top-level keys
+    in the file are preserved unchanged.
+
+    Args:
+        section:     Top-level key in extraction.yaml to replace.  Must be
+                     one of the allowed section names.
+        data:        New dict to store under ``section``.
+        config_path: Override for the YAML path.  Defaults to
+                     ``config/extraction.yaml``.  Override in tests.
+
+    Raises:
+        ValueError: If ``section`` is not in the allowed set.
+        OSError:    If the file cannot be read or written.
+    """
+    _ALLOWED_SECTIONS: frozenset[str] = frozenset(
+        {
+            "ranking",
+            "clustering",
+            "feedback",
+            "trending_concepts",
+            "query_expansion",
+            "researcher_gating",
+            "web_ui",
+            "embedding",
+            "discovery",
+        }
+    )
+    if section not in _ALLOWED_SECTIONS:
+        raise ValueError(
+            f"unknown section: {section!r}; allowed: {sorted(_ALLOWED_SECTIONS)}"
+        )
+
+    path = Path(config_path) if config_path is not None else CONFIG_DIR / "extraction.yaml"
+
+    raw = path.read_text(encoding="utf-8") if path.exists() else ""
+    full: dict[str, Any] = yaml.safe_load(raw) or {}
+    full[section] = data
+    rendered = yaml.safe_dump(full, sort_keys=False, allow_unicode=True)
+    _atomic_write(path, rendered)
+
+
 def _atomic_write(target: Path, content: str) -> Path:
     """Atomically write text to ``target`` (delegates to scripts.core.atomic_write).
 

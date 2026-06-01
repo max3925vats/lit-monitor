@@ -1,0 +1,114 @@
+{#
+  _partials/paper_card.html — Bundle H shared paper card partial.
+  Used by /discovery/{id}, /themes/{id}, /feedback, and future cluster-aware-ask (Bundle I).
+
+  Required context:
+    paper  — dict with keys: doi, title, score, rationale, score_breakdown_json,
+              ingested, [distance_to_centroid (optional, themes only)]
+    loop   — Jinja loop variable (for unique element IDs); pass loop.index
+             OR a unique index manually via `card_index`.
+
+  Optional context flags (all default off/on as noted):
+    show_feedback_buttons  bool — controlled by web_ui.show_feedback_buttons config
+                                  (default False). Gates the Save/Dismiss/👍/👎/Rate row.
+    show_score_decomp      bool — show "Why this paper?" panel (default True).
+    show_action_buttons    bool — show Relink/Re-extract buttons from P8 (default False,
+                                  enabled on /discovery/{id} only).
+    feedback_source        str  — value passed as 'source' in /api/feedback POST
+                                  (default "discovery").
+    card_index             int  — fallback unique index when not inside a Jinja loop.
+#}
+{% set _idx = card_index if card_index is defined else loop.index %}
+{% set _source = feedback_source if feedback_source is defined else "discovery" %}
+
+<div class="paper-card card" id="paper-{{ _idx }}">
+  <h3>
+    {% if paper.doi %}
+    <a href="https://doi.org/{{ paper.doi }}" target="_blank" rel="noopener">{{ paper.title or "Untitled" }}</a>
+    {% else %}
+    {{ paper.title or "Untitled" }}
+    {% endif %}
+  </h3>
+
+  <p class="paper-meta">
+    {% if paper.doi %}
+      <a class="doi" href="https://doi.org/{{ paper.doi }}" target="_blank" rel="noopener">{{ paper.doi }}</a>
+    {% else %}
+      <span class="doi">(no DOI)</span>
+    {% endif %}
+    &middot;
+    <span class="score">score {{ "%.3f" | format(paper.score or 0 | float) }}</span>
+    {% if paper.ingested %}
+      &middot; <span class="badge ingested">ingested</span>
+    {% endif %}
+    {% if paper.distance_to_centroid is defined and paper.distance_to_centroid is not none %}
+      &middot; <span class="badge distance">dist {{ "%.3f" | format(paper.distance_to_centroid | float) }}</span>
+    {% endif %}
+  </p>
+
+  {% if paper.rationale %}
+  <p class="rationale">{{ paper.rationale }}</p>
+  {% endif %}
+
+  {# Bundle B: collapsible "Why this paper?" panel (default open). #}
+  {% if show_score_decomp | default(true) and paper.score_breakdown_json %}
+  {% include "_partials/score_decomposition.html" %}
+  {% endif %}
+
+  {# Bundle H: feedback buttons — opt-in via web_ui.show_feedback_buttons (default false). #}
+  {% if show_feedback_buttons %}
+  <div class="feedback-row">
+    <button type="button" class="btn btn-sm btn-action"
+            hx-post="/api/feedback"
+            hx-vals='{"doi": "{{ paper.doi }}", "signal_type": "saved", "source": "{{ _source }}"}'
+            hx-swap="none"
+            title="Save this paper">&#128190; Save</button>
+    <button type="button" class="btn btn-sm btn-action"
+            hx-post="/api/feedback"
+            hx-vals='{"doi": "{{ paper.doi }}", "signal_type": "dismissed", "source": "{{ _source }}"}'
+            hx-swap="none"
+            title="Dismiss this paper">&#10007; Dismiss</button>
+    <button type="button" class="btn btn-sm btn-action"
+            hx-post="/api/feedback"
+            hx-vals='{"doi": "{{ paper.doi }}", "signal_type": "thumbs_up", "source": "{{ _source }}"}'
+            hx-swap="none"
+            title="Thumbs up">&#128077;</button>
+    <button type="button" class="btn btn-sm btn-action"
+            hx-post="/api/feedback"
+            hx-vals='{"doi": "{{ paper.doi }}", "signal_type": "thumbs_down", "source": "{{ _source }}"}'
+            hx-swap="none"
+            title="Thumbs down">&#128078;</button>
+    <details class="rate-widget">
+      <summary class="btn btn-sm btn-action">&#11088; Rate</summary>
+      <form class="rate-form"
+            hx-post="/api/feedback"
+            hx-vals='{"doi": "{{ paper.doi }}", "signal_type": "rated", "source": "{{ _source }}"}'
+            hx-swap="none">
+        {% for r in [1, 2, 3, 4, 5] %}
+        <button type="submit" name="rating" value="{{ r }}" class="btn btn-sm rate-btn">{{ r }}</button>
+        {% endfor %}
+      </form>
+    </details>
+  </div>
+  {% endif %}
+
+  {# P8 action buttons (Relink / Re-extract) — enabled on /discovery/{id} only. #}
+  {% if show_action_buttons | default(false) and paper.doi %}
+  {#
+    DOI is embedded literally in the URL path — no urlencode — so that the
+    {doi:path} route (which accepts "10.0/x" verbatim) matches correctly.
+    Double-encoding would produce "%2F" in the request path and break the route.
+  #}
+  <div class="action-row">
+    <button type="button" class="btn btn-secondary btn-sm"
+            hx-post="/api/papers/{{ paper.doi }}/relink"
+            hx-target="#paper-{{ _idx }} .action-result"
+            hx-swap="innerHTML">Relink</button>
+    <button type="button" class="btn btn-secondary btn-sm"
+            hx-post="/api/papers/{{ paper.doi }}/re-extract"
+            hx-target="#paper-{{ _idx }} .action-result"
+            hx-swap="innerHTML">Re-extract</button>
+    <span class="action-result"></span>
+  </div>
+  {% endif %}
+</div>

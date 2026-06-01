@@ -1,0 +1,29 @@
+{#
+  _partials/score_decomposition.html — Bundle B's "Why this paper?" panel extracted
+  into a reusable partial (Bundle H).
+
+  Required context:
+    paper  — dict with keys:
+               score_breakdown_json  TEXT (JSON object, e.g. '{"semantic": 0.8, ...}')
+               score                 REAL
+  The caller is responsible for guarding with:
+    {% if show_score_decomp|default(true) and paper.score_breakdown_json %}
+#}
+{% set breakdown = paper.score_breakdown_json | fromjson %}
+<details class="why-panel" open>
+  <summary>Why this paper?</summary>
+  <table class="score-breakdown-table">
+    <thead>
+      <tr><th>Signal</th><th>Score</th></tr>
+    </thead>
+    <tbody>
+      {% for signal, score in breakdown.items() %}
+      <tr><td>{{ signal }}</td><td>{{ "%.3f" | format(score | float) }}</td></tr>
+      {% endfor %}
+      <tr class="total-row">
+        <td><strong>total</strong></td>
+        <td><strong>{{ "%.3f" | format(paper.score or 0 | float) }}</strong></td>
+      </tr>
+    </tbody>
+  </table>
+</details>

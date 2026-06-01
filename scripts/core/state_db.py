@@ -211,6 +211,23 @@ CREATE TABLE IF NOT EXISTS trending_concepts_suggested (
     action_at       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_trending_action ON trending_concepts_suggested(user_action);
+
+-- Bundle H (v0.9): user feedback events for active-learning (Bundle J substrate).
+-- signal_type is a closed vocabulary: opened|saved|dismissed|rated|thumbs_up|thumbs_down
+-- weight is pre-computed at insert time using the Rocchio-style map below.
+-- rating is NULL unless signal_type='rated'.
+CREATE TABLE IF NOT EXISTS feedback_events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    doi          TEXT NOT NULL,
+    signal_type  TEXT NOT NULL,
+    weight       REAL NOT NULL,
+    rating       INTEGER,
+    source       TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (doi) REFERENCES papers(doi)
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_doi     ON feedback_events(doi);
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback_events(created_at);
 """
 # ---------------------------------------------------------------------------
 # StateDB class
@@ -1633,3 +1650,116 @@ class StateDB:
                 "SELECT * FROM trending_concepts_suggested ORDER BY suggested_at DESC",
             ).fetchall()
         return [dict(r) for r in rows]
+
+    # -- Bundle H (v0.9): feedback events --
+
+    # Pre-computed Rocchio-style weight map per signal type.
+    # 'rated' is handled separately; weight is scaled by (rating - 3) * 0.5.
+    _FEEDBACK_WEIGHT_MAP: dict[str, float] = {
+        "opened": 0.3,
+        "saved": 1.0,
+        "dismissed": -0.5,
+        "rated": 0.5,        # base; multiplied by (rating - 3) * 0.5 at insert time
+        "thumbs_up": 0.8,
+        "thumbs_down": -0.8,
+    }
+
+    _VALID_SIGNAL_TYPES: frozenset[str] = frozenset(
+        {"opened", "saved", "dismissed", "rated", "thumbs_up", "thumbs_down"}
+    )
+
+    def record_feedback_event(
+        self,
+        doi: str,
+        signal_type: str,
+        *,
+        rating: int | None = None,
+        source: str | None = None,
+    ) -> None:
+        """Bundle H: insert one feedback event row.
+
+        Args:
+            doi:         Paper DOI — stored verbatim; FK to papers(doi).
+            signal_type: One of the closed vocabulary in _VALID_SIGNAL_TYPES.
+            rating:      Integer 1-5. Only meaningful when signal_type='rated'.
+            source:      Free-text origin tag (e.g. 'discovery', 'themes').
+
+        Raises:
+            ValueError: If signal_type is not in the closed vocabulary, or if
+                        rating is provided for a non-'rated' signal.
+        """
+        if signal_type not in self._VALID_SIGNAL_TYPES:
+            raise ValueError(
+                f"invalid signal_type {signal_type!r}; "
+                f"must be one of {sorted(self._VALID_SIGNAL_TYPES)}"
+            )
+        if signal_type == "rated":
+            if rating is None or not (1 <= int(rating) <= 5):
+                raise ValueError("rating (1-5) required when signal_type='rated'")
+        elif rating is not None:
+            raise ValueError("rating only valid when signal_type='rated'")
+
+        base_weight = self._FEEDBACK_WEIGHT_MAP[signal_type]
+        if signal_type == "rated" and rating is not None:
+            # Rocchio-friendly: scale relative to the neutral midpoint (3).
+            weight = base_weight * (int(rating) - 3) * 0.5
+        else:
+            weight = base_weight
+
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO feedback_events (doi, signal_type, weight, rating, source) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (doi, signal_type, weight, rating, source),
+            )
+
+    def list_feedback_events(
+        self,
+        *,
+        limit: int = 50,
+        since: str | None = None,
+    ) -> list[dict]:
+        """Bundle H: return recent feedback events, newest first.
+
+        Args:
+            limit: Max rows to return (default 50).
+            since: ISO date/datetime string; when provided, only rows with
+                   created_at >= since are returned.
+
+        Returns:
+            List of row dicts with keys: id, doi, signal_type, weight,
+            rating, source, created_at.
+        """
+        if since is not None:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM feedback_events "
+                    "WHERE created_at >= ? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (since, limit),
+                ).fetchall()
+        else:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM feedback_events "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def feedback_summary(self) -> dict[str, int]:
+        """Bundle H: count feedback events per signal_type over all time.
+
+        Returns:
+            Dict mapping signal_type → count. All valid signal types are
+            present even when count is 0.
+        """
+        result: dict[str, int] = {s: 0 for s in self._VALID_SIGNAL_TYPES}
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT signal_type, COUNT(*) as n FROM feedback_events "
+                "GROUP BY signal_type"
+            ).fetchall()
+        for row in rows:
+            result[row[0]] = row[1]
+        return result

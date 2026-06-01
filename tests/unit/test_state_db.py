@@ -634,3 +634,100 @@ class TestDiscoveryRunHelpers:
                 "SELECT doi FROM papers WHERE doi='10.0/legacy'"
             ).fetchone()
         assert row is not None
+
+
+# ---------------------------------------------------------------------------
+# Bundle H: feedback_events table + helper tests
+# ---------------------------------------------------------------------------
+
+class TestFeedbackEvents:
+    """Bundle H: feedback_events table, record/list/summary helpers."""
+
+    @pytest.fixture()
+    def db(self, tmp_path):
+        return StateDB(tmp_path / "state.db")
+
+    def test_feedback_events_table_exists(self, db):
+        with db._connect() as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='feedback_events'"
+            ).fetchone()
+        assert exists is not None
+
+    def test_feedback_events_indexes_exist(self, db):
+        with db._connect() as conn:
+            idx_names = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='index' "
+                    "AND tbl_name='feedback_events'"
+                ).fetchall()
+            ]
+        assert "idx_feedback_doi" in idx_names
+        assert "idx_feedback_created" in idx_names
+
+    def test_record_and_list(self, db):
+        db.record_feedback_event("10.1/test", "saved", source="discovery")
+        events = db.list_feedback_events()
+        assert len(events) == 1
+        assert events[0]["doi"] == "10.1/test"
+        assert events[0]["signal_type"] == "saved"
+        assert events[0]["weight"] == 1.0
+        assert events[0]["source"] == "discovery"
+
+    def test_rated_signal_stores_rating(self, db):
+        db.record_feedback_event("10.1/test", "rated", rating=5)
+        events = db.list_feedback_events()
+        assert events[0]["rating"] == 5
+        # Weight for rated=5: 0.5 * (5-3) * 0.5 = 0.5
+        assert abs(events[0]["weight"] - 0.5) < 1e-9
+
+    def test_negative_weight_for_dismissed(self, db):
+        db.record_feedback_event("10.1/test", "dismissed")
+        events = db.list_feedback_events()
+        assert events[0]["weight"] < 0
+
+    def test_invalid_signal_type_raises(self, db):
+        with pytest.raises(ValueError, match="invalid signal_type"):
+            db.record_feedback_event("10.1/test", "totally_wrong")
+
+    def test_rated_without_rating_raises(self, db):
+        with pytest.raises(ValueError):
+            db.record_feedback_event("10.1/test", "rated")
+
+    def test_rating_without_rated_raises(self, db):
+        with pytest.raises(ValueError):
+            db.record_feedback_event("10.1/test", "saved", rating=4)
+
+    def test_summary_returns_all_signal_types(self, db):
+        summary = db.feedback_summary()
+        expected = {"opened", "saved", "dismissed", "rated", "thumbs_up", "thumbs_down"}
+        assert set(summary.keys()) == expected
+
+    def test_summary_counts(self, db):
+        db.record_feedback_event("10.1/a", "saved")
+        db.record_feedback_event("10.1/b", "saved")
+        db.record_feedback_event("10.1/c", "dismissed")
+        summary = db.feedback_summary()
+        assert summary["saved"] == 2
+        assert summary["dismissed"] == 1
+        assert summary["thumbs_up"] == 0
+
+    def test_list_limit(self, db):
+        for i in range(10):
+            db.record_feedback_event(f"10.1/{i}", "opened")
+        events = db.list_feedback_events(limit=3)
+        assert len(events) == 3
+
+    def test_list_since_filter(self, db):
+        db.record_feedback_event("10.1/old", "opened")
+        # Insert a row directly with a future created_at timestamp.
+        with db._connect() as conn:
+            conn.execute(
+                "INSERT INTO feedback_events (doi, signal_type, weight, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                ("10.1/new", "saved", 1.0, "2099-01-01 00:00:00"),
+            )
+        events = db.list_feedback_events(since="2050-01-01")
+        assert len(events) == 1
+        assert events[0]["doi"] == "10.1/new"

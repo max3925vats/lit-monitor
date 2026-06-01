@@ -1,0 +1,125 @@
+{# Bundle H: /settings — post-onboarding Advanced Settings panel. #}
+{% extends "base.html" %}
+{% block title %}Advanced Settings — lit-monitor{% endblock %}
+{% block content %}
+<section class="dashboard">
+  <div class="page-header">
+    <h1>Advanced Settings</h1>
+    <p class="field-note">
+      Changes are written atomically to <code>config/extraction.yaml</code>.
+      Restart is not required for most settings.
+    </p>
+  </div>
+
+  <!-- Section: Ranking Weights -->
+  <details class="settings-section" open>
+    <summary><h2>Ranking weights</h2></summary>
+    <form class="setup-form"
+          hx-post="/api/settings/ranking"
+          hx-swap="none"
+          hx-on="htmx:afterRequest: document.getElementById('ranking-result').textContent = (event.detail.successful ? 'Saved.' : 'Error — check logs.')">
+      <div class="field-group">
+        <label class="field-label" for="ranking-semantic">Semantic weight</label>
+        <input type="number" step="0.01" min="0" max="1" id="ranking-semantic"
+               name="semantic_weight"
+               value="{{ ranking.get('semantic_weight', 0.4) }}">
+        <span class="field-note">Contribution of embedding cosine similarity.</span>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="ranking-graph">Graph weight</label>
+        <input type="number" step="0.01" min="0" max="1" id="ranking-graph"
+               name="graph_weight"
+               value="{{ ranking.get('graph_weight', 0.3) }}">
+        <span class="field-note">Contribution of citation-graph signals.</span>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="ranking-domain">Domain weight</label>
+        <input type="number" step="0.01" min="0" max="1" id="ranking-domain"
+               name="domain_weight"
+               value="{{ ranking.get('domain_weight', 0.3) }}">
+        <span class="field-note">Contribution of domain-focus overlap.</span>
+      </div>
+      <button type="submit" class="button">Save ranking settings</button>
+      <span id="ranking-result" class="field-note" style="margin-left:1rem;"></span>
+    </form>
+  </details>
+
+  <!-- Section: Clustering -->
+  <details class="settings-section">
+    <summary><h2>Clustering</h2></summary>
+    <form class="setup-form"
+          hx-post="/api/settings/clustering"
+          hx-swap="none"
+          hx-on="htmx:afterRequest: document.getElementById('clustering-result').textContent = (event.detail.successful ? 'Saved.' : 'Error — check logs.')">
+      <div class="field-group">
+        <label class="field-label" for="cluster-k">Number of clusters (k)</label>
+        <input type="number" step="1" min="2" max="100" id="cluster-k"
+               name="k"
+               value="{{ clustering.get('k', 8) }}">
+        <span class="field-note">Target number of theme clusters.</span>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="cluster-algo">Algorithm</label>
+        <select id="cluster-algo" name="algorithm">
+          <option value="kmeans" {% if clustering.get('algorithm', 'kmeans') == 'kmeans' %}selected{% endif %}>k-means</option>
+          <option value="hdbscan" {% if clustering.get('algorithm') == 'hdbscan' %}selected{% endif %}>HDBSCAN</option>
+        </select>
+      </div>
+      <button type="submit" class="button">Save clustering settings</button>
+      <span id="clustering-result" class="field-note" style="margin-left:1rem;"></span>
+    </form>
+  </details>
+
+  <!-- Section: Feedback / UI -->
+  <details class="settings-section">
+    <summary><h2>Feedback &amp; UI</h2></summary>
+    <form class="setup-form"
+          hx-post="/api/settings/web_ui"
+          hx-swap="none"
+          hx-on="htmx:afterRequest: document.getElementById('webui-result').textContent = (event.detail.successful ? 'Saved.' : 'Error — check logs.')">
+      <div class="field-group">
+        <label class="checkbox-inline">
+          <input type="checkbox" name="show_feedback_buttons"
+                 {% if web_ui.get('show_feedback_buttons', false) %}checked{% endif %}>
+          Show feedback buttons on paper cards
+        </label>
+        <span class="field-note">
+          Enables Save / Dismiss / &#128077; / &#128078; / Rate buttons.
+          Default: off. Feedback events are stored for future active-learning.
+          See <a href="/feedback">Feedback Events</a> page.
+        </span>
+      </div>
+      <button type="submit" class="button">Save UI settings</button>
+      <span id="webui-result" class="field-note" style="margin-left:1rem;"></span>
+    </form>
+  </details>
+</section>
+
+<script>
+  /* Bundle H: coerce the /api/settings/{section} form to submit JSON.
+   * HTMX submits form data as URL-encoded by default; the settings API
+   * expects a JSON object. This tiny script intercepts hx-post forms on
+   * .settings-section and re-encodes them as JSON before sending. */
+  document.querySelectorAll('.settings-section form[hx-post]').forEach(function (form) {
+    form.addEventListener('htmx:configRequest', function (evt) {
+      var params = evt.detail.parameters;
+      var obj = {};
+      for (var k in params) {
+        if (Object.prototype.hasOwnProperty.call(params, k)) {
+          /* Checkboxes arrive as 'on'/'off' or are absent; normalise to bool. */
+          var el = form.elements[k];
+          if (el && el.type === 'checkbox') {
+            obj[k] = el.checked;
+          } else if (params[k] !== undefined) {
+            /* Try numeric coercion for number inputs. */
+            var num = Number(params[k]);
+            obj[k] = isNaN(num) ? params[k] : num;
+          }
+        }
+      }
+      evt.detail.parameters = JSON.stringify(obj);
+      evt.detail.headers['Content-Type'] = 'application/json';
+    });
+  });
+</script>
+{% endblock %}

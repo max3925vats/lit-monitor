@@ -1,0 +1,50 @@
+{# Bundle H: /themes/{cluster_id} — per-cluster detail page. #}
+{% extends "base.html" %}
+{% block title %}{{ cluster.display_name }} — Themes — lit-monitor{% endblock %}
+{% block content %}
+<section class="dashboard">
+  <div class="page-header">
+    <h1>{{ cluster.display_name }}</h1>
+    <p class="field-note">
+      {{ cluster.n_papers }} paper{% if cluster.n_papers != 1 %}s{% endif %}
+      {% if cluster.cohesion_score is not none %}
+        &middot; cohesion {{ "%.3f" | format(cluster.cohesion_score | float) }}
+      {% endif %}
+      &middot; computed {{ (cluster.computed_at or "")[:10] or "&mdash;" }}
+    </p>
+    <div class="button-row">
+      <a href="/themes" class="btn btn-secondary">&larr; All themes</a>
+      <button type="button" class="btn btn-secondary btn-sm"
+              hx-post="/api/themes/{{ cluster.id }}/write-back/tags"
+              hx-target="#writeback-result"
+              hx-swap="innerHTML">
+        Write tags (dry-run)
+      </button>
+      <button type="button" class="btn btn-secondary btn-sm"
+              hx-post="/api/themes/{{ cluster.id }}/write-back/collections"
+              hx-target="#writeback-result"
+              hx-swap="innerHTML">
+        Write collection (dry-run)
+      </button>
+    </div>
+    <div id="writeback-result" class="dev-result"></div>
+  </div>
+
+  {% if not papers %}
+    <p class="field-note">No papers in this cluster.</p>
+  {% else %}
+  <div class="paper-cards">
+    {% for p in papers %}
+    {% with paper=p,
+            show_feedback_buttons=show_feedback_buttons,
+            show_action_buttons=false,
+            show_score_decomp=false,
+            feedback_source="themes",
+            card_index=loop.index %}
+    {% include "_partials/paper_card.html" %}
+    {% endwith %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

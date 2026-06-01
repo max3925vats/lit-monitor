@@ -1,0 +1,67 @@
+{# Bundle H: /themes — cluster review index page. #}
+{% extends "base.html" %}
+{% block title %}Themes — lit-monitor{% endblock %}
+{% block content %}
+<section class="dashboard">
+  <div class="page-header">
+    <h1>Themes in your library</h1>
+    <p class="field-note">
+      Clusters detected by k-means over your library embeddings. Use write-back
+      buttons to sync theme labels to Zotero (dry-run by default).
+    </p>
+  </div>
+
+  {% if not themes %}
+    <p class="field-note">
+      No clusters found. Run a brain-build to generate theme clusters.
+    </p>
+  {% else %}
+  <table class="papers-table">
+    <thead>
+      <tr>
+        <th>Theme</th>
+        <th>Papers</th>
+        <th>Cohesion</th>
+        <th>Computed</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for theme in themes %}
+      <tr>
+        <td><a href="/themes/{{ theme.id }}">{{ theme.display_name }}</a></td>
+        <td>{{ theme.n_papers }}</td>
+        <td>
+          {% if theme.cohesion_score is not none %}
+            {{ "%.3f" | format(theme.cohesion_score | float) }}
+          {% else %}
+            &mdash;
+          {% endif %}
+        </td>
+        <td class="field-note">{{ (theme.computed_at or "")[:10] or "&mdash;" }}</td>
+        <td>
+          <div class="button-row">
+            <button type="button" class="btn btn-secondary btn-sm"
+                    hx-post="/api/themes/{{ theme.id }}/write-back/tags"
+                    hx-target="#writeback-result-{{ theme.id }}"
+                    hx-swap="innerHTML"
+                    title="Dry-run: preview tag changes in Zotero">
+              Write tags (dry-run)
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm"
+                    hx-post="/api/themes/{{ theme.id }}/write-back/collections"
+                    hx-target="#writeback-result-{{ theme.id }}"
+                    hx-swap="innerHTML"
+                    title="Dry-run: preview sub-collection changes in Zotero">
+              Write collection (dry-run)
+            </button>
+          </div>
+          <div id="writeback-result-{{ theme.id }}" class="dev-result"></div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

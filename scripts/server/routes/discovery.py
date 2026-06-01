@@ -185,10 +185,22 @@ def discovery_run_detail(request: Request, run_id: int) -> HTMLResponse:
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
     papers = get_discovery_run_papers(state_db, run_id, top_k=100)
+
+    # Bundle H: read web_ui.show_feedback_buttons config flag (default False).
+    show_feedback_buttons = False
+    try:
+        from scripts.server.config_io import load_config
+        cfg = load_config("extraction")
+        show_feedback_buttons = bool(
+            cfg.get("web_ui", {}).get("show_feedback_buttons", False)
+        )
+    except Exception:
+        pass
+
     return templates.TemplateResponse(
         request,
         "discovery/run_detail.html",
-        {"run": run, "papers": papers},
+        {"run": run, "papers": papers, "show_feedback_buttons": show_feedback_buttons},
     )
 
 

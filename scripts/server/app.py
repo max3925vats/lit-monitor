@@ -193,6 +193,25 @@ def create_app() -> FastAPI:
 
     app.include_router(topics_router)
 
+    # Bundle H (v0.9): /themes + /themes/{id} — cluster review surface.
+    # /themes (static) must be registered BEFORE /themes/{cluster_id} (typed int param)
+    # so the index route is matched first. Both live in the same router; FastAPI
+    # evaluates routes in registration order so the static GET /themes endpoint
+    # (no param) will never be shadowed by the /{cluster_id} typed param.
+    from scripts.server.routes.themes import router as themes_router  # noqa: PLC0415
+
+    app.include_router(themes_router)
+
+    # Bundle H (v0.9): /feedback + /api/feedback — feedback events admin view.
+    from scripts.server.routes.feedback import router as feedback_router  # noqa: PLC0415
+
+    app.include_router(feedback_router)
+
+    # Bundle H (v0.9): /settings + /api/settings/{section} — Advanced Settings.
+    from scripts.server.routes.settings import router as settings_router  # noqa: PLC0415
+
+    app.include_router(settings_router)
+
     # Dev-only /dev test surface. Wrapped in try/except so a syntax error or
     # import-time failure inside routes/dev.py downgrades to a warning rather
     # than killing the whole server.
