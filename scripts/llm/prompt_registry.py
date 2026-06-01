@@ -204,6 +204,11 @@ _REQUIRED_PLACEHOLDERS: dict[str, frozenset[str]] = {
     # (for the model's situational awareness only — it must not explain it);
     # {rows} is A3.render_rows()'s markdown table.
     "ask_summarize": frozenset({"question", "cypher", "rows"}),
+    # Bundle G (v0.9): domain_context free-text → structured focus areas.
+    # Single LLM call. {domain_context} is the user's domain_focus paragraph
+    # from config/domain_context.yaml. Filled by
+    # scripts/domain/extract.py::analyze_domain.
+    "domain_extraction": frozenset({"domain_context"}),
 }
 
 

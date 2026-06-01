@@ -156,6 +156,21 @@ CREATE TABLE IF NOT EXISTS embedding_provenance (
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     is_current      INTEGER NOT NULL DEFAULT 1  -- 1 for the active collection
 );
+CREATE TABLE IF NOT EXISTS domain_focus_extracted (
+    -- Bundle G (v0.9): structured focus areas extracted by LLM from the user's
+    -- free-text domain_context paragraph. One row per item. Field type follows a
+    -- closed vocabulary: topic | method | material | adjacent_field | exclusion.
+    -- Consumed by the ranker's entity-overlap signal and by the trending-concept
+    -- suggester. REPLACE semantics on save_domain_extraction — the table is
+    -- wiped before a new extraction lands, never merged.
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    field_type          TEXT NOT NULL,    -- topic|method|material|adjacent_field|exclusion
+    value               TEXT NOT NULL,
+    confidence          REAL,
+    user_confirmed      INTEGER NOT NULL DEFAULT 0,
+    last_analyzed_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dfe_field_type ON domain_focus_extracted(field_type);
 """
 # ---------------------------------------------------------------------------
 # StateDB class
@@ -868,6 +883,103 @@ class StateDB:
             }
             for r in rows
         ]
+
+    # -- Bundle G (v0.9): domain focus extraction --
+    # Plural ↔ singular field_type mapping. Plural keys are the public/JSON
+    # contract; singular values are the closed vocabulary stored in the table.
+    _DFE_PLURAL_TO_SINGULAR: dict[str, str] = {
+        "topics": "topic",
+        "methods": "method",
+        "materials": "material",
+        "adjacent_fields": "adjacent_field",
+        "exclusions": "exclusion",
+    }
+    _DFE_SINGULAR_TO_PLURAL: dict[str, str] = {
+        "topic": "topics",
+        "method": "methods",
+        "material": "materials",
+        "adjacent_field": "adjacent_fields",
+        "exclusion": "exclusions",
+    }
+
+    def save_domain_extraction(self, extraction: dict[str, list[str]]) -> None:
+        """Bundle G: persist a domain extraction with REPLACE semantics.
+
+        Wipes ALL previous rows in domain_focus_extracted before inserting,
+        so the table always reflects the most recent analysis — no merging,
+        no append. Confirmed/rejected state from a previous extraction is
+        intentionally discarded: a new analysis means the user is asking
+        the LLM to re-think, and stale confirmations would taint the new
+        result.
+
+        Args:
+            extraction: dict with plural keys (topics/methods/materials/
+                adjacent_fields/exclusions), each mapped to a list of
+                strings. Empty lists are fine.
+        """
+        with self._connect() as conn:
+            conn.execute("DELETE FROM domain_focus_extracted")
+            for plural, items in extraction.items():
+                singular = self._DFE_PLURAL_TO_SINGULAR.get(plural)
+                if singular is None:
+                    # Unknown plural key — skip silently. Schema is the
+                    # contract; bad keys from upstream are not our problem
+                    # to fix at write time.
+                    continue
+                for item in items:
+                    if not item or not str(item).strip():
+                        continue
+                    conn.execute(
+                        "INSERT INTO domain_focus_extracted "
+                        "(field_type, value) VALUES (?, ?)",
+                        (singular, str(item).strip()),
+                    )
+
+    def list_domain_extraction(self) -> dict[str, list[dict]]:
+        """Bundle G: read current extraction; group by field_type.
+
+        Returns a dict with the SAME five plural keys as the input to
+        save_domain_extraction. Each value is a list of row dicts:
+        ``{id, value, user_confirmed, last_analyzed_at}``. Keys are
+        always present even when empty (stable shape for HTTP consumers).
+        """
+        result: dict[str, list[dict]] = {
+            plural: [] for plural in self._DFE_PLURAL_TO_SINGULAR
+        }
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, field_type, value, user_confirmed, last_analyzed_at "
+                "FROM domain_focus_extracted "
+                "ORDER BY field_type, value"
+            ).fetchall()
+        for row in rows:
+            plural = self._DFE_SINGULAR_TO_PLURAL.get(row[1])
+            if plural is None:
+                continue
+            result[plural].append(
+                {
+                    "id": row[0],
+                    "value": row[2],
+                    "user_confirmed": bool(row[3]),
+                    "last_analyzed_at": row[4],
+                }
+            )
+        return result
+
+    def clear_domain_extraction(self) -> int:
+        """Bundle G: wipe domain_focus_extracted; return rows deleted."""
+        with self._connect() as conn:
+            cur = conn.execute("DELETE FROM domain_focus_extracted")
+            return cur.rowcount
+
+    def set_domain_extraction_confirmed(self, row_id: int, confirmed: bool) -> None:
+        """Bundle G: toggle the user_confirmed flag on one extracted item."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE domain_focus_extracted "
+                "SET user_confirmed = ? WHERE id = ?",
+                (int(bool(confirmed)), int(row_id)),
+            )
 
     # -- Citation graph (E1) --
     def upsert_citation_edge(

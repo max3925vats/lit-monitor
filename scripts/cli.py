@@ -3286,6 +3286,140 @@ def embeddings_rebuild_cmd(keep_old: bool, confirm: bool) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Bundle G (v0.9): `lit-monitor domain` — LLM extraction of structured
+# focus areas from config/domain_context.yaml.
+# ---------------------------------------------------------------------------
+@main.group("domain")
+def domain_group() -> None:
+    """Analyze and review structured domain focus areas (Bundle G)."""
+
+
+def _load_domain_text() -> str | None:
+    """Read domain_focus from config/domain_context.yaml; None when empty."""
+    from pathlib import Path
+
+    import yaml
+
+    path = Path("config/domain_context.yaml")
+    if not path.exists():
+        return None
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError:
+        return None
+    if isinstance(data, dict):
+        text = data.get("domain_focus") or data.get("domain_context") or ""
+    elif isinstance(data, str):
+        text = data
+    else:
+        return None
+    text = (text or "").strip()
+    return text or None
+
+
+@domain_group.command("analyze")
+def domain_analyze_cmd() -> None:
+    """Run LLM extraction on config/domain_context.yaml; persist to state.db."""
+    from pathlib import Path
+
+    from rich.console import Console
+
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+    from scripts.domain.extract import analyze_domain
+
+    text = _load_domain_text()
+    if text is None:
+        click.echo(
+            "config/domain_context.yaml not found or empty. Fill in "
+            "'domain_focus' before running this command.",
+            err=True,
+        )
+        raise click.exceptions.Exit(1)
+
+    click.echo(">> Analyzing domain focus via LLM (single call)...")
+    extraction = analyze_domain(text)
+    if extraction is None:
+        click.echo(
+            "Extraction failed. Run with --verbose for the breadcrumb log.",
+            err=True,
+        )
+        raise click.exceptions.Exit(1)
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+    db.save_domain_extraction(extraction)
+
+    # Print rich summary
+    console = Console()
+    for field, items in extraction.items():
+        if items:
+            console.print(f"[bold]{field}:[/bold] {', '.join(items)}")
+        else:
+            console.print(f"[dim]{field}: (none)[/dim]")
+    click.echo(">> Saved to state.db::domain_focus_extracted")
+
+
+@domain_group.command("view")
+def domain_view_cmd() -> None:
+    """Print the current domain extraction as a Rich table."""
+    from pathlib import Path
+
+    from rich.console import Console
+    from rich.table import Table
+
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+    extraction = db.list_domain_extraction()
+
+    any_items = any(items for items in extraction.values())
+    console = Console()
+    if not any_items:
+        console.print(
+            "[yellow]No domain extraction recorded.[/yellow] Run "
+            "`lit-monitor domain analyze` first."
+        )
+        return
+
+    table = Table(
+        title="Domain focus extraction",
+        show_header=True,
+        header_style="bold cyan",
+    )
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_column("Confirmed", justify="center")
+    for field, items in extraction.items():
+        for item in items:
+            table.add_row(
+                field,
+                item["value"],
+                "[green]✓[/green]" if item["user_confirmed"] else "",
+            )
+    console.print(table)
+
+
+@domain_group.command("clear")
+@click.confirmation_option(
+    prompt="Wipe all rows from domain_focus_extracted?",
+)
+def domain_clear_cmd() -> None:
+    """Wipe the domain extraction table — useful before re-analysis."""
+    from pathlib import Path
+
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+    n = db.clear_domain_extraction()
+    click.echo(f"Cleared {n} rows from domain_focus_extracted.")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":

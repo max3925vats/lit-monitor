@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Domain focus — lit-monitor{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Domain focus</h2>
+  <p>
+    Structured focus areas extracted by LLM from
+    <code>config/domain_context.yaml</code>. Used as a ranking signal by
+    the discovery pipeline — confirm an item to up-weight it, reject to
+    drop it from the signal.
+  </p>
+  <p>
+    <button hx-post="/api/domain/analyze" hx-swap="none"
+            hx-on::after-request="window.location.reload()">
+      Re-analyze
+    </button>
+  </p>
+
+  {% set any_items = extraction.topics or extraction.methods or extraction.materials or extraction.adjacent_fields or extraction.exclusions %}
+  {% if not any_items %}
+    <p><em>No extraction yet. Click <strong>Re-analyze</strong> to run the LLM.</em></p>
+  {% endif %}
+
+  {% for field, items in extraction.items() %}
+    {% if items %}
+      <h3>{{ field|replace('_', ' ')|capitalize }}</h3>
+      <ul class="domain-list">
+        {% for item in items %}
+          <li>
+            <span class="domain-value">{{ item.value }}</span>
+            {% if item.user_confirmed %}
+              <em class="domain-confirmed">(confirmed)</em>
+            {% endif %}
+            <button hx-post="/api/domain/{{ item.id }}/confirm" hx-swap="none">Confirm</button>
+            <button hx-post="/api/domain/{{ item.id }}/reject"  hx-swap="none">Reject</button>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% endfor %}
+</section>
+{% endblock %}

@@ -177,6 +177,12 @@ def create_app() -> FastAPI:
 
     app.include_router(search_router)
 
+    # Bundle G (v0.9): /api/domain — LLM extraction of structured focus
+    # areas from config/domain_context.yaml. Also /domain page (HTMX UI).
+    from scripts.server.routes.domain import router as domain_router  # noqa: PLC0415
+
+    app.include_router(domain_router)
+
     # Dev-only /dev test surface. Wrapped in try/except so a syntax error or
     # import-time failure inside routes/dev.py downgrades to a warning rather
     # than killing the whole server.
