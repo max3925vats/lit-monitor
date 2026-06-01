@@ -643,7 +643,10 @@ class TestSetupCompleteNotifyPanel:
     def test_post_persists_choice(self):
         """P4: POST /setup/complete/notify calls safe_save_preference."""
         client = self._make_client()
-        with patch("scripts.server.routes.setup.safe_save_preference") as m:
+        # Both writers must be patched — the route calls safe_save_digest_auto_write
+        # too, and an unpatched call would write to the real config/extraction.yaml.
+        with patch("scripts.server.routes.setup.safe_save_preference") as m, \
+             patch("scripts.server.routes.setup.safe_save_digest_auto_write"):
             r = client.post(
                 "/setup/complete/notify",
                 data={"viewer": "browser", "enabled": "on"},
@@ -659,7 +662,8 @@ class TestSetupCompleteNotifyPanel:
     def test_post_without_enabled_flag(self):
         """P4: POST /setup/complete/notify without enabled=on sets enabled=False."""
         client = self._make_client()
-        with patch("scripts.server.routes.setup.safe_save_preference") as m:
+        with patch("scripts.server.routes.setup.safe_save_preference") as m, \
+             patch("scripts.server.routes.setup.safe_save_digest_auto_write"):
             r = client.post(
                 "/setup/complete/notify",
                 data={"viewer": "obsidian"},

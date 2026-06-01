@@ -338,11 +338,16 @@ class TestSchemaVersionV3:
     """R1: SCHEMA_VERSION >= 3; migration dispatcher handles v1/v2→v3 (now v4)."""
 
     def test_schema_version_is_at_least_4(self):
-        """SCHEMA_VERSION must be 4 after Phase 4 CITES column parity fix."""
+        """SCHEMA_VERSION floor is 4 — CITES parity must stay present.
+
+        Bundle D (v0.9) bumped this to 5 to add Paper.authors. The floor
+        stays at 4 to encode 'Phase 4 CITES fix is permanently in', while
+        the assertion now matches the test name's 'at_least_4' wording.
+        """
         from scripts.graph.migrations import SCHEMA_VERSION
 
-        assert SCHEMA_VERSION == 4, (
-            f"Expected SCHEMA_VERSION == 4 (Phase 4 CITES fix), got {SCHEMA_VERSION}"
+        assert SCHEMA_VERSION >= 4, (
+            f"Expected SCHEMA_VERSION >= 4 (Phase 4 CITES fix), got {SCHEMA_VERSION}"
         )
 
     def test_migrate_v2_to_v3_adds_new_tables(self, tmp_path):

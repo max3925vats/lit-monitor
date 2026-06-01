@@ -171,3 +171,49 @@ class TestSafeSaveSettingsSection:
 
         with pytest.raises(ValueError, match="unknown section"):
             safe_save_settings_section("nonexistent_section", {}, config_path=config_path)
+
+    def test_preserves_comments_on_unchanged_sections(self, tmp_path):
+        """v0.9.1 regression: comments + quoting on untouched sections survive the write.
+
+        Bundle H originally used yaml.safe_dump which silently stripped every
+        comment in extraction.yaml the first time a user toggled an Advanced
+        Settings flag. The fix uses ruamel.yaml round-trip mode.
+        """
+        from scripts.server.config_io import safe_save_settings_section
+
+        config_path = tmp_path / "extraction.yaml"
+        original = (
+            "# top-of-file comment\n"
+            "brain_build:\n"
+            '  model: "phi4-mini"  # quality ceiling\n'
+            "  # nested comment about chunking\n"
+            "  chunk_chars: null\n"
+            "\n"
+            "ranking:\n"
+            "  semantic_weight: 0.4\n"
+        )
+        config_path.write_text(original, encoding="utf-8")
+
+        # Toggle a setting via the production code path.
+        safe_save_settings_section(
+            "ranking",
+            {"semantic_weight": 0.9, "graph_weight": 0.1},
+            config_path=config_path,
+        )
+
+        written = config_path.read_text(encoding="utf-8")
+        # All comments preserved.
+        assert "# top-of-file comment" in written, (
+            "top-of-file comment was stripped — ruamel round-trip is not active"
+        )
+        assert "# quality ceiling" in written, "inline comment was stripped"
+        assert "# nested comment about chunking" in written, "nested comment was stripped"
+        # Quoted string stays quoted.
+        assert '"phi4-mini"' in written, "quoted scalar lost its quotes"
+        # The actual edit landed.
+        result = yaml.safe_load(written)
+        assert result["ranking"]["semantic_weight"] == 0.9
+        assert result["ranking"]["graph_weight"] == 0.1
+        # Untouched section semantically intact.
+        assert result["brain_build"]["model"] == "phi4-mini"
+        assert result["brain_build"]["chunk_chars"] is None

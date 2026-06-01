@@ -118,6 +118,52 @@ def save_server_config(host: str, port: int, open_browser: bool) -> None:
 _VALID_VIEWERS: frozenset[str] = frozenset({"browser", "obsidian", "none"})
 
 
+def _round_trip_extraction_yaml(path: Path):
+    """v0.9.1 hotfix shared helper: load extraction.yaml with comment-preserving
+    round-trip semantics, returning (yaml_rt, data).
+
+    All three live-config writers below (safe_save_preference,
+    safe_save_digest_auto_write, safe_save_settings_section) share this so
+    user comments + quote style + key ordering survive each toggle. PyYAML's
+    safe_dump strips all of those silently.
+
+    Returns:
+        Tuple of (configured YAML instance, loaded data dict). Callers
+        mutate the data dict and call ``yaml_rt.dump(data, buf)`` to render.
+        For a missing file the data is a fresh ``CommentedMap`` so any new
+        nested keys land cleanly.
+    """
+    from ruamel.yaml import YAML
+    from ruamel.yaml.comments import CommentedMap
+
+    yaml_rt = YAML(typ="rt")
+    yaml_rt.preserve_quotes = True
+    yaml_rt.indent(mapping=2, sequence=4, offset=2)
+    yaml_rt.width = 4096  # don't visually drift long-line values
+    # ruamel's default emits None as the empty scalar (canonical YAML). We
+    # round-trip many user configs that explicitly write ``null``, so install
+    # a representer that keeps the explicit token to avoid visual drift
+    # (e.g. ``device: null`` → ``device:`` would silently rewrite the file).
+    yaml_rt.representer.add_representer(
+        type(None),
+        lambda r, d: r.represent_scalar("tag:yaml.org,2002:null", "null"),
+    )
+    if path.exists():
+        data = yaml_rt.load(path.read_text(encoding="utf-8")) or CommentedMap()
+    else:
+        data = CommentedMap()
+    return yaml_rt, data
+
+
+def _dump_round_trip(yaml_rt, data) -> str:
+    """Companion to _round_trip_extraction_yaml — render to string."""
+    from io import StringIO
+
+    buf = StringIO()
+    yaml_rt.dump(data, buf)
+    return buf.getvalue()
+
+
 def safe_save_preference(
     viewer: str,
     *,
@@ -157,8 +203,8 @@ def safe_save_preference(
 
     path = Path(config_path) if config_path is not None else CONFIG_DIR / "extraction.yaml"
 
-    raw = path.read_text(encoding="utf-8")
-    data: dict[str, Any] = yaml.safe_load(raw) or {}
+    # v0.9.1: ruamel round-trip preserves user comments + quote style.
+    yaml_rt, data = _round_trip_extraction_yaml(path)
 
     # Navigate / create the nested structure defensively.
     data.setdefault("discovery", {})
@@ -173,7 +219,7 @@ def safe_save_preference(
     if enabled is not None:
         data["discovery"]["notify"]["enabled"] = bool(enabled)
 
-    rendered = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+    rendered = _dump_round_trip(yaml_rt, data)
     # Delegate to the same atomic helper used by save_config / save_secrets.
     _atomic_write(path, rendered)
 
@@ -200,8 +246,8 @@ def safe_save_digest_auto_write(
     """
     path = Path(config_path) if config_path is not None else CONFIG_DIR / "extraction.yaml"
 
-    raw = path.read_text(encoding="utf-8")
-    data: dict[str, Any] = yaml.safe_load(raw) or {}
+    # v0.9.1: ruamel round-trip preserves user comments + quote style.
+    yaml_rt, data = _round_trip_extraction_yaml(path)
 
     # Navigate / create the nested structure defensively.
     data.setdefault("discovery", {})
@@ -213,7 +259,7 @@ def safe_save_digest_auto_write(
 
     data["discovery"]["digest"]["auto_write"] = bool(value)
 
-    rendered = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+    rendered = _dump_round_trip(yaml_rt, data)
     _atomic_write(path, rendered)
 
 
@@ -265,12 +311,17 @@ def safe_save_settings_section(
     *,
     config_path: Path | None = None,
 ) -> None:
-    """Bundle H: atomically update one top-level section of extraction.yaml.
+    """Bundle H (v0.9.1 hotfix): atomically update one top-level section of extraction.yaml.
 
-    Reads the current file, replaces the named section with ``data``, then
-    writes back atomically via tempfile + os.replace (delegated to
-    ``_atomic_write`` / ``atomic_write_text``).  All other top-level keys
-    in the file are preserved unchanged.
+    Uses ruamel.yaml round-trip mode so user comments, quote style, and key
+    ordering on the unchanged sections survive the write. PyYAML's safe_dump
+    silently strips all of those; that was the v0.9.0 regression that
+    destroyed the carefully curated comments in ``config/extraction.yaml``
+    the first time the Advanced-Settings panel toggled any flag.
+
+    The function reads the current file via ruamel round-trip loader,
+    replaces only the named section, and re-dumps the same data structure.
+    All other top-level keys retain their comments and formatting.
 
     Args:
         section:     Top-level key in extraction.yaml to replace.  Must be
@@ -303,11 +354,10 @@ def safe_save_settings_section(
 
     path = Path(config_path) if config_path is not None else CONFIG_DIR / "extraction.yaml"
 
-    raw = path.read_text(encoding="utf-8") if path.exists() else ""
-    full: dict[str, Any] = yaml.safe_load(raw) or {}
+    # v0.9.1: ruamel round-trip preserves user comments + quote style.
+    yaml_rt, full = _round_trip_extraction_yaml(path)
     full[section] = data
-    rendered = yaml.safe_dump(full, sort_keys=False, allow_unicode=True)
-    _atomic_write(path, rendered)
+    _atomic_write(path, _dump_round_trip(yaml_rt, full))
 
 
 def _atomic_write(target: Path, content: str) -> Path:

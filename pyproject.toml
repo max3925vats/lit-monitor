@@ -60,6 +60,13 @@ dependencies = [
 
     # Bundle C: k-means clustering + silhouette-score K selection (~30 MB, cross-platform)
     "scikit-learn>=1.3",
+
+    # v0.9.1 hotfix: comment-preserving YAML round-trip for `/api/settings/{section}` writes.
+    # PyYAML's safe_dump strips comments + quote style + key order, which silently
+    # destroyed the carefully curated comments in user-edited extraction.yaml the
+    # first time the Advanced-Settings panel toggled any flag. ruamel.yaml round-trips
+    # cleanly. ~150 KB, pure Python.
+    "ruamel.yaml>=0.18",
 ]
 
 [project.scripts]

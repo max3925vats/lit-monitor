@@ -1362,7 +1362,9 @@ def test_discovery_rag_mode_graph_uses_graph_ranking(tmp_path):
         rank_papers_calls.append(candidates)
         return [dict(p, similarity_score=0.5) for p in candidates]
 
-    def fake_rank_graph(candidates, *, embeddings_db, llm, top_k, rag_mode):
+    def fake_rank_graph(candidates, *, embeddings_db, llm, top_k, rag_mode, **kwargs):
+        # **kwargs absorbs Bundle D additions (graph_signals, graph_weights, etc.)
+        # so this mock stays forward-compatible with rank_papers signature growth.
         graph_rank_calls.append(rag_mode)
         return [dict(p, similarity_score=0.3) for p in candidates]
 
