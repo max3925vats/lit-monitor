@@ -170,6 +170,25 @@ class Config:
             "default_mode": _ret_mode,
             "graph_db": _Namespace(_ret_graph) if isinstance(_ret_graph, dict) else _ret_graph,
         })
+        # --- Bundle F: embedding provider config (all defaults → ollama/mxbai behavior) ---
+        # Read from raw_extraction; missing key defaults to safe values preserving
+        # the pre-Bundle-F behavior (ollama, mxbai-embed-large, 1024-dim).
+        raw_embedding = raw_extraction.get("embedding", {}) or {}
+        _raw_emb_ollama = raw_embedding.get("ollama", {}) or {}
+        _raw_emb_litellm = raw_embedding.get("litellm", {}) or {}
+        self.embedding = _Namespace({
+            # Default: ollama — preserves existing behavior for all current installs.
+            "provider": raw_embedding.get("provider", "ollama"),
+            "ollama": _Namespace({
+                "host": _raw_emb_ollama.get("host", "http://localhost:11434"),
+                "model": _raw_emb_ollama.get("model", "mxbai-embed-large"),
+                "dim": int(_raw_emb_ollama.get("dim", 1024)),
+            }),
+            "litellm": _Namespace({
+                "model": _raw_emb_litellm.get("model", "text-embedding-3-large"),
+                "dim": int(_raw_emb_litellm.get("dim", 3072)),
+            }),
+        })
         # --- Bundle A: context-aware ranking config (all defaults → v0.8.0 behavior) ---
         # Read from raw_extraction; missing key defaults to an empty dict so every
         # sub-key falls through to its safe default value.

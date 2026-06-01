@@ -4,6 +4,35 @@
 # See extraction.yaml for the full brain_build / embeddings / reranker options.
 
 # ---------------------------------------------------------------------------
+# Bundle F — embedding provider abstraction
+# Controls which embedding model/provider is used for ChromaDB vector indices.
+# WARNING: changing provider or model on an existing installation requires a
+# full collection rebuild (`lit-monitor embeddings switch` or `rebuild`).
+# ChromaDB collections are dimension-locked — vectors from different models
+# cannot coexist in the same collection.
+# ---------------------------------------------------------------------------
+embedding:
+  # Active provider: 'ollama' (default, local) or 'litellm' (cloud/API)
+  provider: ollama
+
+  ollama:
+    # Local Ollama server URL.
+    host: http://localhost:11434
+    # Model for vector embeddings.  Default 1024-dim.
+    # Alternative: nomic-embed-text (768-dim, smaller + faster).
+    model: mxbai-embed-large
+    dim: 1024
+
+  litellm:
+    # Any LiteLLM-compatible embedding model.
+    # Provider is inferred from the model string (e.g. 'text-embedding-3-large'
+    # routes to OpenAI; 'cohere/embed-english-v3.0' routes to Cohere).
+    # API keys are read from environment variables per LiteLLM docs.
+    # Requires: uv sync --extra litellm
+    model: text-embedding-3-large
+    dim: 3072
+
+# ---------------------------------------------------------------------------
 # Bundle A — context-aware ranking core
 # All keys default to "off" so existing pipelines are unaffected on upgrade.
 # ---------------------------------------------------------------------------

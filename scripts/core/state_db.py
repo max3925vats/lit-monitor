@@ -145,6 +145,17 @@ CREATE TABLE IF NOT EXISTS discovery_paper_results (
     ingested     INTEGER DEFAULT 0,
     ingested_at  TEXT    -- NULL when ingested=0
 );
+CREATE TABLE IF NOT EXISTS embedding_provenance (
+    -- Bundle F: tracks every ChromaDB collection's provider/model/dim provenance.
+    -- ChromaDB collections are dim-locked once created; this table lets EmbeddingsDB
+    -- detect when constructor args would mismatch an existing collection and override them.
+    collection_name TEXT PRIMARY KEY,
+    provider        TEXT NOT NULL,          -- 'ollama' | 'litellm'
+    model           TEXT NOT NULL,          -- e.g. 'mxbai-embed-large', 'text-embedding-3-large'
+    dim             INTEGER NOT NULL,       -- embedding dimension (1024, 3072, etc.)
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    is_current      INTEGER NOT NULL DEFAULT 1  -- 1 for the active collection
+);
 """
 # ---------------------------------------------------------------------------
 # StateDB class
@@ -755,6 +766,108 @@ class StateDB:
                 "ON CONFLICT(key) DO UPDATE SET value = '1'"
             )
         return n
+
+    # -- Bundle F: embedding provenance --
+    def record_embedding_provenance(
+        self,
+        collection_name: str,
+        provider: str,
+        model: str,
+        dim: int,
+    ) -> None:
+        """Bundle F: register a ChromaDB collection's embedding provenance.
+
+        Uses INSERT OR REPLACE semantics so a second call for the same
+        collection_name overwrites the previous record.  Sets is_current=1
+        on the new/updated row; does NOT clear is_current on other rows —
+        call set_current_embedding_collection() explicitly when switching.
+
+        Parameters
+        ----------
+        collection_name:
+            ChromaDB collection name (e.g. 'lit_monitor_v1').
+        provider:
+            'ollama' or 'litellm'.
+        model:
+            Model identifier string (e.g. 'mxbai-embed-large').
+        dim:
+            Embedding dimension (e.g. 1024).
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO embedding_provenance "
+                "(collection_name, provider, model, dim, created_at, is_current) "
+                "VALUES (?, ?, ?, ?, datetime('now'), 1)",
+                (collection_name, provider, model, dim),
+            )
+
+    def get_embedding_provenance(self, collection_name: str) -> dict | None:
+        """Bundle F: read provenance for a collection; None if not registered.
+
+        Returns a dict with keys: provider, model, dim, created_at, is_current.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT provider, model, dim, created_at, is_current "
+                "FROM embedding_provenance WHERE collection_name = ?",
+                (collection_name,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "provider": row[0],
+            "model": row[1],
+            "dim": row[2],
+            "created_at": row[3],
+            "is_current": bool(row[4]),
+        }
+
+    def set_current_embedding_collection(self, collection_name: str) -> None:
+        """Bundle F: mark one collection as active; all others become non-current.
+
+        Call this after building a new collection so the provenance table
+        accurately reflects which collection is in active use.
+
+        Parameters
+        ----------
+        collection_name:
+            ChromaDB collection name to mark as the current (active) one.
+        """
+        with self._connect() as conn:
+            conn.execute("UPDATE embedding_provenance SET is_current = 0")
+            conn.execute(
+                "UPDATE embedding_provenance SET is_current = 1 "
+                "WHERE collection_name = ?",
+                (collection_name,),
+            )
+
+    def list_embedding_provenance(self) -> list[dict]:
+        """Bundle F: list all known embedding collections and their provenance.
+
+        Returns rows in created_at DESC order (most recently created first).
+
+        Returns
+        -------
+        list[dict]
+            Each dict has keys: collection_name, provider, model, dim,
+            created_at, is_current.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT collection_name, provider, model, dim, created_at, is_current "
+                "FROM embedding_provenance ORDER BY created_at DESC"
+            ).fetchall()
+        return [
+            {
+                "collection_name": r[0],
+                "provider": r[1],
+                "model": r[2],
+                "dim": r[3],
+                "created_at": r[4],
+                "is_current": bool(r[5]),
+            }
+            for r in rows
+        ]
 
     # -- Citation graph (E1) --
     def upsert_citation_edge(

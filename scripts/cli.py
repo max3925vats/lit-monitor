@@ -167,8 +167,28 @@ def _make_embeddings_db(config):
     ollama_host = getattr(config.embeddings, "ollama_host", None)
     if ollama_host is None:
         ollama_host = getattr(config.brain_build, "ollama_host", "http://localhost:11434")
-    embed_model = getattr(config.embeddings, "model", "mxbai-embed-large")
-    return EmbeddingsDB(persist_dir=persist_dir, ollama_host=ollama_host, embed_model=embed_model)
+    # Bundle F: read provider config; default to ollama/mxbai-embed-large if absent.
+    emb_cfg = getattr(config, "embedding", None)
+    if emb_cfg is not None:
+        provider = getattr(emb_cfg, "provider", "ollama")
+        provider_sub = getattr(emb_cfg, provider, None)
+        model = getattr(provider_sub, "model", None) if provider_sub else None
+        dim = getattr(provider_sub, "dim", None) if provider_sub else None
+        # For ollama, prefer the sub-block host over the legacy brain_build host.
+        if provider == "ollama" and provider_sub is not None:
+            ollama_host = getattr(provider_sub, "host", ollama_host)
+    else:
+        provider = "ollama"
+        model = getattr(config.embeddings, "model", "mxbai-embed-large")
+        dim = None
+    return EmbeddingsDB(
+        persist_dir=persist_dir,
+        ollama_host=ollama_host,
+        provider=provider,
+        model=model,
+        dim=dim,
+        state_db_path=str(Path(config.state_db.path).expanduser()),
+    )
 def _make_zotero_client(config, secrets: dict):
     from scripts.core.zotero_client import ZoteroClient
     zot_secrets = secrets.get("zotero", {})
@@ -3143,6 +3163,126 @@ def discovery_export_md(
     dest = Path(output_path) if output_path else Path(f"Discovery_{date_str}.md")
     dest.write_text(md, encoding="utf-8")
     click.echo(f"Written to {dest}")
+
+
+# ---------------------------------------------------------------------------
+# Bundle F: embeddings management commands
+# ---------------------------------------------------------------------------
+@main.group("embeddings")
+def embeddings_group() -> None:
+    """Manage the embedding store — provider, rebuild, and status."""
+
+
+@embeddings_group.command("status")
+def embeddings_status_cmd() -> None:
+    """List all embedding collections and their recorded provenance.
+
+    Shows: collection name, provider, model, dimension, creation date,
+    and whether it is the currently active collection.
+    """
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+    rows = db.list_embedding_provenance()
+
+    if not rows:
+        click.echo("No embedding collections recorded.")
+        return
+
+    try:
+        from rich.console import Console
+        from rich.table import Table
+
+        table = Table(
+            title="Embedding collections",
+            show_header=True,
+            header_style="bold cyan",
+        )
+        table.add_column("Collection", style="bold")
+        table.add_column("Provider")
+        table.add_column("Model")
+        table.add_column("Dim", justify="right")
+        table.add_column("Created", justify="center")
+        table.add_column("Active", justify="center")
+        for r in rows:
+            table.add_row(
+                r["collection_name"],
+                r["provider"],
+                r["model"],
+                str(r["dim"]),
+                (r["created_at"] or "")[:10],
+                "✓" if r["is_current"] else "",
+            )
+        Console().print(table)
+    except ImportError:
+        # Fallback: plain-text table when rich is not installed.
+        header = f"{'Collection':<30} {'Provider':<10} {'Model':<30} {'Dim':>6}  {'Active'}"
+        click.echo(header)
+        click.echo("-" * len(header))
+        for r in rows:
+            active = "*" if r["is_current"] else " "
+            click.echo(
+                f"{r['collection_name']:<30} {r['provider']:<10} "
+                f"{r['model']:<30} {r['dim']:>6}  {active}"
+            )
+
+
+@embeddings_group.command("switch")
+@click.option("--provider", required=True, type=click.Choice(["ollama", "litellm"]),
+              help="Embedding provider to switch to.")
+@click.option("--model", required=True,
+              help="Model identifier string.")
+@click.option("--dim", type=int, default=None,
+              help="Embedding dimension (uses provider default if omitted).")
+@click.option("--keep-old", is_flag=True, default=False,
+              help="Preserve the old collection; build a new one alongside it. "
+                   "Recommended for production: safe, reversible.")
+@click.option("--confirm", is_flag=True, default=False,
+              help="Required when not using --keep-old (destructive: deletes old collection).")
+def embeddings_switch_cmd(
+    provider: str,
+    model: str,
+    dim: int | None,
+    keep_old: bool,
+    confirm: bool,
+) -> None:
+    """Switch the active embedding provider/model.
+
+    \b
+    Safe path (recommended):
+        lit-monitor embeddings switch --provider litellm \\
+            --model text-embedding-3-large --keep-old
+
+    \b
+    Destructive path (requires explicit --confirm):
+        lit-monitor embeddings switch --provider ollama \\
+            --model nomic-embed-text --confirm
+    """
+    from scripts.pipelines.embeddings_migration import switch_provider
+    switch_provider(
+        provider=provider,
+        model=model,
+        dim=dim,
+        keep_old=keep_old,
+        confirm=confirm,
+    )
+
+
+@embeddings_group.command("rebuild")
+@click.option("--keep-old", is_flag=True, default=False,
+              help="Preserve the current collection; build a fresh one alongside.")
+@click.option("--confirm", is_flag=True, default=False,
+              help="Required when not using --keep-old.")
+def embeddings_rebuild_cmd(keep_old: bool, confirm: bool) -> None:
+    """Re-embed the active collection using the current config.
+
+    Use this after manually editing the embedding model in extraction.yaml
+    to rebuild the ChromaDB collection with the new model.
+    """
+    from scripts.pipelines.embeddings_migration import rebuild_active
+    rebuild_active(keep_old=keep_old, confirm=confirm)
 
 
 # ---------------------------------------------------------------------------

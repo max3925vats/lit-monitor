@@ -53,20 +53,66 @@ class EmbeddingsDB:
     Thin wrapper around a single ChromaDB collection.
     All add_* methods are idempotent — re-adding an existing ID
     updates the document and metadata without creating a duplicate.
+
+    Bundle F: accepts provider/model/dim kwargs so users can route
+    through any LiteLLM-compatible model in addition to local Ollama.
+    When a collection already has provenance recorded in state.db,
+    those values OVERRIDE the constructor kwargs — this prevents
+    dimension-mismatch corruption when the user changes config but
+    re-opens an existing (dim-locked) ChromaDB collection.
     """
+
+    # Default values for the ollama provider (backward-compat).
+    _DEFAULT_OLLAMA_MODEL = "mxbai-embed-large"
+    _DEFAULT_OLLAMA_DIM = 1024
+    _DEFAULT_LITELLM_MODEL = "text-embedding-3-large"
+    _DEFAULT_LITELLM_DIM = 3072
+
     def __init__(
         self,
         persist_dir: str,
         ollama_host: str = "http://localhost:11434",
-        embed_model: str = "mxbai-embed-large",
+        # Legacy positional kwarg preserved for backward compat with existing call sites.
+        embed_model: str | None = None,
         *,
         papers_collection: str = _COLLECTION_NAME,
         chunks_collection: str = _CHUNKS_COLLECTION_NAME,
+        # Bundle F: provider abstraction
+        provider: str = "ollama",
+        model: str | None = None,
+        dim: int | None = None,
+        # Optional state_db path for provenance lookup.  When None, no
+        # provenance override is attempted (safe default for tests).
+        state_db_path: str | None = None,
     ) -> None:
+        # Validate provider before touching ChromaDB.
+        if provider not in ("ollama", "litellm"):
+            raise ValueError(
+                f"provider must be 'ollama' or 'litellm'; got {provider!r}"
+            )
+
+        # Bundle F: provenance override — if this collection already has a
+        # recorded provider/model/dim, use those values instead of the
+        # constructor args.  ChromaDB collections are dim-locked on creation;
+        # overriding with the stored provenance prevents corrupt inserts.
+        resolved_provider, resolved_model, resolved_dim = self._resolve_provenance(
+            collection_name=papers_collection,
+            state_db_path=state_db_path,
+            constructor_provider=provider,
+            constructor_model=model or embed_model,  # embed_model is the legacy kwarg
+            constructor_dim=dim,
+        )
+
+        self.provider = resolved_provider
+        self.model = resolved_model
+        self.dim = resolved_dim
+        self._ollama_host = ollama_host.rstrip("/")
+        # Keep _embed_model for backward compat with check_embed_model_change() +
+        # the .embed_model property used by callers.
+        self._embed_model = self.model
+
         # Telemetry already suppressed via os.environ above; no Settings object needed.
         self._client = chromadb.PersistentClient(path=persist_dir)
-        self._ollama_host = ollama_host.rstrip("/")
-        self._embed_model = embed_model  # configurable — change triggers full re-embed
         # Collection names are instance-bound so the same class can be reused
         # for the production indices AND the /dev sandbox (which uses _dev_*).
         # Defaults preserve historic behaviour exactly.
@@ -80,6 +126,56 @@ class EmbeddingsDB:
             name=chunks_collection,
             metadata={"hnsw:space": "cosine"},
         )
+
+    # ------------------------------------------------------------------
+    # Bundle F: provider resolution helpers (class-level, no ChromaDB)
+    # ------------------------------------------------------------------
+    @classmethod
+    def _resolve_provenance(
+        cls,
+        *,
+        collection_name: str,
+        state_db_path: str | None,
+        constructor_provider: str,
+        constructor_model: str | None,
+        constructor_dim: int | None,
+    ) -> tuple[str, str, int]:
+        """Return (provider, model, dim) after applying provenance override.
+
+        If state_db_path is given and has a provenance row for collection_name,
+        those values win.  Otherwise falls back to the constructor args (with
+        sensible defaults per provider).
+        """
+        if state_db_path is not None:
+            try:
+                from scripts.core.state_db import StateDB
+                sdb = StateDB(state_db_path)
+                prov = sdb.get_embedding_provenance(collection_name)
+                if prov is not None:
+                    stored = (prov["provider"], prov["model"], prov["dim"])
+                    given = (constructor_provider, constructor_model, constructor_dim)
+                    if given != stored:
+                        logger.warning(
+                            "Bundle F: collection %r has stored provenance "
+                            "(provider=%r model=%r dim=%d); ignoring constructor args %r.",
+                            collection_name, prov["provider"], prov["model"],
+                            prov["dim"], given,
+                        )
+                    return prov["provider"], prov["model"], prov["dim"]
+            except Exception as exc:
+                logger.debug(
+                    "Bundle F: provenance lookup failed (%s); using constructor args.", exc
+                )
+
+        # No stored provenance — use constructor args with per-provider defaults.
+        provider = constructor_provider
+        if provider == "ollama":
+            model = constructor_model or cls._DEFAULT_OLLAMA_MODEL
+            dim = constructor_dim or cls._DEFAULT_OLLAMA_DIM
+        else:  # litellm
+            model = constructor_model or cls._DEFAULT_LITELLM_MODEL
+            dim = constructor_dim or cls._DEFAULT_LITELLM_DIM
+        return provider, model, dim
     # ------------------------------------------------------------------
     # Add / update
     # ------------------------------------------------------------------
@@ -383,8 +479,12 @@ class EmbeddingsDB:
         EmbeddingsDB instances using *different* providers or models must not
         share cached vectors.  The brief's "NOT including instance state"
         wording refers to avoiding stale hits when instance fields mutate —
-        EmbeddingsDB fields (``_embed_model``, ``_ollama_host``) are set once
-        in ``__init__`` and never mutated, so per-instance caching is safe.
+        EmbeddingsDB fields are set once in ``__init__`` and never mutated,
+        so per-instance caching is safe.
+
+        Bundle F: routes through _embed_via_provider() so the configured
+        provider (ollama or litellm) is used.  Bundle A's contract is
+        preserved: returns np.ndarray float32.
 
         Parameters
         ----------
@@ -406,8 +506,35 @@ class EmbeddingsDB:
             raise ValueError(
                 "embed_text requires non-empty text; got an empty or whitespace-only string."
             )
-        raw: list[float] = self._embed(text)
-        return np.array(raw, dtype=np.float32)
+        # Bundle F: route through provider abstraction instead of hardcoded Ollama.
+        # _embed_via_provider returns np.ndarray; for LiteLLM it is already float32.
+        # For Ollama it goes through _embed (which handles truncation/retry) and
+        # returns list[float] — we wrap in np.array here for uniform return type.
+        return self._embed_via_provider(text)
+
+    # ------------------------------------------------------------------
+    # Bundle F: provider dispatch
+    # ------------------------------------------------------------------
+    def _embed_via_provider(self, text: str) -> np.ndarray:
+        """Bundle F: dispatch an embedding call to the configured provider.
+
+        Returns a 1-D float32 numpy array.  Called by embed_text() and
+        (for non-Ollama providers) by _embed().
+
+        Uses getattr with defaults so __new__-constructed test instances
+        without a full __init__ still work via the Ollama path.
+        """
+        provider = getattr(self, "provider", "ollama")
+        if provider != "litellm":
+            # Ollama path: route through _embed so the truncation/retry loop
+            # (context-length handling) still applies, and so existing tests
+            # that patch _embed continue to intercept the call correctly.
+            raw: list[float] = self._embed(text)
+            return np.array(raw, dtype=np.float32)
+        else:
+            from scripts.llm.embedding_client import embed_via_litellm
+            model = getattr(self, "model", self._DEFAULT_LITELLM_MODEL)
+            return embed_via_litellm(text, model=model)
 
     # ------------------------------------------------------------------
     # Internal
@@ -423,16 +550,29 @@ class EmbeddingsDB:
     _EMBED_TRUNCATE_FLOOR_CHARS = 200
 
     def _embed(self, text: str) -> list[float]:
-        """Call Ollama embedding API and return the embedding vector.
+        """Embed text using the configured provider and return the vector.
 
-        On HTTPError ``context length exceeded``, transparently retry with
-        progressively shorter input — halving each round — until either the
-        embed succeeds or the input drops below ``_EMBED_TRUNCATE_FLOOR_CHARS``.
-        Each truncation step logs a WARNING so the user knows data was dropped.
+        For the 'ollama' provider: applies truncation/retry logic on context-
+        length errors (same behavior as before Bundle F).
+
+        For the 'litellm' provider: delegates directly to embed_via_litellm
+        (no truncation — LiteLLM providers generally support longer contexts).
+
+        On HTTPError ``context length exceeded`` (Ollama only), transparently
+        retries with progressively shorter input — halving each round — until
+        either the embed succeeds or the input drops below
+        ``_EMBED_TRUNCATE_FLOOR_CHARS``.  Each truncation step logs a WARNING.
 
         Other 400s (model not found, malformed input) are NOT retried; they
         propagate after capturing the response body in the ERROR log.
         """
+        # Bundle F: LiteLLM path — skip Ollama-specific truncation/retry.
+        # Use getattr so __new__-constructed test instances (no __init__) default
+        # to the Ollama path and preserve pre-Bundle-F behavior.
+        if getattr(self, "provider", "ollama") != "ollama":
+            return self._embed_via_provider(text).tolist()
+
+        # Ollama path: truncation + retry loop (pre-Bundle-F behavior preserved).
         # Start at full text; cap subsequent rounds via the truncate ladder.
         truncated_to: int | None = None
         attempt = 0
