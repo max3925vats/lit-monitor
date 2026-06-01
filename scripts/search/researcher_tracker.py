@@ -163,6 +163,74 @@ def run_researcher_searches(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+# Bundle E (v0.9): researcher-tracker gating
+# ---------------------------------------------------------------------------
+
+def should_fire_for_researcher(
+    researcher_name: str,
+    graph_db: Any,
+    recent_topic_entities: list[str],
+    *,
+    min_overlap: int = 1,
+) -> bool:
+    """Bundle E: gate a researcher search on graph neighborhood overlap.
+
+    Returns True if the researcher's recent papers share at least min_overlap
+    entities with any topic's neighborhood (recent_topic_entities list).
+
+    Fail-safe behavior (returns True) when:
+    - graph_db is None (graph unavailable)
+    - recent_topic_entities is empty (nothing to compare against)
+    - any graph query exception occurs
+
+    Args:
+        researcher_name:       Display name of the researcher to check.
+        graph_db:              GraphDB instance, or None if graph unavailable.
+        recent_topic_entities: List of canonical entity IDs from active topics.
+        min_overlap:           Minimum overlapping entities required to fire.
+                               Default 1 (per plan). 0 always returns True.
+
+    Returns:
+        True if the researcher search should fire; False to skip it.
+    """
+    # Fail-safe conditions
+    if graph_db is None:
+        return True
+    if not recent_topic_entities:
+        return True
+    if min_overlap <= 0:
+        return True
+
+    try:
+        # Find papers by this researcher (via authors STRING field, CONTAINS match)
+        # then count MENTIONS entities that overlap with recent_topic_entities.
+        cypher = (
+            "MATCH (p:Paper)-[:MENTIONS]->(e:Entity) "
+            "WHERE p.authors CONTAINS $name "
+            "  AND e.canonical_id IN $entities "
+            "RETURN count(DISTINCT e.canonical_id) AS overlap_count"
+        )
+        result = graph_db._conn.execute(
+            cypher,
+            {"name": researcher_name, "entities": recent_topic_entities},
+        )
+        if result.has_next():
+            row = result.get_next()
+            overlap_count = int(row[0]) if row[0] is not None else 0
+            return overlap_count >= min_overlap
+        # No result row → no overlap
+        return False
+
+    except Exception as exc:
+        logger.warning(
+            "E: researcher gating failed for %r: %s — failing open",
+            researcher_name,
+            exc,
+        )
+        return True  # Fail open: when graph is unavailable, always fire
+
+
+# ---------------------------------------------------------------------------
 
 def _get_researchers(config) -> list[dict[str, str]]:
     """Extract researcher list from config.researchers."""

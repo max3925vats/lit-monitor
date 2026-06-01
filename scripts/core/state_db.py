@@ -195,6 +195,22 @@ CREATE TABLE IF NOT EXISTS cluster_assignments (
     FOREIGN KEY (doi)        REFERENCES papers(doi)
 );
 CREATE INDEX IF NOT EXISTS idx_cluster_assignments_cluster ON cluster_assignments(cluster_id);
+
+-- Bundle E (v0.9): trending-concept suggestions from graph mention-count growth.
+-- One row per concept+detection-run. user_action: pending|accepted|dismissed.
+-- Cooldown is enforced by querying action_at < now - cooldown_days.
+CREATE TABLE IF NOT EXISTS trending_concepts_suggested (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    concept_text    TEXT NOT NULL,
+    concept_type    TEXT NOT NULL,    -- topic|method|material|keyword|author
+    n_mentions_new  INTEGER NOT NULL,
+    n_mentions_prev INTEGER NOT NULL,
+    growth_rate     REAL NOT NULL,
+    suggested_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    user_action     TEXT,             -- accepted|dismissed|pending
+    action_at       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_trending_action ON trending_concepts_suggested(user_action);
 """
 # ---------------------------------------------------------------------------
 # StateDB class
@@ -1529,3 +1545,91 @@ class StateDB:
                 (doi,),
             ).fetchone()
         return dict(row) if row else None
+
+    # ---------------------------------------------------------------------------
+    # Bundle E (v0.9): trending-concept suggestion helpers
+    # ---------------------------------------------------------------------------
+
+    def persist_trending_suggestion(
+        self,
+        concept_text: str,
+        concept_type: str,
+        n_mentions_new: int,
+        n_mentions_prev: int,
+        growth_rate: float,
+    ) -> int:
+        """Insert a new trending-concept suggestion row; return its rowid.
+
+        Always inserts a fresh row with user_action=pending so the full
+        history of detections is preserved. Cooldown deduplication is handled
+        upstream in find_trending_concepts() before calling this method.
+        """
+        with self._connect() as conn:
+            cur = conn.execute(
+                "INSERT INTO trending_concepts_suggested "
+                "(concept_text, concept_type, n_mentions_new, n_mentions_prev, "
+                " growth_rate, user_action) "
+                "VALUES (?, ?, ?, ?, ?, 'pending')",
+                (concept_text, concept_type, n_mentions_new, n_mentions_prev, growth_rate),
+            )
+            return cur.lastrowid  # type: ignore[return-value]
+
+    def get_pending_trending_suggestions(self) -> list[dict]:
+        """Return all rows where user_action IS NULL or 'pending', newest first."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM trending_concepts_suggested "
+                "WHERE user_action IS NULL OR user_action = 'pending' "
+                "ORDER BY suggested_at DESC",
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_trending_suggestion_by_id(self, row_id: int) -> dict | None:
+        """Return a single trending suggestion row by primary key, or None."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM trending_concepts_suggested WHERE id = ?",
+                (row_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def update_trending_action(self, row_id: int, action: str) -> None:
+        """Set user_action and action_at for a trending suggestion.
+
+        action must be 'accepted' or 'dismissed'.
+        """
+        if action not in ("accepted", "dismissed"):
+            raise ValueError(f"invalid trending action: {action!r}")
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE trending_concepts_suggested "
+                "SET user_action = ?, action_at = datetime('now') "
+                "WHERE id = ?",
+                (action, row_id),
+            )
+
+    def get_dismissed_trending_concepts(self, cooldown_days: int = 60) -> list[str]:
+        """Return concept_text values dismissed within the cooldown window.
+
+        Used by find_trending_concepts() to skip re-suggesting recently
+        dismissed concepts. Returns lowercase concept_text strings.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT concept_text FROM trending_concepts_suggested "
+                "WHERE user_action = 'dismissed' "
+                "  AND action_at >= datetime('now', ? || ' days')",
+                (f"-{cooldown_days}",),
+            ).fetchall()
+        return [r[0].lower() for r in rows]
+
+    def list_all_trending_suggestions(self) -> list[dict]:
+        """Return all trending suggestion rows ordered by suggested_at DESC.
+
+        Used by the CLI `trending view` command.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM trending_concepts_suggested ORDER BY suggested_at DESC",
+            ).fetchall()
+        return [dict(r) for r in rows]

@@ -266,6 +266,25 @@ class Config:
         self.ranking.weights.graph_shared_authors = float(
             _raw_weights_c.get("graph_shared_authors", 0.0)
         )
+        # --- Bundle E (v0.9): trending_concepts, query_expansion, researcher_gating ---
+        # All three default to off so existing v0.8 behavior is byte-for-byte preserved.
+        _raw_tc = (raw_extraction.get("trending_concepts") or {}) if isinstance(raw_extraction, dict) else {}
+        self.trending_concepts = _Namespace({
+            "enabled": bool(_raw_tc.get("enabled", False)),
+            "threshold_growth_rate": float(_raw_tc.get("threshold_growth_rate", 0.3)),
+            "min_recent_mentions": int(_raw_tc.get("min_recent_mentions", 5)),
+            "cooldown_days_after_dismiss": int(_raw_tc.get("cooldown_days_after_dismiss", 60)),
+        })
+        _raw_qe = (raw_extraction.get("query_expansion") or {}) if isinstance(raw_extraction, dict) else {}
+        self.query_expansion = _Namespace({
+            "enabled": bool(_raw_qe.get("enabled", False)),
+            "top_k_co_entities": int(_raw_qe.get("top_k_co_entities", 3)),
+        })
+        _raw_rg = (raw_extraction.get("researcher_gating") or {}) if isinstance(raw_extraction, dict) else {}
+        self.researcher_gating = _Namespace({
+            "enabled": bool(_raw_rg.get("enabled", False)),
+            "min_graph_overlap": int(_raw_rg.get("min_graph_overlap", 1)),
+        })
         # --- Optional configs (loaded lazily if files exist) ---
         self._topics: list[dict] | None = None
         self._discovery_top_k: int = 20

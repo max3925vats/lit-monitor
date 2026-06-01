@@ -217,6 +217,48 @@ def safe_save_digest_auto_write(
     _atomic_write(path, rendered)
 
 
+def safe_save_topics(
+    new_topic: dict,
+    *,
+    topics_path: Path | None = None,
+) -> None:
+    """Bundle E: atomically add a new topic entry to topics.yaml (searches list).
+
+    Reads the existing topics.yaml (or starts with an empty searches list if the
+    file does not exist), appends the new_topic dict, and writes back atomically
+    via tempfile + os.replace. Never removes or modifies existing topics.
+
+    Args:
+        new_topic:   Dict with at minimum a "name" and "query" key. Appended
+                     directly to the searches list without validation — caller
+                     is responsible for schema correctness.
+        topics_path: Override the path for testing. Defaults to
+                     config/topics.yaml (relative to cwd, same convention as
+                     CONFIG_DIR for other helpers).
+
+    Raises:
+        OSError: If the file cannot be read or written (e.g. permissions).
+    """
+    path = Path(topics_path) if topics_path is not None else CONFIG_DIR / "topics.yaml"
+
+    # Read existing content; start fresh if file absent.
+    if path.exists():
+        raw = path.read_text(encoding="utf-8")
+        data: dict = yaml.safe_load(raw) or {}
+    else:
+        data = {}
+
+    # Ensure the searches list exists.
+    searches = data.get("searches")
+    if not isinstance(searches, list):
+        searches = []
+    searches.append(new_topic)
+    data["searches"] = searches
+
+    rendered = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+    _atomic_write(path, rendered)
+
+
 def _atomic_write(target: Path, content: str) -> Path:
     """Atomically write text to ``target`` (delegates to scripts.core.atomic_write).
 

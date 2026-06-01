@@ -183,6 +183,16 @@ def create_app() -> FastAPI:
 
     app.include_router(domain_router)
 
+    # Bundle E (v0.9): /api/trending + /trending — trending-concept suggestion queue.
+    from scripts.server.routes.trending import router as trending_router  # noqa: PLC0415
+
+    app.include_router(trending_router)
+
+    # Bundle E (v0.9): /api/topics/{name}/expansion-suggestions — query expansion.
+    from scripts.server.routes.topics import router as topics_router  # noqa: PLC0415
+
+    app.include_router(topics_router)
+
     # Dev-only /dev test surface. Wrapped in try/except so a syntax error or
     # import-time failure inside routes/dev.py downgrades to a warning rather
     # than killing the whole server.

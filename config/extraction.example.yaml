@@ -186,3 +186,31 @@ clustering:
     collections:
       enabled: false             # set true to enable automatic write-back after recompute
       parent_collection: lit-monitor  # top-level collection created if absent
+
+# ---------------------------------------------------------------------------
+# Bundle E (v0.9) — graph-driven topic surfaces
+# All three features are OFF by default — no behavior change on v0.8 installs.
+# ---------------------------------------------------------------------------
+
+# Trending-concept suggestions: entities whose MENTIONS count grew >threshold
+# in the last 60 days vs the prior 60-day window. Surfaces in digest and web UI.
+# Run: lit-monitor trending suggest  (then: trending view / accept / dismiss)
+trending_concepts:
+  enabled: false               # default off; opt-in
+  threshold_growth_rate: 0.3   # 30% growth required (e.g. 5→6.5 new mentions)
+  min_recent_mentions: 5       # noise floor: ignore entities with fewer new mentions
+  cooldown_days_after_dismiss: 60  # don't re-suggest a dismissed concept for 60 days
+
+# Graph-driven query expansion: for each topic, suggest the top-k co-occurring
+# entities. Suggestion only — never auto-applied. User opts in per-topic.
+# Run: lit-monitor topics expansions suggest <topic_name>
+query_expansion:
+  enabled: false               # default off; opt-in
+  top_k_co_entities: 3         # number of co-occurring entity suggestions per topic
+
+# Researcher-tracker gating: only fire a researcher search when their recent-paper
+# entities overlap with a recently-active topic's graph neighborhood. Cuts noise.
+# When disabled (default), all researcher searches fire (existing behavior).
+researcher_gating:
+  enabled: false               # default off; opt-in
+  min_graph_overlap: 1         # minimum overlapping entities required to fire

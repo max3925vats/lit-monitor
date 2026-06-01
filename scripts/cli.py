@@ -3662,6 +3662,198 @@ def cluster_writeback_collections_cmd(
 
 
 # ---------------------------------------------------------------------------
+# Bundle E (v0.9): trending concept suggestion commands
+# ---------------------------------------------------------------------------
+
+@main.group("trending")
+def trending_group() -> None:
+    """Trending-concept suggestions from the graph."""
+
+
+@trending_group.command("suggest")
+def trending_suggest_cmd() -> None:
+    """Run trending detection and persist new suggestions to state.db."""
+    from pathlib import Path
+
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+    from scripts.graph.trending import find_trending_concepts
+
+    cfg = get_config()
+    if not cfg.trending_concepts.enabled:
+        click.echo(
+            "Trending concepts are disabled. "
+            "Set trending_concepts.enabled: true in extraction.yaml to use this feature."
+        )
+        return
+
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+    try:
+        from scripts.graph.db import GraphDB
+
+        graph_path = Path(cfg.retrieval.graph_db.persist_dir).expanduser()
+        graph_db = GraphDB(str(graph_path))
+    except Exception as exc:
+        click.echo(f"Could not open graph DB: {exc}", err=True)
+        return
+
+    with graph_db:
+        suggestions = find_trending_concepts(graph_db, db, cfg)
+
+    if not suggestions:
+        click.echo("No trending concepts detected above the configured thresholds.")
+        return
+
+    persisted = 0
+    for s in suggestions:
+        try:
+            db.persist_trending_suggestion(
+                concept_text=s["concept_text"],
+                concept_type=s["concept_type"],
+                n_mentions_new=s["n_mentions_new"],
+                n_mentions_prev=s["n_mentions_prev"],
+                growth_rate=s["growth_rate"],
+            )
+            persisted += 1
+        except Exception as exc:
+            click.echo(f"  Warning: could not persist {s['concept_text']!r}: {exc}", err=True)
+
+    click.echo(f"Detected and persisted {persisted} trending concept(s).")
+    click.echo("Run `lit-monitor trending view` to review them.")
+
+
+@trending_group.command("view")
+def trending_view_cmd() -> None:
+    """List all trending-concept suggestions (pending, accepted, dismissed)."""
+    from pathlib import Path
+
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+    rows = db.list_all_trending_suggestions()
+    if not rows:
+        click.echo("No trending concept suggestions found.")
+        return
+
+    click.echo(f"{'ID':>4}  {'Status':>10}  {'Growth':>7}  {'New':>5}  {'Prev':>5}  Concept")
+    click.echo("-" * 70)
+    for r in rows:
+        action = r.get("user_action") or "pending"
+        growth_pct = f"{r['growth_rate'] * 100:+.0f}%"
+        click.echo(
+            f"{r['id']:>4}  {action:>10}  {growth_pct:>7}  "
+            f"{r['n_mentions_new']:>5}  {r['n_mentions_prev']:>5}  {r['concept_text']}"
+        )
+
+
+@trending_group.command("accept")
+@click.argument("suggestion_id", type=int)
+def trending_accept_cmd(suggestion_id: int) -> None:
+    """Accept a suggestion (SUGGESTION_ID); add the concept to topics.yaml."""
+    from pathlib import Path
+
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+    from scripts.server.config_io import safe_save_topics
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+    row = db.get_trending_suggestion_by_id(suggestion_id)
+    if row is None:
+        click.echo(f"Error: no suggestion with id={suggestion_id}", err=True)
+        raise SystemExit(1)
+
+    db.update_trending_action(suggestion_id, "accepted")
+    new_topic = {
+        "name": row["concept_text"],
+        "query": row["concept_text"],
+        "databases": ["pubmed", "arxiv"],
+        "source": f"trending_suggestion:{suggestion_id}",
+    }
+    try:
+        safe_save_topics(new_topic)
+        click.echo(
+            f"Accepted: {row['concept_text']!r} added to config/topics.yaml."
+        )
+    except Exception as exc:
+        click.echo(f"Warning: accepted in state.db but failed to save to topics.yaml: {exc}", err=True)
+
+
+@trending_group.command("dismiss")
+@click.argument("suggestion_id", type=int)
+def trending_dismiss_cmd(suggestion_id: int) -> None:
+    """Dismiss a suggestion (SUGGESTION_ID); suppresses re-suggestion for the cooldown window."""
+    from pathlib import Path
+
+    from scripts.core.config import get_config
+    from scripts.core.state_db import StateDB
+
+    cfg = get_config()
+    db = StateDB(Path(cfg.state_db.path).expanduser())
+    row = db.get_trending_suggestion_by_id(suggestion_id)
+    if row is None:
+        click.echo(f"Error: no suggestion with id={suggestion_id}", err=True)
+        raise SystemExit(1)
+
+    db.update_trending_action(suggestion_id, "dismissed")
+    click.echo(
+        f"Dismissed: {row['concept_text']!r} will not be re-suggested "
+        f"for {getattr(getattr(get_config(), 'trending_concepts', None), 'cooldown_days_after_dismiss', 60)} days."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Bundle E (v0.9): topics expansions subcommand
+# ---------------------------------------------------------------------------
+
+@main.group("topics")
+def topics_group() -> None:
+    """Topic management commands."""
+
+
+@topics_group.group("expansions")
+def topics_expansions_group() -> None:
+    """Graph-driven query expansion suggestions for topics."""
+
+
+@topics_expansions_group.command("suggest")
+@click.argument("topic_name")
+@click.option("--top-k", default=3, show_default=True, type=int)
+def topics_expansions_suggest_cmd(topic_name: str, top_k: int) -> None:
+    """Suggest top-K co-occurring entities for TOPIC_NAME's primary entity."""
+    from pathlib import Path
+
+    from scripts.core.config import get_config
+    from scripts.graph.query_expansion import suggest_expansions
+
+    cfg = get_config()
+    try:
+        from scripts.graph.db import GraphDB
+
+        graph_path = Path(cfg.retrieval.graph_db.persist_dir).expanduser()
+        graph_db = GraphDB(str(graph_path))
+    except Exception as exc:
+        click.echo(f"Could not open graph DB: {exc}", err=True)
+        return
+
+    with graph_db:
+        suggestions = suggest_expansions(topic_name, graph_db, top_k=top_k)
+
+    if not suggestions:
+        click.echo(f"No expansion suggestions found for topic {topic_name!r}.")
+        return
+
+    click.echo(f"Expansion suggestions for {topic_name!r} (top {top_k}):")
+    for i, cid in enumerate(suggestions, 1):
+        click.echo(f"  {i}. {cid}")
+    click.echo(
+        "\nTo apply: add these as OR-expansions to the topic query in config/topics.yaml."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Trending concepts — lit-monitor{% endblock %}
+{% block content %}
+<section class="card">
+  <h2>Trending concepts</h2>
+  <p>
+    Entities whose mention count grew significantly in the last 60 days compared
+    to the prior 60-day window. Accept to add to
+    <code>config/topics.yaml</code>; dismiss to suppress for 60 days.
+    Changes are never applied automatically.
+  </p>
+  <p>
+    <button hx-post="/api/trending/detect"
+            hx-swap="none"
+            hx-on::after-request="window.location.reload()">
+      Re-detect trending concepts
+    </button>
+  </p>
+
+  {% if not suggestions %}
+    <p><em>No pending suggestions. Run a brain-build or click Re-detect to find trending concepts.</em></p>
+  {% else %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Concept</th>
+          <th>Type</th>
+          <th>Recent mentions</th>
+          <th>Prior mentions</th>
+          <th>Growth</th>
+          <th>In topics?</th>
+          <th>Suggested at</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in suggestions %}
+        <tr id="trending-row-{{ s.id }}">
+          <td><strong>{{ s.concept_text }}</strong></td>
+          <td>{{ s.concept_type }}</td>
+          <td>{{ s.n_mentions_new }}</td>
+          <td>{{ s.n_mentions_prev }}</td>
+          <td>+{{ (s.growth_rate * 100) | round(0) | int }}%</td>
+          <td>{% if s.in_existing_topics is defined and s.in_existing_topics %}Yes{% else %}No{% endif %}</td>
+          <td><small>{{ s.suggested_at }}</small></td>
+          <td>
+            <button
+              hx-post="/api/trending/{{ s.id }}/accept"
+              hx-swap="outerHTML"
+              hx-target="#trending-row-{{ s.id }}"
+              hx-confirm="Add '{{ s.concept_text }}' to topics.yaml?"
+              class="btn-accept">
+              Accept
+            </button>
+            <button
+              hx-post="/api/trending/{{ s.id }}/dismiss"
+              hx-swap="outerHTML"
+              hx-target="#trending-row-{{ s.id }}">
+              Dismiss
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</section>
+{% endblock %}
