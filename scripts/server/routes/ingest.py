@@ -1,16 +1,41 @@
-"""H2: POST /api/ingest — production ingest endpoint.
+"""H2/A1: POST /api/ingest — production async ingest endpoint.
+
+Architecture (A1)
+-----------------
+The endpoint validates the payload, inserts an ``ingest_queue`` row with
+status ``"queued"``, schedules a FastAPI ``BackgroundTask``, and returns
+``202`` immediately. The HTTP request is NEVER blocked on LLM extraction
+(which takes 30–90 s). The background task does the real ingestion by
+wiring ``scripts.pipelines.brain_build._process_paper`` with a fully
+constructed runtime (config, state_db, embeddings_db, zotero_client, llm,
+graph_db-or-None) and transitions the queue row:
+
+    queued → processing → done | no_markdown | failed
+
+The H3 status endpoints (``GET /api/ingest/queue``,
+``GET /api/ingest/{doi}/status``) are the polling surface for this async
+flow — clients submit, then poll for the terminal status.
 
 R28 invariant
 -------------
 papers.graph_indexed=1 ONLY after BOTH vector embed AND graph add succeed.
-_process_paper (brain_build) enforces this. The HTTP layer merely wraps it.
+brain_build._process_paper enforces this. The HTTP layer merely wraps it
+and never writes papers.graph_indexed directly.
 
 R28 hardening
 -------------
-If _process_paper raises, the ingest_queue row is marked status='failed'
-with the error text BEFORE re-raising — never left orphaned in 'queued'.
-An orphaned 'queued' row would appear as an active job to H3's queue
+If the background task raises, the ingest_queue row is marked
+status='failed' with the error text — never left orphaned in 'queued' or
+'processing'. An orphaned row would appear as an active job to H3's queue
 listing and hide the real failure.
+
+no_markdown fallback
+--------------------
+``_process_paper`` returns ``(False, [])`` and marks the paper
+``"no_markdown"`` in state_db when the Zotero item has no ``.md``
+attachment yet (the plugin may push a paper before the user attaches the
+markdown). This is EXPECTED, not an error — the queue row is set to
+``"no_markdown"``, not ``"failed"``.
 
 Duplicate handling
 ------------------
@@ -26,8 +51,9 @@ from __future__ import annotations
 import logging
 import re
 from datetime import UTC, datetime
+from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 
@@ -73,37 +99,6 @@ class IngestRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Pipeline wrapper (monkeypatched in unit tests)
-# ---------------------------------------------------------------------------
-
-
-def _process_paper(
-    doi: str,
-    title: str,
-    authors: list[str],
-    year: int | None,
-    abstract: str | None,
-) -> None:
-    """Thin dispatch to brain_build._process_paper.
-
-    Intentionally thin so unit tests can monkeypatch this symbol without
-    importing the full brain_build module (which requires a configured
-    runtime, Zotero client, LLM, etc.).
-
-    Production note: brain_build._process_paper has a richer signature
-    (zotero_key, item dict, config, state_db, embeddings_db, llm …).
-    Wiring a full production call here is deferred to Phase 4d, which will
-    add an async worker queue. For now the endpoint accepts and queues the
-    request; the actual pipeline invocation is a no-op placeholder that
-    will be replaced when the worker lands.
-    """
-    # Phase 4d: replace this with actual worker dispatch.
-    # The R28 invariant is enforced inside brain_build._process_paper;
-    # this layer MUST NOT write papers.graph_indexed directly.
-    logger.info("H2: _process_paper placeholder called for doi=%s", doi)
-
-
-# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -113,21 +108,220 @@ def _utcnow() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _build_zotero_item(body: IngestRequest) -> dict[str, Any]:
+    """Synthesize a Zotero-shaped item dict from an IngestRequest.
+
+    brain_build._process_paper reads the item as
+    ``{"key": <zotero_key>, "data": {...}}`` and pulls fields via
+    ``data.get("title")``, ``ZoteroClient.extract_authors(data)``,
+    ``_parse_year(data.get("date"))``, ``data.get("abstractNote")``, etc.
+
+    The request gives ``authors`` as a flat ``list[str]`` of display names,
+    but ``extract_authors`` expects Zotero ``creators`` with
+    ``creatorType`` + ``lastName``. We round-trip each display name through
+    the ``lastName`` field so ``extract_authors`` returns the exact strings
+    the caller supplied (it emits "lastName, firstName".strip(", ") which,
+    with an empty firstName, is just the lastName).
+    """
+    creators = [
+        {"creatorType": "author", "firstName": "", "lastName": name}
+        for name in body.authors
+        if name and name.strip()
+    ]
+    # _parse_year scans "-"-split parts for a 4-digit year, so a bare year
+    # string is sufficient. Empty string → _parse_year returns 0.
+    date_str = str(body.year) if body.year is not None else ""
+    return {
+        "key": body.zotero_key or "",
+        "data": {
+            "itemType": "journalArticle",
+            "title": body.title,
+            "creators": creators,
+            "date": date_str,
+            "abstractNote": body.abstract or "",
+            "DOI": body.doi,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Pipeline wrapper (monkeypatched in unit tests)
+# ---------------------------------------------------------------------------
+
+
+def _process_paper(
+    doi: str,
+    item: dict[str, Any],
+) -> tuple[bool, list[str]]:
+    """Real production wiring around brain_build._process_paper.
+
+    Constructs the full runtime needed by brain_build's per-paper pipeline
+    and dispatches to it. Returns ``(processed, discovered_topics)``:
+
+      * ``processed=True``  — extracted and indexed → queue row ``"done"``.
+      * ``processed=False`` — no ``.md`` attachment yet (brain_build marked
+        the paper ``"no_markdown"`` in state_db) → queue row
+        ``"no_markdown"``. Not an error.
+
+    Raises on unrecoverable errors so the background task marks the queue
+    row ``"failed"``.
+
+    Kept as a module-level, monkeypatchable symbol: unit tests replace it
+    with a stand-in so they can exercise the queue-status transitions
+    without a configured runtime, Zotero client, or LLM.
+    """
+    # Local imports: keep module import cheap and avoid importing the full
+    # brain_build stack (LLM, S2, graph) at server boot.
+    from scripts.graph import safe_graph_db
+    from scripts.llm.extractor import extract_paper
+    from scripts.llm.llm_client import get_clients_for_passes
+    from scripts.output.obsidian_writer import write_paper_note
+    from scripts.pipelines.brain_build import _process_paper as brain_process_paper
+
+    runtime = get_runtime()
+    config = runtime.config
+    secrets = runtime.secrets
+
+    # Mirror the CLI: hydrate provider keys from config.toml so the LLM and
+    # S2 enrichment inside brain_build can authenticate. Shell env wins.
+    _hydrate_provider_keys(secrets)
+
+    # Build the LLM client exactly as the brain_build CLI does.
+    llm = get_clients_for_passes(config, mode="brain_build", think=True)
+
+    # Resolve the graph DB; None when the [graph] extra isn't installed.
+    # _process_paper accepts graph_db=None and runs vector-only.
+    graph_db = safe_graph_db()
+
+    pass_strategy = getattr(
+        getattr(config, "brain_build", None), "pass_strategy", "individual"
+    )
+    zotero_key = item.get("key", "") or doi
+
+    try:
+        return brain_process_paper(
+            doi=doi,
+            zotero_key=zotero_key,
+            item=item,
+            config=config,
+            state_db=runtime.state_db,
+            embeddings_db=runtime.embeddings_db,
+            llm=llm,
+            zotero_client=runtime.zotero_client,
+            source_type="paper",
+            pass_strategy=pass_strategy,
+            extract_paper_fn=extract_paper,
+            write_paper_note_fn=write_paper_note,
+            graph_db=graph_db,
+        )
+    finally:
+        # Release the KuzuDB connection if one was opened. close() is a
+        # no-op when graph_db is None and is safe to call multiple times.
+        if graph_db is not None:
+            try:
+                graph_db.close()
+            except Exception as exc:  # pragma: no cover — defensive
+                logger.warning("A1: graph_db.close() failed (non-fatal): %s", exc)
+
+
+def _hydrate_provider_keys(secrets: dict) -> None:
+    """Inject OLLAMA_API_KEY / S2_API_KEY from config.toml if unset.
+
+    Mirrors scripts.cli._maybe_set_ollama_key / _maybe_set_s2_key. Shell
+    env vars always win over config.toml.
+    """
+    import os
+
+    if not os.environ.get("OLLAMA_API_KEY"):
+        ollama_key = secrets.get("ollama", {}).get("api_key", "")
+        if ollama_key:
+            os.environ["OLLAMA_API_KEY"] = ollama_key
+    if not os.environ.get("S2_API_KEY"):
+        s2_key = secrets.get("semantic_scholar", {}).get("api_key", "")
+        if s2_key:
+            os.environ["S2_API_KEY"] = s2_key
+
+
+# ---------------------------------------------------------------------------
+# Background task
+# ---------------------------------------------------------------------------
+
+
+def _run_ingest_task(doi: str, item: dict[str, Any]) -> None:
+    """Background worker: transition the queue row and run real ingestion.
+
+    Status transitions:
+      queued → processing  (set at task start)
+      processing → done         (_process_paper returned processed=True)
+      processing → no_markdown  (_process_paper returned processed=False)
+      processing → failed       (_process_paper raised)
+
+    Wrapping _process_paper here (rather than inline) preserves the unit
+    test seam: tests monkeypatch ingest._process_paper, and Starlette's
+    TestClient runs background tasks synchronously after the response, so
+    the monkeypatched stand-in still drives these transitions.
+    """
+    state_db = get_runtime().state_db
+
+    # queued → processing
+    try:
+        with state_db._connect() as conn:
+            conn.execute(
+                "UPDATE ingest_queue SET status = ? WHERE doi = ?",
+                ("processing", doi),
+            )
+    except Exception:
+        # If we can't even mark 'processing', log and continue — the real
+        # work below still runs and will set a terminal status.
+        logger.exception("A1: could not mark ingest_queue row processing for doi=%s", doi)
+
+    try:
+        processed, _topics = _process_paper(doi, item)
+    except Exception as exc:
+        # R28 hardening: terminal 'failed' with error text, never orphaned.
+        logger.warning("A1: ingest task failed for doi=%s: %s", doi, exc)
+        try:
+            with state_db._connect() as conn:
+                conn.execute(
+                    "UPDATE ingest_queue SET status = ?, error = ?, completed_at = ? "
+                    "WHERE doi = ?",
+                    ("failed", str(exc)[:1000], _utcnow(), doi),
+                )
+        except Exception:
+            logger.exception(
+                "A1: could not mark ingest_queue row failed for doi=%s", doi
+            )
+        return
+
+    # processed=True → done; processed=False → no_markdown (not an error).
+    terminal = "done" if processed else "no_markdown"
+    with state_db._connect() as conn:
+        conn.execute(
+            "UPDATE ingest_queue SET status = ?, completed_at = ? WHERE doi = ?",
+            (terminal, _utcnow(), doi),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Route
 # ---------------------------------------------------------------------------
 
 
 @router.post("/api/ingest", status_code=202)
-def ingest(body: IngestRequest) -> JSONResponse:
-    """Accept a paper ingest request and add it to the ingest_queue.
+def ingest(body: IngestRequest, background_tasks: BackgroundTasks) -> JSONResponse:
+    """Accept a paper ingest request, queue it, and schedule async ingestion.
+
+    The HTTP request returns immediately (202) after inserting the queue
+    row and scheduling the background task — it does NOT block on the
+    30–90 s LLM extraction. Poll GET /api/ingest/{doi}/status for the
+    terminal state (done / no_markdown / failed).
 
     Returns
     -------
-    202  — queued successfully.
+    202  — queued; background ingestion scheduled.
     409  — this DOI was already submitted (duplicate).
     422  — validation failed (bad DOI format or missing/blank title).
-    500  — the ingest pipeline raised an unexpected exception.
+    500  — the queue INSERT itself failed unexpectedly.
     """
     state_db = get_runtime().state_db
 
@@ -145,10 +339,10 @@ def ingest(body: IngestRequest) -> JSONResponse:
             status_code=409,
         )
 
-    # --- Insert queue row BEFORE calling pipeline ---
-    # Inserting first means the failure path always has a row to update.
-    # If the INSERT itself fails (e.g., race-condition duplicate), the
-    # IntegrityError propagates as a 500 — acceptable for v1.
+    # --- Insert queue row BEFORE scheduling the task ---
+    # The row must exist so the background task always has something to
+    # transition. If the INSERT itself fails (e.g. race-condition duplicate),
+    # the IntegrityError propagates as a 500 — acceptable for v1.
     queued_at = _utcnow()
     with state_db._connect() as conn:
         conn.execute(
@@ -156,38 +350,11 @@ def ingest(body: IngestRequest) -> JSONResponse:
             (body.doi, "queued", queued_at),
         )
 
-    # --- Invoke pipeline with R28 hardening ---
-    try:
-        _process_paper(body.doi, body.title, body.authors, body.year, body.abstract)
-    except Exception as exc:
-        # R28 hardening: mark queue row 'failed' BEFORE re-raising so the
-        # row is never left orphaned in 'queued'. H3's queue listing reads
-        # this table — an orphaned 'queued' row would look like an active job.
-        logger.warning("H2: _process_paper failed for doi=%s: %s", body.doi, exc)
-        try:
-            with state_db._connect() as conn:
-                conn.execute(
-                    "UPDATE ingest_queue SET status = ?, error = ?, completed_at = ? "
-                    "WHERE doi = ?",
-                    ("failed", str(exc)[:1000], _utcnow(), body.doi),
-                )
-        except Exception:
-            # Best-effort: if the UPDATE itself fails, log it but still re-raise
-            # the original pipeline exception so the caller gets a 500.
-            logger.exception(
-                "H2: could not mark ingest_queue row failed for doi=%s", body.doi
-            )
-        raise HTTPException(
-            status_code=500,
-            detail=f"ingest pipeline failed: {exc}",
-        )
-
-    # --- Mark done on success ---
-    with state_db._connect() as conn:
-        conn.execute(
-            "UPDATE ingest_queue SET status = ?, completed_at = ? WHERE doi = ?",
-            ("done", _utcnow(), body.doi),
-        )
+    # --- Schedule real async ingestion ---
+    # Synthesize the Zotero-shaped item the background task feeds to
+    # brain_build._process_paper.
+    item = _build_zotero_item(body)
+    background_tasks.add_task(_run_ingest_task, body.doi, item)
 
     return JSONResponse(
         {"status": "queued", "paper_id": body.doi},

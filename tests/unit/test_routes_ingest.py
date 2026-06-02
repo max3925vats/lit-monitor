@@ -62,7 +62,7 @@ class TestHappyPath:
         """H2: valid request returns 202 with status=queued and paper_id=doi."""
         from scripts.server.routes import ingest as ingest_route
 
-        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
 
         r = client.post(
             "/api/ingest",
@@ -77,7 +77,7 @@ class TestHappyPath:
         """H2: after _process_paper succeeds, ingest_queue row has status='done'."""
         from scripts.server.routes import ingest as ingest_route
 
-        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
 
         client.post(
             "/api/ingest",
@@ -98,7 +98,7 @@ class TestHappyPath:
         """H2: optional fields (authors, year, abstract, zotero_key) are accepted."""
         from scripts.server.routes import ingest as ingest_route
 
-        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
 
         r = client.post(
             "/api/ingest",
@@ -150,7 +150,7 @@ class TestValidation:
         """H2: DOIs with long suffixes and slashes are accepted."""
         from scripts.server.routes import ingest as ingest_route
 
-        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
 
         r = client.post(
             "/api/ingest",
@@ -170,7 +170,7 @@ class TestDuplicateDOI:
         """H2: second POST with same DOI returns 409."""
         from scripts.server.routes import ingest as ingest_route
 
-        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
 
         # First ingest — should succeed.
         r1 = client.post(
@@ -190,7 +190,7 @@ class TestDuplicateDOI:
         """H2: 409 body contains status=duplicate and the paper_id."""
         from scripts.server.routes import ingest as ingest_route
 
-        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
 
         client.post("/api/ingest", json={"doi": "10.1234/dup.002", "title": "T"})
         r2 = client.post(
@@ -213,8 +213,15 @@ class TestR28FailureSemantics:
     will specifically check.
     """
 
-    def test_process_paper_failure_returns_500(self, client, db, monkeypatch):
-        """H2: a pipeline exception surfaces as HTTP 500 (not a silent 202)."""
+    def test_process_paper_failure_still_returns_202(self, client, db, monkeypatch):
+        """A1: the POST is accepted (202) even when ingestion later fails.
+
+        Under the BackgroundTasks design the HTTP request returns immediately
+        after queueing — it does NOT block on extraction, so a pipeline
+        exception cannot surface as a synchronous 500. The failure is recorded
+        on the queue row (see sibling tests) and surfaced via the H3 status
+        endpoint. The endpoint itself stays 202.
+        """
         from scripts.server.routes import ingest as ingest_route
 
         def boom(*a, **kw):
@@ -226,7 +233,7 @@ class TestR28FailureSemantics:
             "/api/ingest",
             json={"doi": "10.1234/fail.001", "title": "T"},
         )
-        assert r.status_code == 500, f"expected 500, got {r.status_code}: {r.text}"
+        assert r.status_code == 202, f"expected 202, got {r.status_code}: {r.text}"
 
     def test_process_paper_failure_marks_queue_row_failed(self, client, db, monkeypatch):
         """H2: after _process_paper raises, ingest_queue.status='failed' (not 'queued').
@@ -428,7 +435,7 @@ class TestQueueListing:
         """H3: two ingests → list ordered newest-first (queued_at DESC)."""
         from scripts.server.routes import ingest as ingest_route
 
-        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
         client.post("/api/ingest", json={"doi": "10.1234/a", "title": "A"})
         client.post("/api/ingest", json={"doi": "10.1234/b", "title": "B"})
 
@@ -444,7 +451,7 @@ class TestQueueListing:
         """H3: each item in the queue list has the expected keys."""
         from scripts.server.routes import ingest as ingest_route
 
-        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
         client.post("/api/ingest", json={"doi": "10.1234/shape", "title": "S"})
 
         r = client.get("/api/ingest/queue")
@@ -470,7 +477,7 @@ class TestDoiStatus:
         """H3: known DOI → 200 with correct doi and status."""
         from scripts.server.routes import ingest as ingest_route
 
-        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
         client.post("/api/ingest", json={"doi": "10.1234/known", "title": "K"})
 
         r = client.get("/api/ingest/10.1234/known/status")
@@ -483,7 +490,7 @@ class TestDoiStatus:
         """H3: status response includes all five expected keys."""
         from scripts.server.routes import ingest as ingest_route
 
-        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: None)
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
         client.post("/api/ingest", json={"doi": "10.1234/fields", "title": "F"})
 
         r = client.get("/api/ingest/10.1234/fields/status")
@@ -515,3 +522,139 @@ class TestQueueRouteDoesNotMatchAsDoi:
             "Ensure the /queue route is registered BEFORE {doi:path}/status."
         )
         assert isinstance(r.json(), list)
+
+
+# ---------------------------------------------------------------------------
+# A1: async BackgroundTasks ingestion — queue-status transitions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAsyncIngestTransitions:
+    """A1: the background task wraps _process_paper and transitions the queue
+    row to a terminal status based on its return value / raised exception.
+
+    Starlette's TestClient runs background tasks synchronously after the
+    response, so a monkeypatched _process_paper drives these transitions
+    deterministically within the POST call.
+    """
+
+    def test_processed_true_yields_done(self, client, db, monkeypatch):
+        """A1: _process_paper returning (True, [...]) → queue status 'done'."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(
+            ingest_route, "_process_paper", lambda *a, **kw: (True, ["topic"])
+        )
+
+        client.post("/api/ingest", json={"doi": "10.1234/a1.done", "title": "T"})
+
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT status, completed_at FROM ingest_queue WHERE doi = ?",
+                ("10.1234/a1.done",),
+            ).fetchone()
+        assert row is not None
+        assert row[0] == "done"
+        assert row[1] is not None  # completed_at stamped
+
+    def test_processed_false_yields_no_markdown(self, client, db, monkeypatch):
+        """A1: _process_paper returning (False, []) → queue status 'no_markdown'.
+
+        This is the EXPECTED path when the Zotero item has no .md attachment
+        yet — it is NOT an error and must not be marked 'failed'.
+        """
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(
+            ingest_route, "_process_paper", lambda *a, **kw: (False, [])
+        )
+
+        client.post("/api/ingest", json={"doi": "10.1234/a1.nomd", "title": "T"})
+
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT status, error FROM ingest_queue WHERE doi = ?",
+                ("10.1234/a1.nomd",),
+            ).fetchone()
+        assert row is not None
+        assert row[0] == "no_markdown", (
+            f"Expected 'no_markdown', got {row[0]!r}. A missing .md attachment "
+            "is not an error and must not be marked 'failed'."
+        )
+        assert row[1] is None  # no error text for the no_markdown path
+
+    def test_raising_yields_failed_with_error_text(self, client, db, monkeypatch):
+        """A1: _process_paper raising → queue status 'failed' + error text."""
+        from scripts.server.routes import ingest as ingest_route
+
+        def boom(*a, **kw):
+            raise RuntimeError("a1 simulated failure")
+
+        monkeypatch.setattr(ingest_route, "_process_paper", boom)
+
+        client.post("/api/ingest", json={"doi": "10.1234/a1.fail", "title": "T"})
+
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT status, error, completed_at FROM ingest_queue WHERE doi = ?",
+                ("10.1234/a1.fail",),
+            ).fetchone()
+        assert row is not None
+        assert row[0] == "failed"
+        assert row[1] and "a1 simulated failure" in row[1]
+        assert row[2] is not None  # completed_at stamped on failure
+
+
+@pytest.mark.unit
+class TestSynthesizedZoteroItem:
+    """A1: the background task builds a Zotero-shaped item dict from the
+    IngestRequest and feeds it to _process_paper. Verify the shape by
+    capturing the kwargs the (monkeypatched) _process_paper receives.
+    """
+
+    def test_item_dict_shape_satisfies_process_paper_reads(
+        self, client, db, monkeypatch
+    ):
+        """A1: synthesized item carries every field _process_paper reads.
+
+        _process_paper reads item['key'] and item['data'] with
+        title / creators / date / abstractNote / DOI. We capture the actual
+        item passed and assert the shape, including that ZoteroClient
+        .extract_authors round-trips the request authors.
+        """
+        from scripts.core.zotero_client import ZoteroClient
+        from scripts.server.routes import ingest as ingest_route
+
+        captured: dict = {}
+
+        def capture(doi, item, *a, **kw):
+            captured["doi"] = doi
+            captured["item"] = item
+            return (True, [])
+
+        monkeypatch.setattr(ingest_route, "_process_paper", capture)
+
+        client.post(
+            "/api/ingest",
+            json={
+                "doi": "10.1234/a1.shape",
+                "title": "Shape Paper",
+                "authors": ["Smith", "Doe"],
+                "year": 2023,
+                "abstract": "An abstract.",
+                "zotero_key": "ZKEY42",
+            },
+        )
+
+        assert captured["doi"] == "10.1234/a1.shape"
+        item = captured["item"]
+        assert item["key"] == "ZKEY42"
+        data = item["data"]
+        assert data["title"] == "Shape Paper"
+        assert data["abstractNote"] == "An abstract."
+        assert data["DOI"] == "10.1234/a1.shape"
+        # _parse_year scans the date string for a 4-digit year.
+        assert "2023" in data["date"]
+        # extract_authors must round-trip the supplied display names.
+        assert ZoteroClient.extract_authors(data) == ["Smith", "Doe"]

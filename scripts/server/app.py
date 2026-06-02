@@ -152,7 +152,10 @@ def create_app() -> FastAPI:
     app.include_router(discovery_router)
     app.include_router(schedule_router)
     app.include_router(health_router)
-    # H2: POST /api/ingest — production ingest endpoint for Zotero plugin / web ingestors.
+    # H2/A1: POST /api/ingest — production async ingest endpoint for the Zotero
+    # plugin / web ingestors. Validates + queues + schedules a BackgroundTask
+    # that runs the real brain_build ingestion, then returns 202 immediately.
+    # Clients poll GET /api/ingest/{doi}/status for the terminal state.
     app.include_router(ingest_router)
 
     # H4: GET /api/papers/{doi} — paper snapshot (wraps H1 get_paper_snapshot).
