@@ -18,6 +18,7 @@ import json
 import logging
 import sqlite3
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,21 @@ from typing import Any
 from scripts.core.strict_mode import strict_fallback
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class NewClusterSpec:
+    """B3: one cluster to persist via StateDB.replace_clusters().
+
+    inherited_id is the existing cluster id to reuse (stable-ID mapping) or
+    None to insert a fresh row. display_name None → 'Cluster <id>' fallback is
+    applied INSIDE the same transaction once the row id is known.
+    """
+    inherited_id: int | None
+    display_name: str | None
+    n_papers: int
+    cohesion_score: float | None
+    centroid_blob: bytes
 
 # Bump this string whenever the extraction schema changes in a way that
 # makes existing extraction_json incompatible with the current schema.
@@ -1425,6 +1441,77 @@ class StateDB:
     # ------------------------------------------------------------------ #
     # Bundle C: clustering helpers
     # ------------------------------------------------------------------ #
+    # -- conn-based primitives (B3) --
+    # These execute their SQL against a caller-supplied connection so that
+    # replace_clusters() can run archive + every insert/upsert inside ONE
+    # transaction.  The public methods below wrap them with their own
+    # _connect() so existing callers/tests keep working unchanged.
+
+    @staticmethod
+    def _insert_cluster_conn(
+        conn: sqlite3.Connection,
+        display_name: str | None,
+        n_papers: int,
+        cohesion_score: float | None,
+        centroid_blob: bytes,
+    ) -> int:
+        """INSERT a cluster row on ``conn``; return the new row id. No commit."""
+        name = display_name or ""
+        cursor = conn.execute(
+            "INSERT INTO clusters (display_name, n_papers, cohesion_score, centroid_blob) "
+            "VALUES (?, ?, ?, ?)",
+            (name, n_papers, cohesion_score, centroid_blob),
+        )
+        return cursor.lastrowid
+
+    @staticmethod
+    def _upsert_cluster_by_id_conn(
+        conn: sqlite3.Connection,
+        cluster_id: int,
+        display_name: str | None,
+        n_papers: int,
+        cohesion_score: float | None,
+        centroid_blob: bytes,
+    ) -> None:
+        """UPSERT a cluster row by id on ``conn`` (reactivates archived). No commit."""
+        name = display_name or ""
+        conn.execute(
+            "INSERT INTO clusters (id, display_name, n_papers, cohesion_score, "
+            "centroid_blob, archived, computed_at) "
+            "VALUES (?, ?, ?, ?, ?, 0, datetime('now')) "
+            "ON CONFLICT(id) DO UPDATE SET "
+            "  display_name=excluded.display_name, "
+            "  n_papers=excluded.n_papers, "
+            "  cohesion_score=excluded.cohesion_score, "
+            "  centroid_blob=excluded.centroid_blob, "
+            "  archived=0, "
+            "  computed_at=datetime('now')",
+            (cluster_id, name, n_papers, cohesion_score, centroid_blob),
+        )
+
+    @staticmethod
+    def _update_cluster_display_name_conn(
+        conn: sqlite3.Connection, cluster_id: int, name: str
+    ) -> None:
+        """UPDATE a cluster's display_name on ``conn``. No commit."""
+        conn.execute(
+            "UPDATE clusters SET display_name=? WHERE id=?",
+            (name, cluster_id),
+        )
+
+    @staticmethod
+    def _archive_clusters_conn(
+        conn: sqlite3.Connection, cluster_ids: list[int]
+    ) -> None:
+        """Mark cluster_ids archived on ``conn``. No commit. No-op if empty."""
+        if not cluster_ids:
+            return
+        placeholders = ",".join("?" * len(cluster_ids))
+        conn.execute(
+            f"UPDATE clusters SET archived=1 WHERE id IN ({placeholders})",
+            cluster_ids,
+        )
+
     def insert_cluster(
         self,
         display_name: str | None,
@@ -1443,14 +1530,10 @@ class StateDB:
         Returns:
             The new row's integer id.
         """
-        name = display_name or ""
         with self._connect() as conn:
-            cursor = conn.execute(
-                "INSERT INTO clusters (display_name, n_papers, cohesion_score, centroid_blob) "
-                "VALUES (?, ?, ?, ?)",
-                (name, n_papers, cohesion_score, centroid_blob),
+            return self._insert_cluster_conn(
+                conn, display_name, n_papers, cohesion_score, centroid_blob
             )
-            return cursor.lastrowid
 
     def upsert_cluster_by_id(
         self,
@@ -1465,29 +1548,75 @@ class StateDB:
         Used when recompute finds a new cluster near an existing one:
         the existing ID is preserved so user-applied tags don't drift.
         """
-        name = display_name or ""
         with self._connect() as conn:
-            conn.execute(
-                "INSERT INTO clusters (id, display_name, n_papers, cohesion_score, "
-                "centroid_blob, archived, computed_at) "
-                "VALUES (?, ?, ?, ?, ?, 0, datetime('now')) "
-                "ON CONFLICT(id) DO UPDATE SET "
-                "  display_name=excluded.display_name, "
-                "  n_papers=excluded.n_papers, "
-                "  cohesion_score=excluded.cohesion_score, "
-                "  centroid_blob=excluded.centroid_blob, "
-                "  archived=0, "
-                "  computed_at=datetime('now')",
-                (cluster_id, name, n_papers, cohesion_score, centroid_blob),
+            self._upsert_cluster_by_id_conn(
+                conn, cluster_id, display_name, n_papers, cohesion_score, centroid_blob
             )
 
     def update_cluster_display_name(self, cluster_id: int, name: str) -> None:
         """Update the display_name of an existing cluster (used for fallback labelling)."""
         with self._connect() as conn:
-            conn.execute(
-                "UPDATE clusters SET display_name=? WHERE id=?",
-                (name, cluster_id),
-            )
+            self._update_cluster_display_name_conn(conn, cluster_id, name)
+
+    def replace_clusters(
+        self,
+        archive_ids: list[int],
+        new_clusters: list[NewClusterSpec],
+    ) -> list[int]:
+        """B3: atomically archive old clusters and install the new ones.
+
+        Archive + every insert/upsert + display-name fallback run inside a
+        SINGLE ``with self._connect()`` block, i.e. one SQLite transaction.
+        ``_connect()`` commits on clean exit and rolls back on any exception,
+        so a crash mid-persist can NEVER leave the library with zero active
+        clusters: either the old rows stay (rollback) or the new rows fully
+        land (commit).
+
+        Args:
+            archive_ids: Existing cluster ids to soft-archive (archived=1).
+            new_clusters: Ordered specs to persist. inherited_id None → fresh
+                INSERT; otherwise reactivate that id via upsert. display_name
+                None → 'Cluster <id>' fallback applied with the now-known id.
+
+        Returns:
+            The assigned cluster ids, in the same order as ``new_clusters``.
+        """
+        assigned: list[int] = []
+        with self._connect() as conn:
+            # 1) Archive the old clusters first (still in this txn).
+            self._archive_clusters_conn(conn, archive_ids)
+
+            # 2) Insert/upsert every new cluster.
+            for spec in new_clusters:
+                if spec.inherited_id is not None:
+                    self._upsert_cluster_by_id_conn(
+                        conn,
+                        spec.inherited_id,
+                        spec.display_name,
+                        spec.n_papers,
+                        spec.cohesion_score,
+                        spec.centroid_blob,
+                    )
+                    cid = spec.inherited_id
+                else:
+                    cid = self._insert_cluster_conn(
+                        conn,
+                        spec.display_name,
+                        spec.n_papers,
+                        spec.cohesion_score,
+                        spec.centroid_blob,
+                    )
+
+                # 3) Display-name fallback — inside the same txn, using the
+                #    now-known row id.
+                if spec.display_name is None:
+                    self._update_cluster_display_name_conn(
+                        conn, cid, f"Cluster {cid}"
+                    )
+
+                assigned.append(cid)
+
+        return assigned
 
     def get_cluster(self, cluster_id: int) -> dict | None:
         """Return a single cluster row as a dict, or None if not found."""
@@ -1513,12 +1642,8 @@ class StateDB:
         """
         if not cluster_ids:
             return
-        placeholders = ",".join("?" * len(cluster_ids))
         with self._connect() as conn:
-            conn.execute(
-                f"UPDATE clusters SET archived=1 WHERE id IN ({placeholders})",
-                cluster_ids,
-            )
+            self._archive_clusters_conn(conn, cluster_ids)
 
     def upsert_cluster_assignment(
         self,

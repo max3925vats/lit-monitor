@@ -12,6 +12,11 @@ Safety invariants:
   - Pre-flight: user sees paper count + estimated time + cost BEFORE any rebuild.
   - Atomicity: provenance is recorded ONLY after the rebuild loop completes;
     if interrupted mid-rebuild, state.db still points at the old collection.
+  - B3 swap-order: BOTH paths build into a FRESH versioned collection first.
+    The destructive path drops the old collection ONLY after the new one is
+    built and marked current (build → record → set-current → drop-old). A crash
+    mid-rebuild leaves the old collection intact + current; the half-built new
+    collection is best-effort dropped so no partial collection leaks.
 """
 from __future__ import annotations
 
@@ -88,34 +93,51 @@ def switch_provider(
         click.echo("Aborted.")
         raise click.exceptions.Exit(1)
 
-    # Determine the target collection name.
-    if keep_old:
-        next_v = _next_collection_version(rows)
-        new_collection = f"papers_v{next_v}_{provider}"
-    else:
-        # Destructive: reuse the current collection name.
-        new_collection = current_collection
+    # Always build into a FRESH versioned collection — never overwrite the
+    # current one in place.  (B3) This eliminates the destruction window: even
+    # on the destructive path we build new first, then swap on success, so a
+    # crash mid-rebuild leaves the OLD collection fully intact and current.
+    next_v = _next_collection_version(rows)
+    new_collection = f"papers_v{next_v}_{provider}"
 
     persist_dir = str(Path(cfg.state_db.path).expanduser().parent / "chroma")
 
-    if not keep_old:
-        # Destructive path: clear the existing ChromaDB collection first.
-        _drop_collection(current_collection, persist_dir=persist_dir)
+    # Build the new collection by re-embedding all papers.  If this raises
+    # (e.g. the user kills it mid-embed), best-effort clean up the half-built
+    # new collection and re-raise — the OLD collection is never touched here,
+    # so it remains current and recoverable.
+    try:
+        _rebuild_collection(
+            collection_name=new_collection,
+            provider=provider,
+            model=model,
+            dim=effective_dim,
+            persist_dir=persist_dir,
+            state_db=state_db,
+            cfg=cfg,
+        )
+    except Exception:
+        # Drop the orphaned, partially-populated new collection so we don't
+        # leak it.  NEVER drop the old collection on this path.
+        try:
+            _drop_collection(new_collection, persist_dir=persist_dir)
+        except Exception as cleanup_exc:
+            logger.warning(
+                "Failed to clean up half-built collection %r after a failed "
+                "rebuild: %s",
+                new_collection, cleanup_exc,
+            )
+        raise
 
-    # Build the new collection by re-embedding all papers.
-    _rebuild_collection(
-        collection_name=new_collection,
-        provider=provider,
-        model=model,
-        dim=effective_dim,
-        persist_dir=persist_dir,
-        state_db=state_db,
-        cfg=cfg,
-    )
-
-    # Record provenance + mark new collection as current.
+    # Rebuild succeeded.  Record provenance + mark the new collection current.
+    # Only AFTER the swap do we drop the old collection on the destructive path.
     state_db.record_embedding_provenance(new_collection, provider, model, effective_dim)
     state_db.set_current_embedding_collection(new_collection)
+
+    if not keep_old and current_collection != new_collection:
+        # Destructive path: now that the new collection is built and current,
+        # it is safe to drop the old one.
+        _drop_collection(current_collection, persist_dir=persist_dir)
 
     click.echo(
         f"\nDone. New embedding collection: {new_collection!r} "

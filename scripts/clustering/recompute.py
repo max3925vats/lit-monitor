@@ -19,6 +19,7 @@ import numpy as np
 from scripts.clustering.assign import assign_papers_to_clusters
 from scripts.clustering.kmeans import Cluster, compute_clusters, map_to_existing_clusters
 from scripts.clustering.naming import name_cluster
+from scripts.core.state_db import NewClusterSpec
 
 logger = logging.getLogger(__name__)
 
@@ -115,46 +116,35 @@ def recompute_clusters(
         )
         cluster.display_name = name  # None when LLM unavailable → fallback later
 
-    # Persist: archive old clusters, insert new ones.
-    # Do this in a single logical transaction via sequential state_db calls.
+    # Persist: archive old clusters + insert/upsert new ones ATOMICALLY.
+    # B3: replace_clusters runs the archive AND every insert inside ONE SQLite
+    # transaction.  Previously these were separate state_db calls (each its own
+    # commit), so a crash between archive and the inserts left the library with
+    # ZERO active clusters.  Now a crash mid-persist rolls the whole thing back:
+    # either the old clusters survive or the new ones land fully — never zero.
     old_ids = [c.id for c in existing_clusters if c.id is not None]
-    if old_ids:
-        state_db.archive_clusters(old_ids)
 
-    created = 0
-    for i, cluster in enumerate(new_clusters):
-        inherited_id = id_mapping.get(i)
-        # Display name: use LLM result or fallback placeholder
-        # The fallback uses the inherited_id or a temp marker resolved after insert
-        display = cluster.display_name  # may be None
+    specs: list[NewClusterSpec] = [
+        NewClusterSpec(
+            inherited_id=id_mapping.get(i),
+            display_name=cluster.display_name,  # may be None → fallback in txn
+            n_papers=cluster.size,
+            cohesion_score=cluster.cohesion_score,
+            centroid_blob=cluster.centroid_vec.tobytes(),
+        )
+        for i, cluster in enumerate(new_clusters)
+    ]
 
-        if inherited_id is not None:
-            # Reactivate the existing row with updated metadata
-            state_db.upsert_cluster_by_id(
-                cluster_id=inherited_id,
-                display_name=display,
-                n_papers=cluster.size,
-                cohesion_score=cluster.cohesion_score,
-                centroid_blob=cluster.centroid_vec.tobytes(),
-            )
-            cluster.id = inherited_id
-        else:
-            new_id = state_db.insert_cluster(
-                display_name=display,
-                n_papers=cluster.size,
-                cohesion_score=cluster.cohesion_score,
-                centroid_blob=cluster.centroid_vec.tobytes(),
-            )
-            cluster.id = new_id
+    assigned_ids = state_db.replace_clusters(old_ids, specs)
 
-        # Fill in fallback display name using now-known id
+    # Mirror the assigned ids + resolved fallback names back onto the Cluster
+    # objects so downstream assignment uses the real persisted ids/names.
+    for cluster, cid in zip(new_clusters, assigned_ids):
+        cluster.id = cid
         if cluster.display_name is None:
-            fallback = f"Cluster {cluster.id}"
-            state_db.update_cluster_display_name(cluster.id, fallback)
-            cluster.display_name = fallback
+            cluster.display_name = f"Cluster {cid}"
 
-        created += 1
-
+    created = len(assigned_ids)
     logger.info("C: persisted %d clusters.", created)
 
     # Assign all library papers to their nearest centroid

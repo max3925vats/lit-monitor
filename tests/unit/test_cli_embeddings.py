@@ -5,6 +5,7 @@ Coverage:
   - embeddings switch with --keep-old records new provenance
   - embeddings switch destructive requires --confirm
   - embeddings rebuild delegates to rebuild_active
+  - B3: destructive switch builds-new-then-swaps; crash mid-rebuild preserves old
 """
 from __future__ import annotations
 
@@ -115,6 +116,124 @@ class TestCliEmbeddingsRebuild:
             catch_exceptions=False,
         )
         assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# B3: destructive switch builds-new-then-swaps (safe migration)
+# ---------------------------------------------------------------------------
+class TestSwitchProviderSafeSwap:
+    def _setup_current(self, tmp_path):
+        """Seed a current 'lit_monitor_v1' provenance row; return the StateDB."""
+        from scripts.core.state_db import StateDB
+
+        sdb = StateDB(tmp_path / "state.db")
+        sdb.record_embedding_provenance(
+            "lit_monitor_v1", "ollama", "mxbai-embed-large", 1024
+        )
+        sdb.set_current_embedding_collection("lit_monitor_v1")
+        return sdb
+
+    def _patch_config(self, tmp_path, monkeypatch):
+        from scripts.core import config as config_mod
+
+        mock_cfg = _make_mock_config(tmp_path)
+        monkeypatch.setattr(config_mod, "get_config", lambda: mock_cfg)
+        return mock_cfg
+
+    def test_destructive_rebuild_crash_preserves_old_collection(
+        self, tmp_path, monkeypatch
+    ):
+        """B3: if _rebuild_collection raises during a destructive switch, the OLD
+        collection must remain current (provenance unchanged) and the OLD
+        collection must NOT have been dropped. The half-built new collection is
+        best-effort cleaned up."""
+        import pytest
+
+        from scripts.pipelines import embeddings_migration as mig
+
+        sdb = self._setup_current(tmp_path)
+        self._patch_config(tmp_path, monkeypatch)
+
+        # Auto-confirm the interactive "Continue?" cost prompt.
+        monkeypatch.setattr(mig, "_count_papers", lambda *a, **k: 5)
+        import click as _click
+        monkeypatch.setattr(_click, "confirm", lambda *a, **k: True)
+
+        dropped: list[str] = []
+        monkeypatch.setattr(
+            mig, "_drop_collection",
+            lambda name, persist_dir: dropped.append(name),
+        )
+
+        # Rebuild blows up partway through (simulating a kill mid-embed).
+        def boom(**kwargs):
+            raise RuntimeError("simulated crash during rebuild")
+
+        monkeypatch.setattr(mig, "_rebuild_collection", boom)
+
+        with pytest.raises(RuntimeError):
+            mig.switch_provider(
+                provider="litellm",
+                model="text-embedding-3-large",
+                dim=3072,
+                keep_old=False,
+                confirm=True,
+            )
+
+        # OLD collection still current; provenance untouched.
+        rows = sdb.list_embedding_provenance()
+        current = [r for r in rows if r["is_current"]]
+        assert len(current) == 1
+        assert current[0]["collection_name"] == "lit_monitor_v1"
+        # No new provenance row got recorded for the failed build.
+        assert all(r["collection_name"] == "lit_monitor_v1" for r in rows)
+
+        # The OLD collection must NEVER be dropped on the failure path.
+        assert "lit_monitor_v1" not in dropped
+
+    def test_destructive_success_swaps_then_drops_old(self, tmp_path, monkeypatch):
+        """B3 happy path: a successful destructive switch builds into a NEW
+        collection, records provenance + marks it current, THEN drops the old
+        one (swap order: build → record → set-current → drop-old)."""
+        from scripts.pipelines import embeddings_migration as mig
+
+        sdb = self._setup_current(tmp_path)
+        self._patch_config(tmp_path, monkeypatch)
+
+        monkeypatch.setattr(mig, "_count_papers", lambda *a, **k: 5)
+        import click as _click
+        monkeypatch.setattr(_click, "confirm", lambda *a, **k: True)
+
+        order: list[str] = []
+        dropped: list[str] = []
+
+        def fake_rebuild(**kwargs):
+            order.append(f"rebuild:{kwargs['collection_name']}")
+
+        def fake_drop(name, persist_dir):
+            order.append(f"drop:{name}")
+            dropped.append(name)
+
+        monkeypatch.setattr(mig, "_rebuild_collection", fake_rebuild)
+        monkeypatch.setattr(mig, "_drop_collection", fake_drop)
+
+        mig.switch_provider(
+            provider="litellm",
+            model="text-embedding-3-large",
+            dim=3072,
+            keep_old=False,
+            confirm=True,
+        )
+
+        rows = sdb.list_embedding_provenance()
+        current = [r for r in rows if r["is_current"]]
+        assert len(current) == 1
+        new_name = current[0]["collection_name"]
+        # New collection is NOT the old one (built fresh, then swapped).
+        assert new_name != "lit_monitor_v1"
+        # Old collection was dropped AFTER the rebuild into the new collection.
+        assert "lit_monitor_v1" in dropped
+        assert order.index(f"rebuild:{new_name}") < order.index("drop:lit_monitor_v1")
 
 
 # ---------------------------------------------------------------------------

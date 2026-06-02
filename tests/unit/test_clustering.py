@@ -387,6 +387,211 @@ class TestClusteringSchema:
 
 
 # ---------------------------------------------------------------------------
+# B3: StateDB.replace_clusters — atomic archive + insert/upsert
+# ---------------------------------------------------------------------------
+
+class TestReplaceClustersAtomicity:
+    def _spec(self, inherited_id, name, n, cohesion, centroid):
+        from scripts.core.state_db import NewClusterSpec
+
+        return NewClusterSpec(
+            inherited_id=inherited_id,
+            display_name=name,
+            n_papers=n,
+            cohesion_score=cohesion,
+            centroid_blob=centroid.tobytes(),
+        )
+
+    def test_replace_clusters_archives_and_inserts(self, tmp_path):
+        """replace_clusters archives old IDs and inserts new rows in one call."""
+        from scripts.core.state_db import StateDB
+
+        db = StateDB(tmp_path / "state.db")
+        centroid = np.zeros(8, dtype=np.float32)
+
+        old_a = db.insert_cluster("Old A", 3, 0.6, centroid.tobytes())
+        old_b = db.insert_cluster("Old B", 4, 0.7, centroid.tobytes())
+
+        specs = [
+            self._spec(None, "New X", 5, 0.5, centroid),
+            self._spec(None, "New Y", 6, 0.55, centroid),
+        ]
+        new_ids = db.replace_clusters([old_a, old_b], specs)
+
+        assert len(new_ids) == 2
+        active = db.list_active_clusters()
+        active_names = {c["display_name"] for c in active}
+        assert active_names == {"New X", "New Y"}
+        # Old rows archived, not active
+        assert not any(c["id"] in (old_a, old_b) for c in active)
+
+    def test_replace_clusters_upserts_inherited_id(self, tmp_path):
+        """An inherited_id reactivates the existing row (stable ID preserved)."""
+        from scripts.core.state_db import StateDB
+
+        db = StateDB(tmp_path / "state.db")
+        centroid = np.zeros(8, dtype=np.float32)
+
+        old_a = db.insert_cluster("Old A", 3, 0.6, centroid.tobytes())
+
+        specs = [self._spec(old_a, "Reactivated", 9, 0.8, centroid)]
+        new_ids = db.replace_clusters([old_a], specs)
+
+        assert new_ids == [old_a]
+        active = db.list_active_clusters()
+        assert len(active) == 1
+        assert active[0]["id"] == old_a
+        assert active[0]["display_name"] == "Reactivated"
+
+    def test_replace_clusters_display_name_fallback(self, tmp_path):
+        """A None display_name falls back to 'Cluster <id>' inside the txn."""
+        from scripts.core.state_db import StateDB
+
+        db = StateDB(tmp_path / "state.db")
+        centroid = np.zeros(8, dtype=np.float32)
+
+        specs = [self._spec(None, None, 5, 0.5, centroid)]
+        new_ids = db.replace_clusters([], specs)
+
+        row = db.get_cluster(new_ids[0])
+        assert row["display_name"] == f"Cluster {new_ids[0]}"
+
+    def test_replace_clusters_rolls_back_on_insert_failure(self, tmp_path, monkeypatch):
+        """If an insert mid-batch raises, the whole txn rolls back: old clusters
+        stay active and NO new rows land — never a zero-cluster window."""
+        import pytest as _pytest
+
+        from scripts.core.state_db import StateDB
+
+        db = StateDB(tmp_path / "state.db")
+        centroid = np.zeros(8, dtype=np.float32)
+
+        old_a = db.insert_cluster("Old A", 3, 0.6, centroid.tobytes())
+        old_b = db.insert_cluster("Old B", 4, 0.7, centroid.tobytes())
+        before = {c["id"] for c in db.list_active_clusters()}
+
+        specs = [
+            self._spec(None, "New X", 5, 0.5, centroid),
+            self._spec(None, "CRASH", 6, 0.55, centroid),
+        ]
+
+        # Make the per-insert helper raise on the spec named "CRASH", simulating
+        # a crash AFTER archive + first insert but before the batch completes.
+        orig_helper = StateDB._insert_cluster_conn
+
+        def boom_helper(self, conn, display_name, n_papers, cohesion_score, centroid_blob):
+            if display_name == "CRASH":
+                raise RuntimeError("simulated crash during insert")
+            # orig_helper is the original @staticmethod — no self.
+            return orig_helper(conn, display_name, n_papers, cohesion_score, centroid_blob)
+
+        monkeypatch.setattr(StateDB, "_insert_cluster_conn", boom_helper)
+
+        with _pytest.raises(RuntimeError):
+            db.replace_clusters([old_a, old_b], specs)
+
+        # Rolled back: old clusters STILL active, no "New X" leaked.
+        after = {c["id"] for c in db.list_active_clusters()}
+        assert after == before
+        names = {c["display_name"] for c in db.list_active_clusters()}
+        assert names == {"Old A", "Old B"}
+
+
+class TestRecomputeAtomicity:
+    """B3: recompute_clusters persists via the single atomic replace_clusters."""
+
+    def _seed_active_clusters(self, db, n=3, dim=8):
+        centroid = np.zeros(dim, dtype=np.float32)
+        ids = []
+        for i in range(n):
+            ids.append(
+                db.insert_cluster(f"Seed {i}", 2, 0.5, centroid.tobytes())
+            )
+        return ids
+
+    def _make_cfg(self):
+        cfg = MagicMock()
+        cfg.clustering.enabled = True
+        cfg.clustering.min_papers_threshold = 100
+        cfg.clustering.k_min = 2
+        cfg.clustering.k_max = 5
+        return cfg
+
+    def _make_embeddings_db(self, n=120, dim=8):
+        embs = _make_embeddings(n, dim=dim)
+        dois = _make_dois(n)
+        edb = MagicMock()
+        edb._collection.count.return_value = n
+        edb._collection.get.return_value = {
+            "ids": dois,
+            "embeddings": embs.tolist(),
+        }
+        return edb
+
+    def test_recompute_replaces_via_atomic_method(self, tmp_path):
+        """Happy path: recompute archives the seeded clusters and installs new
+        ones; afterwards list_active_clusters reflects ONLY the new set."""
+        from scripts.clustering.recompute import recompute_clusters
+        from scripts.core.state_db import StateDB
+
+        db = StateDB(tmp_path / "state.db")
+        seeded = self._seed_active_clusters(db, n=3)
+        before = {c["id"] for c in db.list_active_clusters()}
+        assert before == set(seeded)
+
+        edb = self._make_embeddings_db()
+        cfg = self._make_cfg()
+
+        with patch("scripts.clustering.recompute.name_cluster", return_value=None), \
+             patch("scripts.clustering.recompute.assign_papers_to_clusters"):
+            created = recompute_clusters(db, edb, cfg)
+
+        assert created > 0
+        active = db.list_active_clusters()
+        # All active rows must be freshly computed (non-zero, fallback-named).
+        assert len(active) == created
+        for c in active:
+            assert c["display_name"].startswith("Cluster ")
+
+    def test_recompute_crash_mid_persist_keeps_old_clusters(self, tmp_path, monkeypatch):
+        """If the persist transaction crashes mid-insert, the OLD clusters
+        survive — list_active_clusters is non-empty and unchanged (never zero)."""
+        from scripts.clustering.recompute import recompute_clusters
+        from scripts.core.state_db import StateDB
+
+        db = StateDB(tmp_path / "state.db")
+        self._seed_active_clusters(db, n=3)
+        before = {c["id"] for c in db.list_active_clusters()}
+
+        edb = self._make_embeddings_db()
+        cfg = self._make_cfg()
+
+        # Make the atomic insert helper blow up partway through the batch.
+        calls = {"n": 0}
+        orig_helper = StateDB._insert_cluster_conn
+
+        def boom_helper(self, conn, display_name, n_papers, cohesion_score, centroid_blob):
+            calls["n"] += 1
+            if calls["n"] == 2:  # crash on the second insert
+                raise RuntimeError("simulated crash during persist")
+            # orig_helper is the original @staticmethod — no self.
+            return orig_helper(conn, display_name, n_papers, cohesion_score, centroid_blob)
+
+        monkeypatch.setattr(StateDB, "_insert_cluster_conn", boom_helper)
+
+        with patch("scripts.clustering.recompute.name_cluster", return_value=None), \
+             patch("scripts.clustering.recompute.assign_papers_to_clusters"):
+            import pytest as _pytest
+            with _pytest.raises(RuntimeError):
+                recompute_clusters(db, edb, cfg)
+
+        # The crash rolled back the whole replace: OLD clusters are STILL active.
+        after = {c["id"] for c in db.list_active_clusters()}
+        assert after, "must NEVER leave zero active clusters"
+        assert after == before
+
+
+# ---------------------------------------------------------------------------
 # Threshold gating
 # ---------------------------------------------------------------------------
 
@@ -430,7 +635,11 @@ class TestThresholdGating:
 
         state_db = MagicMock()
         state_db.list_active_clusters.return_value = []
-        state_db.insert_cluster.return_value = 1
+        # B3: persistence now goes through the single atomic replace_clusters,
+        # which returns the assigned ids. Echo back one id per new cluster spec.
+        state_db.replace_clusters.side_effect = (
+            lambda archive_ids, specs: list(range(1, len(specs) + 1))
+        )
 
         embeddings_db = MagicMock()
         embeddings_db._collection.count.return_value = n
@@ -450,6 +659,7 @@ class TestThresholdGating:
             result = recompute_clusters(state_db, embeddings_db, cfg)
 
         assert result > 0
+        state_db.replace_clusters.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
