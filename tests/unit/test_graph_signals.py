@@ -526,16 +526,45 @@ class TestRankerIntegration:
 class TestConfigDefaults:
     """Config defaults for Bundle D graph weights must be 0.0."""
 
+    @staticmethod
+    def _make_paths_yaml(tmp_path):
+        """Write a minimal valid paths.yaml + create the vault dir Config validates.
+
+        CI doesn't have config/paths.yaml on disk, and Config() validates the
+        full pair (paths + extraction). We supply both via kwargs so the test
+        is self-contained and doesn't depend on the dev's local config tree.
+        """
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        paths_yaml = tmp_path / "paths.yaml"
+        paths_yaml.write_text(
+            "zotero:\n"
+            '  library_type: "user"\n'
+            '  library_id: "1"\n'
+            '  local_storage_path: "~/Zotero/storage"\n'
+            "obsidian:\n"
+            f'  vault_path: "{vault}"\n'
+            '  papers_folder: "Literature/Papers"\n'
+            '  books_folder: "Literature/Books"\n'
+            '  digests_folder: "Literature/Digests"\n'
+            '  connections_folder: "Literature/Connections"\n'
+            "state_db:\n"
+            f'  path: "{tmp_path / "state.db"}"\n'
+            "logs:\n"
+            f'  path: "{tmp_path / "logs"}"\n'
+            "  retention_days: 90\n"
+        )
+        return paths_yaml
+
     def test_ranking_weights_graph_defaults_zero(self, tmp_path):
         """ranking.weights.graph_* all default to 0.0 when not set in YAML."""
         from scripts.core.config import Config
 
-        # Write a minimal extraction.yaml with no graph weight keys.
-        # Config takes extraction_yaml as a Path kwarg (not positional).
+        paths_yaml = self._make_paths_yaml(tmp_path)
         cfg_path = tmp_path / "extraction.yaml"
         cfg_path.write_text("# minimal config\n")
 
-        cfg = Config(extraction_yaml=cfg_path)
+        cfg = Config(paths_yaml=paths_yaml, extraction_yaml=cfg_path)
         assert cfg.ranking.weights.graph_entity_overlap == 0.0
         assert cfg.ranking.weights.graph_citation == 0.0
         assert cfg.ranking.weights.graph_shared_authors == 0.0
@@ -544,6 +573,7 @@ class TestConfigDefaults:
         """graph weights from YAML are loaded into config correctly."""
         from scripts.core.config import Config
 
+        paths_yaml = self._make_paths_yaml(tmp_path)
         cfg_path = tmp_path / "extraction.yaml"
         cfg_path.write_text(
             "ranking:\n"
@@ -552,7 +582,7 @@ class TestConfigDefaults:
             "    graph_citation: 0.10\n"
             "    graph_shared_authors: 0.05\n"
         )
-        cfg = Config(extraction_yaml=cfg_path)
+        cfg = Config(paths_yaml=paths_yaml, extraction_yaml=cfg_path)
         assert cfg.ranking.weights.graph_entity_overlap == 0.15
         assert cfg.ranking.weights.graph_citation == 0.10
         assert cfg.ranking.weights.graph_shared_authors == 0.05

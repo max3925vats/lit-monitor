@@ -251,14 +251,22 @@ class TestBundleAEmbedTextRegression:
         assert call_count == 1, "_embed_call should be called only once (cache hit on second)"
 
     def test_embed_text_returns_ndarray(self, tmp_path):
-        """embed_text returns np.ndarray, not a raw list."""
+        """embed_text returns np.ndarray, not a raw list.
+
+        The Ollama path routes through EmbeddingsDB._embed (not
+        embed_via_ollama directly), so we patch the bound method. This
+        keeps the test offline — without it, CI runners with no Ollama
+        connection fail with URLError.
+        """
         from scripts.output.embeddings import EmbeddingsDB
-        fake_vec = np.ones(1024, dtype=np.float32)
-        with patch("scripts.llm.embedding_client.embed_via_ollama", return_value=fake_vec):
-            db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
+        db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
+        # _embed returns list[float]; embed_text wraps it via np.array(..., float32).
+        with patch.object(db, "_embed", return_value=[1.0] * 1024):
+            db.embed_text.cache_clear()  # avoid lru_cache hit from sibling tests
             result = db.embed_text("some text")
         assert isinstance(result, np.ndarray)
         assert result.dtype == np.float32
+        assert result.shape == (1024,)
 
     def test_embed_text_empty_raises(self, tmp_path):
         """embed_text with empty string still raises ValueError."""
