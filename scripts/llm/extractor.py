@@ -23,6 +23,7 @@ from scripts.core.markdown_processor import strip_end_matter, strip_references_s
 from scripts.core.strict_mode import strict_fallback
 from scripts.llm import extraction_schema as _es
 from scripts.llm.llm_client import LLMClient, parse_llm_json
+from scripts.llm.prompt_safety import sanitize_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -259,6 +260,12 @@ def _build_system_prompt(
 def _build_extraction_user_prompt(text: str, ocr_heavy: bool) -> str:
     from scripts.llm.prompt_registry import load_extraction_prompts
     _ep = load_extraction_prompts()
+    # C1: sanitize the paper fulltext once at this boundary. Paper text comes
+    # from a Zotero markdown attachment (user-controllable) and could carry
+    # ChatML/Llama role markers to break out of the prompt. strip_code_fences
+    # is False so legitimate methods/algorithm code blocks survive — fence
+    # removal here would degrade extraction quality on code-bearing papers.
+    text = sanitize_for_prompt(text, strip_code_fences=False)
     parts = [_ep.user_prefix, "", text]
     if ocr_heavy and _es.ocr_warning():
         parts.extend(["", _es.ocr_warning().strip()])

@@ -28,6 +28,7 @@ from typing import Any
 
 from scripts.graph.relationship_extractor import RelationshipTuple
 from scripts.graph.relationship_validator import VALID_PREDICATES
+from scripts.llm.prompt_safety import sanitize_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +135,11 @@ def _summarize_extraction(extraction_json: dict[str, Any] | None) -> str:
             continue
         if isinstance(v, list):
             v = "; ".join(str(x) for x in v[:5])
-        parts.append(f"  {k}: {str(v)[:300]}")
+        # C1: these fields originate from user-controllable paper fulltext via
+        # the extraction pass; scrub role markers before inlining into the
+        # prompt. Short snippets → default fence-stripping.
+        safe_v = sanitize_for_prompt(str(v)[:300])
+        parts.append(f"  {k}: {safe_v}")
     return "\n".join(parts) if parts else "(no structured extraction available)"
 
 
@@ -390,7 +395,11 @@ def extract_llm_relationships(
             return []
 
     # Render placeholders.
-    truncated_text = _truncate_text(fulltext)
+    # C1: fulltext is full-document text → preserve legitimate code fences,
+    # strip only role markers. _summarize_extraction sanitizes its own fields.
+    truncated_text = sanitize_for_prompt(
+        _truncate_text(fulltext), strip_code_fences=False
+    )
     extraction_summary = _summarize_extraction(extraction_json)
     try:
         system_msg = prompt.system

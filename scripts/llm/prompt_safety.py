@@ -22,20 +22,31 @@ _ROLE_MARKERS = re.compile(
 )
 
 
-def sanitize_for_prompt(text: str | None) -> str:
+def sanitize_for_prompt(text: str | None, strip_code_fences: bool = True) -> str:
     """Return a copy of *text* safe to f-string into an LLM prompt.
 
-    Removes triple-backtick fences, ChatML / Llama role markers, and
-    collapses runs of newlines. Returns "" for None or empty input.
-    Does NOT strip leading/trailing whitespace from normal content.
+    Removes ChatML / Llama role markers (the actual prompt-injection breakout
+    vector) and collapses runs of newlines. Optionally removes triple-backtick
+    fences. Returns "" for None or empty input. Does NOT strip leading/trailing
+    whitespace from normal content.
 
-    Note: removes ALL triple-backticks, including legitimate code fences.
-    Caller must accept that source code in paper text is stripped.
+    Parameters
+    ----------
+    strip_code_fences:
+        When True (default), also removes ALL triple-backticks, including
+        legitimate code fences. Correct for short metadata (titles, keywords,
+        domain_context) which should not carry real code blocks.
+
+        When False, PRESERVES ` ``` ` fences while still stripping role markers.
+        Use for paper FULLTEXT, where fence-stripping would destroy legitimate
+        methods/algorithm code blocks and degrade extraction quality. The
+        high-value defence (role-marker removal) still applies.
     """
     if not text:
         return ""
     s = str(text)
-    s = s.replace("```", "")
+    if strip_code_fences:
+        s = s.replace("```", "")
     s = _ROLE_MARKERS.sub("", s)
     s = _EXCESS_NEWLINES.sub("\n\n", s)
     return s

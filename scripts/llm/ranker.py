@@ -294,7 +294,10 @@ def _get_rationales(
 
     system = prompt.system
     if domain_context:
-        system = domain_context + "\n\n" + system
+        # C1: domain_context is a free-text user config paragraph; sanitize it
+        # before prepending so a role marker there cannot break out of the
+        # system prompt. Short metadata → default fence-stripping.
+        system = sanitize_for_prompt(domain_context) + "\n\n" + system
 
     try:
         raw = llm.complete(system, user_prompt, max_tokens=prompt.max_tokens)

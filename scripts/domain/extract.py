@@ -86,9 +86,14 @@ def analyze_domain(
     # ---- Load + render prompt ------------------------------------------
     try:
         from scripts.llm.prompt_registry import load_prompt
+        from scripts.llm.prompt_safety import sanitize_for_prompt
 
         prompt = load_prompt("domain_extraction")
-        rendered_user = prompt.render_user(domain_context=text)
+        # C1: the domain_focus paragraph is free-text user config; scrub role
+        # markers before rendering. Short paragraph → default fence-stripping.
+        rendered_user = prompt.render_user(
+            domain_context=sanitize_for_prompt(text)
+        )
         system = prompt.system
         max_tokens = prompt.max_tokens
     except Exception as exc:  # noqa: BLE001 — defensive perimeter

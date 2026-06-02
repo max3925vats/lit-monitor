@@ -22,6 +22,7 @@ import yaml
 
 from scripts.llm.llm_client import LLMClient, parse_llm_json
 from scripts.llm.prompt_registry import load_clustering_prompts
+from scripts.llm.prompt_safety import sanitize_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -605,7 +606,11 @@ def build_vocabulary(
             "build_vocabulary: clustering chunk %d/%d (%d keywords)…",
             i, n_chunks, len(chunk),
         )
-        raw = llm.complete(_prompts.system, _prompts.render_user(chunk), max_tokens=max_tokens)
+        # C1: Zotero keyword strings are user-controllable; a malicious tag
+        # could carry ChatML/Llama role markers into the clustering prompt.
+        # Keywords are short → default fence-stripping is correct here.
+        safe_chunk = [sanitize_for_prompt(kw) for kw in chunk]
+        raw = llm.complete(_prompts.system, _prompts.render_user(safe_chunk), max_tokens=max_tokens)
         try:
             partial = parse_llm_json(raw)
         except ValueError as parse_exc:
