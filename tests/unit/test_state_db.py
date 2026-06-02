@@ -731,3 +731,82 @@ class TestFeedbackEvents:
         events = db.list_feedback_events(since="2050-01-01")
         assert len(events) == 1
         assert events[0]["doi"] == "10.1/new"
+
+
+# ===========================================================================
+# B4: reset_extractions re-queues papers as 'pending' (get_pending visibility)
+# ===========================================================================
+
+
+class TestResetExtractionsRequeue:
+    """B4 Fix 1: reset_extractions must set status='pending' so reset papers
+    re-enter the get_pending queue. Under the old status=NULL behavior they
+    were invisible to get_pending and never re-processed."""
+
+    def test_reset_extractions_makes_papers_pending_and_visible(self, tmp_path):
+        """B4: a completed paper, after reset, is returned by get_pending."""
+        db = StateDB(tmp_path / "state.db")
+        db.upsert_paper({
+            "doi": "10.1/done",
+            "title": "Done Paper",
+            "source_type": "paper",
+            "status": "extraction_complete",
+            "extraction_json": '{"summary": "x"}',
+        })
+        # Pre-reset: not pending (status is complete).
+        assert db.get_pending("paper") == []
+
+        n = db.reset_extractions()
+        assert n == 1
+
+        # Post-reset: extraction cleared AND paper re-queued as pending.
+        row = db.get_paper("10.1/done")
+        assert row["extraction_json"] is None
+        assert row["status"] == "pending"
+
+        pending = db.get_pending("paper")
+        pending_dois = {p["doi"] for p in pending}
+        assert "10.1/done" in pending_dois, (
+            "reset paper must be visible to get_pending — this fails under the "
+            "old status=NULL behavior"
+        )
+
+
+# ===========================================================================
+# B4: upsert_paper fails loud on unknown / typo / flag-column keys
+# ===========================================================================
+
+
+class TestUpsertPaperUnknownKeys:
+    """B4 Fix 2: upsert_paper must raise ValueError on keys that are not real
+    upsert-able papers columns, instead of silently dropping them."""
+
+    def test_valid_full_upsert_still_works(self, tmp_path):
+        """B4: a normal upsert with only real columns succeeds and round-trips."""
+        db = StateDB(tmp_path / "state.db")
+        db.upsert_paper({
+            "doi": "10.1/ok",
+            "title": "T",
+            "authors": ["A", "B"],
+            "year": 2024,
+            "journal": "J",
+            "status": "pending",
+            "source_type": "paper",
+            "extraction_json": '{"k": 1}',
+        })
+        row = db.get_paper("10.1/ok")
+        assert row["title"] == "T"
+        assert row["status"] == "pending"
+
+    def test_typo_key_raises_valueerror_naming_key(self, tmp_path):
+        """B4: an unknown/typo key raises ValueError naming the offending key."""
+        db = StateDB(tmp_path / "state.db")
+        with pytest.raises(ValueError, match="bogus_col"):
+            db.upsert_paper({"doi": "10.1/x", "title": "T", "bogus_col": 1})
+
+    def test_flag_column_raises_with_setter_redirect(self, tmp_path):
+        """B4: a flag column managed by a dedicated setter is rejected with a
+        redirect message, not silently written through upsert_paper."""
+        db = StateDB(tmp_path / "state.db")
+        with pytest.raises(ValueError, match="set_graph_indexed"):
+            db.upsert_paper({"doi": "10.1/y", "title": "T", "graph_indexed": 1})

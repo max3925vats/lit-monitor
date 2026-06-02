@@ -232,6 +232,10 @@ def run_discovery(
             for paper in new_papers:
                 doi = paper.get("doi", "")
                 if doi:
+                    # B4: similarity_score / llm_rationale are NOT papers columns
+                    # (they were silently dropped here); the ranked score+rationale
+                    # are persisted in discovery_paper_results via add_discovery_paper
+                    # above, so they are not passed to upsert_paper.
                     state_db.upsert_paper({
                         "doi": doi,
                         "title": paper.get("title", ""),
@@ -240,8 +244,6 @@ def run_discovery(
                         "status": "discovered",
                         "source_type": "paper",
                         "first_seen_date": str(date.today()),
-                        "similarity_score": paper.get("similarity_score", 0.0),
-                        "llm_rationale": paper.get("llm_rationale", ""),
                         "last_updated": _now(),
                     })
         # ----------------------------------------------------------------

@@ -248,6 +248,21 @@ CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback_events(created_at);
 # ---------------------------------------------------------------------------
 # StateDB class
 # ---------------------------------------------------------------------------
+
+# B4: papers columns that ARE real columns but are intentionally managed by
+# dedicated setters (set_graph_indexed / set_chunks_indexed / set_notes_synced /
+# set_ner_processed_at / set_rel_processed_at).  Writing them through
+# upsert_paper would bypass the R28 dual-write invariant logic in those setters,
+# so upsert_paper rejects them with a redirect to the correct method.
+_UPSERT_FLAG_COLUMNS: dict[str, str] = {
+    "graph_indexed": "set_graph_indexed()",
+    "chunks_indexed": "set_chunks_indexed()",
+    "notes_synced": "set_notes_synced()",
+    "ner_processed_at": "set_ner_processed_at()",
+    "rel_processed_at": "set_rel_processed_at()",
+}
+
+
 class StateDB:
     """Thread-safe SQLite wrapper for lit-monitor state."""
     def __init__(self, db_path: str | Path) -> None:
@@ -420,7 +435,17 @@ class StateDB:
                 )
     # -- Paper / review CRUD --
     def upsert_paper(self, data: dict[str, Any]) -> None:
-        """Insert or replace a paper or review record."""
+        """Insert or replace a paper or review record.
+
+        B4: validates every key in ``data`` against the set of upsert-able
+        ``papers`` columns and raises ``ValueError`` on anything unknown.
+        Previously unknown keys were SILENTLY dropped, so a typo
+        (``"tite"`` for ``"title"``) or an attempt to write a flag column
+        produced silent data loss with no error.  Flag columns
+        (graph_indexed / chunks_indexed / notes_synced / ner_processed_at /
+        rel_processed_at) are real columns but managed by dedicated setters,
+        so they are rejected with a redirect rather than written here.
+        """
         cols = [
             "doi", "title", "authors", "year", "journal", "zotero_key",
             "first_seen_date", "status", "source_type", "parent_id",
@@ -428,6 +453,26 @@ class StateDB:
             "extraction_provider", "extraction_model", "ocr_pages_json",
             "ocr_heavy", "keywords_json", "isbn", "last_updated",
         ]
+
+        # B4: fail loud on unknown keys.  Separate flag columns (redirect to
+        # their setter) from genuine typos / non-existent columns (clear error).
+        allowed = set(cols)
+        flag_keys = sorted(k for k in data if k in _UPSERT_FLAG_COLUMNS)
+        if flag_keys:
+            redirects = ", ".join(
+                f"{k} -> {_UPSERT_FLAG_COLUMNS[k]}" for k in flag_keys
+            )
+            raise ValueError(
+                "upsert_paper() does not manage flag column(s) "
+                f"{flag_keys}; use the dedicated setter(s) instead: {redirects}"
+            )
+        unknown = sorted(k for k in data if k not in allowed)
+        if unknown:
+            raise ValueError(
+                f"upsert_paper() got unknown papers column(s) {unknown}; "
+                f"valid columns are {sorted(allowed)}. Check for a typo or use "
+                "the dedicated setter for flag columns."
+            )
 
         row = {}
         for col in cols:
@@ -814,8 +859,13 @@ class StateDB:
             Number of paper rows whose extraction_json was cleared.
         """
         with self._connect() as conn:
+            # B4: re-queue reset papers as 'pending' (the canonical "ready to be
+            # processed" state — same value newly-ingested papers default to and
+            # the only status get_pending() matches).  The old code set status=NULL,
+            # which made every reset paper INVISIBLE to get_pending() so they were
+            # never re-extracted — defeating the whole point of resetting.
             cur = conn.execute(
-                "UPDATE papers SET extraction_json = NULL, status = NULL, "
+                "UPDATE papers SET extraction_json = NULL, status = 'pending', "
                 "extraction_provider = NULL, extraction_model = NULL, "
                 "last_updated = datetime('now') WHERE extraction_json IS NOT NULL"
             )

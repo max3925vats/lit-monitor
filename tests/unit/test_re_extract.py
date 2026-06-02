@@ -43,10 +43,12 @@ def _seed_paper(state_db, doi: str, tmp_path: Path) -> None:
         tmp_path / "vault" / "Literature" / "Papers" / "Smith2021_Test.md"
     )
     Path(note_path).write_text("# Dummy note\nWe studied filtration.", encoding="utf-8")
+    # B4: 'abstract' is not a papers column — it was always silently dropped by
+    # upsert_paper (and re_extract falls back to fulltext when record['abstract']
+    # is absent), so it is no longer passed now that upsert_paper fails loud.
     state_db.upsert_paper({
         "doi": doi,
         "title": "A Study on Filtration",
-        "abstract": "We studied filtration with Protein A resin.",
         "source_type": "paper",
         "extraction_json": json.dumps({"core_finding": "old finding"}),
         "note_path": note_path,
