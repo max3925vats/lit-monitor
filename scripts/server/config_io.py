@@ -48,11 +48,27 @@ def load_config(name: str) -> dict[str, Any]:
 
 
 def save_config(name: str, data: dict[str, Any]) -> Path:
-    """Atomically write ``config/{name}.yaml``. Returns the final path."""
+    """Atomically write ``config/{name}.yaml``. Returns the final path.
+
+    Uses ruamel.yaml round-trip mode so any comments / quote style /
+    key ordering on the EXISTING file survive when the wizard re-saves
+    after a single-field edit. New top-level keys in ``data`` are
+    appended at the bottom in insertion order.
+    """
     target = CONFIG_DIR / f"{name}.yaml"
     target.parent.mkdir(parents=True, exist_ok=True)
-    rendered = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
-    return _atomic_write(target, rendered)
+    yaml_rt, existing = _round_trip_load(target)
+    # Replace top-level keys from ``data`` while preserving any pre-existing
+    # comments + ordering on keys that aren't being edited. ``data`` is the
+    # full new document, so swap in each key explicitly.
+    for k, v in data.items():
+        existing[k] = v
+    # Drop top-level keys the new dict no longer contains. The wizard always
+    # passes the COMPLETE intended document, so absence = explicit deletion.
+    for k in list(existing.keys()):
+        if k not in data:
+            del existing[k]
+    return _atomic_write(target, _round_trip_dump(yaml_rt, existing))
 
 
 def load_secrets() -> dict[str, Any]:
@@ -118,20 +134,18 @@ def save_server_config(host: str, port: int, open_browser: bool) -> None:
 _VALID_VIEWERS: frozenset[str] = frozenset({"browser", "obsidian", "none"})
 
 
-def _round_trip_extraction_yaml(path: Path):
-    """v0.9.1 hotfix shared helper: load extraction.yaml with comment-preserving
-    round-trip semantics, returning (yaml_rt, data).
+def _round_trip_load(path: Path):
+    """Load a YAML file with comment-preserving round-trip semantics.
 
-    All three live-config writers below (safe_save_preference,
-    safe_save_digest_auto_write, safe_save_settings_section) share this so
-    user comments + quote style + key ordering survive each toggle. PyYAML's
-    safe_dump strips all of those silently.
+    Returns (yaml_rt, data). Callers mutate ``data`` and pass it to
+    :func:`_round_trip_dump` to render the modified document back to text.
+    For a missing file the data is a fresh ``CommentedMap`` so any new
+    nested keys land cleanly.
 
-    Returns:
-        Tuple of (configured YAML instance, loaded data dict). Callers
-        mutate the data dict and call ``yaml_rt.dump(data, buf)`` to render.
-        For a missing file the data is a fresh ``CommentedMap`` so any new
-        nested keys land cleanly.
+    All writers in this module that target user-edited YAML route through
+    this helper. PyYAML's ``safe_dump`` silently strips comments + quote
+    style + key ordering — the v0.9.0 Bundle H regression that prompted
+    this hotfix.
     """
     from ruamel.yaml import YAML
     from ruamel.yaml.comments import CommentedMap
@@ -155,8 +169,8 @@ def _round_trip_extraction_yaml(path: Path):
     return yaml_rt, data
 
 
-def _dump_round_trip(yaml_rt, data) -> str:
-    """Companion to _round_trip_extraction_yaml — render to string."""
+def _round_trip_dump(yaml_rt, data) -> str:
+    """Companion to :func:`_round_trip_load` — render the data back to text."""
     from io import StringIO
 
     buf = StringIO()
@@ -204,7 +218,7 @@ def safe_save_preference(
     path = Path(config_path) if config_path is not None else CONFIG_DIR / "extraction.yaml"
 
     # v0.9.1: ruamel round-trip preserves user comments + quote style.
-    yaml_rt, data = _round_trip_extraction_yaml(path)
+    yaml_rt, data = _round_trip_load(path)
 
     # Navigate / create the nested structure defensively.
     data.setdefault("discovery", {})
@@ -219,7 +233,7 @@ def safe_save_preference(
     if enabled is not None:
         data["discovery"]["notify"]["enabled"] = bool(enabled)
 
-    rendered = _dump_round_trip(yaml_rt, data)
+    rendered = _round_trip_dump(yaml_rt, data)
     # Delegate to the same atomic helper used by save_config / save_secrets.
     _atomic_write(path, rendered)
 
@@ -247,7 +261,7 @@ def safe_save_digest_auto_write(
     path = Path(config_path) if config_path is not None else CONFIG_DIR / "extraction.yaml"
 
     # v0.9.1: ruamel round-trip preserves user comments + quote style.
-    yaml_rt, data = _round_trip_extraction_yaml(path)
+    yaml_rt, data = _round_trip_load(path)
 
     # Navigate / create the nested structure defensively.
     data.setdefault("discovery", {})
@@ -259,7 +273,7 @@ def safe_save_digest_auto_write(
 
     data["discovery"]["digest"]["auto_write"] = bool(value)
 
-    rendered = _dump_round_trip(yaml_rt, data)
+    rendered = _round_trip_dump(yaml_rt, data)
     _atomic_write(path, rendered)
 
 
@@ -287,12 +301,9 @@ def safe_save_topics(
     """
     path = Path(topics_path) if topics_path is not None else CONFIG_DIR / "topics.yaml"
 
-    # Read existing content; start fresh if file absent.
-    if path.exists():
-        raw = path.read_text(encoding="utf-8")
-        data: dict = yaml.safe_load(raw) or {}
-    else:
-        data = {}
+    # v0.9.1: ruamel round-trip preserves any user comments / formatting on
+    # the existing topics.yaml (e.g. category section headers).
+    yaml_rt, data = _round_trip_load(path)
 
     # Ensure the searches list exists.
     searches = data.get("searches")
@@ -301,8 +312,7 @@ def safe_save_topics(
     searches.append(new_topic)
     data["searches"] = searches
 
-    rendered = yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
-    _atomic_write(path, rendered)
+    _atomic_write(path, _round_trip_dump(yaml_rt, data))
 
 
 def safe_save_settings_section(
@@ -355,9 +365,9 @@ def safe_save_settings_section(
     path = Path(config_path) if config_path is not None else CONFIG_DIR / "extraction.yaml"
 
     # v0.9.1: ruamel round-trip preserves user comments + quote style.
-    yaml_rt, full = _round_trip_extraction_yaml(path)
+    yaml_rt, full = _round_trip_load(path)
     full[section] = data
-    _atomic_write(path, _dump_round_trip(yaml_rt, full))
+    _atomic_write(path, _round_trip_dump(yaml_rt, full))
 
 
 def _atomic_write(target: Path, content: str) -> Path:

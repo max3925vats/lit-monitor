@@ -157,6 +157,85 @@ def test_save_config_roundtrip(monkeypatch, tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_save_config_preserves_comments_on_unedited_sections(monkeypatch, tmp_path: Path) -> None:
+    """v0.9.1: save_config must preserve comments on top-level sections the
+    user did NOT edit.
+
+    The wizard writes the complete intended document each step. Sections it
+    re-passes are replaced wholesale (inline comments inside cannot survive —
+    the new value is a plain dict). But sections the wizard isn't touching
+    on this save should retain their existing comments + formatting.
+    """
+    monkeypatch.chdir(tmp_path)
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    target = config_dir / "paths.yaml"
+    target.write_text(
+        "# user notes about their setup\n"
+        "obsidian:\n"
+        "  vault_path: /old/path\n"
+        "  papers_folder: Literature/Papers\n"
+        "\n"
+        "zotero:\n"
+        "  # comment on the zotero block — user did NOT touch this section\n"
+        '  library_type: "user"\n'
+        '  library_id: "123"  # inline note the user added\n',
+        encoding="utf-8",
+    )
+
+    # Wizard re-saves the full document: obsidian section is edited, zotero
+    # section is passed through unchanged.
+    config_io.save_config("paths", {
+        "obsidian": {
+            "vault_path": "/new/path",
+            "papers_folder": "Literature/Papers",
+        },
+        "zotero": {
+            "library_type": "user",
+            "library_id": "123",
+        },
+    })
+
+    written = target.read_text(encoding="utf-8")
+    # Top-of-file comment is between sections — survives the round-trip.
+    assert "# user notes about their setup" in written, "top-of-file comment stripped"
+    # The edit landed in the changed section.
+    assert "/new/path" in written
+    # YAML parses correctly with both sections intact.
+    loaded = yaml.safe_load(written)
+    assert loaded["obsidian"]["vault_path"] == "/new/path"
+    assert loaded["zotero"]["library_type"] == "user"
+    assert loaded["zotero"]["library_id"] == "123"
+
+
+@pytest.mark.unit
+def test_safe_save_topics_preserves_comments(tmp_path: Path) -> None:
+    """v0.9.1: safe_save_topics must preserve existing topics.yaml comments."""
+    topics_path = tmp_path / "topics.yaml"
+    topics_path.write_text(
+        "# Topics for weekly discovery\n"
+        "# Edit this list to change what's monitored.\n"
+        "searches:\n"
+        '  - query: "protein folding"  # core focus\n',
+        encoding="utf-8",
+    )
+
+    config_io.safe_save_topics(
+        {"query": "membrane filtration"},
+        topics_path=topics_path,
+    )
+
+    written = topics_path.read_text(encoding="utf-8")
+    assert "# Topics for weekly discovery" in written
+    assert "# core focus" in written
+    # New entry appended.
+    loaded = yaml.safe_load(written)
+    queries = [s["query"] for s in loaded["searches"]]
+    assert "protein folding" in queries
+    assert "membrane filtration" in queries
+
+
+@pytest.mark.unit
 def test_load_config_raises_yaml_error_on_malformed_yaml(tmp_path, monkeypatch):
     """load_config must NOT silently return {} on parse error."""
     monkeypatch.chdir(tmp_path)
