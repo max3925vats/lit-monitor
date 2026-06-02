@@ -336,7 +336,7 @@ def test_perform_vault_reset_removes_files(tmp_path: Path) -> None:
 
     cfg = _fake_config(state_db_path=tmp_path / "state.db", vault_path=vault)
     targets = reset_mod.vault_targets(cfg)
-    results = reset_mod.perform_vault_reset(targets)
+    results = reset_mod.perform_vault_reset(targets, vault_root=vault)
 
     # Papers and Digests should report deleted=True; Synthesis absent → skipped.
     by_label = {r.label: r for r in results}
@@ -365,9 +365,11 @@ def test_perform_vault_reset_idempotent(tmp_path: Path) -> None:
     (papers / "p1.md").write_text("x")
 
     cfg = _fake_config(state_db_path=tmp_path / "state.db", vault_path=vault)
-    reset_mod.perform_vault_reset(reset_mod.vault_targets(cfg))
+    reset_mod.perform_vault_reset(reset_mod.vault_targets(cfg), vault_root=vault)
     # Second pass: every folder exists but contains no .md → all skipped.
-    results = reset_mod.perform_vault_reset(reset_mod.vault_targets(cfg))
+    results = reset_mod.perform_vault_reset(
+        reset_mod.vault_targets(cfg), vault_root=vault
+    )
     assert all(not r.deleted for r in results)
 
 
@@ -384,10 +386,218 @@ def test_perform_vault_reset_does_not_touch_dev_sandbox(tmp_path: Path) -> None:
     dev_note.write_text("dev-only content")
 
     cfg = _fake_config(state_db_path=tmp_path / "state.db", vault_path=vault)
-    reset_mod.perform_vault_reset(reset_mod.vault_targets(cfg))
+    reset_mod.perform_vault_reset(reset_mod.vault_targets(cfg), vault_root=vault)
 
     assert not (papers / "p1.md").exists()
     assert dev_note.exists(), "Dev sandbox note must survive vault reset."
+
+
+# ---------------------------------------------------------------------------
+# Audit-2 B2: containment guard for vault .md deletion
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_is_safely_within_real_subfolder_true(tmp_path: Path) -> None:
+    """A genuine subfolder of the vault root is safe."""
+    root = tmp_path / "vault"
+    child = root / "Literature" / "Papers"
+    assert reset_mod._is_safely_within(child, root) is True
+
+
+@pytest.mark.unit
+def test_is_safely_within_vault_root_itself_false(tmp_path: Path) -> None:
+    """The vault root itself is NOT a safe deletion target (depth 0)."""
+    root = tmp_path / "vault"
+    assert reset_mod._is_safely_within(root, root) is False
+
+
+@pytest.mark.unit
+def test_is_safely_within_sibling_outside_false(tmp_path: Path) -> None:
+    """A sibling/outside path is rejected."""
+    root = tmp_path / "vault"
+    outside = tmp_path / "outside"
+    assert reset_mod._is_safely_within(outside, root) is False
+
+
+@pytest.mark.unit
+def test_is_safely_within_dotdot_escape_false(tmp_path: Path) -> None:
+    """A ``..``-escaping path that resolves outside the root is rejected."""
+    root = tmp_path / "vault"
+    root.mkdir()
+    # root / "../outside" resolves to tmp_path/outside, outside the vault.
+    escaping = root / ".." / "outside"
+    assert reset_mod._is_safely_within(escaping, root) is False
+
+
+@pytest.mark.unit
+def test_is_safely_within_nested_deep_true(tmp_path: Path) -> None:
+    """A deeply nested subfolder is still safe."""
+    root = tmp_path / "vault"
+    deep = root / "a" / "b" / "c" / "d"
+    assert reset_mod._is_safely_within(deep, root) is True
+
+
+@pytest.mark.unit
+def test_perform_vault_reset_happy_path_with_guard(tmp_path: Path) -> None:
+    """Happy path: normal subfolders pass the guard and .md files are deleted.
+
+    Exercises the guarded code path (``vault_root`` supplied) to prove the
+    containment check does not interfere with legitimate deletions.
+    """
+    vault = tmp_path / "vault"
+    papers = vault / "Literature" / "Papers"
+    papers.mkdir(parents=True)
+    (papers / "p1.md").write_text("# paper 1")
+    (papers / "p2.md").write_text("# paper 2")
+
+    cfg = _fake_config(state_db_path=tmp_path / "state.db", vault_path=vault)
+    targets = reset_mod.vault_targets(cfg)
+    results = reset_mod.perform_vault_reset(targets, vault_root=vault)
+
+    by_label = {r.label: r for r in results}
+    assert by_label["Papers folder"].deleted is True
+    assert not (papers / "p1.md").exists()
+    assert not (papers / "p2.md").exists()
+    # No target should be flagged unsafe on the happy path.
+    assert all(
+        r.skipped_reason != "unsafe path (outside vault root)" for r in results
+    )
+
+
+@pytest.mark.unit
+def test_perform_vault_reset_skips_empty_folder_config_attack(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Empty-string folder config resolves to the vault root → must be SKIPPED.
+
+    ``vault_root / "" == vault_root``; deleting the vault root's *.md
+    recursively would erase the whole vault. The guard must skip it, leave a
+    sentinel at the vault root untouched, and record the skip with a warning.
+    """
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    # Sentinel directly at the vault root — must survive.
+    sentinel = vault / "ROOT_NOTE.md"
+    sentinel.write_text("important user note at vault root")
+    # A theme page in a subfolder too, to make the recursive blast radius real.
+    other = vault / "Themes"
+    other.mkdir()
+    other_note = other / "theme.md"
+    other_note.write_text("theme content")
+
+    # papers_folder="" → resolves to vault root.
+    cfg = _fake_config(
+        state_db_path=tmp_path / "state.db",
+        vault_path=vault,
+        papers_folder="",
+    )
+    targets = reset_mod.vault_targets(cfg)
+    with caplog.at_level("WARNING"):
+        results = reset_mod.perform_vault_reset(targets, vault_root=vault)
+
+    papers_result = next(r for r in results if r.label == "Papers folder")
+    assert papers_result.deleted is False
+    assert papers_result.skipped_reason == "unsafe path (outside vault root)"
+    # Loud warning recorded.
+    assert any("unsafe" in rec.message.lower() for rec in caplog.records)
+    # Sentinels at/under the vault root SURVIVE the attack.
+    assert sentinel.exists(), "Vault-root note must NOT be deleted by the attack."
+    assert other_note.exists(), "Sibling note must NOT be deleted by the attack."
+
+
+@pytest.mark.unit
+def test_perform_vault_reset_skips_absolute_escape_attack(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An absolute folder path outside the vault → must be SKIPPED.
+
+    Builds a sibling ``outside/`` dir holding a sentinel .md and points
+    ``papers_folder`` at it via an absolute path. The guard must refuse to
+    touch it; the sentinel survives.
+    """
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "outside_note.md"
+    sentinel.write_text("file outside the vault")
+
+    # vault_root / "/abs/path" → absolute path wins, lands outside the vault.
+    cfg = _fake_config(
+        state_db_path=tmp_path / "state.db",
+        vault_path=vault,
+        papers_folder=str(outside),
+    )
+    targets = reset_mod.vault_targets(cfg)
+    with caplog.at_level("WARNING"):
+        results = reset_mod.perform_vault_reset(targets, vault_root=vault)
+
+    papers_result = next(r for r in results if r.label == "Papers folder")
+    assert papers_result.deleted is False
+    assert papers_result.skipped_reason == "unsafe path (outside vault root)"
+    assert any("unsafe" in rec.message.lower() for rec in caplog.records)
+    assert sentinel.exists(), "File outside the vault must survive the attack."
+
+
+@pytest.mark.unit
+def test_perform_vault_reset_skips_dotdot_escape_attack(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A ``../outside`` folder config that escapes the vault → must be SKIPPED."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "escaped_note.md"
+    sentinel.write_text("file reached via .. traversal")
+
+    # papers_folder="../outside" → vault/../outside == tmp_path/outside.
+    cfg = _fake_config(
+        state_db_path=tmp_path / "state.db",
+        vault_path=vault,
+        papers_folder="../outside",
+    )
+    targets = reset_mod.vault_targets(cfg)
+    with caplog.at_level("WARNING"):
+        results = reset_mod.perform_vault_reset(targets, vault_root=vault)
+
+    papers_result = next(r for r in results if r.label == "Papers folder")
+    assert papers_result.deleted is False
+    assert papers_result.skipped_reason == "unsafe path (outside vault root)"
+    assert any("unsafe" in rec.message.lower() for rec in caplog.records)
+    assert sentinel.exists(), "Escaped file must survive the .. traversal attack."
+
+
+@pytest.mark.unit
+def test_perform_vault_reset_mixed_safe_and_unsafe_continues(tmp_path: Path) -> None:
+    """An unsafe target is skipped but safe targets in the same run still delete."""
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    # Safe Digests folder with a real note.
+    digests = vault / "Literature" / "Digests"
+    digests.mkdir(parents=True)
+    (digests / "d1.md").write_text("digest")
+    # Unsafe Papers folder ("" → vault root) with a root sentinel.
+    sentinel = vault / "ROOT.md"
+    sentinel.write_text("survive")
+
+    cfg = _fake_config(
+        state_db_path=tmp_path / "state.db",
+        vault_path=vault,
+        papers_folder="",
+    )
+    targets = reset_mod.vault_targets(cfg)
+    results = reset_mod.perform_vault_reset(targets, vault_root=vault)
+
+    by_label = {r.label: r for r in results}
+    # Unsafe one skipped...
+    assert by_label["Papers folder"].deleted is False
+    assert by_label["Papers folder"].skipped_reason == (
+        "unsafe path (outside vault root)"
+    )
+    # ...but the safe one still got cleaned.
+    assert by_label["Digests folder"].deleted is True
+    assert not (digests / "d1.md").exists()
+    assert sentinel.exists(), "Root sentinel must survive."
 
 
 # ---------------------------------------------------------------------------

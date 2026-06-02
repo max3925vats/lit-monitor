@@ -2323,7 +2323,10 @@ def _run_vault_reset(ctx: click.Context) -> None:
         click.echo("Aborted — nothing deleted.")
         return
     click.echo()
-    results = perform_vault_reset(targets)
+    # Audit-2 B2: pass the resolved vault root so perform_vault_reset can
+    # refuse to wipe *.md outside it (corrupted *_folder config guard).
+    vault_root = Path(config.obsidian.vault_path).expanduser()
+    results = perform_vault_reset(targets, vault_root=vault_root)
     _render_results(results)
     click.echo()
     click.echo(

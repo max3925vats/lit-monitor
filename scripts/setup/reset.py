@@ -273,6 +273,51 @@ def vault_targets(config: Any) -> list[ResetTarget]:
 
 
 # ---------------------------------------------------------------------------
+# Containment guard (Audit-2 B2)
+# ---------------------------------------------------------------------------
+def _is_safely_within(child: Path, root: Path) -> bool:
+    """Return True only if ``child`` is a strict, real descendant of ``root``.
+
+    Audit-2 data-safety guard for the vault ``*.md`` deletion path. A corrupted
+    ``papers_folder`` / ``digests_folder`` / ``connections_folder`` config value
+    (e.g. ``""`` so ``vault_root / "" == vault_root``, an absolute path like
+    ``/``, or a ``../../`` escape) could otherwise make the recursive ``*.md``
+    delete walk far outside the intended subfolder and erase notes across the
+    whole vault or home directory.
+
+    Both paths are ``.resolve()``-d (so symlinks and ``..`` segments are
+    collapsed) and the function rejects:
+      - ``child == root``                  (the vault root itself, depth 0)
+      - ``child`` outside ``root``         (sibling / absolute escape)
+      - any ``..`` traversal that resolves outside ``root``
+
+    It returns True only when ``child`` resolves to a path that is strictly
+    below ``root`` (relative depth >= 1). Resolution failures are treated as
+    unsafe (fail-closed).
+    """
+    try:
+        resolved_child = child.resolve()
+        resolved_root = root.resolve()
+    except OSError as exc:
+        logger.warning("Path resolution failed for %s / %s: %s", child, root, exc)
+        return False
+
+    if resolved_child == resolved_root:
+        # Empty-string config case: vault_root / "" == vault_root. The root
+        # itself is never a valid *.md-wipe target.
+        return False
+    try:
+        rel = resolved_child.relative_to(resolved_root)
+    except ValueError:
+        # child is not under root at all (sibling, absolute escape, or a
+        # `..` traversal that climbed above the root).
+        return False
+    # relative_to succeeded and child != root, so depth is >= 1. Guard the
+    # degenerate "." case defensively even though child == root is handled above.
+    return len(rel.parts) >= 1
+
+
+# ---------------------------------------------------------------------------
 # Deletion
 # ---------------------------------------------------------------------------
 def _delete_file(path: Path) -> None:
@@ -434,7 +479,9 @@ def perform_state_reset(targets: list[ResetTarget]) -> list[ResetResult]:
     return results
 
 
-def perform_vault_reset(targets: list[ResetTarget]) -> list[ResetResult]:
+def perform_vault_reset(
+    targets: list[ResetTarget], vault_root: Path
+) -> list[ResetResult]:
     """Delete every vault target's markdown content.
 
     Each target is a folder; we recursively remove ``*.md`` files inside it
@@ -442,9 +489,40 @@ def perform_vault_reset(targets: list[ResetTarget]) -> list[ResetResult]:
     auto-create + write into the folder don't have to special-case its
     absence. The dev sandbox subfolder and theme pages at the vault root
     are excluded at the target-enumeration layer, not here.
+
+    Containment guard (Audit-2 B2): ``vault_root`` is REQUIRED and the guard
+    ALWAYS runs — every target folder MUST pass
+    ``_is_safely_within(target, vault_root)`` before its ``*.md`` contents are
+    touched. A corrupted config (empty-string, absolute, or ``..``-escaping
+    folder value) that resolves to the vault root or to a path outside it is
+    SKIPPED with a loud WARNING and recorded as
+    ``skipped_reason="unsafe path (outside vault root)"`` rather than deleted —
+    we skip the unsafe target and continue with the safe ones instead of
+    aborting the whole reset. ``vault_root`` is a required argument (no default)
+    on purpose: a data-safety guard that defaults OFF is a footgun, so a caller
+    that forgets it fails loud with a ``TypeError`` rather than silently running
+    the unguarded recursive ``*.md`` delete.
     """
     results: list[ResetResult] = []
     for tgt in targets:
+        if not _is_safely_within(tgt.path, vault_root):
+            logger.warning(
+                "Refusing to delete .md files in unsafe vault target %s (%s): "
+                "resolved path is not strictly inside the vault root %s — "
+                "check your *_folder config for an empty, absolute, or '..' value.",
+                tgt.label,
+                tgt.path,
+                vault_root,
+            )
+            results.append(
+                ResetResult(
+                    label=tgt.label,
+                    path=tgt.path,
+                    deleted=False,
+                    skipped_reason="unsafe path (outside vault root)",
+                )
+            )
+            continue
         if not tgt.exists:
             results.append(
                 ResetResult(
@@ -478,4 +556,5 @@ __all__ = [
     "perform_vault_reset",
     "_format_size_bytes",
     "_graph_persist_dir",
+    "_is_safely_within",
 ]
