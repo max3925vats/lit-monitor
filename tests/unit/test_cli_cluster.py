@@ -12,9 +12,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from click.testing import CliRunner
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -40,43 +38,75 @@ def _mock_state_db(n_papers: int = 150, n_clusters: int = 0):
     return sdb
 
 
+def _mock_embeddings_db(n_papers: int = 150):
+    """Mock EmbeddingsDB with a ._collection.count() returning a real int.
+
+    The CLI handlers compare `edb._collection.count() < threshold`. A bare
+    MagicMock returns a MagicMock from .count() and the comparison raises
+    TypeError on Python 3.12+. Pin the return value here.
+    """
+    edb = MagicMock()
+    edb._collection.count.return_value = n_papers
+    return edb
+
+
+# Mock return values from the write-back helpers. The CLI reads these keys
+# directly for its echo output; a partial dict raises KeyError.
+_MOCK_TAGS_REPORT_DRY = {
+    "tags_added": 12, "papers_processed": 4, "papers_skipped": 0, "dry_run": True,
+}
+_MOCK_TAGS_REPORT_REAL = {
+    "tags_added": 12, "papers_processed": 4, "papers_skipped": 0, "dry_run": False,
+}
+_MOCK_COLLECTIONS_REPORT_DRY = {
+    "collections_to_create": 3, "items_to_add": 12, "dry_run": True,
+}
+
+
 # ---------------------------------------------------------------------------
 # cluster recompute
 # ---------------------------------------------------------------------------
 
 class TestClusterRecomputeCmd:
     def test_recompute_calls_recompute_clusters(self):
-        """cluster recompute invokes recompute_clusters when papers ≥ threshold."""
+        """cluster recompute invokes recompute_clusters when papers ≥ threshold.
+
+        The CLI handler does lazy imports inside the function — patches must
+        target the source modules (scripts.core.config.get_config,
+        scripts.core.state_db.StateDB), NOT scripts.cli._make_config.
+        """
         from scripts.cli import main
 
         runner = CliRunner()
 
-        with patch("scripts.cli._make_config", return_value=_mock_config()), \
-             patch("scripts.cli._make_state_db", return_value=_mock_state_db(150, 0)), \
-             patch("scripts.cli._make_embeddings_db", return_value=MagicMock()), \
+        with patch("scripts.core.config.get_config", return_value=_mock_config()), \
+             patch("scripts.core.state_db.StateDB"), \
+             patch("scripts.cli._make_embeddings_db", return_value=_mock_embeddings_db(150)), \
              patch("scripts.clustering.recompute.recompute_clusters",
                    return_value=7) as mock_recompute, \
              patch("scripts.cli._load_secrets", return_value={}):
             result = runner.invoke(main, ["cluster", "recompute"])
 
-        # Should not crash; recompute may or may not be called depending on routing,
-        # but the command itself should exit cleanly
-        assert result.exit_code in (0, 1)  # 1 allowed if config missing in test env
+        assert result.exit_code == 0, result.output
+        mock_recompute.assert_called_once()
 
     def test_recompute_respects_threshold_flag(self):
-        """--threshold option overrides config value."""
+        """--threshold option overrides config value: 50 papers < 200 → skipped."""
         from scripts.cli import main
 
         runner = CliRunner()
 
-        with patch("scripts.cli._make_config", return_value=_mock_config()), \
-             patch("scripts.cli._make_state_db", return_value=_mock_state_db(50, 0)), \
-             patch("scripts.cli._make_embeddings_db", return_value=MagicMock()), \
+        with patch("scripts.core.config.get_config", return_value=_mock_config()), \
+             patch("scripts.core.state_db.StateDB"), \
+             patch("scripts.cli._make_embeddings_db", return_value=_mock_embeddings_db(50)), \
+             patch("scripts.clustering.recompute.recompute_clusters") as mock_recompute, \
              patch("scripts.cli._load_secrets", return_value={}):
             result = runner.invoke(main, ["cluster", "recompute", "--threshold", "200"])
 
-        # With --threshold 200 and only 50 papers in DB, should show "below threshold"
-        assert result.exit_code in (0, 1)
+        # 50 indexed papers < threshold 200 → CLI prints the warning and
+        # exits cleanly WITHOUT calling recompute_clusters.
+        assert result.exit_code == 0, result.output
+        mock_recompute.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -119,23 +149,31 @@ class TestClusterViewCmd:
 
 class TestClusterWriteBackCmd:
     def test_tags_default_dry_run(self):
-        """cluster write-back tags runs in dry-run by default (no --confirm)."""
+        """cluster write-back tags runs in dry-run by default (no --confirm).
+
+        Patches target the lazy-imported source modules. Mock return value
+        carries the full key set the CLI echoes (tags_added, papers_processed).
+        """
         from scripts.cli import main
 
         runner = CliRunner()
 
-        with patch("scripts.cli._make_config", return_value=_mock_config()), \
-             patch("scripts.cli._make_state_db", return_value=_mock_state_db()), \
+        with patch("scripts.core.config.get_config", return_value=_mock_config()), \
+             patch("scripts.core.state_db.StateDB"), \
              patch("scripts.cli._make_zotero_client", return_value=MagicMock()), \
              patch("scripts.cli._load_secrets", return_value={}), \
              patch("scripts.clustering.write_back.push_tags_to_zotero",
-                   return_value={"dry_run": True}) as mock_push:
+                   return_value=_MOCK_TAGS_REPORT_DRY) as mock_push:
             result = runner.invoke(main, ["cluster", "write-back", "tags"])
 
-        # If command reached our mock, verify dry_run=True was passed
-        if mock_push.called:
-            _, kwargs = mock_push.call_args
-            assert kwargs.get("dry_run", True) is True
+        assert result.exit_code == 0, result.output
+        mock_push.assert_called_once()
+        _, kwargs = mock_push.call_args
+        # Default (no --confirm) ⇒ dry_run=True. Safety contract is
+        # "dry-run unless asked", so a missing kwarg is also a bug.
+        assert kwargs.get("dry_run") is True, (
+            f"dry_run default should be True (got kwargs={kwargs!r})"
+        )
 
     def test_tags_confirm_flag_passes_dry_run_false(self):
         """cluster write-back tags --confirm passes dry_run=False."""
@@ -143,17 +181,20 @@ class TestClusterWriteBackCmd:
 
         runner = CliRunner()
 
-        with patch("scripts.cli._make_config", return_value=_mock_config()), \
-             patch("scripts.cli._make_state_db", return_value=_mock_state_db()), \
+        with patch("scripts.core.config.get_config", return_value=_mock_config()), \
+             patch("scripts.core.state_db.StateDB"), \
              patch("scripts.cli._make_zotero_client", return_value=MagicMock()), \
              patch("scripts.cli._load_secrets", return_value={}), \
              patch("scripts.clustering.write_back.push_tags_to_zotero",
-                   return_value={}) as mock_push:
+                   return_value=_MOCK_TAGS_REPORT_REAL) as mock_push:
             result = runner.invoke(main, ["cluster", "write-back", "tags", "--confirm"])
 
-        if mock_push.called:
-            _, kwargs = mock_push.call_args
-            assert kwargs.get("dry_run", True) is False
+        assert result.exit_code == 0, result.output
+        mock_push.assert_called_once()
+        _, kwargs = mock_push.call_args
+        assert kwargs.get("dry_run") is False, (
+            f"--confirm must flip dry_run to False (got kwargs={kwargs!r})"
+        )
 
     def test_collections_default_dry_run(self):
         """cluster write-back collections is dry-run by default."""
@@ -161,14 +202,17 @@ class TestClusterWriteBackCmd:
 
         runner = CliRunner()
 
-        with patch("scripts.cli._make_config", return_value=_mock_config()), \
-             patch("scripts.cli._make_state_db", return_value=_mock_state_db()), \
+        with patch("scripts.core.config.get_config", return_value=_mock_config()), \
+             patch("scripts.core.state_db.StateDB"), \
              patch("scripts.cli._make_zotero_client", return_value=MagicMock()), \
              patch("scripts.cli._load_secrets", return_value={}), \
              patch("scripts.clustering.write_back.push_collections_to_zotero",
-                   return_value={"dry_run": True}) as mock_push:
+                   return_value=_MOCK_COLLECTIONS_REPORT_DRY) as mock_push:
             result = runner.invoke(main, ["cluster", "write-back", "collections"])
 
-        if mock_push.called:
-            _, kwargs = mock_push.call_args
-            assert kwargs.get("dry_run", True) is True
+        assert result.exit_code == 0, result.output
+        mock_push.assert_called_once()
+        _, kwargs = mock_push.call_args
+        assert kwargs.get("dry_run") is True, (
+            f"dry_run default should be True (got kwargs={kwargs!r})"
+        )

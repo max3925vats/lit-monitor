@@ -208,7 +208,6 @@ class TestGraphSignalsExtraction:
 
     def test_compares_to_library_counted(self, fixture_graph):
         """When COMPARES_TO edge is present it is counted."""
-        from scripts.graph import GraphDB
         from scripts.api.queries import get_graph_signals_for_candidate
 
         # Re-use the fixture_graph connection directly to add a COMPARES_TO edge
@@ -235,8 +234,8 @@ class TestGraphSignalsExtraction:
 
     def test_shared_authors_sample_capped_at_three(self, tmp_path):
         """shared_authors_sample contains at most 3 names."""
-        from scripts.graph import GraphDB
         from scripts.api.queries import get_graph_signals_for_candidate
+        from scripts.graph import GraphDB
 
         db = GraphDB(persist_dir=str(tmp_path / "authors3.kuzu"))
         db.add_paper(
@@ -299,8 +298,8 @@ class TestGraphSignalsExtraction:
 
     def test_case_insensitive_author_match(self, tmp_path):
         """Author overlap is case-insensitive: 'SMITH' in library matches 'Smith' in candidate."""
-        from scripts.graph import GraphDB
         from scripts.api.queries import get_graph_signals_for_candidate
+        from scripts.graph import GraphDB
 
         db = GraphDB(persist_dir=str(tmp_path / "case.kuzu"))
         db.add_paper(

@@ -392,7 +392,6 @@ class TestReExtract:
 @pytest.fixture()
 def client_with_db(tmp_path) -> TestClient:
     """TestClient backed by a real create_app() with a real (empty) StateDB."""
-    import scripts.server.routes.papers as papers_route
     from scripts.core.state_db import StateDB
 
     db = StateDB(tmp_path / "state.db")
@@ -411,7 +410,6 @@ def client_with_db(tmp_path) -> TestClient:
 @pytest.fixture()
 def client_with_seeded_run(tmp_path) -> TestClient:
     """TestClient with a StateDB that has one run + one paper with score_breakdown."""
-    import json as _json
 
     import scripts.server.routes.papers as _papers_mod
     from scripts.core.state_db import StateDB

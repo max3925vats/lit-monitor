@@ -16,14 +16,10 @@ Tests cover:
 """
 from __future__ import annotations
 
-import sqlite3
-from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -397,7 +393,7 @@ class TestClusteringSchema:
 class TestThresholdGating:
     def test_below_threshold_returns_zero(self, tmp_path):
         """recompute_clusters with fewer papers than threshold returns 0."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
 
         from scripts.clustering.recompute import recompute_clusters
 

@@ -10,9 +10,10 @@ Coverage:
 """
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import numpy as np
 import pytest
-from unittest.mock import MagicMock, patch
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +180,6 @@ class TestProvenanceOverridesConstructor:
         Scenario: user recorded ollama/mxbai/1024 previously. Then they construct
         EmbeddingsDB with litellm/3072. The provenance record should win.
         """
-        import sqlite3
 
         # Manually plant a provenance record in state.db
         state_db_path = tmp_path / "state.db"

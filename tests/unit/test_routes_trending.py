@@ -16,7 +16,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -153,6 +152,7 @@ class TestSafeSaveTopics:
 
     def test_atomic_add_appends_to_existing(self, tmp_path):
         import yaml
+
         from scripts.server.config_io import safe_save_topics
 
         topics_path = tmp_path / "topics.yaml"
@@ -170,6 +170,7 @@ class TestSafeSaveTopics:
 
     def test_does_not_remove_existing_topics(self, tmp_path):
         import yaml
+
         from scripts.server.config_io import safe_save_topics
 
         topics_path = tmp_path / "topics.yaml"

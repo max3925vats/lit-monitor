@@ -8,7 +8,6 @@ Coverage:
 """
 from __future__ import annotations
 
-import pytest
 from click.testing import CliRunner
 
 
@@ -19,10 +18,12 @@ class TestCliEmbeddingsStatus:
     def test_status_empty_when_no_rows(self, tmp_path, monkeypatch):
         """status command prints 'No embedding collections' when table is empty."""
         from scripts.cli import main
-        from scripts.core.state_db import StateDB
         from scripts.core import config as config_mod
+        from scripts.core.state_db import StateDB
 
-        sdb = StateDB(tmp_path / "state.db")
+        # Create empty state.db at tmp_path; side-effect only — the CLI re-opens
+        # via _make_state_db, so we don't need to hold the handle.
+        StateDB(tmp_path / "state.db")
         mock_cfg = _make_mock_config(tmp_path)
         monkeypatch.setattr(config_mod, "_config_cache", mock_cfg)
 
@@ -34,8 +35,8 @@ class TestCliEmbeddingsStatus:
     def test_status_lists_provenance_rows(self, tmp_path, monkeypatch):
         """status command shows each recorded collection."""
         from scripts.cli import main
-        from scripts.core.state_db import StateDB
         from scripts.core import config as config_mod
+        from scripts.core.state_db import StateDB
 
         sdb = StateDB(tmp_path / "state.db")
         sdb.record_embedding_provenance("lit_monitor_v1", "ollama", "mxbai-embed-large", 1024)
@@ -76,10 +77,11 @@ class TestCliEmbeddingsSwitch:
     def test_switch_with_keep_old_aborted_via_stdin(self, tmp_path, monkeypatch):
         """switch --keep-old exits 1 when user answers 'n' to the cost prompt."""
         from scripts.cli import main
-        from scripts.core.state_db import StateDB
         from scripts.core import config as config_mod
+        from scripts.core.state_db import StateDB
 
-        sdb = StateDB(tmp_path / "state.db")
+        # Create empty state.db at tmp_path; side-effect only.
+        StateDB(tmp_path / "state.db")
         mock_cfg = _make_mock_config(tmp_path)
         monkeypatch.setattr(config_mod, "_config_cache", mock_cfg)
 
