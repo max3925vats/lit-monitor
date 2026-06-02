@@ -473,6 +473,74 @@ def test_retheme_renames_page(tmp_path):
     assert (vault / "NewTheme.md").exists()
     assert stats["page_renamed"] == 1
 @pytest.mark.unit
+def test_retheme_survives_replace_failure_per_file(tmp_path, monkeypatch):
+    """B1 crash-safety: retheme writes each note atomically. If os.replace fails
+    on the SECOND file, the first-written file must already be a complete, valid
+    rewrite (atomic per-file) and no .tmp sibling may leak.
+
+    Why this catches a non-atomic regression: os.replace is patched to raise on
+    its second call (the final rename step of the second atomic_write_text).
+    atomic_write_text's cleanup unlinks its temp file before re-raising, and
+    retheme's per-file try/except logs+swallows the OSError so the loop survives.
+    With a plain md_file.write_text(...) there is no temp file at all and a crash
+    mid-write would leave a half-written (truncated) note on disk — this test
+    would then find a leaked temp file and/or a note whose content is neither the
+    clean original nor the clean rewrite.
+
+    NOTE: retheme is intentionally non-transactional ACROSS files — after this
+    crash the first note IS rewritten while the second is not. That cross-file
+    inconsistency is a documented, out-of-scope limitation; B1 only guarantees
+    per-file atomicity (no individual note truncated).
+    """
+    from scripts.core import atomic_write as atomic_write_mod
+    from scripts.obsidian_tools.retheme import retheme
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    note_a = vault / "a.md"
+    note_b = vault / "b.md"
+    note_a.write_text("Link to [[OldTheme]] in note A.\n", encoding="utf-8")
+    note_b.write_text("Link to [[OldTheme]] in note B.\n", encoding="utf-8")
+
+    real_replace = atomic_write_mod.os.replace
+    calls = {"n": 0}
+
+    def flaky_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("simulated rename crash on second file")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(atomic_write_mod.os, "replace", flaky_replace)
+
+    # retheme swallows the per-file OSError (logs a warning) and finishes the
+    # loop, so it returns normally rather than propagating.
+    retheme(vault, "OldTheme", "NewTheme")
+
+    # Every note on disk is either the clean original or the clean rewrite —
+    # never a truncated/partial file. Exactly one was rewritten (the first),
+    # the other still holds its original content (cross-file non-transactional).
+    valid = {
+        "Link to [[OldTheme]] in note A.\n",
+        "Link to [[OldTheme]] in note B.\n",
+        "Link to [[NewTheme]] in note A.\n",
+        "Link to [[NewTheme]] in note B.\n",
+    }
+    text_a = note_a.read_text(encoding="utf-8")
+    text_b = note_b.read_text(encoding="utf-8")
+    assert text_a in valid, f"note A is truncated/corrupt: {text_a!r}"
+    assert text_b in valid, f"note B is truncated/corrupt: {text_b!r}"
+    rewritten = [t for t in (text_a, text_b) if "NewTheme" in t]
+    untouched = [t for t in (text_a, text_b) if "OldTheme" in t]
+    assert len(rewritten) == 1, "exactly one note should have been atomically rewritten"
+    assert len(untouched) == 1, "the second note should remain untouched (cross-file)"
+    # No temp-file droppings left behind anywhere in the vault.
+    leftovers = [
+        p for p in vault.rglob("*")
+        if p.name.startswith(".") and p.name.endswith(".tmp")
+    ]
+    assert leftovers == [], f"leaked temp files: {leftovers}"
+@pytest.mark.unit
 def test_rerender_paper_note(tmp_path):
     """rerender_note() calls write_paper_note with extraction from state DB."""
     from scripts.obsidian_tools.rerender import rerender_note
@@ -580,6 +648,61 @@ def test_synthesize_empty_results_returns_empty(tmp_path):
     result = synthesize("some obscure topic", config, state_db, embeddings_db, llm)
     assert result == ""
     llm.complete.assert_not_called()
+@pytest.mark.unit
+def test_synthesize_survives_replace_failure(tmp_path, monkeypatch):
+    """B1 crash-safety: if os.replace fails mid-write, a pre-existing synthesis
+    note must be preserved verbatim and no .tmp sibling may leak.
+
+    Why this catches a non-atomic regression: os.replace is patched to raise at
+    the final rename step of atomic_write_text. A plain note_path.write_text(...)
+    has no temp file and would truncate/rewrite the destination in place before
+    any replace ran, so the 'original intact' assertion would fail.
+    """
+    from scripts.core import atomic_write as atomic_write_mod
+    from scripts.obsidian_tools.synthesize import _slugify, synthesize
+
+    config = _make_config(tmp_path)
+    state_db = _make_state_db(tmp_path)
+    embeddings_db = MagicMock()
+    llm = MagicMock()
+    llm.complete.return_value = "Freshly generated synthesis that must NOT land."
+    extraction = {"core_finding": "Key finding.", "core_finding_confidence": "explicit"}
+    state_db.upsert_paper({
+        "doi": "10.1/related",
+        "title": "Relevant Paper",
+        "source_type": "paper",
+        "note_title": "Smith2021_Relevant",
+        "extraction_json": json.dumps(extraction),
+        "status": "extraction_complete",
+    })
+    embeddings_db.find_similar_chunks.return_value = []
+    embeddings_db.find_similar_to_text.return_value = [
+        {"id": "10.1/related", "score": 0.88, "document": "Key finding.", "metadata": {}}
+    ]
+
+    # Seed an existing synthesis note whose content must survive the crash.
+    topic = "TopicX transport mechanism"
+    connections = Path(config.obsidian.vault_path) / config.obsidian.connections_folder
+    existing_note = connections / f"Synthesis_{_slugify(topic)}.md"
+    original = "# Synthesis: TopicX\nuser-authored content that must survive crashes\n"
+    existing_note.write_text(original, encoding="utf-8")
+
+    def boom(_src, _dst):  # noqa: ANN001 — match os.replace signature
+        raise OSError("simulated rename crash")
+
+    monkeypatch.setattr(atomic_write_mod.os, "replace", boom)
+
+    with pytest.raises(OSError, match="simulated rename crash"):
+        synthesize(topic, config, state_db, embeddings_db, llm)
+
+    # Original note content untouched.
+    assert existing_note.read_text(encoding="utf-8") == original
+    # No temp-file droppings left behind in the connections dir.
+    leftovers = [
+        p for p in connections.iterdir()
+        if p.name.startswith(".") and p.name.endswith(".tmp")
+    ]
+    assert leftovers == [], f"leaked temp files: {leftovers}"
 # ===========================================================================
 # Model compare — signature verification
 # ===========================================================================

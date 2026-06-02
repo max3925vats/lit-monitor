@@ -629,3 +629,105 @@ def test_relink_default_rag_mode_reads_from_config(tmp_path):
     # graph mode should have been used.
     graph_db.find_similar_papers.assert_called()
     embeddings_db.find_similar_to_text.assert_not_called()
+
+
+# ===========================================================================
+# B1 — atomic vault writes (Audit-2 data-safety)
+# ===========================================================================
+
+
+@pytest.mark.unit
+def test_relink_note_updated_via_atomic_path(tmp_path):
+    """B1 happy-path: relink_note rewrites the note's persist zone and the new
+    content is present (proving the atomic_write_text path actually lands)."""
+    from scripts.obsidian_tools.relink import relink_note
+
+    state_db = _make_state_db(tmp_path)
+    embeddings_db = _make_embeddings_db()
+
+    state_db.upsert_paper({
+        "doi": "10.1/atomic-ok",
+        "title": "Atomic OK",
+        "source_type": "paper",
+        "note_title": "Smith2021_AtomicOK",
+    })
+    state_db.upsert_paper({
+        "doi": "10.1/citer",
+        "title": "Citing Paper",
+        "source_type": "paper",
+        "note_title": "Jones2022_Citer",
+    })
+    state_db.upsert_citation_edge(
+        source_doi="10.1/citer",
+        ref_id="[1]",
+        target_doi="10.1/atomic-ok",
+        target_s2_id=None,
+        context="Cites the target.",
+        resolution="numeric_index",
+    )
+
+    note_path = _make_note(tmp_path, "10.1/atomic-ok", "Atomic OK")
+    relink_note(note_path, embeddings_db, state_db)
+
+    content = note_path.read_text(encoding="utf-8")
+    assert "← [[Jones2022_Citer]] cites this" in content
+
+
+@pytest.mark.unit
+def test_relink_note_survives_replace_failure(tmp_path, monkeypatch):
+    """B1 crash-safety: if os.replace fails mid-write, the original note must be
+    preserved verbatim and no .tmp sibling may leak.
+
+    Why this catches a non-atomic regression: the patched os.replace raises only
+    at the final rename step of atomic_write_text. With a plain
+    note_path.write_text(...) there is no temp file — the destination would
+    already be truncated/rewritten in place before any replace ran, so the
+    'original intact' assertion would fail.
+    """
+    from scripts.core import atomic_write as atomic_write_mod
+    from scripts.obsidian_tools.relink import relink_note
+
+    state_db = _make_state_db(tmp_path)
+    embeddings_db = _make_embeddings_db()
+
+    state_db.upsert_paper({
+        "doi": "10.1/atomic-boom",
+        "title": "Atomic Boom",
+        "source_type": "paper",
+        "note_title": "Smith2021_AtomicBoom",
+    })
+    # An incoming citation guarantees relink_note reaches the write step.
+    state_db.upsert_paper({
+        "doi": "10.1/citer2",
+        "title": "Citing Paper 2",
+        "source_type": "paper",
+        "note_title": "Jones2022_Citer2",
+    })
+    state_db.upsert_citation_edge(
+        source_doi="10.1/citer2",
+        ref_id="[1]",
+        target_doi="10.1/atomic-boom",
+        target_s2_id=None,
+        context="Cites the target.",
+        resolution="numeric_index",
+    )
+
+    note_path = _make_note(tmp_path, "10.1/atomic-boom", "Atomic Boom")
+    original = note_path.read_text(encoding="utf-8")
+
+    def boom(_src, _dst):  # noqa: ANN001 — match os.replace signature
+        raise OSError("simulated rename crash")
+
+    monkeypatch.setattr(atomic_write_mod.os, "replace", boom)
+
+    with pytest.raises(OSError, match="simulated rename crash"):
+        relink_note(note_path, embeddings_db, state_db)
+
+    # Original note content untouched.
+    assert note_path.read_text(encoding="utf-8") == original
+    # No temp-file droppings left behind in the vault dir.
+    leftovers = [
+        p for p in note_path.parent.iterdir()
+        if p.name.startswith(".") and p.name.endswith(".tmp")
+    ]
+    assert leftovers == [], f"leaked temp files: {leftovers}"

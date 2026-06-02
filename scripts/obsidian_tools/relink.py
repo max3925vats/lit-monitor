@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 from rapidfuzz import fuzz
 
+from scripts.core.atomic_write import atomic_write_text
 from scripts.core.strict_mode import strict_fallback
 from scripts.llm.prompt_safety import sanitize_for_prompt
 
@@ -249,7 +250,7 @@ def relink_note(
     if citing_sources:
         referenced_by = _build_referenced_by_block(citing_sources)
         updated_content = _replace_persist_zone_content(updated_content, "referenced_by", referenced_by)
-    note_path.write_text(updated_content, encoding="utf-8")
+    atomic_write_text(note_path, updated_content)
     logger.info(
         "Relinked: %s (%d similar, %d cited, %d citing)",
         note_path.name, len(similar), len(cited), len(citing_sources),

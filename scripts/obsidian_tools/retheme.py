@@ -15,6 +15,8 @@ import logging
 import re
 from pathlib import Path
 
+from scripts.core.atomic_write import atomic_write_text
+
 logger = logging.getLogger(__name__)
 # Matches [[Target]], [[Target|Alias]], [[Target#Heading]], [[Target#Heading|Alias]]
 _WIKILINK_PATTERN = re.compile(
@@ -38,13 +40,18 @@ def retheme(vault_path: str | Path, old_theme: str, new_theme: str) -> dict[str,
         old_page.rename(new_page)
         stats["page_renamed"] = 1
         logger.info("Renamed theme page: %s → %s", old_page, new_page)
-    # 2. Rewrite wikilinks in all .md files
+    # 2. Rewrite wikilinks in all .md files.
+    # Each file is written atomically (temp + fsync + os.replace) so no
+    # individual note is ever truncated by a mid-write crash. NOTE: this loop
+    # is still non-transactional ACROSS files — a crash partway through leaves
+    # some notes rewritten and others not. A full vault-wide transaction is a
+    # larger, separate concern and is intentionally out of scope here.
     for md_file in vault.rglob("*.md"):
         try:
             content = md_file.read_text(encoding="utf-8")
             new_content, n = _rewrite_wikilinks(content, old_theme, new_theme)
             if n > 0:
-                md_file.write_text(new_content, encoding="utf-8")
+                atomic_write_text(md_file, new_content)
                 stats["files_modified"] += 1
                 stats["wikilinks_rewritten"] += n
                 logger.debug("Rewrote %d wikilink(s) in %s", n, md_file)

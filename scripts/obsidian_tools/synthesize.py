@@ -21,6 +21,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from scripts.core.atomic_write import atomic_write_text
 from scripts.llm.prompt_registry import load_prompt
 from scripts.llm.prompt_safety import sanitize_for_prompt
 
@@ -268,7 +269,7 @@ def _write_synthesis_note(
         if user_section:
             content = content.rstrip("\n") + "\n\n## Notes\n" + user_section
 
-    note_path.write_text(content, encoding="utf-8")
+    atomic_write_text(note_path, content)
     return str(note_path)
 def _extract_user_section(content: str) -> str:
     """
