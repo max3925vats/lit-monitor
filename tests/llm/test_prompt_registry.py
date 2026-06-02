@@ -306,3 +306,41 @@ def test_load_prompt_emits_no_false_positive_warnings(caplog):
         f"False-positive WARNINGs on prompt load: "
         f"{[r.getMessage() for r in noise]}"
     )
+
+
+# ---------------------------------------------------------------------------
+# ask_summarize — Bundle I cluster_context placeholder
+#
+# Relocated from tests/integration/test_v09_e2e.py (Audit-2 A2): these are
+# pure-unit prompt-registry checks that need no live services, so they belong
+# in the unit/llm suite where they run unconditionally — not gated behind a
+# live-Ollama integration fixture.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_prompt_registry_ask_summarize_has_cluster_context():
+    """prompt_registry must declare cluster_context as required for
+    ask_summarize after the Bundle I cluster-aware-ask update."""
+    from scripts.llm.prompt_registry import required_placeholders
+
+    placeholders = required_placeholders("ask_summarize")
+    assert "cluster_context" in placeholders, (
+        "prompt_registry.ask_summarize must list cluster_context as required "
+        "after Bundle I"
+    )
+
+
+@pytest.mark.unit
+def test_ask_summarize_yaml_renders_with_four_placeholders():
+    """The ask_summarize YAML round-trip must succeed with the four Bundle I
+    placeholders (question, cypher, rows, cluster_context)."""
+    prompt = load_prompt("ask_summarize")
+    rendered = prompt.render_user(
+        question="find methods",
+        cypher="MATCH (p) RETURN p",
+        rows="| doi |\n|---|\n| 10.0/a |",
+        cluster_context="Based on your Protein A theme:",
+    )
+    assert "find methods" in rendered
+    assert "Based on your Protein A theme:" in rendered

@@ -115,3 +115,30 @@ class TestRenderRows:
         rows = [{"a": 1, "b": 2}, {"b": 3, "c": 4}]
         out = render_rows(rows)
         assert "a" in out and "b" in out and "c" in out
+
+
+# ---------------------------------------------------------------------------
+# AskResult dataclass shape
+#
+# Relocated from tests/integration/test_v09_e2e.py (Audit-2 A2): a trivial
+# dataclass-field check that needs no live services. The shape-parity contract
+# (CLI + HTTP see the same AskResult) is worth pinning, so it runs here in the
+# unit suite rather than being gated behind a live-Ollama integration fixture.
+# ---------------------------------------------------------------------------
+
+
+class TestAskResultShape:
+    def test_ask_result_dataclass_fields(self):
+        """AskResult must expose cypher, rows, rendered, prose fields."""
+        from scripts.graph.ask import AskResult
+
+        r = AskResult(
+            cypher="MATCH (p) RETURN p",
+            rows=[{"doi": "10.0/a"}],
+            rendered="| doi |\n|---|\n| 10.0/a |",
+            prose="One paper found.",
+        )
+        assert r.cypher
+        assert r.rows
+        assert r.rendered
+        assert r.prose

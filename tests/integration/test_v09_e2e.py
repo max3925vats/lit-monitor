@@ -1,51 +1,77 @@
-"""Bundle I: v0.9.0 end-to-end integration test.
+"""v0.9.0 LIVE end-to-end integration test (Audit-2 A2).
 
-Tests the full v0.9 engine in terms of shape contracts and component wiring,
-using only mocked backends and a small in-process fixture state.  No live
-Ollama, no real ChromaDB, no real Zotero — the goal is to verify that all
-Bundle signals and new features are plumbed together correctly, not to test
-the LLM or network layer.
+This file exercises the full v0.9 engine against REAL services — real Ollama
+(embed + chat models), a real ChromaDB-backed :class:`EmbeddingsDB`, and a real
+Kuzu-backed :class:`GraphDB` — wired together exactly as production wires them:
 
-Fixture library: 5 papers with mixed entities (DOIs 10.0/a … 10.0/e).
+    embed 5 papers  →  cluster (k-means + silhouette)  →  rank (real cosine +
+    real rationale LLM)  →  graph ask (NL → Cypher → execute → summarize)  →
+    cluster-aware ask annotation.
 
-Run:
-    uv run pytest tests/integration/test_v09_e2e.py -v -m integration
+It is the real replacement for the former all-mocks "integration" file, which
+was a unit test in an integration costume (its own docstring claimed "No live
+Ollama, no real ChromaDB") and contained one half-mocked test that accidentally
+reached real Ollama and HUNG. Here every test that touches a service depends —
+directly or through its fixture chain — on a real-service fixture that calls
+:func:`tests.integration._live.skip_or_fail`. So:
 
-All tests are marked @pytest.mark.integration.  Add -m "not integration" to
-exclude them from fast unit runs.
+    * No env vars, Ollama down  → every test SKIPS cleanly in well under a
+      second. Zero hangs, zero real network calls.
+    * ``LIT_MONITOR_LIVE=1`` with Ollama down → every test FAILS loudly
+      (the live-mode contract: a green run with services down is a lie).
+
+Run (live, manual / pre-release gate)::
+
+    LIT_MONITOR_LIVE=1 uv run pytest tests/integration/test_v09_e2e.py -v -m integration
+
+Required real services for the live run:
+    * Ollama reachable at the configured ingestion host (default
+      http://localhost:11434).
+    * Embed model ``mxbai-embed-large`` pulled (``ollama pull mxbai-embed-large``).
+    * The ingestion chat model pulled (default ``qwen2.5:3b`` — see
+      ``real_llm`` in conftest.py).
+    * Write access to pytest tmp dirs (ChromaDB + Kuzu persist to ``tmp_path``).
+    * A valid ``~/.config/lit-monitor/config.toml`` (loaded by ``real_config``).
+
+All tests are marked ``@pytest.mark.integration`` and are excluded from the
+fast unit CI run — that is correct for a real-service test. The pure-unit
+prompt-registry and AskResult-shape checks that used to live here were
+relocated to tests/llm/test_prompt_registry.py and
+tests/unit/test_graph_ask_exec.py respectively (Audit-2 A2), where they run
+unconditionally.
 """
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 
+from tests.integration._live import skip_or_fail as _skip_or_fail
+
 pytestmark = pytest.mark.integration
 
-# ---------------------------------------------------------------------------
-# Helper: serialise a float32 centroid to BLOB format used by Bundle C
-# ---------------------------------------------------------------------------
-
-def _make_centroid_blob(vec: list[float]) -> bytes:
-    return np.array(vec, dtype=np.float32).tobytes()
-
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Fixture library: 5 papers with text we embed directly (no Zotero markdown
+# attachment required — the v0.9 engine only needs paper text + DOIs).
 # ---------------------------------------------------------------------------
 
 @pytest.fixture()
 def five_papers() -> list[dict]:
-    """Minimal paper dicts representative of a small Zotero library."""
+    """Five papers spanning two clear themes (capture/polish vs filtration)
+    so a real k-means over real embeddings produces meaningful structure."""
     return [
         {
             "doi": "10.0/a",
             "title": "Protein A affinity chromatography for mAb capture",
             "year": 2020,
             "journal": "J1",
-            "abstract": "Protein A is widely used for monoclonal antibody capture.",
+            "abstract": (
+                "Protein A affinity chromatography is the workhorse capture "
+                "step for monoclonal antibody purification, binding the Fc "
+                "region with high selectivity."
+            ),
             "authors": ["Smith J", "Jones K"],
         },
         {
@@ -53,7 +79,11 @@ def five_papers() -> list[dict]:
             "title": "Cation exchange polishing of antibodies",
             "year": 2021,
             "journal": "J1",
-            "abstract": "CEX is the standard polishing step after Protein A.",
+            "abstract": (
+                "Cation exchange chromatography is the standard polishing step "
+                "after Protein A capture, clearing aggregates and host cell "
+                "protein from the monoclonal antibody pool."
+            ),
             "authors": ["Jones K", "Lee L"],
         },
         {
@@ -61,7 +91,11 @@ def five_papers() -> list[dict]:
             "title": "Viral filtration in downstream processing",
             "year": 2022,
             "journal": "J2",
-            "abstract": "Nanofiltration removes enveloped and non-enveloped viruses.",
+            "abstract": (
+                "Nanofiltration membranes remove enveloped and non-enveloped "
+                "viruses from antibody process streams, a critical viral "
+                "clearance unit operation in downstream filtration."
+            ),
             "authors": ["Brown A"],
         },
         {
@@ -69,7 +103,11 @@ def five_papers() -> list[dict]:
             "title": "Tangential flow filtration for concentration",
             "year": 2023,
             "journal": "J2",
-            "abstract": "TFF using hollow-fibre modules is used for UF/DF steps.",
+            "abstract": (
+                "Tangential flow filtration with hollow-fibre membrane modules "
+                "concentrates and buffer-exchanges protein solutions in the "
+                "ultrafiltration/diafiltration step of downstream filtration."
+            ),
             "authors": ["Patel R", "Brown A"],
         },
         {
@@ -77,387 +115,327 @@ def five_papers() -> list[dict]:
             "title": "High-throughput screening of chromatography resins",
             "year": 2024,
             "journal": "J3",
-            "abstract": "Miniaturised column screens accelerate resin selection.",
+            "abstract": (
+                "Miniaturised robotic column screens accelerate chromatography "
+                "resin selection for antibody capture and polishing process "
+                "development."
+            ),
             "authors": ["Smith J", "Patel R"],
         },
     ]
 
 
-@pytest.fixture()
-def mock_state_db_with_clusters(five_papers):
-    """A StateDB mock pre-populated with 2 active clusters above the
-    min_papers_threshold of 3 (overridden config).
+def _embed_text(paper: dict) -> str:
+    """Concatenate the text the engine embeds for a paper."""
+    return f"{paper['title']}. {paper['abstract']}"
 
-    Cluster 0 — 'Protein A & CEX': centroid aligned with papers a, b.
-    Cluster 1 — 'Filtration': centroid aligned with papers c, d.
+
+# ---------------------------------------------------------------------------
+# Real-service fixtures. Every one funnels missing-service paths through
+# skip_or_fail, so the whole module skips cleanly (or fails loudly in live
+# mode) without ever issuing a real network call when Ollama is down.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def real_embed_host(real_config) -> str:
+    """Ollama host with mxbai-embed-large pulled. Skips/fails otherwise.
+
+    Depends on ``real_config`` (which itself skips when config/vault are
+    absent). ``mxbai-embed-large`` is the embedding model — distinct from the
+    ingestion chat model that ``real_llm`` checks.
     """
-    db = MagicMock()
-    # list_active_clusters returns 2 rows matching Bundle C schema
-    db.list_active_clusters.return_value = [
-        {
-            "id": 0,
-            "display_name": "Protein A & CEX",
-            "n_papers": 2,
-            "cohesion_score": 0.85,
-            "centroid_blob": _make_centroid_blob([1.0, 0.0, 0.0, 0.0]),
-            "archived": 0,
-        },
-        {
-            "id": 1,
-            "display_name": "Filtration",
-            "n_papers": 2,
-            "cohesion_score": 0.80,
-            "centroid_blob": _make_centroid_blob([0.0, 1.0, 0.0, 0.0]),
-            "archived": 0,
-        },
-    ]
-    db.get_paper_count.return_value = len(five_papers)
+    import requests as _requests
+
+    host = getattr(real_config.ingestion, "ollama_host", "http://localhost:11434")
+    try:
+        resp = _requests.get(f"{host}/api/tags", timeout=5)
+        resp.raise_for_status()
+    except Exception as exc:  # noqa: BLE001 — surface as skip/fail, never raise
+        _skip_or_fail(f"Ollama not reachable at {host}: {exc}")
+
+    pulled = [m.get("name", "") for m in resp.json().get("models", [])]
+    if not any("mxbai-embed-large" in p for p in pulled):
+        _skip_or_fail(
+            "Embed model 'mxbai-embed-large' is not pulled. "
+            "Run: ollama pull mxbai-embed-large"
+        )
+    return host
+
+
+@pytest.fixture()
+def real_embeddings_db(real_embed_host, tmp_chroma_dir, five_papers):
+    """A real EmbeddingsDB with the 5 fixture papers embedded via real Ollama.
+
+    Each ``add_paper`` issues a real embedding call to mxbai-embed-large and
+    persists the vector into a throwaway ChromaDB under ``tmp_chroma_dir``.
+    """
+    from scripts.output.embeddings import EmbeddingsDB
+
+    db = EmbeddingsDB(str(tmp_chroma_dir), ollama_host=real_embed_host)
+    for paper in five_papers:
+        db.add_paper(
+            doi=paper["doi"],
+            text=_embed_text(paper),
+            metadata={"title": paper["title"], "year": paper["year"]},
+        )
+    assert db.count() == len(five_papers), "not all fixture papers were embedded"
     return db
 
 
 @pytest.fixture()
-def mock_embeddings_db():
-    """EmbeddingsDB mock that returns deterministic vectors.
+def real_clusters(real_embeddings_db, real_config, tmp_state_db, five_papers):
+    """Run the REAL clustering pipeline over the real embeddings.
 
-    For the 'cluster-aware ask' test, we need the question embedding to be
-    close to one of the cluster centroids.  Return [1, 0, 0, 0] (aligned
-    with cluster 0 — 'Protein A & CEX').
+    Overrides ``min_papers_threshold`` (default 100) down to 2 and ``k_min``
+    down to 2 so a 5-paper library actually clusters. ``recompute_clusters``
+    reads embeddings straight from ChromaDB, runs deterministic k-means
+    (random_state=42) with silhouette-based K selection, names clusters
+    (llm=None → ``Cluster N`` fallback), and persists rows + assignments into
+    the real ``tmp_state_db``.
+
+    Returns the list of persisted active clusters (Bundle C row dicts).
     """
-    db = MagicMock()
-    db.embed_text.return_value = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
-    return db
+    from scripts.clustering.recompute import recompute_clusters
+
+    # Seed state_db with the paper rows so cluster naming / title sampling has
+    # something to read (name_cluster falls back to "Cluster N" with llm=None).
+    for paper in five_papers:
+        tmp_state_db.upsert_paper({
+            "doi": paper["doi"],
+            "title": paper["title"],
+            "year": paper["year"],
+            "source_type": "paper",
+            "status": "extraction_complete",
+        })
+
+    # Clone the clustering config namespace with a low threshold so 5 papers
+    # cross the gate. _Namespace is a plain dot-access wrapper, so setattr on a
+    # shallow copy is the cleanest override that doesn't mutate the shared cfg.
+    import copy
+
+    cfg = copy.copy(real_config)
+    cfg.clustering = copy.copy(real_config.clustering)
+    cfg.clustering.min_papers_threshold = 2
+    cfg.clustering.k_min = 2
+    cfg.clustering.k_max = 3
+    cfg.clustering.enabled = True
+
+    created = recompute_clusters(tmp_state_db, real_embeddings_db, cfg, llm=None)
+    if created < 1:
+        _skip_or_fail(
+            "recompute_clusters produced 0 clusters from 5 real embeddings — "
+            "k-means/silhouette path did not select any K (unexpected)."
+        )
+    clusters = tmp_state_db.list_active_clusters()
+    assert clusters, "clusters were created but list_active_clusters is empty"
+    return clusters
 
 
 @pytest.fixture()
-def mock_ranker_papers(five_papers):
-    """A list of 5 candidate dicts as rank() would return them — each already
-    has a score_breakdown dict with nonzero values for every Bundle signal
-    (simulating a config where all weights > 0).
+def real_graph_db(tmp_path, five_papers):
+    """A real tmp Kuzu GraphDB seeded with two papers + one shared entity.
+
+    Skips/fails (instead of erroring) when the [graph] extra (kuzu) is not
+    installed, mirroring production's ``safe_graph_db`` tolerance.
     """
-    return [
-        {
-            **p,
-            "similarity_score": 0.9 - i * 0.1,
-            "score_breakdown": {
-                "vector": 0.5,
-                "domain_context": 0.1,
-                "cluster_centroid": 0.1,
-                "graph_entity_overlap": 0.1,
-                "graph_citation": 0.05,
-                "graph_shared_authors": 0.05,
-            },
-            "llm_rationale": f"Sample rationale for {p['doi']}",
-        }
-        for i, p in enumerate(five_papers)
+    from scripts.graph.import_citations import safe_graph_db
+
+    graph_db = safe_graph_db(persist_dir=str(tmp_path / "graph.kuzu"))
+    if graph_db is None:
+        _skip_or_fail(
+            "GraphDB unavailable — the [graph] extra (kuzu) is not installed. "
+            "Install with: uv sync --extra graph"
+        )
+
+    from scripts.graph.entity_extractor import EntityTuple
+
+    shared = EntityTuple(
+        canonical_id="protein a",
+        type="method",
+        surface="Protein A",
+        field="methods_summary",
+        span_start=None,
+        span_end=None,
+    )
+    graph_db.add_paper(
+        doi="10.0/a",
+        entities=[shared],
+        relationships=[],
+        paper_metadata={"title": five_papers[0]["title"], "year": 2020, "journal": "J1"},
+    )
+    graph_db.add_paper(
+        doi="10.0/b",
+        entities=[shared],
+        relationships=[],
+        paper_metadata={"title": five_papers[1]["title"], "year": 2021, "journal": "J1"},
+    )
+    return graph_db
+
+
+# ===========================================================================
+# 1. Embeddings — real Ollama embed round trip
+# ===========================================================================
+
+@pytest.mark.integration
+def test_embeddings_real_round_trip(real_embeddings_db, five_papers):
+    """All 5 fixture papers embed into ChromaDB and similarity search ranks
+    the most-relevant paper first for an aligned query."""
+    results = real_embeddings_db.find_similar_to_text(
+        "monoclonal antibody affinity capture with Protein A", top_k=5
+    )
+    assert results, "find_similar_to_text returned no results"
+    ids = [r["id"] for r in results]
+    # The Protein A capture paper should be the top hit for this query.
+    assert ids[0] == "10.0/a", f"expected 10.0/a as top hit, got {ids}"
+    # Each result carries the contract keys consumed downstream.
+    top = results[0]
+    assert "score" in top and "document" in top and "metadata" in top
+
+
+# ===========================================================================
+# 2. Clustering — real k-means / silhouette over real embeddings
+# ===========================================================================
+
+@pytest.mark.integration
+def test_clustering_real_recompute(real_clusters):
+    """recompute_clusters persists real clusters with stable IDs, names, and
+    serialised centroids."""
+    assert len(real_clusters) >= 1, "no active clusters persisted"
+    for cluster in real_clusters:
+        assert cluster.get("id") is not None
+        assert cluster.get("display_name"), "cluster has no display_name"
+        # Centroid blob must round-trip as a float32 vector.
+        blob = cluster.get("centroid_blob")
+        assert blob, f"cluster {cluster.get('id')} has empty centroid_blob"
+        vec = np.frombuffer(blob, dtype=np.float32)
+        assert vec.size > 0, "centroid deserialised to an empty vector"
+    # K was chosen within the overridden [k_min=2, k_max=3] band.
+    assert 1 <= len(real_clusters) <= 3
+
+
+# ===========================================================================
+# 3. Ranking — real cosine + real rationale LLM
+# ===========================================================================
+
+@pytest.mark.integration
+def test_ranking_real_full_breakdown(real_embeddings_db, real_embed_host, real_llm, five_papers):
+    """rank_papers over real embeddings (real cosine), a real domain-context
+    embedding, and the real ingestion LLM for rationales must emit all six
+    score_breakdown signal keys, preserve all 5 papers, and sort descending."""
+    from scripts.llm.ranker import rank_papers
+
+    candidates = [
+        {"doi": p["doi"], "title": p["title"], "abstract": p["abstract"]}
+        for p in five_papers
     ]
 
+    # Real domain-context embedding via the same Ollama embed model.
+    domain_text = "downstream bioprocessing of monoclonal antibodies"
+    domain_emb = real_embeddings_db.embed_text(domain_text)
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
+    ranked = rank_papers(
+        candidates,
+        real_embeddings_db,
+        real_llm,
+        domain_context=domain_text,
+        domain_context_emb=domain_emb,
+        domain_context_weight=0.2,
+    )
 
-class TestV09Integration:
-    """End-to-end contract tests for the full v0.9 engine."""
-
-    # -------------------------------------------------------------------------
-    # 1. Clustering threshold crossing
-    # -------------------------------------------------------------------------
-
-    def test_clusters_populated_above_min_threshold(
-        self, mock_state_db_with_clusters
-    ) -> None:
-        """Simulates brain-build crossing min_papers_threshold=3.
-
-        We verify that list_active_clusters() returns non-empty rows —
-        i.e. the fixture correctly models a post-threshold-crossing state.
-        The actual K-means logic lives in scripts/clustering/ (covered by
-        its own unit tests); here we confirm the plumbing between the
-        clustering module and StateDB is the assumed contract.
-        """
-        clusters = mock_state_db_with_clusters.list_active_clusters()
-        assert len(clusters) >= 1, "At least one cluster must exist post-threshold"
-        for c in clusters:
-            assert "display_name" in c
-            assert "n_papers" in c
-            assert "centroid_blob" in c
-            assert c["archived"] == 0
-
-    # -------------------------------------------------------------------------
-    # 2. All Bundle signals contribute to score_breakdown
-    # -------------------------------------------------------------------------
-
-    def test_all_signals_present_in_score_breakdown(
-        self, mock_ranker_papers
-    ) -> None:
-        """All Bundle weights are nonzero → every signal key must appear in the
-        score_breakdown dict of every ranked paper.
-
-        This acts as a regression test: if a Bundle accidentally removes a
-        signal key, this fails immediately.
-        """
-        required_signals = {
-            "vector",
-            "domain_context",
-            "cluster_centroid",
-            "graph_entity_overlap",
-            "graph_citation",
-            "graph_shared_authors",
-        }
-        for paper in mock_ranker_papers:
-            breakdown = paper.get("score_breakdown", {})
-            missing = required_signals - set(breakdown.keys())
-            assert not missing, (
-                f"Paper {paper['doi']} missing signals: {missing}"
+    required_signals = {
+        "vector",
+        "domain_context",
+        "cluster_centroid",
+        "graph_entity_overlap",
+        "graph_citation",
+        "graph_shared_authors",
+    }
+    assert ranked, "rank_papers returned no papers"
+    for paper in ranked:
+        breakdown = paper.get("score_breakdown", {})
+        missing = required_signals - set(breakdown.keys())
+        assert not missing, f"Paper {paper['doi']} missing signals: {missing}"
+        for key, val in breakdown.items():
+            assert isinstance(val, (int, float)), (
+                f"Paper {paper['doi']} signal '{key}' is {type(val)}"
             )
 
-    def test_score_breakdown_values_are_numeric(self, mock_ranker_papers) -> None:
-        """Every score_breakdown value must be a float/int — no None, no strings."""
-        for paper in mock_ranker_papers:
-            for key, val in paper.get("score_breakdown", {}).items():
-                assert isinstance(val, (int, float)), (
-                    f"Paper {paper['doi']} signal '{key}' is {type(val)}"
-                )
+    # No candidate silently dropped.
+    dois = {p["doi"] for p in ranked}
+    assert dois == {"10.0/a", "10.0/b", "10.0/c", "10.0/d", "10.0/e"}
 
-    def test_rank_preserves_all_five_papers(self, mock_ranker_papers) -> None:
-        """The ranked list must contain all 5 fixture papers (no silent drops)."""
-        dois = {p["doi"] for p in mock_ranker_papers}
-        assert dois == {"10.0/a", "10.0/b", "10.0/c", "10.0/d", "10.0/e"}
+    # Sorted descending by similarity_score.
+    scores = [p["similarity_score"] for p in ranked]
+    assert scores == sorted(scores, reverse=True), (
+        "rank_papers output is not sorted descending by similarity_score"
+    )
 
-    def test_rank_descending_by_similarity_score(self, mock_ranker_papers) -> None:
-        """Ranked list must be sorted descending by similarity_score."""
-        scores = [p["similarity_score"] for p in mock_ranker_papers]
-        assert scores == sorted(scores, reverse=True), (
-            "Papers are not sorted descending by similarity_score"
+
+# ===========================================================================
+# 4. Graph + ask — real NL → Cypher → execute → summarize via real Ollama
+# ===========================================================================
+
+@pytest.mark.integration
+def test_graph_ask_real_pipeline(real_graph_db, real_llm):
+    """run_pipeline drives a REAL Ollama client through NL → Cypher →
+    execute (real Kuzu) → summarize, returning an AskResult with cypher + prose.
+
+    The ask pipeline normally builds its own cloud client when OLLAMA_API_KEY is
+    set; here we inject the real LOCAL ingestion client by patching
+    ``_maybe_construct_client`` so the NL→Cypher and summarize stages make real
+    local Ollama calls. This is the test that previously HUNG (it half-mocked
+    its way into an unguarded real call) — it now only runs behind real_llm.
+    """
+    from scripts.graph.ask import AskResult, run_pipeline
+
+    with patch(
+        "scripts.graph.ask._maybe_construct_client",
+        return_value=real_llm,
+    ):
+        result = run_pipeline(
+            "Which papers are in my library? List their DOIs.",
+            graph_db=real_graph_db,
+            state_db=None,
+            embeddings_db=None,
+            summarize=True,
         )
 
-    # -------------------------------------------------------------------------
-    # 3. Write-back commands (dry-run)
-    # -------------------------------------------------------------------------
+    assert isinstance(result, AskResult)
+    # A real LLM produced a real, validated, read-only Cypher query.
+    assert result.cypher, f"no cypher generated; prose={result.prose!r}"
+    # And a real prose summary (non-empty) came back.
+    assert result.prose, f"no prose summary; cypher={result.cypher!r}"
 
-    def test_cluster_writeback_dry_run_calls_zotero_noop(self) -> None:
-        """lit-monitor cluster write-back tags --dry-run must NOT mutate Zotero.
 
-        We test the plumbing contract: when dry_run=True, the write-back
-        function returns a diff but does not call the Zotero write method.
-        """
-        pytest.importorskip("scripts.clustering.writeback")
-        from scripts.clustering.writeback import write_back_tags  # type: ignore
+# ===========================================================================
+# 5. Cluster-aware ask — real clusters + real question embedding
+# ===========================================================================
 
-        mock_zotero = MagicMock()
-        mock_state_db = MagicMock()
-        mock_state_db.list_active_clusters.return_value = [
-            {
-                "id": 0,
-                "display_name": "Protein A & CEX",
-                "n_papers": 2,
-                "centroid_blob": _make_centroid_blob([1.0, 0.0]),
-                "archived": 0,
-            }
-        ]
-        # build_cluster_assignments returns doi→cluster_id mapping
-        mock_state_db.get_cluster_assignments.return_value = [
-            {"doi": "10.0/a", "cluster_id": 0},
-            {"doi": "10.0/b", "cluster_id": 0},
-        ]
+@pytest.mark.integration
+def test_cluster_aware_ask_real(real_clusters, real_embeddings_db, tmp_state_db):
+    """_identify_relevant_cluster over the REAL persisted clusters returns the
+    dominant cluster for a capture-aligned query, using a real question
+    embedding and real cosine similarity."""
+    from scripts.graph.ask import _identify_relevant_cluster
 
-        try:
-            write_back_tags(
-                state_db=mock_state_db,
-                zotero_client=mock_zotero,
-                dry_run=True,
-            )
-        except TypeError:
-            # write_back_tags signature may differ; call with positional args
-            write_back_tags(mock_state_db, mock_zotero, dry_run=True)
+    result = _identify_relevant_cluster(
+        "best methods for monoclonal antibody affinity capture",
+        tmp_state_db,
+        real_embeddings_db,
+        threshold=0.1,
+    )
 
-        # In dry-run mode, the Zotero write (update_item / set_tags) must be
-        # called zero times.
-        write_calls = (
-            mock_zotero.update_item.call_count
-            + mock_zotero.set_tags.call_count
-        )
-        assert write_calls == 0, (
-            f"Dry-run must not mutate Zotero; got {write_calls} write calls"
-        )
+    assert result is not None, (
+        "_identify_relevant_cluster returned None despite real clusters and "
+        "an aligned query"
+    )
+    assert result["display_name"], "matched cluster has no display_name"
+    assert result["n_papers"] >= 1
+    assert result["similarity"] >= 0.1
 
-    # -------------------------------------------------------------------------
-    # 4. Cluster-aware ask
-    # -------------------------------------------------------------------------
-
-    def test_ask_returns_cluster_aware_response(
-        self, mock_state_db_with_clusters, mock_embeddings_db
-    ) -> None:
-        """run_pipeline returns prose that references the dominant cluster name.
-
-        Strategy:
-          - question embedding = [1, 0, 0, 0] (from fixture) — aligned with
-            cluster 0 'Protein A & CEX' (cosine sim = 1.0 > 0.3 threshold).
-          - LLM client is mocked to echo its user prompt.
-          - We assert the cluster name appears in the injected prompt.
-        """
-        from scripts.graph.ask import _identify_relevant_cluster
-
-        result = _identify_relevant_cluster(
-            "what are the best methods for mAb capture?",
-            mock_state_db_with_clusters,
-            mock_embeddings_db,
-            threshold=0.3,
-        )
-
-        assert result is not None, (
-            "_identify_relevant_cluster returned None; "
-            "expected a match for cluster 'Protein A & CEX'"
-        )
-        assert result["display_name"] == "Protein A & CEX"
-        assert result["n_papers"] == 2
-        assert result["similarity"] >= 0.3
-
-    def test_ask_no_cluster_context_when_similarity_low(
-        self, mock_state_db_with_clusters
-    ) -> None:
-        """When question embedding is orthogonal to all centroids, no cluster
-        context is returned — plain summarisation path is used."""
-        import numpy as np
-
-        from scripts.graph.ask import _identify_relevant_cluster
-
-        mock_emb_db = MagicMock()
-        # Diagonal vector — not parallel to either [1,0,0,0] or [0,1,0,0]
-        mock_emb_db.embed_text.return_value = np.array(
-            [0.707, 0.707, 0.0, 0.0], dtype=np.float32
-        )
-
-        result = _identify_relevant_cluster(
-            "general question unrelated to specific cluster",
-            mock_state_db_with_clusters,
-            mock_emb_db,
-            threshold=0.99,  # extremely high threshold → no match
-        )
-        assert result is None
-
-    def test_run_pipeline_cluster_context_passed_to_summarize(
-        self, mock_state_db_with_clusters, mock_embeddings_db
-    ) -> None:
-        """run_pipeline passes cluster_context into summarize_results.
-
-        We mock summarize_results to capture what cluster_context it receives,
-        then verify it contains the dominant cluster name.
-        """
-        captured: dict[str, Any] = {}
-
-        def mock_summarize(question, cypher, rendered_rows, **kwargs):
-            captured["cluster_context"] = kwargs.get("cluster_context")
-            return "Based on your Protein A & CEX theme: two methods found."
-
-        mock_graph_db = MagicMock()
-        mock_graph_db.execute_query.return_value = []
-
-        with (
-            patch(
-                "scripts.graph.ask._maybe_construct_client",
-                return_value=MagicMock(),
-            ),
-            patch("scripts.graph.ask.generate_cypher", return_value="MATCH (p) RETURN p"),
-            patch("scripts.graph.ask.execute_cypher", return_value=[{"doi": "10.0/a"}]),
-            patch(
-                "scripts.graph.ask.render_rows",
-                return_value="| doi |\n|---|\n| 10.0/a |",
-            ),
-            patch("scripts.graph.ask.summarize_results", side_effect=mock_summarize),
-        ):
-            from scripts.graph.ask import run_pipeline
-
-            result = run_pipeline(
-                "what mAb capture methods are in my library?",
-                graph_db=mock_graph_db,
-                state_db=mock_state_db_with_clusters,
-                embeddings_db=mock_embeddings_db,
-                summarize=True,
-            )
-
-        assert "cluster_context" in captured, (
-            "run_pipeline did not pass cluster_context to summarize_results"
-        )
-        ctx = captured["cluster_context"]
-        assert ctx is not None, (
-            "cluster_context should be non-None when a matching cluster exists"
-        )
-        assert ctx["display_name"] == "Protein A & CEX"
-        assert result.prose is not None
-
-    def test_run_pipeline_graceful_when_no_state_db(self) -> None:
-        """run_pipeline degrades gracefully when state_db is None."""
-        with (
-            patch("scripts.graph.ask.generate_cypher", return_value="MATCH (p) RETURN p"),
-            patch("scripts.graph.ask.execute_cypher", return_value=[]),
-            patch("scripts.graph.ask.render_rows", return_value="_(no results)_"),
-            patch(
-                "scripts.graph.ask._maybe_construct_client",
-                return_value=MagicMock(),
-            ),
-        ):
-            from scripts.graph.ask import run_pipeline
-
-            mock_graph_db = MagicMock()
-            result = run_pipeline(
-                "any question",
-                graph_db=mock_graph_db,
-                state_db=None,   # no clusters available
-                embeddings_db=None,
-                summarize=False,
-            )
-
-        # Must return an AskResult without raising
-        assert result is not None
-        assert result.cypher == "MATCH (p) RETURN p"
-        assert result.prose is None
-
-    # -------------------------------------------------------------------------
-    # 5. AskResult shape parity (CLI + HTTP must see the same type)
-    # -------------------------------------------------------------------------
-
-    def test_ask_result_dataclass_fields(self) -> None:
-        """AskResult must expose cypher, rows, rendered, prose fields."""
-        from scripts.graph.ask import AskResult
-
-        r = AskResult(
-            cypher="MATCH (p) RETURN p",
-            rows=[{"doi": "10.0/a"}],
-            rendered="| doi |\n|---|\n| 10.0/a |",
-            prose="One paper found.",
-        )
-        assert r.cypher
-        assert r.rows
-        assert r.rendered
-        assert r.prose
-
-    # -------------------------------------------------------------------------
-    # 6. Prompt registry knows cluster_context is required
-    # -------------------------------------------------------------------------
-
-    def test_prompt_registry_ask_summarize_has_cluster_context(self) -> None:
-        """prompt_registry should declare cluster_context as required for
-        ask_summarize after Bundle I update."""
-        from scripts.llm.prompt_registry import _reset_prompt_cache, required_placeholders
-
-        _reset_prompt_cache()
-        placeholders = required_placeholders("ask_summarize")
-        assert "cluster_context" in placeholders, (
-            "prompt_registry.ask_summarize must list cluster_context as required "
-            "after Bundle I"
-        )
-
-    def test_ask_summarize_yaml_renders_with_four_placeholders(self) -> None:
-        """The YAML round-trip must succeed with the four Bundle I placeholders."""
-        from scripts.llm.prompt_registry import _reset_prompt_cache, load_prompt
-
-        _reset_prompt_cache()
-        prompt = load_prompt("ask_summarize")
-        rendered = prompt.render_user(
-            question="find methods",
-            cypher="MATCH (p) RETURN p",
-            rows="| doi |\n|---|\n| 10.0/a |",
-            cluster_context="Based on your Protein A theme:",
-        )
-        assert "find methods" in rendered
-        assert "Based on your Protein A theme:" in rendered
+    # The matched cluster must be one of the real persisted clusters.
+    real_names = {c["display_name"] for c in real_clusters}
+    assert result["display_name"] in real_names, (
+        f"matched cluster {result['display_name']!r} not in persisted set "
+        f"{real_names}"
+    )

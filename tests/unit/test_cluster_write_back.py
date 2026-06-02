@@ -150,6 +150,46 @@ class TestPushTagsToZotero:
         tags = [t["tag"] for t in call_args["data"]["tags"]]
         assert "lm/Membrane Filtration" in tags
 
+    def test_dry_run_calls_zotero_noop(self):
+        """Audit-2 F2: dry-run must not touch any Zotero mutating method.
+
+        Migrated here from tests/integration/test_v09_e2e.py, where it was
+        permanently skipped by a broken ``pytest.importorskip(
+        "scripts.clustering.writeback")`` (wrong module — the real module
+        is ``write_back``) plus a call to a non-existent ``write_back_tags``.
+        It is a pure unit test (mocked state_db + zotero_client, no live
+        services), so it lives in the unit suite and runs unconditionally.
+
+        The live path of push_tags_to_zotero reads each item via
+        ``zotero_client._zot.item`` and writes via ``_zot.update_item``.
+        With dry_run=True neither must be invoked, and the report must
+        carry ``dry_run=True``.
+        """
+        from scripts.clustering.write_back import push_tags_to_zotero
+
+        clusters = [{"id": 0, "display_name": "Protein A & CEX", "n_papers": 2}]
+        assignments = [
+            {"doi": "10.0/a", "cluster_id": 0},
+            {"doi": "10.0/b", "cluster_id": 0},
+        ]
+        sdb = _make_state_db_with_clusters(clusters, assignments)
+        sdb.get_paper.side_effect = lambda doi: {
+            "10.0/a": {"zotero_key": "KEYA"},
+            "10.0/b": {"zotero_key": "KEYB"},
+        }.get(doi)
+
+        zot = _make_zot_client()
+
+        report = push_tags_to_zotero(sdb, zot, dry_run=True)
+
+        # In dry-run mode the Zotero read+write methods used by the live
+        # path must be called zero times.
+        zot._zot.item.assert_not_called()
+        zot._zot.update_item.assert_not_called()
+
+        # And the report explicitly flags itself as a dry run.
+        assert report["dry_run"] is True
+
 
 # ---------------------------------------------------------------------------
 # push_collections_to_zotero

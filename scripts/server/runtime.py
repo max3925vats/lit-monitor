@@ -107,6 +107,12 @@ class ServerRuntime:
     _embeddings_db: Any | None = field(default=None, repr=False)
     _zotero_client: Any | None = field(default=None, repr=False)
     _secrets: dict | None = field(default=None, repr=False)
+    _graph_db: Any | None = field(default=None, repr=False)
+    # graph_db is allowed to legitimately resolve to None (the [graph] extra
+    # may be absent or the DB may not open). A plain ``is None`` cache guard
+    # would re-attempt construction on every access, so we track resolution
+    # with a separate sentinel flag to cache the None result too.
+    _graph_db_resolved: bool = field(default=False, repr=False)
 
     # Process registry — one slot per long-running pipeline. Start endpoints
     # refuse to spawn when the matching slot is already running.
@@ -176,6 +182,28 @@ class ServerRuntime:
                 local_storage_path=cfg.zotero.local_storage_path,
             )
         return self._zotero_client
+
+    @property
+    def graph_db(self) -> Any | None:
+        """Lazily construct the Kuzu-backed GraphDB, or None when unavailable.
+
+        Mirrors the other lazy properties but tolerates a legitimate ``None``
+        result: ``safe_graph_db`` returns ``None`` when the ``[graph]`` extra
+        is not installed or the DB cannot be opened. We cache that ``None`` via
+        ``_graph_db_resolved`` so a missing graph install isn't re-probed on
+        every request. As with the other lazy props, picking up a later graph
+        install requires a runtime reset — acceptable and consistent.
+        """
+        if not self._graph_db_resolved:
+            from scripts.graph.import_citations import safe_graph_db
+
+            # Argless call uses the default production path
+            # (~/.config/lit-monitor/graph.kuzu), matching every other
+            # server route (papers/entities/query/ingest) so the topics
+            # endpoint reads the same graph.
+            self._graph_db = safe_graph_db()
+            self._graph_db_resolved = True
+        return self._graph_db
 
 
 # Module-level singleton: one runtime per server process.
