@@ -25,9 +25,17 @@ and never writes papers.graph_indexed directly.
 R28 hardening
 -------------
 If the background task raises, the ingest_queue row is marked
-status='failed' with the error text — never left orphaned in 'queued' or
-'processing'. An orphaned row would appear as an active job to H3's queue
-listing and hide the real failure.
+status='failed' with the error text — never orphaned in 'queued' or
+'processing' by an *in-process* failure. An orphaned row would appear as
+an active job to H3's queue listing and hide the real failure.
+
+Known limitation (process-death window): this guarantee only covers
+in-process failures caught by the task's try/except. If the worker process
+is hard-killed (SIGKILL / OOM / restart) in the window between the
+'processing' UPDATE and the terminal UPDATE, the row is stranded in
+'processing' forever — no in-process handler can run during a hard kill.
+The proper fix is a reaper / timeout sweep that re-fails rows stuck in
+'processing' past a deadline; deferred to a future bundle.
 
 no_markdown fallback
 --------------------
@@ -62,6 +70,16 @@ from scripts.server.runtime import get_runtime
 logger = logging.getLogger(__name__)
 
 _DOI_RE = re.compile(r"^10\.\d{4,9}/\S+$")
+
+# Single source of truth for the ingest_queue state machine. These bare
+# string literals were previously scattered across the route, the background
+# task, and the tests; a typo like "no markdown" would silently create an
+# unmatchable status. Reference these constants in all production code paths.
+_STATUS_QUEUED = "queued"
+_STATUS_PROCESSING = "processing"
+_STATUS_DONE = "done"
+_STATUS_NO_MARKDOWN = "no_markdown"
+_STATUS_FAILED = "failed"
 
 router = APIRouter(tags=["ingest"])
 
@@ -183,7 +201,8 @@ def _process_paper(
     secrets = runtime.secrets
 
     # Mirror the CLI: hydrate provider keys from config.toml so the LLM and
-    # S2 enrichment inside brain_build can authenticate. Shell env wins.
+    # S2 enrichment inside brain_build can authenticate. Idempotent and
+    # one-time per process (see _hydrate_provider_keys). Shell env wins.
     _hydrate_provider_keys(secrets)
 
     # Build the LLM client exactly as the brain_build CLI does.
@@ -224,12 +243,30 @@ def _process_paper(
                 logger.warning("A1: graph_db.close() failed (non-fatal): %s", exc)
 
 
+# Guards the one-time, process-wide env hydration below. Module-level so it
+# persists across every background task in this process.
+_KEYS_HYDRATED = False
+
+
 def _hydrate_provider_keys(secrets: dict) -> None:
     """Inject OLLAMA_API_KEY / S2_API_KEY from config.toml if unset.
 
     Mirrors scripts.cli._maybe_set_ollama_key / _maybe_set_s2_key. Shell
-    env vars always win over config.toml.
+    env vars always win over config.toml (we only set a key when
+    ``os.environ.get(name)`` is empty).
+
+    BLAST RADIUS — DELIBERATE: this is a *process-wide* mutation of
+    ``os.environ``, not a request-scoped one. The keys remain set for the
+    life of the server process and are inherited by any subprocess the
+    server later spawns. That mirrors the CLI's behaviour and is intentional
+    so brain_build's LLM/S2 calls can authenticate. The ``_KEYS_HYDRATED``
+    guard makes this run AT MOST ONCE per process — it is idempotent and
+    does NOT re-run on every background task.
     """
+    global _KEYS_HYDRATED
+    if _KEYS_HYDRATED:
+        return
+
     import os
 
     if not os.environ.get("OLLAMA_API_KEY"):
@@ -240,6 +277,8 @@ def _hydrate_provider_keys(secrets: dict) -> None:
         s2_key = secrets.get("semantic_scholar", {}).get("api_key", "")
         if s2_key:
             os.environ["S2_API_KEY"] = s2_key
+
+    _KEYS_HYDRATED = True
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +307,7 @@ def _run_ingest_task(doi: str, item: dict[str, Any]) -> None:
         with state_db._connect() as conn:
             conn.execute(
                 "UPDATE ingest_queue SET status = ? WHERE doi = ?",
-                ("processing", doi),
+                (_STATUS_PROCESSING, doi),
             )
     except Exception:
         # If we can't even mark 'processing', log and continue — the real
@@ -285,7 +324,7 @@ def _run_ingest_task(doi: str, item: dict[str, Any]) -> None:
                 conn.execute(
                     "UPDATE ingest_queue SET status = ?, error = ?, completed_at = ? "
                     "WHERE doi = ?",
-                    ("failed", str(exc)[:1000], _utcnow(), doi),
+                    (_STATUS_FAILED, str(exc)[:1000], _utcnow(), doi),
                 )
         except Exception:
             logger.exception(
@@ -294,7 +333,7 @@ def _run_ingest_task(doi: str, item: dict[str, Any]) -> None:
         return
 
     # processed=True → done; processed=False → no_markdown (not an error).
-    terminal = "done" if processed else "no_markdown"
+    terminal = _STATUS_DONE if processed else _STATUS_NO_MARKDOWN
     with state_db._connect() as conn:
         conn.execute(
             "UPDATE ingest_queue SET status = ?, completed_at = ? WHERE doi = ?",
@@ -347,7 +386,7 @@ def ingest(body: IngestRequest, background_tasks: BackgroundTasks) -> JSONRespon
     with state_db._connect() as conn:
         conn.execute(
             "INSERT INTO ingest_queue (doi, status, queued_at) VALUES (?, ?, ?)",
-            (body.doi, "queued", queued_at),
+            (body.doi, _STATUS_QUEUED, queued_at),
         )
 
     # --- Schedule real async ingestion ---
