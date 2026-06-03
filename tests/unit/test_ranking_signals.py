@@ -59,8 +59,13 @@ class TestEmbedText:
         assert vec.shape == (1024,)
         assert vec.dtype == np.float32
 
-    def test_returns_l2_normalised_vector(self, tmp_path):
-        """embed_text() converts list[float] from _embed to np.ndarray."""
+    def test_preserves_raw_values_and_shape(self, tmp_path):
+        """embed_text() converts list[float] from _embed to an ndarray WITHOUT
+        L2-normalising — raw component values are preserved verbatim.
+
+        (Previously misnamed test_returns_l2_normalised_vector; embed_text does
+        not normalise, and the assertions only ever checked value preservation.)
+        """
         from scripts.output.embeddings import EmbeddingsDB
 
         db = EmbeddingsDB.__new__(EmbeddingsDB)
@@ -70,7 +75,10 @@ class TestEmbedText:
         with patch.object(db, "_embed", return_value=fixed):
             vec = db.embed_text("test")
         assert vec.shape == (8,)
+        # Raw values are preserved (not normalised): the L2 norm here is 2.0, so an
+        # L2-normalised vector would have vec[:4] == 0.5 — this asserts it does NOT.
         np.testing.assert_allclose(vec[:4], np.float32(1.0))
+        np.testing.assert_allclose(vec[4:], np.float32(0.0))
 
     def test_lru_cache_avoids_re_embedding(self):
         """Calling embed_text() twice with the same text hits _embed only once."""

@@ -120,7 +120,11 @@ def test_get_client_returns_ollama_client_for_brain_build():
     config.brain_build.ollama_host = "http://localhost:11434"
     config.brain_build.timeout = 300
     config.brain_build.temperature = 0.1
-    client = get_client(config, "brain_build")
+    # MagicMock config has no real num_ctx_override → get_client would let
+    # OllamaClient.__init__ fire a real /api/show HTTP call. Patch the boundary
+    # so this is network-free in clean CI.
+    with patch("requests.post", side_effect=ConnectionError("no network")):
+        client = get_client(config, "brain_build")
     assert isinstance(client, OllamaClient)
     assert client.model == "qwen2.5:7b"
 @pytest.mark.unit
@@ -132,7 +136,10 @@ def test_get_client_returns_correct_model_for_ingestion():
     config.ingestion.ollama_host = "http://localhost:11434"
     config.ingestion.timeout = 300
     config.ingestion.temperature = 0.1
-    client = get_client(config, "ingestion")
+    # Patch the /api/show boundary — MagicMock config would otherwise let
+    # OllamaClient.__init__ make a real HTTP call (fails in clean CI).
+    with patch("requests.post", side_effect=ConnectionError("no network")):
+        client = get_client(config, "ingestion")
     assert isinstance(client, OllamaClient)
     assert client.model == "qwen2.5:3b"
 @pytest.mark.unit
@@ -160,7 +167,9 @@ def test_get_client_rejects_non_ollama_provider():
 @pytest.mark.unit
 def test_ollama_client_stores_timeout():
     from scripts.llm.llm_client import OllamaClient
-    client = OllamaClient(model="phi4-mini", timeout=300)
+    # _skip_api_show=True avoids the real /api/show HTTP call in __init__ so this
+    # construction is network-free (passes in clean CI / no Ollama running).
+    client = OllamaClient(model="phi4-mini", timeout=300, _skip_api_show=True)
     assert client.timeout == 300
 @pytest.mark.unit
 def test_ollama_client_thinking_mode_is_on():
@@ -172,7 +181,9 @@ def test_ollama_client_thinking_mode_is_on():
     options caused Ollama to silently ignore the flag.
     """
     from scripts.llm.llm_client import OllamaClient
-    client = OllamaClient(model="qwen2.5:3b")
+    # _skip_api_show=True so __init__ makes no real /api/show call; the patch
+    # below only covers the complete() POST we actually want to assert on.
+    client = OllamaClient(model="qwen2.5:3b", _skip_api_show=True)
     captured_payload = {}
     def mock_post(url, json=None, timeout=None, headers=None):
         captured_payload.update(json or {})
@@ -221,7 +232,10 @@ def test_get_client_respects_think_false_from_yaml_config():
     )
     config = SimpleNamespace(brain_build=mode_config)
 
-    client = get_client(config, "brain_build", think=True)  # caller wants True…
+    # Patch /api/show boundary — config has no num_ctx_override so __init__
+    # would otherwise make a real HTTP call.
+    with patch("requests.post", side_effect=ConnectionError("no network")):
+        client = get_client(config, "brain_build", think=True)  # caller wants True…
     assert isinstance(client, OllamaClient)
     assert client.think is False, (
         "YAML 'think: false' must override the caller's think=True default"
@@ -250,7 +264,8 @@ def test_get_client_falls_back_to_caller_think_when_yaml_omits_it():
     config = SimpleNamespace(brain_build=mode_config)
 
     # Caller passes think=False (e.g. vocabulary clustering) — must be respected.
-    client = get_client(config, "brain_build", think=False)
+    with patch("requests.post", side_effect=ConnectionError("no network")):
+        client = get_client(config, "brain_build", think=False)
     assert isinstance(client, OllamaClient)
     assert client.think is False, (
         "Caller's think=False must be used when YAML has no 'think' field"
@@ -262,7 +277,7 @@ def test_get_client_falls_back_to_caller_think_when_yaml_omits_it():
 def test_ollama_client_explicit_api_key_stored():
     """Explicit api_key parameter is stored on the client."""
     from scripts.llm.llm_client import OllamaClient
-    client = OllamaClient(model="gemma4:31b", api_key="explicit-key")
+    client = OllamaClient(model="gemma4:31b", api_key="explicit-key", _skip_api_show=True)
     assert client.api_key == "explicit-key"
 
 
@@ -271,7 +286,7 @@ def test_ollama_client_reads_api_key_from_env(monkeypatch):
     """When no explicit key is given, OllamaClient falls back to OLLAMA_API_KEY env var."""
     from scripts.llm.llm_client import OllamaClient
     monkeypatch.setenv("OLLAMA_API_KEY", "env-key-abc")
-    client = OllamaClient(model="gemma4:31b")
+    client = OllamaClient(model="gemma4:31b", _skip_api_show=True)
     assert client.api_key == "env-key-abc"
 
 
@@ -280,7 +295,7 @@ def test_ollama_client_explicit_key_wins_over_env(monkeypatch):
     """Explicit api_key takes precedence over OLLAMA_API_KEY env var."""
     from scripts.llm.llm_client import OllamaClient
     monkeypatch.setenv("OLLAMA_API_KEY", "env-key-should-be-ignored")
-    client = OllamaClient(model="gemma4:31b", api_key="explicit-wins")
+    client = OllamaClient(model="gemma4:31b", api_key="explicit-wins", _skip_api_show=True)
     assert client.api_key == "explicit-wins"
 
 
@@ -289,7 +304,7 @@ def test_ollama_client_no_key_when_neither_set(monkeypatch):
     """api_key is None when neither explicit key nor env var is present."""
     from scripts.llm.llm_client import OllamaClient
     monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
-    client = OllamaClient(model="qwen2.5:3b")
+    client = OllamaClient(model="qwen2.5:3b", _skip_api_show=True)
     assert client.api_key is None
 
 
@@ -297,7 +312,7 @@ def test_ollama_client_no_key_when_neither_set(monkeypatch):
 def test_ollama_client_sends_bearer_header_in_complete():
     """complete() includes Authorization: Bearer <key> when api_key is set."""
     from scripts.llm.llm_client import OllamaClient
-    client = OllamaClient(model="gemma4:31b", api_key="test-bearer-key")
+    client = OllamaClient(model="gemma4:31b", api_key="test-bearer-key", _skip_api_show=True)
     captured = {}
 
     def mock_post(url, json=None, timeout=None, headers=None):
@@ -321,7 +336,7 @@ def test_ollama_client_no_auth_header_without_api_key(monkeypatch):
     """complete() sends no Authorization header when api_key is None (local Ollama)."""
     from scripts.llm.llm_client import OllamaClient
     monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
-    client = OllamaClient(model="qwen2.5:3b")
+    client = OllamaClient(model="qwen2.5:3b", _skip_api_show=True)
     captured = {}
 
     def mock_post(url, json=None, timeout=None, headers=None):
@@ -348,6 +363,7 @@ def test_ollama_client_is_available_sends_bearer_header():
         model="gemma4:31b",
         host="https://ollama.com",
         api_key="cloud-key",
+        _skip_api_show=True,
     )
     captured = {}
 
@@ -387,7 +403,8 @@ def test_get_client_factory_passes_ollama_host():
     )
     config = SimpleNamespace(brain_build=mode_config)
 
-    client = get_client(config, "brain_build")
+    with patch("requests.post", side_effect=ConnectionError("no network")):
+        client = get_client(config, "brain_build")
     assert isinstance(client, OllamaClient)
     assert client.host == "https://ollama.com", (
         "Factory must pass ollama_host to OllamaClient for cloud-Ollama support"
@@ -580,7 +597,8 @@ def test_get_clients_for_passes_returns_single_when_no_pass_models():
         # no pass1_model / pass2_model / pass3_model
     )
     config = SimpleNamespace(brain_build=mode_config)
-    client = get_clients_for_passes(config, "brain_build")
+    with patch("requests.post", side_effect=ConnectionError("no network")):
+        client = get_clients_for_passes(config, "brain_build")
     assert isinstance(client, OllamaClient), "No per-pass keys → must return single client"
     assert client.model == "phi4-mini"
 
@@ -603,7 +621,8 @@ def test_get_clients_for_passes_returns_dict_when_pass1_model_set():
         # pass2_model / pass3_model absent → fall back to default "phi4-mini"
     )
     config = SimpleNamespace(brain_build=mode_config)
-    result = get_clients_for_passes(config, "brain_build")
+    with patch("requests.post", side_effect=ConnectionError("no network")):
+        result = get_clients_for_passes(config, "brain_build")
     assert isinstance(result, dict), "pass1_model set → must return dict"
     assert set(result.keys()) == {1, 2, 3}
     for client in result.values():
@@ -629,7 +648,8 @@ def test_get_clients_for_passes_per_pass_model_assigned_correctly():
         pass3_model="qwen2.5:3b",   # override for pass 3
     )
     config = SimpleNamespace(brain_build=mode_config)
-    clients = get_clients_for_passes(config, "brain_build")
+    with patch("requests.post", side_effect=ConnectionError("no network")):
+        clients = get_clients_for_passes(config, "brain_build")
     assert clients[1].model == "qwen2.5:7b"
     assert clients[2].model == "phi4-mini"   # fell back to default
     assert clients[3].model == "qwen2.5:3b"
@@ -652,7 +672,8 @@ def test_get_clients_for_passes_inherits_shared_settings():
         pass1_model="qwen2.5:7b",
     )
     config = SimpleNamespace(brain_build=mode_config)
-    clients = get_clients_for_passes(config, "brain_build")
+    with patch("requests.post", side_effect=ConnectionError("no network")):
+        clients = get_clients_for_passes(config, "brain_build")
     for client in clients.values():
         assert isinstance(client, OllamaClient)
         assert client.timeout == 120

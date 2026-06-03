@@ -118,9 +118,16 @@ class TestEntityListing:
         ):
             client.get("/api/entities?type=topic&top_k=10")
 
-        # list_entities is called with entity_type and top_k
+        # Route calls list_entities(type, top_k, graph_db) positionally — assert the
+        # query params are actually forwarded, not merely that the mock was called.
+        m.assert_called_once()
         call_args = m.call_args
-        assert call_args is not None
+        assert call_args.args[0] == "topic", (
+            f"entity type not forwarded; got {call_args.args[0]!r}"
+        )
+        assert call_args.args[1] == 10, (
+            f"top_k not forwarded; got {call_args.args[1]!r}"
+        )
 
     def test_bad_type_422(self, client):
         """H6: unknown type value → 422 (Pydantic Literal validation)."""

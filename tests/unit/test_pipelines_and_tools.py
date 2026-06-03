@@ -1682,8 +1682,8 @@ class TestDigestAutoWriteFlag:
         )
 
         with patch("scripts.pipelines.discovery._write_digest") as mock_write, \
-             patch("scripts.pipelines.discovery.run_searches", return_value=([], [])), \
-             patch("scripts.pipelines.discovery.run_researcher_searches", return_value=([], [])), \
+             patch("scripts.pipelines.discovery.run_searches", return_value=[]), \
+             patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
              patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]), \
              patch("scripts.pipelines.discovery.rank_papers", return_value=[]):
             with caplog.at_level(logging.INFO):
@@ -1707,8 +1707,8 @@ class TestDigestAutoWriteFlag:
         )
 
         with patch("scripts.pipelines.discovery._write_digest") as mock_write, \
-             patch("scripts.pipelines.discovery.run_searches", return_value=([], [])), \
-             patch("scripts.pipelines.discovery.run_researcher_searches", return_value=([], [])), \
+             patch("scripts.pipelines.discovery.run_searches", return_value=[]), \
+             patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
              patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]), \
              patch("scripts.pipelines.discovery.rank_papers", return_value=[]):
             run_discovery(config, state_db, MagicMock(), MagicMock(), MagicMock())
@@ -1725,8 +1725,8 @@ class TestDigestAutoWriteFlag:
             lambda cfg: False,
         )
 
-        with patch("scripts.pipelines.discovery.run_searches", return_value=([], [])), \
-             patch("scripts.pipelines.discovery.run_researcher_searches", return_value=([], [])), \
+        with patch("scripts.pipelines.discovery.run_searches", return_value=[]), \
+             patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
              patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]), \
              patch("scripts.pipelines.discovery.rank_papers", return_value=[]):
             run_discovery(config, state_db, MagicMock(), MagicMock(), MagicMock())
@@ -1734,6 +1734,13 @@ class TestDigestAutoWriteFlag:
         with state_db._connect() as conn:
             rows = conn.execute("SELECT status FROM discovery_runs").fetchall()
         assert rows, "Expected at least one discovery_runs row"
-        assert rows[0][0] in ("success", "error"), (
-            f"Unexpected status: {rows[0][0]!r}"
+        # With correctly-shaped (list[dict]) search mocks, _run_discovery completes
+        # cleanly and summary.errors stays empty → status MUST be "success".
+        # Under the old ([], []) tuple mocks, the dedup loop raised AttributeError,
+        # the discovery block hit its catch path, appended an error, and status was
+        # "error" — so pinning "success" here would have failed pre-fix.
+        assert rows[0][0] == "success", (
+            f"Expected 'success' from the real discovery flow; got {rows[0][0]!r}. "
+            "A non-success status means search results were the wrong shape and the "
+            "pipeline fell into the exception-catch path."
         )

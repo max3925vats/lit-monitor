@@ -163,9 +163,11 @@ class TestFindPapersByEntity:
         )
         with patch.object(tools, "_get_graph_db", return_value=fake_db):
             tools.find_papers_by_entity("ion exchange", top_k=1)
-        # k=1 was forwarded
+        # Source calls find_papers_by_entities([canonical_id], k=top_k) — k is a
+        # kwarg and there is only one positional arg, so assert the kwarg directly.
+        # (The old `or call_args[0][1]` fallback would IndexError, never reached.)
         _, kwargs = fake_db.find_papers_by_entities.call_args
-        assert kwargs.get("k") == 1 or fake_db.find_papers_by_entities.call_args[0][1] == 1
+        assert kwargs.get("k") == 1
 
 
 # ---------------------------------------------------------------------------

@@ -37,6 +37,20 @@ def fresh_runtime():
     reset_runtime()
 
 
+@pytest.fixture(autouse=True)
+def restore_app_templates():
+    """Restore scripts.server.app.templates after each test.
+
+    _make_client() reassigns app.templates to a test-local Jinja2Templates
+    instance; without restoration that object leaks into sibling tests run later
+    in the same session (order-dependent flakiness).
+    """
+    import scripts.server.app as app_mod
+    original = app_mod.templates
+    yield
+    app_mod.templates = original
+
+
 def _make_client(config_path=None) -> TestClient:
     import json as _json
 
@@ -69,6 +83,8 @@ class TestSettingsPage:
         assert "Advanced Settings" in r.text
 
     def test_reflects_current_config(self):
+        import re
+
         with patch(
             "scripts.server.routes.settings._load_extraction_config",
             return_value={
@@ -78,8 +94,37 @@ class TestSettingsPage:
             client = _make_client()
             r = client.get("/settings")
         assert r.status_code == 200
-        # The checkbox should be rendered as checked when show_feedback_buttons=True.
-        assert "checked" in r.text
+        # The SPECIFIC show_feedback_buttons checkbox must carry `checked` when the
+        # config value is True — a bare `"checked" in r.text` would also match any
+        # other checked control on the page, so pin the input by name.
+        feedback_input = re.search(
+            r'<input[^>]*name="show_feedback_buttons"[^>]*>', r.text, re.DOTALL
+        )
+        assert feedback_input is not None, "show_feedback_buttons checkbox not rendered"
+        assert "checked" in feedback_input.group(0), (
+            "show_feedback_buttons checkbox must be `checked` when config is True"
+        )
+
+    def test_checkbox_unchecked_when_config_false(self):
+        """Inverse of test_reflects_current_config: False config → no `checked`."""
+        import re
+
+        with patch(
+            "scripts.server.routes.settings._load_extraction_config",
+            return_value={
+                "web_ui": {"show_feedback_buttons": False},
+            },
+        ):
+            client = _make_client()
+            r = client.get("/settings")
+        assert r.status_code == 200
+        feedback_input = re.search(
+            r'<input[^>]*name="show_feedback_buttons"[^>]*>', r.text, re.DOTALL
+        )
+        assert feedback_input is not None, "show_feedback_buttons checkbox not rendered"
+        assert "checked" not in feedback_input.group(0), (
+            "show_feedback_buttons checkbox must NOT be `checked` when config is False"
+        )
 
 
 # ---------------------------------------------------------------------------

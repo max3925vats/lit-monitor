@@ -52,7 +52,9 @@ def client(real_db, monkeypatch):
 
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     templates.env.filters["fromjson"] = _json.loads
-    app_mod.templates = templates
+    # monkeypatch auto-restores app.templates after the test so we don't leak
+    # this test-only templates object into sibling tests (order-dependent flakiness).
+    monkeypatch.setattr(app_mod, "templates", templates)
 
     rt = MagicMock()
     rt.state_db = real_db
