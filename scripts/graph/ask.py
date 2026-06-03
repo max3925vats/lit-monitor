@@ -193,6 +193,10 @@ def generate_cypher(
     examples = getattr(prompt, "examples", "") or ""
     try:
         system_msg = prompt.system
+        # C1 review: `question` is operator-supplied (the user querying their
+        # OWN graph) — not untrusted text in the threat model. Intentionally
+        # NOT sanitized: scrubbing would corrupt legitimate queries that
+        # contain ``` or literally ask about role markers.
         user_msg = prompt.render_user(
             question=question,
             schema=schema_text,
@@ -641,6 +645,9 @@ def summarize_results(
     # Render placeholders. Mirrors A2's render path.
     try:
         system_msg = prompt.system
+        # C1 review: `question` is operator-supplied (the user querying their
+        # OWN graph) — not untrusted text in the threat model. Intentionally
+        # NOT sanitized (see A2 render path above).
         user_msg = prompt.render_user(
             question=question,
             cypher=cypher,

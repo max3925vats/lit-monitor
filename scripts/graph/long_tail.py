@@ -29,6 +29,8 @@ import logging
 import os
 from typing import Any
 
+from scripts.llm.prompt_safety import sanitize_for_prompt
+
 logger = logging.getLogger(__name__)
 
 
@@ -285,8 +287,23 @@ def extract_long_tail_and_validate(
             )
 
     # ---- Render placeholders.
-    truncated_text = _truncate_text(text)
-    low_conf_json = json.dumps(low_conf_entities or [])
+    # C1 review: fulltext is full-document text (same injection class as
+    # relationship_llm) → preserve legitimate code fences, strip only role
+    # markers. The low_conf entities carry extraction-derived surface strings
+    # (originating from fulltext); json.dumps does NOT neutralize role markers
+    # inside string values, so sanitize each string field before serializing.
+    # Short fields → default fence-stripping.
+    truncated_text = sanitize_for_prompt(
+        _truncate_text(text), strip_code_fences=False
+    )
+    safe_entities = [
+        {
+            k: (sanitize_for_prompt(v) if isinstance(v, str) else v)
+            for k, v in entity.items()
+        }
+        for entity in (low_conf_entities or [])
+    ]
+    low_conf_json = json.dumps(safe_entities)
     try:
         system_msg = prompt.system
         user_msg = prompt.render_user(

@@ -255,7 +255,31 @@ def _consult_llm(
     # ---- Render placeholders. Accept either Prompt model OR a plain dict
     # (test override path uses {"system": ..., "user_template": ...} or
     # {"system": ..., "user": ...}).
-    clusters_json = json.dumps(cluster_records)
+    # C1 review: cluster_records carry entity `surface` strings (derived from
+    # Zotero keyword/entity surfaces, user-controllable). json.dumps does NOT
+    # neutralize ChatML/Llama role markers inside string values, so scrub each
+    # string field before serializing. Lazy import keeps the module LLM-free
+    # (test_no_llm_imports_in_module). The original `clusters_by_type` is
+    # untouched — verdicts round-trip via opaque cluster_id, not these strings.
+    from scripts.llm.prompt_safety import sanitize_for_prompt  # noqa: PLC0415
+
+    safe_records = [
+        {
+            k: (
+                sanitize_for_prompt(v)
+                if isinstance(v, str)
+                else [
+                    sanitize_for_prompt(m) if isinstance(m, str) else m
+                    for m in v
+                ]
+                if isinstance(v, list)
+                else v
+            )
+            for k, v in record.items()
+        }
+        for record in cluster_records
+    ]
+    clusters_json = json.dumps(safe_records)
     try:
         if hasattr(prompt, "render_user"):
             system_msg = prompt.system

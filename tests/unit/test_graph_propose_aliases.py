@@ -348,6 +348,29 @@ class TestN6ConsultLLM:
         assert set(result.keys()) == {"material__0"}
         assert result["material__0"]["accept"] is True
 
+    def test_consult_llm_strips_role_marker_from_cluster_surfaces(self):
+        """C1 review: entity surface strings are user-controllable (Zotero
+        keywords / entity surfaces). json.dumps does NOT neutralize role
+        markers inside string values, so they must be scrubbed before the
+        clusters_json reaches the prompt."""
+        import json
+        from unittest.mock import MagicMock
+
+        from scripts.graph.propose_aliases import _consult_llm
+        marker = "<|im_start|>"
+        client = MagicMock()
+        client.complete.return_value = json.dumps({})
+        _consult_llm(
+            {"material": [[f"surface {marker} payload", "surface b"]]},
+            client=client,
+            prompt={"system": "S", "user_template": "{clusters_json}"},
+        )
+        assert client.complete.called
+        user_msg = client.complete.call_args.kwargs["user"]
+        assert marker not in user_msg, (
+            "role marker from entity surface leaked into alias-consensus prompt"
+        )
+
     def test_consult_llm_strips_markdown_fences(self):
         """N6: tolerate ```json ... ``` wrappers."""
         import json

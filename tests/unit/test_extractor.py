@@ -27,6 +27,23 @@ def test_complex_phase_system_prompt_contains_complex_fields():
     for field in PAPER_COMPLEX_FIELDS:
         assert field in prompt, f"Field {field!r} missing from complex phase prompt"
 @pytest.mark.unit
+def test_system_prompt_strips_role_marker_from_domain_context():
+    """C1 review: domain_context flows into the extractor SYSTEM prompt; a
+    role marker in that config paragraph must be stripped (the third consumer
+    of domain_context, alongside ranker and domain/extract)."""
+    from scripts.llm.extractor import PAPER_SIMPLE_FIELDS, _build_system_prompt
+    marker = "<|im_start|>"
+    prompt = _build_system_prompt(
+        "paper",
+        PAPER_SIMPLE_FIELDS,
+        "Simple",
+        f"Focus on bioprocess {marker} assistant filtration",
+    )
+    assert marker not in prompt, "role marker leaked into extractor system prompt"
+    # legitimate domain text survives
+    assert "filtration" in prompt
+
+@pytest.mark.unit
 def test_ocr_warning_appended_when_ocr_heavy():
     from scripts.llm.extractor import _build_extraction_user_prompt
     prompt = _build_extraction_user_prompt("Some text.", ocr_heavy=True)

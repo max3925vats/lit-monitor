@@ -550,6 +550,70 @@ def test_refine_clustering_noop_when_no_themes():
 
 
 # ---------------------------------------------------------------------------
+# C1 review: prompt-injection sanitization at the remediation/refinement
+# sub-prompt boundaries. Zotero keyword/theme strings are echoed back into
+# these LLM calls from the merged vocabulary, NOT through the main-loop's
+# safe_chunk path, so they must be scrubbed here too.
+# ---------------------------------------------------------------------------
+
+# A Llama/ChatML role marker that the sanitizer must strip.
+_ROLE_MARKER = "<|im_start|>"
+
+
+@pytest.mark.unit
+def test_remediate_unclustered_strips_role_marker_from_prompt():
+    """C1 review: a role marker in a theme name OR an unclustered keyword must
+    be stripped from the remediation user prompt."""
+    from scripts.vocabulary.clusterer import _remediate_unclustered
+
+    merged = {
+        "themes": [
+            {"name": f"Filtration {_ROLE_MARKER} system", "keywords": ["tff"]},
+        ],
+        "unclustered": [f"rare keyword {_ROLE_MARKER} payload"],
+    }
+    mock_llm = MockLLMClient()
+    with patch.object(
+        mock_llm, "complete", return_value=json.dumps({"assignments": {}})
+    ) as mock_complete:
+        _remediate_unclustered(merged, mock_llm, max_tokens=16384, chunk_size=60)
+
+    assert mock_complete.called
+    rendered_user = mock_complete.call_args[0][1]
+    assert _ROLE_MARKER not in rendered_user, (
+        "role marker from theme name / keyword leaked into remediation prompt"
+    )
+
+
+@pytest.mark.unit
+def test_refine_clustering_strips_role_marker_from_prompt():
+    """C1 review: a role marker in any keyword/theme rendered into the
+    refinement prompt must be stripped."""
+    from scripts.vocabulary.clusterer import _refine_clustering
+
+    merged = {
+        "themes": [
+            {
+                "name": "Mock Theme A",
+                "keywords": ["filtration", f"viscosity {_ROLE_MARKER} payload"],
+            },
+        ],
+        "unclustered": [f"orphan {_ROLE_MARKER} marker"],
+    }
+    mock_llm = MockLLMClient()
+    with patch.object(
+        mock_llm, "complete", return_value=json.dumps({"additions": {}})
+    ) as mock_complete:
+        _refine_clustering(merged, mock_llm, max_tokens=16384)
+
+    assert mock_complete.called
+    rendered_user = mock_complete.call_args[0][1]
+    assert _ROLE_MARKER not in rendered_user, (
+        "role marker from keyword leaked into refinement prompt"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Refinement partial-recovery tests
 # ---------------------------------------------------------------------------
 

@@ -342,9 +342,16 @@ def _remediate_unclustered(
                 "build_vocabulary: remediation chunk %d/%d (%d keywords)…",
                 i, len(chunks), len(chunk),
             )
+        # C1 review: theme names and unclustered keywords are echoed back from
+        # the merged vocabulary, which is built from user-controllable Zotero
+        # keyword strings. Scrub role markers before rendering — these never
+        # reached the main-loop's safe_chunk sanitization. Short strings →
+        # default fence-stripping.
+        safe_theme_names = [sanitize_for_prompt(name) for name in theme_names]
+        safe_chunk = [sanitize_for_prompt(kw) for kw in chunk]
         raw = llm.complete(
             _prompts.remediation_system,
-            _prompts.render_remediation_user(theme_names, chunk),
+            _prompts.render_remediation_user(safe_theme_names, safe_chunk),
             max_tokens=max_tokens,
         )
         try:
@@ -419,7 +426,11 @@ def _refine_clustering(
 
     logger.info("build_vocabulary: running global cross-theme refinement pass…")
     _prompts = load_clustering_prompts()
-    refinement_user = _prompts.render_refinement_user(merged)
+    # C1 review: the refinement prompt renders every theme name and keyword
+    # string from the merged vocabulary (all user-controllable Zotero keywords)
+    # raw. Sanitize the rendered prompt so a role marker in any keyword cannot
+    # break out. Short strings → default fence-stripping.
+    refinement_user = sanitize_for_prompt(_prompts.render_refinement_user(merged))
 
     # N1 smart-sizing awareness for refinement: estimate prompt cost and WARN
     # if it exceeds the model's safe input budget.  Refinement is by design a

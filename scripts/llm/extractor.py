@@ -209,7 +209,14 @@ def _build_system_prompt(
         Optional override for the domain context paragraph.
         When None, uses extraction_schema.domain_context().
     """
-    _domain = domain_ctx if domain_ctx is not None else _es.domain_context()
+    # C1 review: domain_ctx is the free-text domain_focus paragraph from
+    # config/domain_context.yaml (user config). It flows raw into this SYSTEM
+    # prompt — the same field sanitized at the ranker and domain/extract
+    # boundaries, but missed here (the third consumer). Scrub role markers so a
+    # marker cannot break out of the system prompt. Short paragraph → default
+    # fence-stripping.
+    _domain_raw = domain_ctx if domain_ctx is not None else _es.domain_context()
+    _domain = sanitize_for_prompt(_domain_raw)
     _json_hdr = _es.json_format_instruction()
     _role = _es.system_role(content_type)
     _null = _es.null_instruction(content_type)
