@@ -763,3 +763,80 @@ class TestDigestAutoWriteCheckbox:
             else m.call_args.kwargs.get("value")
         )
         assert called_val is False
+
+
+@pytest.mark.unit
+class TestRoutingAdvancedEditorComments:
+    """C3: Step-8 item_routing advanced editor must round-trip raw text.
+
+    Read-path shows the actual file contents (comments and all); save-path
+    persists exactly what the user typed (after validating it parses), so
+    user comments are never silently stripped — same class as the v0.9.1
+    config-comment regression.
+    """
+
+    # A seed file whose comment lines must survive both read and write.
+    _SEED = (
+        "# top-of-file comment that MUST survive\n"
+        "routes:\n"
+        "  journalArticle:\n"
+        "    pipeline: brain_build  # inline comment too\n"
+        "    default_schema: paper\n"
+        "    source_type: paper\n"
+    )
+
+    def _make_client(self):
+        from fastapi.testclient import TestClient
+
+        from scripts.server.app import create_app
+        from scripts.server.runtime import reset_runtime
+
+        reset_runtime()
+        return TestClient(create_app())
+
+    def test_read_path_preserves_comments(self, tmp_path, monkeypatch):
+        """GET /setup/step-8 renders the raw file text, comments included."""
+        from scripts.server import config_io
+
+        (tmp_path / "item_routing.yaml").write_text(self._SEED, encoding="utf-8")
+        monkeypatch.setattr(config_io, "CONFIG_DIR", tmp_path)
+
+        client = self._make_client()
+        r = client.get("/setup/step-8")
+        assert r.status_code == 200
+        # Comment lines must appear verbatim in the rendered textarea.
+        assert "# top-of-file comment that MUST survive" in r.text
+        assert "# inline comment too" in r.text
+
+    def test_save_path_preserves_comments(self, tmp_path, monkeypatch):
+        """POST /setup/api/routing writes the raw textarea text verbatim."""
+        from scripts.server import config_io
+
+        monkeypatch.setattr(config_io, "CONFIG_DIR", tmp_path)
+
+        client = self._make_client()
+        r = client.post("/setup/api/routing", data={"raw_yaml": self._SEED})
+        assert r.status_code == 200, r.text
+
+        written = (tmp_path / "item_routing.yaml").read_text(encoding="utf-8")
+        assert "# top-of-file comment that MUST survive" in written
+        assert "# inline comment too" in written
+        # Exact round-trip: not re-serialized through safe_dump.
+        assert written == self._SEED
+
+    def test_save_path_rejects_invalid_yaml(self, tmp_path, monkeypatch):
+        """Malformed YAML → 4xx, and the existing file is NOT clobbered."""
+        from scripts.server import config_io
+
+        (tmp_path / "item_routing.yaml").write_text(self._SEED, encoding="utf-8")
+        monkeypatch.setattr(config_io, "CONFIG_DIR", tmp_path)
+
+        client = self._make_client()
+        # Unbalanced bracket → yaml.safe_load raises.
+        bad = "routes: [unterminated\n  journalArticle: {\n"
+        r = client.post("/setup/api/routing", data={"raw_yaml": bad})
+        assert 400 <= r.status_code < 500, r.text
+
+        # The pre-existing good file must be untouched.
+        after = (tmp_path / "item_routing.yaml").read_text(encoding="utf-8")
+        assert after == self._SEED

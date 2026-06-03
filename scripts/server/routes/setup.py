@@ -20,6 +20,9 @@ import yaml
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
+from scripts.core.atomic_write import atomic_write_text
+from scripts.core.path_utils import resolve_path as _resolve_path
+from scripts.server import config_io
 from scripts.server.app import templates
 from scripts.server.config_io import (
     load_config,
@@ -1199,6 +1202,43 @@ def _routes_summary(data: dict[str, Any]) -> list[dict[str, str]]:
     return out
 
 
+# Commented default shown in the advanced editor when neither the real
+# config/item_routing.yaml nor its example fallback can be located.
+_ROUTING_DEFAULT_TEMPLATE = """\
+# Item routing configuration — maps every Zotero item type to its pipeline,
+# extraction schema, and source_type value written to the papers table.
+#
+# pipeline:        brain_build | skip
+# default_schema:  paper
+# source_type:     value written to papers.source_type in the state DB
+
+routes:
+  journalArticle:
+    pipeline: brain_build
+    default_schema: paper
+    source_type: paper
+"""
+
+
+def _read_routing_raw() -> str:
+    """Return the RAW text of config/item_routing.yaml (comments preserved).
+
+    Resolves the real file first, falling back to ``item_routing.example.yaml``
+    via :func:`scripts.core.path_utils.resolve_path` (same mechanism as
+    ``load_config``). If neither exists, a sensible commented default template
+    is returned so the advanced editor is never blank.
+
+    Unlike ``yaml.safe_dump(load_config(...))``, this preserves the user's
+    comments, quote style, and key ordering verbatim — the C3 fix (same class
+    as the v0.9.1 config-comment regression).
+    """
+    try:
+        path = _resolve_path(config_io.CONFIG_DIR / "item_routing.yaml")
+    except FileNotFoundError:
+        return _ROUTING_DEFAULT_TEMPLATE
+    return path.read_text(encoding="utf-8")
+
+
 @router.get("/step-8", response_class=HTMLResponse)
 def step_routing_form(request: Request) -> HTMLResponse:
     """Step 8 form: item_routing.yaml read-only grid + raw YAML edit."""
@@ -1207,7 +1247,9 @@ def step_routing_form(request: Request) -> HTMLResponse:
     except FileNotFoundError:
         data = {}
     summary = _routes_summary(data)
-    raw_yaml = yaml.safe_dump(data or {"routes": {}}, sort_keys=False)
+    # C3: populate the advanced-edit textarea with the RAW file text so user
+    # comments survive. yaml.safe_dump (the old read path) stripped them.
+    raw_yaml = _read_routing_raw()
     return templates.TemplateResponse(
         request,
         "setup/step_routing.html",
@@ -1220,7 +1262,14 @@ def save_routing(
     request: Request,
     raw_yaml: str = Form(""),
 ) -> HTMLResponse:
-    """Lint the raw YAML; if it parses AND has a top-level 'routes' key, save it."""
+    """Validate the raw YAML, then persist the user's RAW text verbatim.
+
+    C3: the save path must NOT round-trip through ``safe_load → safe_dump``
+    (that re-strips the user's comments). We validate that the textarea parses
+    and has the required ``routes:`` structure, but write the exact bytes the
+    user typed — preserving comments/formatting. Invalid YAML is rejected with
+    a 400 and the existing file is left untouched.
+    """
     try:
         parsed = yaml.safe_load(raw_yaml)
     except yaml.YAMLError as exc:
@@ -1228,21 +1277,28 @@ def save_routing(
             request,
             "setup/_routing_result.html",
             {"ok": False, "errors": [f"YAML parse error: {exc}"]},
+            status_code=400,
         )
     if not isinstance(parsed, dict) or "routes" not in parsed:
         return templates.TemplateResponse(
             request,
             "setup/_routing_result.html",
             {"ok": False, "errors": ["Top-level 'routes:' key is required."]},
+            status_code=400,
         )
     try:
-        save_config("item_routing", parsed)
+        # Write the user's RAW text atomically (same atomic helper save_config
+        # uses) so the comments/quotes/ordering they typed are preserved.
+        target = config_io.CONFIG_DIR / "item_routing.yaml"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(target, raw_yaml)
     except OSError as exc:
         logger.error("save_routing: write failed: %s", exc)
         return templates.TemplateResponse(
             request,
             "setup/_routing_result.html",
             {"ok": False, "errors": [f"Could not save: {exc}"]},
+            status_code=500,
         )
     return templates.TemplateResponse(
         request,
