@@ -317,16 +317,12 @@ def _consult_llm(
         return None
 
     # ---- Parse the JSON response. Tolerate ```json ... ``` fences.
+    # Lazy import keeps the module-level surface free of scripts.llm.* so the
+    # G11 test ``test_no_llm_imports_in_module`` still passes.
+    from scripts.llm.llm_client import strip_markdown_fences
+
     try:
-        cleaned = (response or "").strip()
-        if cleaned.startswith("```"):
-            # Drop the opening fence (may be ```json\n or just ```\n).
-            first_nl = cleaned.find("\n")
-            if first_nl != -1:
-                cleaned = cleaned[first_nl + 1:]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
-            cleaned = cleaned.strip()
+        cleaned = strip_markdown_fences(response)
         parsed = json.loads(cleaned)
     except (json.JSONDecodeError, AttributeError, TypeError) as exc:
         logger.warning(

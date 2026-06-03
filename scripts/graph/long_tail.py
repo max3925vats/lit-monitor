@@ -29,6 +29,7 @@ import logging
 import os
 from typing import Any
 
+from scripts.llm.llm_client import strip_markdown_fences
 from scripts.llm.prompt_safety import sanitize_for_prompt
 
 logger = logging.getLogger(__name__)
@@ -105,21 +106,6 @@ def _truncate_text(text: str, max_chars: int = _MAX_TEXT_CHARS) -> str:
     snippet = text[:max_chars]
     last_space = snippet.rfind(" ")
     return snippet if last_space == -1 else snippet[:last_space]
-
-
-def _strip_fences(raw: str) -> str:
-    """Tolerate the LLM wrapping JSON in ```json ... ``` fences."""
-    text = raw.strip()
-    if not text.startswith("```"):
-        return text
-    # Drop the opening fence (may be ```json\n or just ```\n).
-    first_nl = text.find("\n")
-    if first_nl != -1:
-        text = text[first_nl + 1 :]
-    # Drop the closing fence.
-    if text.endswith("```"):
-        text = text[:-3]
-    return text.strip()
 
 
 def _validate_response(
@@ -339,7 +325,7 @@ def extract_long_tail_and_validate(
 
     # ---- Parse the JSON response.
     try:
-        cleaned = _strip_fences(response)
+        cleaned = strip_markdown_fences(response)
         parsed = json.loads(cleaned)
     except (json.JSONDecodeError, AttributeError, TypeError) as exc:
         logger.warning(

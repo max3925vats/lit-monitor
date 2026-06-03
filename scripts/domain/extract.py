@@ -112,12 +112,9 @@ def analyze_domain(
         return None
 
     # ---- Strip fences + thinking blocks + parse JSON --------------------
-    try:
-        from scripts.llm.llm_client import strip_markdown_fences
+    from scripts.llm.llm_client import strip_markdown_fences
 
-        cleaned = strip_markdown_fences(raw)
-    except Exception:  # noqa: BLE001 — fall back to in-module stripper
-        cleaned = _local_strip_fences(raw)
+    cleaned = strip_markdown_fences(raw)
 
     try:
         parsed = json.loads(cleaned)
@@ -169,16 +166,3 @@ def analyze_domain(
     return result
 
 
-def _local_strip_fences(text: str) -> str:
-    """Minimal markdown-fence stripper used when llm_client's helper is
-    unavailable (shouldn't happen at runtime — only protects tests that
-    monkeypatch the llm_client module).
-    """
-    text = text.strip()
-    if text.startswith("```"):
-        first_nl = text.find("\n")
-        if first_nl != -1:
-            text = text[first_nl + 1:]
-        if text.rstrip().endswith("```"):
-            text = text.rstrip()[:-3]
-    return text.strip()

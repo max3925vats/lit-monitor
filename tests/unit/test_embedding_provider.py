@@ -126,7 +126,6 @@ class TestEmbeddingsDBProviderDispatch:
         db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
         assert db.provider == "ollama"
         with patch.object(db, "_embed_call", return_value=fake_vec) as mock:
-            db.embed_text.cache_clear()
             vec = db.embed_text("hello world")
         mock.assert_called_once()
         assert isinstance(vec, np.ndarray)
@@ -228,7 +227,7 @@ class TestProvenanceOverridesConstructor:
 class TestBundleAEmbedTextRegression:
     """Bundle F: embed_text() helper must still work after the provider abstraction."""
 
-    def test_lru_cache_still_active(self, tmp_path):
+    def test_embed_text_cache_still_active(self, tmp_path):
         """Same text embedded twice → second call returns cached result (no second dispatch).
 
         For the Ollama path, _embed_call is the underlying call.  Patch it to
@@ -244,11 +243,48 @@ class TestBundleAEmbedTextRegression:
 
         db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
         with patch.object(db, "_embed_call", side_effect=counting_embed_call):
-            db.embed_text.cache_clear()
             _ = db.embed_text("hello cache test")
             _ = db.embed_text("hello cache test")  # second call — should hit cache
 
         assert call_count == 1, "_embed_call should be called only once (cache hit on second)"
+
+    def test_embed_text_cache_is_per_instance(self, tmp_path):
+        """The embed_text cache lives on the instance, not in a shared class-level
+        store. This is the regression guard for the lru_cache memory leak: the old
+        ``@lru_cache`` on a bound method kept every EmbeddingsDB instance alive in a
+        module-global cache. A per-instance dict means instance B does NOT see
+        instance A's cached vectors (so A is free to be garbage-collected).
+        """
+        from scripts.output.embeddings import EmbeddingsDB
+
+        db_a = EmbeddingsDB(persist_dir=str(tmp_path / "chroma_a"))
+        db_b = EmbeddingsDB(persist_dir=str(tmp_path / "chroma_b"))
+
+        with patch.object(db_a, "_embed_call", return_value=[1.0] * 1024):
+            db_a.embed_text("shared text")
+        # db_a now has the entry; db_b must NOT — separate caches.
+        assert "shared text" in db_a._embed_text_cache
+        assert "shared text" not in getattr(db_b, "_embed_text_cache", {})
+
+        # db_b embedding the same text dispatches its own call (no cross-instance hit).
+        with patch.object(db_b, "_embed_call", return_value=[2.0] * 1024) as mock_b:
+            db_b.embed_text("shared text")
+        mock_b.assert_called_once()
+
+    def test_embed_text_cache_evicts_lru(self, tmp_path):
+        """Cache is bounded at _EMBED_TEXT_CACHE_MAXSIZE; the least-recently-used
+        entry is evicted once the cap is exceeded."""
+        from scripts.output.embeddings import EmbeddingsDB
+
+        db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
+        cap = db._EMBED_TEXT_CACHE_MAXSIZE
+        with patch.object(db, "_embed_call", return_value=[1.0] * 1024):
+            for i in range(cap + 5):
+                db.embed_text(f"text {i}")
+        assert len(db._embed_text_cache) == cap
+        # The earliest inserts were evicted; the most recent are retained.
+        assert "text 0" not in db._embed_text_cache
+        assert f"text {cap + 4}" in db._embed_text_cache
 
     def test_embed_text_returns_ndarray(self, tmp_path):
         """embed_text returns np.ndarray, not a raw list.
@@ -262,7 +298,6 @@ class TestBundleAEmbedTextRegression:
         db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
         # _embed returns list[float]; embed_text wraps it via np.array(..., float32).
         with patch.object(db, "_embed", return_value=[1.0] * 1024):
-            db.embed_text.cache_clear()  # avoid lru_cache hit from sibling tests
             result = db.embed_text("some text")
         assert isinstance(result, np.ndarray)
         assert result.dtype == np.float32
@@ -286,7 +321,6 @@ class TestBundleAEmbedTextRegression:
         assert db.provider == "ollama"
         assert db.model == "mxbai-embed-large"
         with patch.object(db, "_embed_call", return_value=[0.5] * 1024) as mock:
-            db.embed_text.cache_clear()
             db.embed_text("dispatch test")
         # The Ollama path: embed_text → _embed_via_provider → _embed → _embed_call
         mock.assert_called_once_with("dispatch test")

@@ -186,10 +186,23 @@ class GraphDB:
     def close(self) -> None:
         """Release the KuzuDB connection and database handle deterministically.
 
-        kuzu.Connection / kuzu.Database are released when dereferenced; this method
-        drops our references explicitly so callers can free resources without
-        relying on CPython refcounting. Safe to call multiple times.
+        Explicitly calls ``close()`` on the kuzu Connection then Database (both
+        expose it as of kuzu 0.11) so file locks and buffer-pool memory are freed
+        immediately rather than waiting on CPython refcounting / GC. References are
+        then dropped. Safe to call multiple times and tolerant of partially-built
+        instances (e.g. ``__new__``-constructed test doubles missing these fields).
         """
+        # Close connection before database — the connection holds a handle into
+        # the database's buffer pool. getattr() guards instances that never ran
+        # __init__; the broad except keeps close() idempotent if kuzu raises on a
+        # double-close or an already-released handle.
+        for attr in ("_conn", "_db"):
+            handle = getattr(self, attr, None)
+            if handle is not None:
+                try:
+                    handle.close()
+                except Exception as exc:  # noqa: BLE001 — best-effort teardown
+                    logger.debug("GraphDB %s.close() raised: %s", attr, exc)
         self._conn = None  # type: ignore[assignment]
         self._db = None    # type: ignore[assignment]
         logger.debug("GraphDB closed: %s", self._persist_dir)

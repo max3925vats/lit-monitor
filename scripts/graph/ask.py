@@ -21,6 +21,8 @@ from typing import Any
 
 import numpy as np  # Bundle I: cosine similarity for cluster-aware ask
 
+from scripts.llm.llm_client import strip_markdown_fences
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,31 +50,6 @@ _VALID_START_RE = re.compile(
     r"^\s*(?:OPTIONAL\s+MATCH|MATCH|CALL|RETURN|WITH)\b",
     re.IGNORECASE,
 )
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-def _strip_fences(raw: str) -> str:
-    """Tolerate ```cypher / bare ``` fenced output.
-
-    Returns the inner text with fences and surrounding whitespace stripped.
-    If the response is fence-only or empty, returns "".
-    """
-    if not isinstance(raw, str):
-        return ""
-    text = raw.strip()
-    if not text:
-        return ""
-    if text.startswith("```"):
-        # Drop the opening fence line (```cypher / ```sql / ```)
-        first_nl = text.find("\n")
-        text = text[first_nl + 1 :] if first_nl != -1 else text[3:]
-        # Drop trailing fence if present
-        text = text.rstrip()
-        if text.endswith("```"):
-            text = text[:-3].rstrip()
-    return text.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +205,7 @@ def generate_cypher(
         return None
 
     # Strip markdown fences if present.
-    cypher = _strip_fences(response)
+    cypher = strip_markdown_fences(response)
     if not cypher:
         logger.info("A2: empty response after fence stripping")
         return None

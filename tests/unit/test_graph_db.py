@@ -124,6 +124,17 @@ class TestGraphDB:
         assert g._conn is None
         assert g._db is None
 
+    def test_close_is_idempotent(self, tmp_path):
+        """close() may be called repeatedly without raising (the second call sees
+        already-None handles and skips the kuzu .close() calls)."""
+        from scripts.graph import GraphDB
+
+        g = GraphDB(persist_dir=str(tmp_path / "idem.kuzu"))
+        g.close()
+        g.close()  # must not raise
+        assert g._conn is None
+        assert g._db is None
+
 
 @pytest.mark.unit
 class TestGraphDBSchemaVersion:

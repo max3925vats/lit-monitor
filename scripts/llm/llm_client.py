@@ -414,9 +414,15 @@ def strip_markdown_fences(raw: str) -> str:
     """
     Remove thinking blocks and markdown code fences from LLM JSON responses.
     Handles:
+    - non-string / empty input (returns "" — lets callers treat it as "empty response")
     - <think>...</think> blocks (Ollama thinking mode, older versions embed in content)
     - ```json ... ``` or ``` ... ``` fences
+
+    This is the single canonical fence stripper for the codebase; graph/llm modules
+    import it rather than keeping their own copies.
     """
+    if not isinstance(raw, str):
+        return ""
     text = raw.strip()
     # Strip <think>...</think> blocks (may appear before the JSON in thinking mode)
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()

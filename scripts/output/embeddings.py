@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
-from functools import lru_cache
+from collections import OrderedDict
 from typing import Any
 
 import numpy as np
@@ -67,6 +67,8 @@ class EmbeddingsDB:
     _DEFAULT_OLLAMA_DIM = 1024
     _DEFAULT_LITELLM_MODEL = "text-embedding-3-large"
     _DEFAULT_LITELLM_DIM = 3072
+    # Max number of distinct texts cached per instance by embed_text().
+    _EMBED_TEXT_CACHE_MAXSIZE = 32
 
     def __init__(
         self,
@@ -463,7 +465,6 @@ class EmbeddingsDB:
     # ------------------------------------------------------------------
     # Bundle A: arbitrary-text embedding helper
     # ------------------------------------------------------------------
-    @lru_cache(maxsize=32)
     def embed_text(self, text: str) -> np.ndarray:
         """Embed an arbitrary string using the current provider/model.
 
@@ -473,14 +474,17 @@ class EmbeddingsDB:
 
         Cache design note
         -----------------
-        ``@lru_cache`` on a bound method includes ``self`` in the cache key,
-        giving each EmbeddingsDB instance its own per-instance LRU cache
-        (maxsize=32 texts per instance).  This is the correct behavior: two
-        EmbeddingsDB instances using *different* providers or models must not
-        share cached vectors.  The brief's "NOT including instance state"
-        wording refers to avoiding stale hits when instance fields mutate —
-        EmbeddingsDB fields are set once in ``__init__`` and never mutated,
-        so per-instance caching is safe.
+        Results are memoized in a per-instance bounded LRU
+        (``self._embed_text_cache``, an OrderedDict capped at
+        ``_EMBED_TEXT_CACHE_MAXSIZE``).  This deliberately replaces an earlier
+        ``@lru_cache`` decorator: ``lru_cache`` on a bound method stores entries
+        in a single *class-level* cache keyed by ``(self, text)``, which keeps a
+        strong reference to every EmbeddingsDB instance ever embedded — a memory
+        leak in long-running processes (the instance, its ChromaDB client, and
+        its vectors can never be garbage-collected).  An instance-owned dict ties
+        the cache lifetime to the instance, so it is freed when the instance is.
+        The cache is created lazily so ``__new__``-constructed test doubles that
+        skip ``__init__`` still work.
 
         Bundle F: routes through _embed_via_provider() so the configured
         provider (ollama or litellm) is used.  Bundle A's contract is
@@ -506,11 +510,24 @@ class EmbeddingsDB:
             raise ValueError(
                 "embed_text requires non-empty text; got an empty or whitespace-only string."
             )
+        # Lazily create the per-instance cache (setdefault keeps __new__-built
+        # test doubles working) and serve a hit, refreshing LRU recency.
+        cache: OrderedDict[str, np.ndarray] = self.__dict__.setdefault(
+            "_embed_text_cache", OrderedDict()
+        )
+        if text in cache:
+            cache.move_to_end(text)
+            return cache[text]
         # Bundle F: route through provider abstraction instead of hardcoded Ollama.
         # _embed_via_provider returns np.ndarray; for LiteLLM it is already float32.
         # For Ollama it goes through _embed (which handles truncation/retry) and
         # returns list[float] — we wrap in np.array here for uniform return type.
-        return self._embed_via_provider(text)
+        vector = self._embed_via_provider(text)
+        cache[text] = vector
+        cache.move_to_end(text)
+        if len(cache) > self._EMBED_TEXT_CACHE_MAXSIZE:
+            cache.popitem(last=False)  # evict least-recently-used
+        return vector
 
     # ------------------------------------------------------------------
     # Bundle F: provider dispatch
