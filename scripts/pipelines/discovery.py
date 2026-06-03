@@ -58,6 +58,7 @@ from scripts.pipelines._ingest import (
     maybe_extract_llm_relationships,
 )
 from scripts.pipelines.brain_build import (
+    RateLimitExhausted,  # P5.5: reuse the P4.5 domain exception (catchable in API/web)
     _check_item_quality,  # A2: metadata quality gate
     _extract_keywords,
     _llm_model_str,  # F15: handles single client and dict[int, LLMClient]
@@ -1121,9 +1122,9 @@ def _run_ingestion(
                         "Quota should reset shortly; the next run will resume.",
                         consecutive_429,
                     )
-                    # M1: mirror brain_build — record rate_limited status and exit
-                    # with non-zero code so cron logs are honest. Paper is NOT
-                    # marked error; next run will retry via Zotero poll.
+                    # M1: mirror brain_build — record rate_limited status so
+                    # cron logs are honest. Paper is NOT marked error; next run
+                    # will retry via Zotero poll.
                     state_db.finish_run(
                         run_id,
                         status="rate_limited",
@@ -1131,7 +1132,13 @@ def _run_ingestion(
                         failed=summary.papers_failed,
                         errors=summary.errors,
                     )
-                    raise SystemExit(2)
+                    # P5.5: raise a catchable domain exception (mirrors P4.5 in
+                    # brain_build), not SystemExit, so API/web callers can handle
+                    # it. The discovery CLI boundary maps it to exit code 2.
+                    raise RateLimitExhausted(
+                        f"Rate limit persists after {consecutive_429} "
+                        "consecutive hits; discovery aborted."
+                    )
                 wait = 60 * (2 ** (consecutive_429 - 1))
                 logger.warning("Sleeping %ds before next paper", wait)
                 _time.sleep(wait)

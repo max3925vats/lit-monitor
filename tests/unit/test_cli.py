@@ -120,6 +120,69 @@ class TestCheckOllama:
             results = check_ollama(model="mistral:7b")
         assert results["model_available"][0] is False
         assert "ollama pull" in results["model_available"][1]
+
+    def test_p52_bare_name_does_not_match_other_family(self):
+        """P5.2: asking for 'mistral' must NOT match 'mistral-nemo:latest'.
+
+        The old startswith(f"{model}:") rule matched too broadly; the exact
+        base-name rule (split(':')[0] == model) keeps families distinct.
+        """
+        from scripts.setup.check_ollama import check_ollama
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"models": [{"name": "mistral-nemo:latest"}]}
+        mock_resp.raise_for_status.return_value = None
+        with patch("scripts.setup.check_ollama.requests.get", return_value=mock_resp):
+            results = check_ollama(model="mistral")
+        assert results["model_available"][0] is False
+
+    def test_p52_bare_name_matches_tagged_variant(self):
+        """P5.2: asking for 'mistral' matches 'mistral:latest' / 'mistral:7b'."""
+        from scripts.setup.check_ollama import check_ollama
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"models": [{"name": "mistral:latest"}]}
+        mock_resp.raise_for_status.return_value = None
+        with patch("scripts.setup.check_ollama.requests.get", return_value=mock_resp):
+            results = check_ollama(model="mistral")
+        assert results["model_available"][0] is True
+
+    def test_p51_probe_targets_configured_host(self):
+        """P5.1: probe targets the configured Ollama host, not hardcoded localhost."""
+        from scripts.setup.check_ollama import check_ollama
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"models": []}
+        mock_resp.raise_for_status.return_value = None
+        configured = "http://ollama.internal:9999"
+        with (
+            patch(
+                "scripts.setup.check_ollama._resolve_ollama_host",
+                return_value=configured,
+            ),
+            patch(
+                "scripts.setup.check_ollama.requests.get", return_value=mock_resp
+            ) as mock_get,
+        ):
+            results = check_ollama()
+        assert mock_get.call_args.args[0] == f"{configured}/api/tags"
+        assert configured in results["ollama_running"][1]
+
+    def test_p51_falls_back_to_localhost_when_config_absent(self):
+        """P5.1: with no/failed config, the probe falls back to localhost."""
+        from scripts.setup import check_ollama as mod
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"models": []}
+        mock_resp.raise_for_status.return_value = None
+        # Simulate config being unavailable: get_config raises on import/use.
+        with (
+            patch(
+                "scripts.core.config.get_config",
+                side_effect=RuntimeError("no config"),
+            ),
+            patch(
+                "scripts.setup.check_ollama.requests.get", return_value=mock_resp
+            ) as mock_get,
+        ):
+            mod.check_ollama()
+        assert mock_get.call_args.args[0] == f"{mod._OLLAMA_BASE}/api/tags"
 # ---------------------------------------------------------------------------
 # check_zotero tests
 # ---------------------------------------------------------------------------
@@ -465,6 +528,29 @@ class TestCliRun:
         assert result.exit_code == 0
         assert "DRY RUN" in result.output
         assert "5" in result.output
+
+    def test_run_rate_limit_exhausted_maps_to_exit_2(self, runner):
+        """P5.5: the discovery CLI catches RateLimitExhausted (raised by
+        run_discovery) and maps it to exit code 2, mirroring brain-build P4.5.
+        """
+        from scripts.pipelines.brain_build import RateLimitExhausted
+        with (
+            patch("scripts.cli._make_config", return_value=MagicMock()),
+            patch("scripts.cli._make_state_db", return_value=MagicMock()),
+            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
+            patch("scripts.cli._make_llm", return_value=MagicMock()),
+            patch("scripts.cli._load_secrets", return_value={}),
+            patch("scripts.output.embeddings.check_embed_model_change"),
+            patch(
+                "scripts.pipelines.discovery.run_discovery",
+                side_effect=RateLimitExhausted("rate limit persists"),
+            ),
+        ):
+            result = runner.invoke(main, ["run"])
+        assert result.exit_code == 2, (
+            f"Expected exit code 2 from RateLimitExhausted; got {result.exit_code}"
+        )
 class TestCliObsidian:
     def test_retheme_command(self, runner):
         mock_stats = {"files_modified": 7, "wikilinks_rewritten": 14, "page_renamed": 1}
@@ -856,6 +942,34 @@ class TestCliSetupLogging:
         assert entry["level"] == "INFO"
         assert entry["msg"] == "hello world"
         assert "ts" in entry
+
+    def test_p53_log_dir_resolves_to_config_location_not_repo(self):
+        """P5.3: _resolve_log_dir must point at the canonical config location
+        (<state_db parent>/logs), consistent with reset.py — NOT the source
+        repo's ``logs/`` directory.
+        """
+        from pathlib import Path as _P
+
+        from scripts import cli
+        fake_cfg = MagicMock()
+        fake_cfg.state_db.path = "/Users/someone/.config/lit-monitor/state.db"
+        with patch("scripts.cli._make_config", return_value=fake_cfg):
+            resolved = cli._resolve_log_dir()
+        assert resolved == _P("/Users/someone/.config/lit-monitor/logs")
+        # Must not be the old repo-relative location.
+        repo_logs = _P(cli.__file__).parent.parent / "logs"
+        assert resolved != repo_logs
+
+    def test_p53_log_dir_falls_back_when_config_absent(self):
+        """P5.3: when config can't load, fall back to ~/.config/lit-monitor/logs."""
+        from pathlib import Path as _P
+
+        from scripts import cli
+        with patch(
+            "scripts.cli._make_config", side_effect=RuntimeError("no config")
+        ):
+            resolved = cli._resolve_log_dir()
+        assert resolved == _P("~/.config/lit-monitor/logs").expanduser()
 
     def test_setup_logging_deduplicates_jsonl_handler(self, tmp_path):
         """N14.1: calling _setup_logging twice for the same log file must produce

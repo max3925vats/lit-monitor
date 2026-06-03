@@ -58,13 +58,14 @@ def notify_discovery_complete(
 
     title = "lit-monitor discovery complete"
     s = "" if paper_count == 1 else "s"
-    message = f"{paper_count} new paper{s} found. Click to view."
 
-    # Click URL is what /discovery/notify-handler (P3) consumes; embedded in
-    # the message body for clients that don't honor plyer's click-action.
+    # Click URL is what /discovery/notify-handler (P3) consumes. plyer can't
+    # make notifications clickable across platforms, so the URL is shown in the
+    # message body itself for the user to read/copy.
     click_url = (
         f"{app_url.rstrip('/')}/discovery/notify-handler?run_id={run_id}"
     )
+    message = f"{paper_count} new paper{s} found. Open: {click_url}"
 
     try:
         _plyer_notification.notify(

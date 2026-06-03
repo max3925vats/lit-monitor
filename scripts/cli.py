@@ -43,8 +43,32 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Logging setup
 # ---------------------------------------------------------------------------
-# __file__ is scripts/cli.py; parent.parent is the project root
-_LOG_DIR = Path(__file__).parent.parent / "logs"
+# Canonical log location. Logs live under the user config dir
+# (~/.config/lit-monitor/logs/), co-located with state.db / chroma / graph.kuzu —
+# the same location reset.py treats as canonical (and intentionally preserves).
+# The old repo-relative ``Path(__file__).parent.parent / "logs"`` only worked
+# when running from a source checkout. ``_resolve_log_dir`` reads the configured
+# state-db parent so a user override of ``state_db.path`` co-locates logs too.
+_DEFAULT_LOG_DIR = Path("~/.config/lit-monitor/logs").expanduser()
+
+
+def _resolve_log_dir() -> Path:
+    """Resolve the canonical log dir: ``<state_db parent>/logs``.
+
+    Mirrors how reset.py co-locates runtime state under the config dir. Falls
+    back to ``~/.config/lit-monitor/logs`` when config is unavailable so logging
+    setup never fails just because config can't be loaded.
+    """
+    try:
+        cfg = _make_config()
+        state_path = getattr(getattr(cfg, "state_db", None), "path", None)
+        if state_path:
+            return Path(state_path).expanduser().parent / "logs"
+    except Exception:  # noqa: BLE001 — logging must work even without config
+        pass
+    return _DEFAULT_LOG_DIR
+
+
 def _setup_logging(mode: str, log_dir: Path | None = None, verbose: bool = False) -> None:
     """Configure root logger: console + JSONL file.
 
@@ -61,7 +85,7 @@ def _setup_logging(mode: str, log_dir: Path | None = None, verbose: bool = False
     # Silence noisy third-party loggers — filtered at logger level, never propagates.
     for _noisy in ("chromadb.telemetry", "chromadb", "httpx", "urllib3", "httpcore"):
         logging.getLogger(_noisy).setLevel(logging.WARNING)
-    effective_dir = log_dir or _LOG_DIR
+    effective_dir = log_dir or _resolve_log_dir()
     effective_dir.mkdir(parents=True, exist_ok=True)
     date_str = datetime.now().strftime("%Y-%m-%d")
     log_file = effective_dir / f"{date_str}_{mode}.jsonl"
@@ -1288,6 +1312,7 @@ def run_cmd(
     # imports scripts.search.semantic_scholar at module-load time).
     _maybe_set_s2_key(_load_secrets())
     from scripts.output.embeddings import check_embed_model_change
+    from scripts.pipelines.brain_build import RateLimitExhausted
     from scripts.pipelines.discovery import run_discovery
     try:
         config = _make_config()
@@ -1322,18 +1347,28 @@ def run_cmd(
             pass
     mode_label = "[DRY RUN] " if dry_run else ""
     click.echo(f"{mode_label}Starting discovery pipeline… (rag-mode: {_effective_rag})")
-    summary = run_discovery(
-        config=config,
-        state_db=state_db,
-        zotero_client=zotero_client,
-        embeddings_db=embeddings_db,
-        llm=llm,
-        dry_run=dry_run,
-        screen_all=screen_all,
-        top_k=top_k,
-        sim_threshold=sim_threshold,
-        rag_mode=_effective_rag,
-    )
+    try:
+        summary = run_discovery(
+            config=config,
+            state_db=state_db,
+            zotero_client=zotero_client,
+            embeddings_db=embeddings_db,
+            llm=llm,
+            dry_run=dry_run,
+            screen_all=screen_all,
+            top_k=top_k,
+            sim_threshold=sim_threshold,
+            rag_mode=_effective_rag,
+        )
+    except RateLimitExhausted as exc:
+        # P5.5: preserve the historical exit-code-2 behaviour at the CLI
+        # boundary; the library now raises a catchable domain exception.
+        click.echo(click.style(f"\n{exc}", fg="red"), err=True)
+        click.echo(
+            "Quota should reset shortly; the next run will resume.",
+            err=True,
+        )
+        sys.exit(2)
     click.echo(click.style("\n── Discovery Run Summary ──", bold=True))
     click.echo(f"  New papers found: {summary.new_papers_found}")
     click.echo(f"  Papers ingested:  {summary.papers_ingested}")

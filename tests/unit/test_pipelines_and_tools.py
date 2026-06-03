@@ -1458,13 +1458,16 @@ def test_discovery_enrich_paper_failure_is_non_fatal(tmp_path, caplog):
 @pytest.mark.unit
 def test_discovery_aborts_after_three_consecutive_rate_limits(tmp_path):
     """
-    M1: when 3 consecutive RateLimitErrors are raised during discovery
+    M1 / P5.5: when 3 consecutive RateLimitErrors are raised during discovery
     ingestion, run_discovery must call state_db.finish_run with
-    status='rate_limited' and raise SystemExit(2). Mirrors the V-9 contract
-    already enforced in brain_build so cron sees a non-zero exit code instead
-    of a silent success.
+    status='rate_limited' and raise the catchable domain exception
+    RateLimitExhausted (NOT SystemExit — that was uncatchable in API/web
+    contexts). Mirrors the P4.5 contract in brain_build; the discovery CLI
+    boundary maps the exception to exit code 2 so cron still sees a non-zero
+    exit instead of a silent success.
     """
     from scripts.llm.llm_client import RateLimitError
+    from scripts.pipelines.brain_build import RateLimitExhausted
 
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
@@ -1514,16 +1517,11 @@ def test_discovery_aborts_after_three_consecutive_rate_limits(tmp_path):
          patch("scripts.pipelines.discovery.extract_paper",
                side_effect=RateLimitError("429 Too Many Requests")), \
          patch("scripts.pipelines.discovery._time.sleep"):  # skip actual back-off
-        with pytest.raises(SystemExit) as exc_info:
+        with pytest.raises(RateLimitExhausted):
             run_discovery(
                 config, state_db, zotero_client, embeddings_db, llm,
                 dry_run=False,
             )
-
-    assert exc_info.value.code == 2, (
-        f"Expected SystemExit(2) after 3 consecutive RateLimitErrors; "
-        f"got code={exc_info.value.code}"
-    )
 
     # finish_run must have been called with status='rate_limited' (not 'complete')
     rate_limited_calls = [
@@ -1535,7 +1533,7 @@ def test_discovery_aborts_after_three_consecutive_rate_limits(tmp_path):
         f"{finish_run_spy.call_args_list}"
     )
 
-    # And SystemExit must have short-circuited the trailing
+    # And the raised RateLimitExhausted must have short-circuited the trailing
     # finish_run(status='complete') call in run_discovery.
     complete_calls = [
         call for call in finish_run_spy.call_args_list

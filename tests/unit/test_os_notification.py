@@ -60,6 +60,27 @@ class TestZeroResultsSuppression:
             )
         mock_notify.assert_not_called()
 
+    def test_p54_message_contains_resolved_url(self):
+        """P5.5/P5.4: the notification body shows the resolved click URL.
+
+        plyer can't make notifications clickable cross-platform, so the URL
+        must appear in the message text for the user to read/copy.
+        """
+        mock_plyer_module = MagicMock()
+        mock_notify = MagicMock()
+        mock_plyer_module.notification.notify = mock_notify
+        with patch.dict("sys.modules", {"plyer": mock_plyer_module}):
+            import scripts.notify.os_notification as mod
+            importlib.reload(mod)
+            mod.notify_discovery_complete(
+                run_id=42, paper_count=3,
+                app_url="http://localhost:8765",
+                enabled=True, on_zero_results=True,
+            )
+        message = mock_notify.call_args.kwargs["message"]
+        expected_url = "http://localhost:8765/discovery/notify-handler?run_id=42"
+        assert expected_url in message
+
     def test_fires_zero_results_when_allowed(self):
         mock_plyer_module = MagicMock()
         mock_notify = MagicMock()

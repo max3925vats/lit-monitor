@@ -29,9 +29,29 @@ from sse_starlette.sse import EventSourceResponse
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["sse"])
 
-# Repo-root logs directory — mirrors ``scripts.cli._LOG_DIR``.
-# scripts/server/routes/sse.py  -> parents[3] is the repo root.
-_LOGS_DIR = Path(__file__).resolve().parents[3] / "logs"
+# Canonical logs directory — mirrors ``scripts.cli._resolve_log_dir`` so the
+# SSE streams tail the same files the CLI writes. Logs live under the user
+# config dir (~/.config/lit-monitor/logs/), co-located with state.db. Falls back
+# to that default when config is unavailable.
+_DEFAULT_LOGS_DIR = Path("~/.config/lit-monitor/logs").expanduser()
+
+
+def _resolve_logs_dir() -> Path:
+    """Resolve ``<state_db parent>/logs`` from config; fall back to the default.
+
+    Kept in lockstep with ``scripts.cli._resolve_log_dir`` — both derive the log
+    dir from ``config.state_db.path`` so a user override of the state-db path
+    co-locates logs, and both fall back to ``~/.config/lit-monitor/logs``.
+    """
+    try:
+        from scripts.core.config import get_config
+        cfg = get_config()
+        state_path = getattr(getattr(cfg, "state_db", None), "path", None)
+        if state_path:
+            return Path(state_path).expanduser().parent / "logs"
+    except Exception:  # noqa: BLE001 — SSE must degrade gracefully without config
+        pass
+    return _DEFAULT_LOGS_DIR
 
 # Poll interval between readline attempts when at EOF.
 _POLL_INTERVAL_S = 0.5
@@ -44,10 +64,11 @@ def _newest_log(mode: str) -> Path | None:
     absent.
     """
 
-    if not _LOGS_DIR.exists():
+    logs_dir = _resolve_logs_dir()
+    if not logs_dir.exists():
         return None
     candidates = sorted(
-        _LOGS_DIR.glob(f"*_{mode}.jsonl"),
+        logs_dir.glob(f"*_{mode}.jsonl"),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
