@@ -326,7 +326,7 @@ def test_state_db_paper_round_trip(tmp_state_db):
 
 @pytest.mark.integration
 def test_single_paper_ingestion_end_to_end(
-    real_config, real_zotero, real_llm, tmp_state_db, tmp_chroma_dir
+    real_config, real_zotero, real_llm, tmp_state_db, tmp_chroma_dir, tmp_path
 ):
     """
     End-to-end ingestion of one real Zotero paper (simple phase only for speed).
@@ -335,14 +335,32 @@ def test_single_paper_ingestion_end_to_end(
         2. Find the first item with a markdown attachment in Zotero
         3. Read markdown text via ZoteroClient.get_markdown_attachment()
         4. Run simple-phase LLM extraction
-        5. Write paper note to Obsidian vault
+        5. Write paper note to a SANDBOXED Obsidian vault
         6. Add to ChromaDB embeddings (if mxbai-embed-large is available)
-        7. Assert note file exists with expected content
-    Cleanup: note file is deleted after all assertions.
+        7. Assert note file exists under the sandbox vault with expected content
+
+    Safety (P7.5): this test used to write into — and then ``unlink()`` from —
+    the user's *real* Obsidian vault (config.obsidian.vault_path). That violated
+    the "never delete without confirmation" rule and risked the user's notes.
+    It is now (a) gated behind LIT_MONITOR_LIVE so the default `pytest` run never
+    touches the vault at all, and (b) redirected to a per-test ``tmp_path`` vault
+    so even under LIT_MONITOR_LIVE no real-vault file is created or deleted.
+    The tmp_path is auto-removed by pytest, so there is no manual unlink of any
+    user-owned path.
     """
+    import copy as _copy
+
+    from scripts.core.config import _Namespace
     from scripts.core.zotero_client import ZoteroClient
     from scripts.llm.extractor import extract_paper
     from scripts.output.obsidian_writer import write_paper_note
+
+    if not _live_mode():
+        _skip_or_fail(
+            "End-to-end ingestion test is gated behind LIT_MONITOR_LIVE so the "
+            "default run never writes into a vault. Set LIT_MONITOR_LIVE=1 to run "
+            "it (it writes only to a temp sandbox, never the real vault)."
+        )
 
     collection_name = real_config.zotero.collection_name
     items = real_zotero.get_collection_items(collection_name)
@@ -405,7 +423,20 @@ def test_single_paper_ingestion_end_to_end(
         "extraction_json": json.dumps(extraction),
     })
 
-    # --- Step 5: Write Obsidian note ---
+    # --- Step 5: Write Obsidian note (to a SANDBOXED vault, never the real one) ---
+    # Shallow-copy the real config and replace ONLY the obsidian namespace,
+    # keeping the real folder names so the path-layout logic is exercised.
+    sandbox_vault = tmp_path / "sandbox_vault"
+    sandbox_vault.mkdir()
+    config = _copy.copy(real_config)
+    config.obsidian = _Namespace({
+        "vault_path": sandbox_vault,
+        "papers_folder": real_config.obsidian.papers_folder,
+        "books_folder": real_config.obsidian.books_folder,
+        "digests_folder": real_config.obsidian.digests_folder,
+        "connections_folder": real_config.obsidian.connections_folder,
+    })
+
     paper_dict = {
         "doi": doi,
         "title": title,
@@ -420,37 +451,37 @@ def test_single_paper_ingestion_end_to_end(
         "fulltext_analyzed": True,
     }
 
-    note_path = write_paper_note(paper_dict, extraction, real_config)
+    note_path = write_paper_note(paper_dict, extraction, config)
     note_path = Path(note_path)
 
+    # The note lives under the sandbox vault, not the user's real vault.
+    assert sandbox_vault in note_path.parents, (
+        f"Note written outside the sandbox vault: {note_path} "
+        f"(sandbox: {sandbox_vault})"
+    )
+    assert note_path.exists(), f"Note not created at {note_path}"
+    content = note_path.read_text(encoding="utf-8")
+    assert 'source_type: "paper"' in content
+    assert '{% persist "related_work" %}' in content
+
+    # --- Step 6: ChromaDB indexing (optional — skipped if nomic not pulled) ---
+    import requests as _requests
+    host = getattr(real_config.ingestion, "ollama_host", "http://localhost:11434")
     try:
-        assert note_path.exists(), f"Note not created at {note_path}"
-        content = note_path.read_text(encoding="utf-8")
-        assert 'source_type: "paper"' in content
-        assert '{% persist "related_work" %}' in content
+        resp = _requests.get(f"{host}/api/tags", timeout=5)
+        pulled = [m.get("name", "") for m in resp.json().get("models", [])]
+        if any("mxbai-embed-large" in p for p in pulled):
+            from scripts.output.embeddings import EmbeddingsDB
+            db = EmbeddingsDB(str(tmp_chroma_dir), ollama_host=host)
+            embed_text = f"{title} {extraction.get('core_finding', '')}"
+            db.add_paper(doi, embed_text, {"title": title, "year": year})
+            assert db.count() >= 1
+            logger.info("ChromaDB indexing: OK (1 doc added)")
+        else:
+            logger.info("mxbai-embed-large not pulled — skipping embedding step")
+    except Exception as embed_exc:
+        logger.warning("ChromaDB step skipped: %s", embed_exc)
 
-        # --- Step 6: ChromaDB indexing (optional — skipped if nomic not pulled) ---
-        import requests as _requests
-        host = getattr(real_config.ingestion, "ollama_host", "http://localhost:11434")
-        try:
-            resp = _requests.get(f"{host}/api/tags", timeout=5)
-            pulled = [m.get("name", "") for m in resp.json().get("models", [])]
-            if any("mxbai-embed-large" in p for p in pulled):
-                from scripts.output.embeddings import EmbeddingsDB
-                db = EmbeddingsDB(str(tmp_chroma_dir), ollama_host=host)
-                embed_text = f"{title} {extraction.get('core_finding', '')}"
-                db.add_paper(doi, embed_text, {"title": title, "year": year})
-                assert db.count() >= 1
-                logger.info("ChromaDB indexing: OK (1 doc added)")
-            else:
-                logger.info("mxbai-embed-large not pulled — skipping embedding step")
-        except Exception as embed_exc:
-            logger.warning("ChromaDB step skipped: %s", embed_exc)
-
-        logger.info("End-to-end ingestion test passed for: %s", title)
-
-    finally:
-        # Always clean up vault note
-        if note_path.exists():
-            note_path.unlink()
-            logger.info("Cleaned up vault note: %s", note_path)
+    logger.info("End-to-end ingestion test passed for: %s", title)
+    # No manual cleanup: pytest removes tmp_path automatically, and nothing was
+    # ever written to a user-owned path.
