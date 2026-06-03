@@ -268,7 +268,8 @@ def trigger_relink(doi: str) -> JSONResponse:
         200 — {doi, status: "ok", summary: <tool return>}
         404 — DOI not in state.db papers table.
         422 — malformed DOI (fails ^10.\\d{4,9}/\\S+$ check).
-        500 — tool raised; detail = str(exc) only, no traceback.
+        500 — tool raised; detail = generic "Internal error" (full exception
+              logged server-side only, never returned to the client).
     """
     if not _DOI_RE.match(doi):
         raise HTTPException(status_code=422, detail=f"invalid DOI: {doi!r}")
@@ -276,11 +277,14 @@ def trigger_relink(doi: str) -> JSONResponse:
         raise HTTPException(status_code=404, detail=f"paper {doi!r} not found")
     try:
         summary = _invoke_relink(doi)
-    except Exception as exc:
-        # str(exc) only — never traceback (Opus info-leak guard).
-        _logger.warning("H7 relink failed doi=%s: %s", doi, exc)
+    except Exception:
+        # P2.2 info-leak guard: the client gets a generic detail only. The
+        # full exception (which can embed filesystem paths, e.g. from a
+        # FileNotFoundError) is logged server-side with the traceback so
+        # operators can still diagnose it, but it never crosses the wire.
+        _logger.error("H7 relink failed doi=%s", doi, exc_info=True)
         return JSONResponse(
-            {"doi": doi, "status": "error", "detail": str(exc)},
+            {"doi": doi, "status": "error", "detail": "Internal error"},
             status_code=500,
         )
     return JSONResponse({"doi": doi, "status": "ok", "summary": summary})
@@ -297,7 +301,8 @@ def trigger_re_extract(doi: str) -> JSONResponse:
         200 — {doi, status: "ok", summary: <tool return>}
         404 — DOI not in state.db papers table.
         422 — malformed DOI.
-        500 — tool raised; detail = str(exc) only, no traceback.
+        500 — tool raised; detail = generic "Internal error" (full exception
+              logged server-side only, never returned to the client).
     """
     if not _DOI_RE.match(doi):
         raise HTTPException(status_code=422, detail=f"invalid DOI: {doi!r}")
@@ -305,10 +310,12 @@ def trigger_re_extract(doi: str) -> JSONResponse:
         raise HTTPException(status_code=404, detail=f"paper {doi!r} not found")
     try:
         summary = _invoke_re_extract(doi)
-    except Exception as exc:
-        _logger.warning("H7 re-extract failed doi=%s: %s", doi, exc)
+    except Exception:
+        # P2.2 info-leak guard: generic detail to the client; full exception
+        # + traceback logged server-side only (see trigger_relink above).
+        _logger.error("H7 re-extract failed doi=%s", doi, exc_info=True)
         return JSONResponse(
-            {"doi": doi, "status": "error", "detail": str(exc)},
+            {"doi": doi, "status": "error", "detail": "Internal error"},
             status_code=500,
         )
     return JSONResponse({"doi": doi, "status": "ok", "summary": summary})

@@ -364,6 +364,37 @@ class TestSubquery:
 
 
 # ---------------------------------------------------------------------------
+# P2.1: bare CALL procedures are banned (potential side effects).
+#
+# Kuzu CALL procedures can mutate; run_cypher is read-only by contract. The
+# internal read-only procedures (CALL show_tables / table_info) are issued
+# directly via conn.execute() in schema_describer.py and migrations.py and
+# never route through guard(), so banning CALL here breaks no real read path.
+# ---------------------------------------------------------------------------
+
+
+class TestCallProcedureBlocked:
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "CALL show_tables() RETURN *",
+            "CALL table_info('Paper') RETURN *",
+            "MATCH (p) CALL db.some_proc() RETURN p",
+            "call SHOW_TABLES() return *",  # case-insensitive
+        ],
+    )
+    def test_call_query_blocked(self, query: str) -> None:
+        """A query invoking a CALL procedure is rejected."""
+        with pytest.raises(CypherSafetyError):
+            guard(query)
+
+    def test_recall_identifier_still_allowed(self) -> None:
+        """Word boundary: 'recall' / 'p.call_count' must NOT trip the CALL ban."""
+        result = _passes("MATCH (p) RETURN p.recall_score, p.call_count LIMIT 5")
+        assert "MATCH" in result
+
+
+# ---------------------------------------------------------------------------
 # 11. String literal false-positive (documented known limitation)
 # ---------------------------------------------------------------------------
 

@@ -217,6 +217,26 @@ class TestSafeSaveSettingsSection:
         with pytest.raises(ValueError, match="unknown section"):
             safe_save_settings_section("nonexistent_section", {}, config_path=config_path)
 
+    @pytest.mark.parametrize("bad", [[1, 2, 3], "a string", 42, True, None])
+    def test_non_dict_data_raises_value_error(self, tmp_path, bad):
+        """P2.4 minimal guard: a section value must be a mapping.
+
+        A list/scalar/None for ``data`` would corrupt the section's shape, so
+        the helper rejects it with ValueError (the route maps ValueError to a
+        4xx) and the file on disk is left UNCHANGED.
+        """
+        from scripts.server.config_io import safe_save_settings_section
+
+        config_path = tmp_path / "extraction.yaml"
+        original = "ranking:\n  semantic_weight: 0.4\n"
+        config_path.write_text(original, encoding="utf-8")
+
+        with pytest.raises(ValueError, match="must be a mapping"):
+            safe_save_settings_section("ranking", bad, config_path=config_path)
+
+        # File must be untouched by the rejected write.
+        assert config_path.read_text(encoding="utf-8") == original
+
     def test_preserves_comments_on_unchanged_sections(self, tmp_path):
         """v0.9.1 regression: comments + quoting on untouched sections survive the write.
 

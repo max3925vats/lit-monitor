@@ -77,8 +77,14 @@ _COMMENT: re.Pattern[str] = re.compile(r"//[^\n]*|/\*.*?\*/", re.DOTALL)
 # Banned mutation keywords.  \\b word boundaries prevent false matches on
 # identifier substrings (e.g. "created_at", "dropped_at", "deleted_by").
 # LOAD\\s+CSV uses \\s+ to catch any whitespace variant (tab, newline, etc.).
+#
+# CALL is banned because Kuzu CALL procedures can have side effects, and the
+# run_cypher tool is read-only by contract. The internal read-only procedures
+# (CALL show_tables / table_info / show_connection) are issued directly via
+# conn.execute() in schema_describer.py and migrations.py — they NEVER route
+# through this guard, so banning CALL here breaks no legitimate read path.
 _BAN: re.Pattern[str] = re.compile(
-    r"\b(CREATE|MERGE|DELETE|SET|DROP|ALTER|REMOVE|LOAD\s+CSV)\b",
+    r"\b(CREATE|MERGE|DELETE|SET|DROP|ALTER|REMOVE|CALL|LOAD\s+CSV)\b",
     re.IGNORECASE,
 )
 

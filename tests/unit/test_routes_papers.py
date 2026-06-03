@@ -310,24 +310,36 @@ class TestRelink:
         r = client.post("/api/papers/not-a-doi/relink")
         assert r.status_code == 422
 
-    def test_relink_tool_exception_returns_500_with_str_only(self, client, monkeypatch):
-        """H7: tool raises → 500 with detail=str(exc) only, no traceback."""
+    def test_relink_tool_exception_returns_generic_500(self, client, monkeypatch, caplog):
+        """P2.2: tool raises → 500 with a GENERIC detail; no exception text or
+        filesystem path leaks to the client, and the failure is logged.
+        """
+        import logging
         from unittest.mock import patch
 
         monkeypatch.setattr("scripts.server.routes.papers._doi_exists", lambda doi: True)
-        with patch(
-            "scripts.server.routes.papers._invoke_relink",
-            side_effect=RuntimeError("vault locked"),
-        ):
-            r = client.post("/api/papers/10.1234/ok/relink")
+        # FileNotFoundError stringifies to include the offending path — exactly
+        # the kind of detail that must never reach the client.
+        secret_path = "/Users/secret/vault/notes/10.1234-ok.md"
+        with caplog.at_level(logging.ERROR, logger="scripts.server.routes.papers"):
+            with patch(
+                "scripts.server.routes.papers._invoke_relink",
+                side_effect=FileNotFoundError(secret_path),
+            ):
+                r = client.post("/api/papers/10.1234/ok/relink")
 
         assert r.status_code == 500
         body = r.json()
         assert body["status"] == "error"
-        assert body["detail"] == "vault locked"
-        # Opus info-leak guard: detail must NOT contain a traceback.
-        assert "Traceback" not in body["detail"]
-        assert "File " not in body["detail"]
+        assert body["detail"] == "Internal error"
+        # P2.2 info-leak guard: no exception text, path, or traceback in the body.
+        serialized = str(body)
+        assert secret_path not in serialized
+        assert "FileNotFoundError" not in serialized
+        assert "Traceback" not in serialized
+        assert "File " not in serialized
+        # The real error must still be logged server-side (with the path).
+        assert any(secret_path in rec.getMessage() or rec.exc_info for rec in caplog.records)
 
 
 # ---------------------------------------------------------------------------
@@ -364,24 +376,32 @@ class TestReExtract:
         r = client.post("/api/papers/not-a-doi/re-extract")
         assert r.status_code == 422
 
-    def test_re_extract_tool_error_500(self, client, monkeypatch):
-        """H7: tool raises → 500 with detail=str(exc) only, no traceback."""
+    def test_re_extract_tool_error_generic_500(self, client, monkeypatch, caplog):
+        """P2.2: tool raises → 500 with a GENERIC detail; no exception text
+        leaks to the client, and the failure is logged server-side.
+        """
+        import logging
         from unittest.mock import patch
 
         monkeypatch.setattr("scripts.server.routes.papers._doi_exists", lambda doi: True)
-        with patch(
-            "scripts.server.routes.papers._invoke_re_extract",
-            side_effect=RuntimeError("LLM timeout"),
-        ):
-            r = client.post("/api/papers/10.1234/ok/re-extract")
+        with caplog.at_level(logging.ERROR, logger="scripts.server.routes.papers"):
+            with patch(
+                "scripts.server.routes.papers._invoke_re_extract",
+                side_effect=RuntimeError("LLM timeout at /tmp/llm/cache.db"),
+            ):
+                r = client.post("/api/papers/10.1234/ok/re-extract")
 
         assert r.status_code == 500
         body = r.json()
         assert body["status"] == "error"
-        assert "LLM timeout" in body["detail"]
-        # Opus info-leak guard: no traceback in detail.
-        assert "Traceback" not in body["detail"]
-        assert "File " not in body["detail"]
+        assert body["detail"] == "Internal error"
+        # P2.2 info-leak guard: exception text / path must not reach the client.
+        serialized = str(body)
+        assert "LLM timeout" not in serialized
+        assert "/tmp/llm/cache.db" not in serialized
+        assert "Traceback" not in serialized
+        # Logged server-side.
+        assert any(rec.exc_info for rec in caplog.records)
 
 
 # ---------------------------------------------------------------------------

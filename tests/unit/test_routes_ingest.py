@@ -158,6 +158,30 @@ class TestValidation:
         )
         assert r.status_code == 202
 
+    def test_oversized_title_returns_422(self, client):
+        """P2.3: a title longer than the cap (500) → 422 (validator rejects)."""
+        from scripts.server.routes.ingest import _MAX_TITLE_LEN
+
+        oversized = "x" * (_MAX_TITLE_LEN + 100)  # 600 chars
+        r = client.post(
+            "/api/ingest", json={"doi": "10.1234/x", "title": oversized}
+        )
+        assert r.status_code == 422
+
+    def test_normal_length_title_accepted(self, client, monkeypatch):
+        """P2.3: a normal-length title still passes (regression guard)."""
+        from scripts.server.routes import ingest as ingest_route
+        from scripts.server.routes.ingest import _MAX_TITLE_LEN
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
+
+        # A long-but-legitimate title right at the cap must still be accepted.
+        at_cap = "A" * _MAX_TITLE_LEN
+        r = client.post(
+            "/api/ingest", json={"doi": "10.1234/at-cap", "title": at_cap}
+        )
+        assert r.status_code == 202
+
 
 # ---------------------------------------------------------------------------
 # Duplicate DOI (409)

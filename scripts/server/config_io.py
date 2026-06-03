@@ -341,7 +341,8 @@ def safe_save_settings_section(
                      ``config/extraction.yaml``.  Override in tests.
 
     Raises:
-        ValueError: If ``section`` is not in the allowed set.
+        ValueError: If ``section`` is not in the allowed set, or if ``data``
+            is not a dict (a top-level section must be a mapping).
         OSError:    If the file cannot be read or written.
     """
     _ALLOWED_SECTIONS: frozenset[str] = frozenset(
@@ -360,6 +361,23 @@ def safe_save_settings_section(
     if section not in _ALLOWED_SECTIONS:
         raise ValueError(
             f"unknown section: {section!r}; allowed: {sorted(_ALLOWED_SECTIONS)}"
+        )
+
+    # P2.4 (minimal guard): a top-level config section is always a mapping.
+    # Refuse to write a list/scalar/None verbatim, which would corrupt the
+    # section's shape. This is defense-in-depth: the HTTP route already
+    # rejects non-object bodies with 422, but safe_save_settings_section is
+    # an importable helper that can be called directly, so it guards itself.
+    #
+    # NOTE: this does NOT validate the *keys/types inside* the dict — a dict
+    # with unknown keys (e.g. {"randomgarbage": true}) is still written. Full
+    # per-section key+type validation is intentionally NOT implemented here
+    # because the section shapes are not cleanly enumerable from existing code
+    # (see the audit report / escalation note). Inventing a speculative schema
+    # was explicitly out of scope.
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"section {section!r} data must be a mapping, got {type(data).__name__!r}"
         )
 
     path = Path(config_path) if config_path is not None else CONFIG_DIR / "extraction.yaml"

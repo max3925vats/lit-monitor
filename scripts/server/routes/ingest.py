@@ -71,6 +71,11 @@ logger = logging.getLogger(__name__)
 
 _DOI_RE = re.compile(r"^10\.\d{4,9}/\S+$")
 
+# P2.3: hard cap on title length. Real article titles are well under this;
+# an oversized title is almost certainly malformed/abusive input and would
+# bloat downstream storage, logs, and LLM prompts. Reject with 422.
+_MAX_TITLE_LEN = 500
+
 # Single source of truth for the ingest_queue state machine. These bare
 # string literals were previously scattered across the route, the background
 # task, and the tests; a typo like "no markdown" would silently create an
@@ -110,9 +115,18 @@ class IngestRequest(BaseModel):
     @field_validator("title")
     @classmethod
     def _validate_title(cls, v: str) -> str:
-        """Reject empty or whitespace-only titles."""
-        if not v or not v.strip():
+        """Reject empty/whitespace-only titles and titles over the length cap.
+
+        The length check uses the stripped title so trailing whitespace can't
+        be used to slip past the cap (or to pad an otherwise-empty title).
+        """
+        stripped = v.strip() if v else ""
+        if not stripped:
             raise ValueError("title cannot be empty or whitespace-only")
+        if len(stripped) > _MAX_TITLE_LEN:
+            raise ValueError(
+                f"title too long: {len(stripped)} chars (max {_MAX_TITLE_LEN})"
+            )
         return v
 
 
