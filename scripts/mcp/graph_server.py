@@ -67,10 +67,11 @@ def _build_tool_schemas() -> dict[str, dict[str, Any]]:
     # Closed vocabularies — imported from their single source of truth so the
     # advertised enums stay in lock-step with the handlers' runtime validation.
     from scripts.graph.relationship_validator import VALID_PREDICATES  # noqa: PLC0415
-    from scripts.mcp.tools import _ENTITY_TYPES  # noqa: PLC0415
+    from scripts.mcp.tools import _ALLOWED_GRANULARITY, _ENTITY_TYPES  # noqa: PLC0415
 
     predicate_enum = sorted(VALID_PREDICATES)
     entity_type_enum = sorted(_ENTITY_TYPES)
+    granularity_enum = sorted(_ALLOWED_GRANULARITY)
 
     return {
         "find_papers_by_entity": {
@@ -208,7 +209,7 @@ def _build_tool_schemas() -> dict[str, dict[str, Any]]:
                     },
                     "granularity": {
                         "type": "string",
-                        "enum": sorted(("paper", "chunk")),
+                        "enum": granularity_enum,
                         "default": "paper",
                         "description": "paper-level or chunk-level hits.",
                     },

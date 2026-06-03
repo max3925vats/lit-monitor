@@ -138,4 +138,4 @@ def test_enum_params_match_vocabularies() -> None:
     assert set(etype["enum"]) == set(tools._ENTITY_TYPES)
 
     gran = schemas["semantic_search"]["inputSchema"]["properties"]["granularity"]
-    assert set(gran["enum"]) == {"paper", "chunk"}
+    assert set(gran["enum"]) == set(tools._ALLOWED_GRANULARITY)
