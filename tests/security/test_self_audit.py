@@ -116,9 +116,17 @@ _SECRET_ASSIGN_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# Substrings that mark an obvious placeholder / non-secret, so check (b) does
-# not fire on documentation, examples, or env-var indirection.
-_PLACEHOLDER_MARKERS = (
+# Markers that flag an obvious placeholder / non-secret, so check (b) does not
+# fire on documentation, examples, or env-var indirection.
+#
+# WORD markers are matched as a whole token (NOT as an arbitrary substring), so
+# a real-looking 24+char literal that merely *contains* or *starts with* such a
+# word run — e.g. "testAAAAAAAAAAAAAAAAAAAA" — is NOT blanket-exempted. A token
+# is delimited by start/end of the value or a non-alphanumeric separator
+# (hyphen, underscore, dot, space, bracket...). So "your-key", "your_key",
+# "changeme" (exact) and "redacted.0000" count, but an opaque alphanumeric blob
+# that happens to begin with the letters of a marker does not.
+_PLACEHOLDER_WORD_MARKERS = (
     "your",
     "xxx",
     "example",
@@ -127,17 +135,34 @@ _PLACEHOLDER_MARKERS = (
     "dummy",
     "fake",
     "test",
+    "redacted",
+)
+# STRUCTURAL markers are kept as plain substring checks: they are syntactic
+# signals (env-var indirection, angle-bracket/ellipsis placeholders) that are
+# meaningful anywhere in the value, never part of an opaque base64-ish secret.
+_PLACEHOLDER_STRUCTURAL_MARKERS = (
     "<",
     "...",
-    "redacted",
     "os.environ",
     "getenv",
+)
+
+# A word marker counts only as a standalone token: bounded on both sides by
+# start/end of the value or a non-alphanumeric separator. This deliberately
+# rejects alphanumeric run-ons such as "testAAAA..." or "changeme1234..." that
+# would otherwise smuggle a real opaque secret past the exemption. Built once.
+_PLACEHOLDER_WORD_RE = re.compile(
+    r"(?:^|[^a-z0-9])(?:"
+    + "|".join(_PLACEHOLDER_WORD_MARKERS)
+    + r")(?:$|[^a-z0-9])"
 )
 
 
 def _looks_like_placeholder(value: str) -> bool:
     low = value.lower()
-    return any(m in low for m in _PLACEHOLDER_MARKERS)
+    if any(m in low for m in _PLACEHOLDER_STRUCTURAL_MARKERS):
+        return True
+    return _PLACEHOLDER_WORD_RE.search(low) is not None
 
 
 def test_no_hardcoded_secrets() -> None:
@@ -161,6 +186,27 @@ def test_no_hardcoded_secrets() -> None:
     assert not violations, "Possible hardcoded secrets in scripts/:\n" + "\n".join(
         violations
     )
+
+
+def test_placeholder_markers_are_anchored_not_substring() -> None:
+    """Placeholder markers match as whole tokens, not arbitrary substrings.
+
+    Guards the hardening: a real-looking opaque secret that merely *contains*
+    or *starts with* a marker's letters (e.g. ``testAAAA...``) must NOT be
+    treated as a placeholder, while genuine separator-delimited placeholders
+    still are.
+    """
+    # Real-looking secret that embeds a marker as an alphanumeric run-on:
+    # NOT a placeholder (the bug this fix closes).
+    assert not _looks_like_placeholder("test" + "A" * 24)
+    assert not _looks_like_placeholder("changeme" + "1" * 16)
+    assert not _looks_like_placeholder("X" * 24)  # 'xxx' run-on
+    # Genuine placeholders (separator-delimited token / structural marker) still
+    # register as placeholders.
+    assert _looks_like_placeholder("your-api-key-goes-here-0")
+    assert _looks_like_placeholder("example-secret-key-000000")
+    assert _looks_like_placeholder("<your-token-here>")
+    assert _looks_like_placeholder('os.environ["API_KEY"]')
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +353,58 @@ def _is_placeholder_var(expr: ast.expr) -> bool:
     return isinstance(expr, ast.Name) and expr.id in _PLACEHOLDER_VAR_NAMES
 
 
+def _sql_interpolation_violations(tree: ast.AST, label: str) -> list[str]:
+    """Collect f-string-into-.execute() value-interpolation smells in a tree.
+
+    ``label`` is a human-readable prefix (e.g. ``file:line`` source) used in the
+    violation message. Extracted so the detector can be driven directly on a
+    synthetic snippet in addition to the real scripts/ tree.
+    """
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in _SQL_EXEC_METHODS
+            and node.args
+        ):
+            continue
+        first = node.args[0]
+        if not isinstance(first, ast.JoinedStr):
+            continue  # literal str or variable → fine
+        fmts = _formatted_values(first)
+        if not fmts:
+            continue  # f-string with no interpolation → effectively literal
+
+        # The DDL/identifier exemption is a *blanket* exemption keyed on a
+        # keyword appearing ANYWHERE in the f-string's literal text, so it
+        # only stays sound when the f-string has a SINGLE interpolation
+        # slot. A multi-slot f-string can pair a DDL keyword (e.g.
+        # ``PRAGMA table_info({name})``) with a genuine value injection in a
+        # second statement (e.g. ``INSERT INTO t VALUES ({val})``); the
+        # keyword would otherwise smuggle the value slot past the check.
+        # Restrict the blanket exemption to single-slot f-strings so each
+        # value slot in a multi-slot f-string is judged on its own merits.
+        is_identifier_ddl = len(fmts) == 1 and any(
+            kw in _literal_text(first) for kw in _IDENTIFIER_DDL_KEYWORDS
+        )
+        for fv in fmts:
+            expr = fv.value
+            if _is_int_coerced(expr):
+                continue  # f"... LIMIT {int(limit)}" — coerced, safe
+            if _is_placeholder_var(expr):
+                continue  # f"... IN ({placeholders})" — ?-marks, not values
+            if is_identifier_ddl and _is_plain_identifier(expr):
+                continue  # f"PRAGMA table_info({table})" — identifier slot
+            # Anything else interpolated into SQL is a smell.
+            rendered = ast.dump(expr)
+            violations.append(
+                f"{label}:{node.lineno}: interpolated SQL expression "
+                f"({rendered}) inside .{node.func.attr}() — use a ? placeholder"
+            )
+    return violations
+
+
 def test_sql_is_parameterized() -> None:
     """No SQL/Cypher value built by f-string interpolation inside .execute().
 
@@ -321,41 +419,35 @@ def test_sql_is_parameterized() -> None:
         tree = _parse(path, source)
         if tree is None:
             continue
-        for node in ast.walk(tree):
-            if not (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Attribute)
-                and node.func.attr in _SQL_EXEC_METHODS
-                and node.args
-            ):
-                continue
-            first = node.args[0]
-            if not isinstance(first, ast.JoinedStr):
-                continue  # literal str or variable → fine
-            fmts = _formatted_values(first)
-            if not fmts:
-                continue  # f-string with no interpolation → effectively literal
-
-            is_identifier_ddl = any(
-                kw in _literal_text(first) for kw in _IDENTIFIER_DDL_KEYWORDS
-            )
-            for fv in fmts:
-                expr = fv.value
-                if _is_int_coerced(expr):
-                    continue  # f"... LIMIT {int(limit)}" — coerced, safe
-                if _is_placeholder_var(expr):
-                    continue  # f"... IN ({placeholders})" — ?-marks, not values
-                if is_identifier_ddl and _is_plain_identifier(expr):
-                    continue  # f"PRAGMA table_info({table})" — identifier slot
-                # Anything else interpolated into SQL is a smell.
-                rendered = ast.dump(expr)
-                violations.append(
-                    f"{_rel(path)}:{node.lineno}: interpolated SQL expression "
-                    f"({rendered}) inside .{node.func.attr}() — use a ? placeholder"
-                )
+        violations.extend(_sql_interpolation_violations(tree, _rel(path)))
     assert not violations, (
         "Possible SQL-injection (f-string SQL) in scripts/:\n" + "\n".join(violations)
     )
+
+
+def test_sql_detector_flags_multi_slot_ddl_value_smuggling() -> None:
+    """A DDL keyword must not exempt a value slot in a multi-slot f-string.
+
+    Guards the per-slot DDL-exemption fix: an f-string that pairs a benign
+    identifier-DDL slot with a genuine value injection in a second statement
+    must still flag the value slot. A single-slot identifier-DDL f-string must
+    remain exempt.
+    """
+    # Multi-slot: PRAGMA exempts {name} (identifier), but {val} is a real value
+    # injection and MUST be flagged despite the DDL keyword in the f-string.
+    smuggling = (
+        "c.execute(f\"PRAGMA table_info({name}); "
+        "INSERT INTO t VALUES ({val})\")"
+    )
+    flagged = _sql_interpolation_violations(ast.parse(smuggling), "<snippet>")
+    assert any("Name(id='val'" in v for v in flagged), (
+        "multi-slot DDL+value f-string should flag the {val} value slot; "
+        f"got: {flagged}"
+    )
+
+    # Single-slot identifier DDL stays exempt (no false positive).
+    safe = "c.execute(f\"PRAGMA table_info({name})\")"
+    assert _sql_interpolation_violations(ast.parse(safe), "<snippet>") == []
 
 
 # ---------------------------------------------------------------------------
