@@ -328,10 +328,9 @@ def safe_save_topics(
 def _validate_settings_section(section: str, data: dict[str, Any]) -> None:
     """E3 / B8: validate ``data`` against the section's pydantic schema.
 
-    Each schema sets ``extra="forbid"`` (except ``feedback``; see its model
-    docstring), so unknown keys or wrong types raise ``pydantic.ValidationError``.
-    That is re-raised as ``ValueError`` so the HTTP route's existing
-    ``except ValueError`` branch handles it uniformly.
+    Each schema sets ``extra="forbid"``, so unknown keys or wrong types raise
+    ``pydantic.ValidationError``. That is re-raised as ``ValueError`` so the HTTP
+    route's existing ``except ValueError`` branch handles it uniformly.
 
     The section name is assumed already validated against the allowed set by
     the caller. An unmapped (but allowed) section would be a programming error,
@@ -343,7 +342,6 @@ def _validate_settings_section(section: str, data: dict[str, Any]) -> None:
         ClusteringSettings,
         DiscoverySettings,
         EmbeddingSettings,
-        FeedbackSettings,
         QueryExpansionSettings,
         RankingSettings,
         ResearcherGatingSettings,
@@ -354,7 +352,6 @@ def _validate_settings_section(section: str, data: dict[str, Any]) -> None:
     section_models = {
         "ranking": RankingSettings,
         "clustering": ClusteringSettings,
-        "feedback": FeedbackSettings,
         "trending_concepts": TrendingConceptsSettings,
         "query_expansion": QueryExpansionSettings,
         "researcher_gating": ResearcherGatingSettings,
@@ -406,7 +403,6 @@ def safe_save_settings_section(
         {
             "ranking",
             "clustering",
-            "feedback",
             "trending_concepts",
             "query_expansion",
             "researcher_gating",

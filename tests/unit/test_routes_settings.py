@@ -159,16 +159,30 @@ class TestSettingsPost:
             r = client.post("/api/settings/bad_section", json={"foo": "bar"})
         assert r.status_code == 400
 
-    def test_garbage_key_returns_422(self):
+    def test_garbage_key_returns_422(self, tmp_path):
         """B8 (route): an unknown key in a known section → HTTP 422.
 
         Not mocked — the real safe_save_settings_section validates and raises
         SettingsValidationError before any file write, which the route maps to
         422 (distinct from the 400 used for an unknown section name).
+
+        E8: routed through _post_to_real_file so the (rejected) write target is a
+        tmp extraction.yaml, never the repo's live config — a future validation
+        regression must not be able to mutate the user's real file.
         """
-        client = _make_client()
-        r = client.post("/api/settings/ranking", json={"randomgarbage": True})
+        r, _ = _post_to_real_file(tmp_path, "ranking", {"randomgarbage": True})
         assert r.status_code == 422
+
+    def test_feedback_section_returns_400(self, tmp_path):
+        """E8: POST /api/settings/feedback → 400 (the dead section was removed).
+
+        ``feedback`` is no longer in the allowed set, so the writer raises a
+        plain ValueError ("unknown section") which the route maps to 400 — the
+        same path as any other unknown section name (distinct from the 422 used
+        for a malformed payload in a known section).
+        """
+        r, _ = _post_to_real_file(tmp_path, "feedback", {"anything": "value"})
+        assert r.status_code == 400
 
     def test_non_object_body_422(self):
         client = _make_client()
@@ -270,22 +284,26 @@ class TestSettingsUIRoundTrip:
         ] == ["Chromatography", "Filtration"]
         assert loaded["clustering"]["write_back"]["tags"]["namespace"] == "lm"
 
-    def test_old_flat_ranking_payload_rejected_422(self):
-        """Migration proof: the pre-fix flat ranking shape now fails validation."""
-        client = _make_client()
-        r = client.post(
-            "/api/settings/ranking",
-            json={"semantic_weight": 0.4, "graph_weight": 0.3, "domain_weight": 0.3},
+    def test_old_flat_ranking_payload_rejected_422(self, tmp_path):
+        """Migration proof: the pre-fix flat ranking shape now fails validation.
+
+        E8: routed through _post_to_real_file so the (rejected) write target is a
+        tmp file, not the repo's live config/extraction.yaml.
+        """
+        r, _ = _post_to_real_file(
+            tmp_path,
+            "ranking",
+            {"semantic_weight": 0.4, "graph_weight": 0.3, "domain_weight": 0.3},
         )
         assert r.status_code == 422
 
-    def test_old_flat_clustering_payload_rejected_422(self):
-        """Migration proof: the pre-fix flat clustering shape now fails validation."""
-        client = _make_client()
-        r = client.post(
-            "/api/settings/clustering",
-            json={"k": 8, "algorithm": "kmeans"},
-        )
+    def test_old_flat_clustering_payload_rejected_422(self, tmp_path):
+        """Migration proof: the pre-fix flat clustering shape now fails validation.
+
+        E8: routed through _post_to_real_file so the (rejected) write target is a
+        tmp file, not the repo's live config/extraction.yaml.
+        """
+        r, _ = _post_to_real_file(tmp_path, "clustering", {"k": 8, "algorithm": "kmeans"})
         assert r.status_code == 422
 
 
@@ -407,7 +425,6 @@ class TestSafeSaveSettingsSection:
             ("embedding", {"provider": "ollama", "ollama": {"dim": 768}}),
             ("discovery", {"notify": {"enabled": False}}),
             ("web_ui", {"show_feedback_buttons": True}),
-            ("feedback", {"anything": "allowed-here"}),
         ],
     )
     def test_valid_payload_written(self, tmp_path, section, payload):
@@ -421,6 +438,26 @@ class TestSafeSaveSettingsSection:
 
         result = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         assert section in result
+
+    def test_feedback_section_now_unknown(self, tmp_path):
+        """E8: the dead ``feedback`` settings section was removed.
+
+        ``feedback`` was vestigial — no ``feedback:`` block in
+        extraction.example.yaml, no ``config.feedback.*`` read in config.py, and
+        no feedback form on the settings page (the real feedback feature uses
+        ``web_ui.show_feedback_buttons`` + the ``feedback_events`` table + the
+        read-only ``/feedback`` page). It must now be rejected like any other
+        unknown section name.
+        """
+        from scripts.server.config_io import safe_save_settings_section
+
+        config_path = tmp_path / "extraction.yaml"
+        config_path.write_text("{}\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="unknown section"):
+            safe_save_settings_section(
+                "feedback", {"anything": "value"}, config_path=config_path
+            )
 
     def test_preserves_comments_on_unchanged_sections(self, tmp_path):
         """v0.9.1 regression: comments + quoting on untouched sections survive the write.

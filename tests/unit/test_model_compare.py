@@ -15,6 +15,29 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_reference_papers(tmp_path):
+    """E8: never let a test in this module read the user's REAL reference file.
+
+    In production ``_load_reference_papers()`` prefers the gitignored,
+    machine-specific ``docs/internal/reference_papers.yaml`` and falls back to
+    the committed ``reference_papers.example.yaml``. Tests must be hermetic, so
+    by default we redirect ``_REFERENCE_REAL`` to a NON-EXISTENT tmp path. With
+    the real file out of the picture, ``_load_reference_papers()`` falls back to
+    the committed ``_REFERENCE_EXAMPLE`` for every test — no test touches the
+    user's real reference_papers.yaml.
+
+    The A7 tests that ``patch.object(mc, "_REFERENCE_REAL", ...)`` inside the
+    test body still win: their ``with patch.object`` runs after this fixture has
+    set the module attr, so it overrides our default for the duration of that
+    block (and restores it on exit).
+    """
+    from scripts.pipelines import model_compare as mc
+
+    with patch.object(mc, "_REFERENCE_REAL", tmp_path / "nonexistent_reference.yaml"):
+        yield
+
+
 def _make_config(tmp_path: Path) -> SimpleNamespace:
     return SimpleNamespace(
         zotero=SimpleNamespace(collection_name="lit-monitor"),

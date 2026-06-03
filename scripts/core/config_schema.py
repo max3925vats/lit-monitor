@@ -161,8 +161,8 @@ class ExtractionConfig(BaseModel):
 # sets ``extra="forbid"`` at every nesting level.
 #
 # Shapes are derived from config/extraction.example.yaml and the reads in
-# scripts/core/config.py. ``feedback`` and ``web_ui`` have no shape anywhere
-# in the loader; their shapes are documented at their class definitions.
+# scripts/core/config.py. ``web_ui`` has no shape anywhere in the loader; its
+# shape is documented at its class definition.
 # ---------------------------------------------------------------------------
 
 class _RankingWeights(BaseModel):
@@ -363,21 +363,3 @@ class WebUiSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     show_feedback_buttons: bool = False
-
-
-class FeedbackSettings(BaseModel):
-    """settings → feedback section.
-
-    DESIGN CALL (no shape defined anywhere). Grepping the codebase finds NO
-    top-level ``feedback`` config key read at all — the only ``feedback``
-    matches are the ``feedback_events`` DB table, the /api/feedback route, and
-    feedback CSS/JS. The user-facing feedback toggle lives under
-    ``web_ui.show_feedback_buttons``, not a ``feedback`` section.
-
-    Since no key can be determined from real usage, this model uses
-    ``extra="allow"`` for THIS section ONLY (documented escalation) rather than
-    guessing a wrong shape and rejecting legitimate-but-undiscoverable keys.
-    A non-dict body is still rejected upstream (caller's isinstance check).
-    """
-
-    model_config = ConfigDict(extra="allow")
