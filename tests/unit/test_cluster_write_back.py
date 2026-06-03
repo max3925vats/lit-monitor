@@ -109,12 +109,16 @@ class TestPushTagsToZotero:
 
         push_tags_to_zotero(sdb, zot, dry_run=False)
 
-        # Check that no delete method was called on the raw pyzotero client
-        for attr_name in dir(zot._zot):
-            if "delete" in attr_name.lower():
-                attr = getattr(zot._zot, attr_name, None)
-                if callable(attr):
-                    attr.assert_not_called()
+        # write_back is strictly additive (module docstring). Assert that none of
+        # the real pyzotero destructive methods were invoked. The previous
+        # `for attr in dir(zot._zot)` loop was vacuous: dir() on a MagicMock lists
+        # only already-materialised children, so the "delete*" filter matched
+        # nothing and asserted nothing. These named methods exist on the real
+        # pyzotero.Zotero client (verified against the installed version).
+        zot._zot.delete_item.assert_not_called()
+        zot._zot.delete_collection.assert_not_called()
+        zot._zot.delete_tags.assert_not_called()
+        zot._zot.deletefrom_collection.assert_not_called()
 
     def test_skips_papers_without_zotero_key(self):
         """Papers with no zotero_key in state_db are silently skipped."""
@@ -248,11 +252,12 @@ class TestPushCollectionsToZotero:
 
         push_collections_to_zotero(sdb, zot, dry_run=False)
 
-        for attr_name in dir(zot._zot):
-            if "delete" in attr_name.lower():
-                attr = getattr(zot._zot, attr_name, None)
-                if callable(attr):
-                    attr.assert_not_called()
+        # Strictly additive: no destructive pyzotero method may fire (the old
+        # dir()-based loop was vacuous — see test_no_delete_methods_called).
+        zot._zot.delete_item.assert_not_called()
+        zot._zot.delete_collection.assert_not_called()
+        zot._zot.delete_tags.assert_not_called()
+        zot._zot.deletefrom_collection.assert_not_called()
 
     def test_dry_run_report_lists_operations(self):
         """dry_run report must describe planned operations, not an empty dict."""

@@ -1,18 +1,22 @@
 """R1: generalized route-collision regression test.
 
-Catches the class of bug that hit P3 between P8 and P11: a typed-param
-route (e.g. {run_id} with `run_id: int` in the signature, or {doi:path}
-in the path string) registered BEFORE a more-specific static-segment
-sibling on the same parent prefix.
+Catches the class of bug that hit P3 between P8 and P11: a path-PARAM route
+(e.g. {run_id} with `run_id: int`, {doi:path} in the path string, or a plain
+default-str {slug}) registered BEFORE a more-specific static-segment sibling on
+the same parent prefix.
 
-FastAPI matches routes in registration order. If a typed-param route fires
-first, it fails its type coercion and returns 422 — without falling through
-to the static-segment handler. This file ships:
+FastAPI matches routes in registration order. If a param route fires first it
+shadows the static sibling: a typed param fails coercion and returns 422; a
+default-str param matches *any* value and silently swallows the request so the
+static handler never runs (P7.6 — the original detector only caught the typed
+case). This file ships:
 
   1. _collect_route_failures(app) — shared walker used by multiple tests.
   2. test_no_typed_param_routes_shadow_static_siblings — live app check.
   3. test_notify_handler_path_specifically — targeted regression for P3/P8.
   4. test_walker_flags_synthetic_broken_app — proves the walker is non-vacuous.
+  5. test_walker_flags_default_str_param_shadowing — P7.6 str-param coverage.
+  6. test_walker_passes_correct_static_first_order — false-positive guard.
 """
 from __future__ import annotations
 
@@ -50,57 +54,48 @@ def _parent_prefix(path: str) -> str:
     return parts[0] if len(parts) > 1 else ""
 
 
-def _is_typed_last_segment(route: object) -> bool:
-    """Return True if the route's last path segment is a typed (non-str) param.
+def _is_param_last_segment(route: object) -> bool:
+    """Return True if the route's last path segment is ANY path parameter.
 
-    Two detection paths:
-    - Explicit: the path string contains a colon-typed placeholder in its last
-      segment, e.g. ``{doi:path}`` or ``{id:int}``.
-    - Implicit: the last segment is a plain placeholder like ``{run_id}`` but
-      the FastAPI dependant reveals its type as int / float / uuid / etc.
+    This covers both shadowing flavours:
+    - Typed params (``{id:int}``, ``{run_id}`` with ``run_id: int``): FastAPI
+      matches the param route first, then *fails coercion* on a non-matching
+      request and returns 422 — the static sibling registered later is
+      unreachable.
+    - Default-``str`` params (``{slug}`` with ``slug: str``, FastAPI's default):
+      this is the MORE dangerous case. A str param matches *any* value
+      (including the literal ``notify-handler``), so the param route silently
+      swallows every request and the static sibling never 422s — it just never
+      runs. The original detector only flagged the typed case and missed this.
+
+    A plain ``{param}`` last segment is detected purely from the path string;
+    no dependant introspection is needed because str-vs-int no longer changes
+    the verdict (both shadow a later static sibling on the same prefix).
     """
     path: str = getattr(route, "path", "") or ""
     last = _last_segment(path)
 
-    # Fast path: explicit type in the path string itself.
+    # Explicit colon-typed placeholder, e.g. {doi:path} / {id:int}.
     if _EXPLICIT_TYPED_PARAM_RE.match(last):
         return True
 
-    # Only proceed if the last segment looks like any path param at all.
-    if not _ANY_PARAM_RE.match(last):
-        return False
-
-    # Derive the param name from the segment (strip braces / type suffix).
-    raw = last[1:-1]  # strip { }
-    param_name = raw.split(":")[0]  # drop any type suffix
-
-    # Walk the dependant's path_params to find a non-str type adapter.
-    dep = getattr(route, "dependant", None)
-    if dep is None:
-        return False
-    for p in getattr(dep, "path_params", []):
-        if p.name != param_name:
-            continue
-        # _type_adapter repr contains the python type name.
-        ta = repr(getattr(p, "_type_adapter", ""))
-        # Flag int, float, and UUID; leave plain str as non-typed.
-        if any(tok in ta for tok in ("int", "float", "uuid", "UUID")):
-            return True
-    return False
+    # Any plain placeholder last segment, e.g. {run_id} or {slug} (default str).
+    return bool(_ANY_PARAM_RE.match(last))
 
 
 def _collect_route_failures(app: FastAPI) -> list[str]:
     """Walk *app.routes* and return descriptions of any shadowing collisions.
 
-    A collision exists when a typed-param route at index I (matching any
-    request to its parent prefix) is registered BEFORE a static-segment
-    sibling at index J > I on the same (method, parent_prefix) group.
-    FastAPI will resolve the typed-param route first, fail coercion, and
-    return 422 — the static sibling is unreachable.
+    A collision exists when a path-PARAM route at index I (whose last segment is
+    a placeholder — typed OR default-str — matching requests to its parent
+    prefix) is registered BEFORE a static-segment sibling at index J > I on the
+    same (method, parent_prefix) group. FastAPI resolves routes in registration
+    order, so the param route wins and the static sibling is unreachable (a
+    typed param 422s on coercion; a str param silently swallows the request).
 
     Returns a list of human-readable failure strings (empty = no collisions).
     """
-    # (method, parent_prefix) → list of (index, last_segment, is_typed, path)
+    # (method, parent_prefix) → list of (index, last_segment, is_param, path)
     by_group: dict[tuple[str, str], list[tuple[int, str, bool, str]]] = (
         defaultdict(list)
     )
@@ -111,26 +106,28 @@ def _collect_route_failures(app: FastAPI) -> list[str]:
             continue
         methods = getattr(route, "methods", None) or set()
         last = _last_segment(path)
-        is_typed = _is_typed_last_segment(route)
+        is_param = _is_param_last_segment(route)
         for method in methods:
             by_group[(method, _parent_prefix(path))].append(
-                (index, last, is_typed, path)
+                (index, last, is_param, path)
             )
 
     failures: list[str] = []
     for (method, prefix), entries in by_group.items():
-        typed_entries = [e for e in entries if e[2]]  # (idx, last, True, path)
-        if not typed_entries:
+        param_entries = [e for e in entries if e[2]]  # (idx, last, True, path)
+        if not param_entries:
             continue
-        for t_idx, _t_last, _, t_path in typed_entries:
-            for o_idx, _o_last, o_typed, o_path in entries:
-                if o_typed or o_idx <= t_idx:
-                    # Skip: other is also typed, or registered before the typed one.
+        for p_idx, _p_last, _, p_path in param_entries:
+            for o_idx, _o_last, o_is_param, o_path in entries:
+                if o_is_param or o_idx <= p_idx:
+                    # Skip: other is also a param route, or registered before
+                    # the param one (and therefore reachable).
                     continue
-                # Static route at o_idx > t_idx: unreachable due to earlier typed route.
+                # Static route at o_idx > p_idx: unreachable — the earlier
+                # param route matches first.
                 failures.append(
                     f"{method} {o_path!r} (index {o_idx}) is shadowed by "
-                    f"{t_path!r} (index {t_idx}) — register the static route first."
+                    f"{p_path!r} (index {p_idx}) — register the static route first."
                 )
     return failures
 
@@ -217,3 +214,70 @@ def test_walker_flags_synthetic_broken_app() -> None:
         "(typed-param before static sibling). The walker is vacuous and "
         "would not catch the P3↔P8 regression."
     )
+
+
+def test_walker_flags_default_str_param_shadowing() -> None:
+    """R1 (P7.6): default-str path params must ALSO be flagged.
+
+    A ``{slug}`` param defaults to ``str`` in FastAPI, which matches *any* value
+    — so it silently swallows a static sibling registered afterwards (the static
+    route never even 422s; it just never runs). This is the more dangerous case
+    the original detector missed because it only inspected for int/float/uuid.
+    """
+    from fastapi import APIRouter, FastAPI
+
+    bad_app = FastAPI()
+
+    # Default-str param sibling registered FIRST — no explicit type annotation.
+    bad_router = APIRouter()
+
+    @bad_router.get("/themes/{slug}")
+    def _detail(slug: str) -> dict:  # str matches everything, incl. "export"
+        return {}
+
+    bad_app.include_router(bad_router)
+
+    # Static sibling registered AFTER → unreachable.
+    static_router = APIRouter()
+
+    @static_router.get("/themes/export")
+    def _export() -> dict:
+        return {}
+
+    bad_app.include_router(static_router)
+
+    failures = _collect_route_failures(bad_app)
+    assert failures, (
+        "The walker did NOT flag a default-str {slug} param shadowing a later "
+        "static /themes/export sibling — the most dangerous (silent) collision."
+    )
+
+
+def test_walker_passes_correct_static_first_order() -> None:
+    """R1 (P7.6): a correctly-ordered app (static BEFORE param) is not flagged.
+
+    Guards against false positives introduced by broadening the detector to
+    default-str params: when the static route is registered first it IS
+    reachable, so no failure must be reported.
+    """
+    from fastapi import APIRouter, FastAPI
+
+    good_app = FastAPI()
+
+    static_router = APIRouter()
+
+    @static_router.get("/themes/export")
+    def _export() -> dict:
+        return {}
+
+    good_app.include_router(static_router)  # static FIRST → reachable
+
+    param_router = APIRouter()
+
+    @param_router.get("/themes/{slug}")
+    def _detail(slug: str) -> dict:
+        return {}
+
+    good_app.include_router(param_router)
+
+    assert _collect_route_failures(good_app) == []

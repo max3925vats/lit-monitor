@@ -1741,22 +1741,20 @@ class TestDigestAutoWriteFlag:
         data = yaml.safe_load(raw)
         assert data["discovery"]["digest"]["auto_write"] is True
 
-    def test_config_exposes_flag_via_namespace(self, monkeypatch):
+    def test_config_exposes_flag_via_namespace(self):
         """P10b: cfg.discovery.digest.auto_write is reachable via the _Namespace path.
 
         Skips when config can't load (CI has no paths.yaml). The attribute-path
         contract is also covered by the other tests in this class via the
         _resolve_digest_auto_write fallback, which defaults to True on missing
         attribute chains.
+
+        The config cache is reset automatically by the ``_reset_config_cache``
+        autouse fixture (tests/unit/conftest.py), so get_config() always returns
+        a fresh Config (or raises FileNotFoundError → skip) — never a stale mock.
         """
         from scripts.core import config as config_mod
 
-        # A prior test may have left a MagicMock in the module-level config cache
-        # (all such tests set it via monkeypatch, but ordering can still expose a
-        # stale value here). Force a clean load so get_config() returns the real
-        # Config or raises FileNotFoundError (→ skip) — never a stale mock, which
-        # would make the assertion below compare a MagicMock.
-        monkeypatch.setattr(config_mod, "_config_cache", None)
         try:
             cfg = config_mod.get_config()
         except FileNotFoundError:

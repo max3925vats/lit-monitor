@@ -48,16 +48,6 @@ paper_pass3:
   discovered_topics: ["topic 1", "topic 2", "topic 3"]
   discovered_topics_confidence: "explicit"
 
-paper_pass4:
-  key_citations:
-    - ref_id: "[1]"
-      context: "Establishes the baseline filtration model used throughout."
-    - ref_id: "Smith et al. (2020)"
-      context: "Provides the fouling mechanism adopted here."
-  key_citations_confidence: "explicit"
-  comparison_to_prior: "This study extends the Smith et al. (2020) framework by applying it to novel membrane systems at industrial scale, achieving 15% lower fouling than the prior benchmark."
-  comparison_to_prior_confidence: "explicit"
-
 ranker:
   rationale: "Mock rationale for relevance."
 

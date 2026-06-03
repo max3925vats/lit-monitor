@@ -592,12 +592,20 @@ class TestMaybeExtractLlmRelationships:
         assert result == []
         assert called["n"] == 0
 
-    def test_missing_config_section_treated_as_disabled(self):
+    def test_missing_config_section_treated_as_disabled(self, monkeypatch):
         """R4: when cfg.graph.relationships raises AttributeError, default to disabled."""
         cfg = MagicMock()
-        # Make .graph.relationships raise AttributeError on attribute access
-        type(cfg.graph).relationships = property(
-            lambda self: (_ for _ in ()).throw(AttributeError("no relationships key"))
+        # Make .graph.relationships raise AttributeError on attribute access.
+        # NOTE: type(cfg.graph) is the shared MagicMock class — setting the
+        # property directly leaks onto every MagicMock in the process. Use
+        # monkeypatch.setattr so it auto-reverts at teardown.
+        monkeypatch.setattr(
+            type(cfg.graph),
+            "relationships",
+            property(
+                lambda self: (_ for _ in ()).throw(AttributeError("no relationships key"))
+            ),
+            raising=False,
         )
 
         from scripts.pipelines._ingest import maybe_extract_llm_relationships

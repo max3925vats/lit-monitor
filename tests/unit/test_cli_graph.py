@@ -204,7 +204,11 @@ class TestGraphStatusCLI:
         with patch("scripts.graph.safe_graph_db", return_value=None):
             result = runner.invoke(main, ["graph", "status"])
         assert result.exit_code == 0
-        assert "backfill" in result.output.lower() or "graph" in result.output.lower()
+        # Assert the specific no-DB guidance the command prints, not just that
+        # the word "graph" appears (which it always does — the command IS
+        # "graph status", making the old assertion vacuous).
+        assert "no DB found" in result.output
+        assert "lit-monitor graph backfill --all" in result.output
 
     def test_status_prints_paper_count(self):
         """G13: when graph DB is available, output includes Paper and Entity rows."""

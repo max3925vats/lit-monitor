@@ -115,32 +115,40 @@ class TestClusterRecomputeCmd:
 
 class TestClusterViewCmd:
     def test_view_displays_table(self):
-        """cluster view renders a rich table to stdout."""
+        """cluster view renders a rich table with the cluster theme names.
+
+        cluster_view_cmd lazy-imports get_config / StateDB inside the handler, so
+        the patches MUST target those real symbols (scripts.core.config.get_config
+        and scripts.core.state_db.StateDB) — not the dead scripts.cli._make_config
+        / _make_state_db helpers, which the handler never calls.
+        """
         from scripts.cli import main
 
         runner = CliRunner()
-        state_db = _mock_state_db(150, 3)
+        state_db = _mock_state_db(150, 3)  # 3 named clusters: "Theme 0/1/2"
 
-        with patch("scripts.cli._make_config", return_value=_mock_config()), \
-             patch("scripts.cli._make_state_db", return_value=state_db), \
-             patch("scripts.cli._load_secrets", return_value={}):
+        with patch("scripts.core.config.get_config", return_value=_mock_config()), \
+             patch("scripts.core.state_db.StateDB", return_value=state_db):
             result = runner.invoke(main, ["cluster", "view"])
 
-        assert result.exit_code in (0, 1)  # may need config; exit 0 if clusters found
+        assert result.exit_code == 0, result.output
+        # Real clusters present → the rich table renders the theme names.
+        assert "Theme 0" in result.output
+        assert "Library Theme Clusters" in result.output
 
     def test_view_handles_empty_clusters(self):
-        """cluster view with no clusters shows a helpful message."""
+        """cluster view with no clusters shows the recompute hint and exits 0."""
         from scripts.cli import main
 
         runner = CliRunner()
         state_db = _mock_state_db(50, 0)  # no clusters
 
-        with patch("scripts.cli._make_config", return_value=_mock_config()), \
-             patch("scripts.cli._make_state_db", return_value=state_db), \
-             patch("scripts.cli._load_secrets", return_value={}):
+        with patch("scripts.core.config.get_config", return_value=_mock_config()), \
+             patch("scripts.core.state_db.StateDB", return_value=state_db):
             result = runner.invoke(main, ["cluster", "view"])
 
-        assert result.exit_code in (0, 1)
+        assert result.exit_code == 0, result.output
+        assert "No clusters found" in result.output
 
 
 # ---------------------------------------------------------------------------

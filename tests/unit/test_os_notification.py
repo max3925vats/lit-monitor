@@ -1,25 +1,42 @@
-"""P2: OS notification tests."""
+"""P2: OS notification tests.
+
+These drive ``scripts.notify.os_notification`` directly by monkeypatching its
+two module-level globals (``_plyer_notification`` / ``_PLYER_AVAILABLE``) rather
+than reloading the module under a patched ``sys.modules``. The old reload
+pattern left whatever plyer-availability state the *last* test set leaking into
+later tests in the suite (the module stayed reloaded with a MagicMock plyer or
+with plyer disabled). monkeypatch auto-reverts both globals at teardown, so the
+module is left exactly as imported.
+"""
 from __future__ import annotations
 
-import importlib
 import logging
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+
+import scripts.notify.os_notification as mod
+
+
+def _install_mock_plyer(monkeypatch) -> MagicMock:
+    """Make the module behave as if plyer is installed; return the notify mock.
+
+    Reverts automatically at test teardown via monkeypatch.
+    """
+    mock_notify = MagicMock()
+    mock_plyer_notification = MagicMock()
+    mock_plyer_notification.notify = mock_notify
+    monkeypatch.setattr(mod, "_plyer_notification", mock_plyer_notification)
+    monkeypatch.setattr(mod, "_PLYER_AVAILABLE", True)
+    return mock_notify
 
 
 class TestNotifyEnabled:
-    def test_calls_plyer_when_enabled(self):
-        mock_plyer_module = MagicMock()
-        mock_notify = MagicMock()
-        mock_plyer_module.notification.notify = mock_notify
-        with patch.dict("sys.modules", {"plyer": mock_plyer_module}):
-            # Force reload so module-level import picks up the mock
-            import scripts.notify.os_notification as mod
-            importlib.reload(mod)
-            mod.notify_discovery_complete(
-                run_id=1, paper_count=3,
-                app_url="http://localhost:8765",
-                enabled=True, on_zero_results=True,
-            )
+    def test_calls_plyer_when_enabled(self, monkeypatch):
+        mock_notify = _install_mock_plyer(monkeypatch)
+        mod.notify_discovery_complete(
+            run_id=1, paper_count=3,
+            app_url="http://localhost:8765",
+            enabled=True, on_zero_results=True,
+        )
         mock_notify.assert_called_once()
         # Confirm key args
         call_kwargs = mock_notify.call_args.kwargs
@@ -28,105 +45,80 @@ class TestNotifyEnabled:
 
 
 class TestNotifyDisabled:
-    def test_skips_when_enabled_false(self, caplog):
-        mock_plyer_module = MagicMock()
-        mock_notify = MagicMock()
-        mock_plyer_module.notification.notify = mock_notify
-        with patch.dict("sys.modules", {"plyer": mock_plyer_module}):
-            import scripts.notify.os_notification as mod
-            importlib.reload(mod)
-            with caplog.at_level(logging.INFO):
-                mod.notify_discovery_complete(
-                    run_id=1, paper_count=3,
-                    app_url="http://localhost:8765",
-                    enabled=False, on_zero_results=True,
-                )
+    def test_skips_when_enabled_false(self, monkeypatch, caplog):
+        mock_notify = _install_mock_plyer(monkeypatch)
+        with caplog.at_level(logging.INFO):
+            mod.notify_discovery_complete(
+                run_id=1, paper_count=3,
+                app_url="http://localhost:8765",
+                enabled=False, on_zero_results=True,
+            )
         mock_notify.assert_not_called()
         assert any("disabled" in r.message.lower() for r in caplog.records)
 
 
 class TestZeroResultsSuppression:
-    def test_skips_zero_results_when_configured(self):
-        mock_plyer_module = MagicMock()
-        mock_notify = MagicMock()
-        mock_plyer_module.notification.notify = mock_notify
-        with patch.dict("sys.modules", {"plyer": mock_plyer_module}):
-            import scripts.notify.os_notification as mod
-            importlib.reload(mod)
-            mod.notify_discovery_complete(
-                run_id=1, paper_count=0,
-                app_url="http://localhost:8765",
-                enabled=True, on_zero_results=False,
-            )
+    def test_skips_zero_results_when_configured(self, monkeypatch):
+        mock_notify = _install_mock_plyer(monkeypatch)
+        mod.notify_discovery_complete(
+            run_id=1, paper_count=0,
+            app_url="http://localhost:8765",
+            enabled=True, on_zero_results=False,
+        )
         mock_notify.assert_not_called()
 
-    def test_p54_message_contains_resolved_url(self):
+    def test_p54_message_contains_resolved_url(self, monkeypatch):
         """P5.5/P5.4: the notification body shows the resolved click URL.
 
         plyer can't make notifications clickable cross-platform, so the URL
         must appear in the message text for the user to read/copy.
         """
-        mock_plyer_module = MagicMock()
-        mock_notify = MagicMock()
-        mock_plyer_module.notification.notify = mock_notify
-        with patch.dict("sys.modules", {"plyer": mock_plyer_module}):
-            import scripts.notify.os_notification as mod
-            importlib.reload(mod)
-            mod.notify_discovery_complete(
-                run_id=42, paper_count=3,
-                app_url="http://localhost:8765",
-                enabled=True, on_zero_results=True,
-            )
+        mock_notify = _install_mock_plyer(monkeypatch)
+        mod.notify_discovery_complete(
+            run_id=42, paper_count=3,
+            app_url="http://localhost:8765",
+            enabled=True, on_zero_results=True,
+        )
         message = mock_notify.call_args.kwargs["message"]
         expected_url = "http://localhost:8765/discovery/notify-handler?run_id=42"
         assert expected_url in message
 
-    def test_fires_zero_results_when_allowed(self):
-        mock_plyer_module = MagicMock()
-        mock_notify = MagicMock()
-        mock_plyer_module.notification.notify = mock_notify
-        with patch.dict("sys.modules", {"plyer": mock_plyer_module}):
-            import scripts.notify.os_notification as mod
-            importlib.reload(mod)
-            mod.notify_discovery_complete(
-                run_id=1, paper_count=0,
-                app_url="http://localhost:8765",
-                enabled=True, on_zero_results=True,
-            )
+    def test_fires_zero_results_when_allowed(self, monkeypatch):
+        mock_notify = _install_mock_plyer(monkeypatch)
+        mod.notify_discovery_complete(
+            run_id=1, paper_count=0,
+            app_url="http://localhost:8765",
+            enabled=True, on_zero_results=True,
+        )
         mock_notify.assert_called_once()
 
 
 class TestPlyerMissing:
-    def test_silent_when_plyer_unavailable(self, caplog):
-        # Make `import plyer` raise ImportError inside the module.
-        # Setting the key to None in sys.modules causes ImportError on import.
-        with patch.dict("sys.modules", {"plyer": None}):
-            import scripts.notify.os_notification as mod
-            importlib.reload(mod)
-            with caplog.at_level(logging.INFO):
-                # Must not raise
-                mod.notify_discovery_complete(
-                    run_id=1, paper_count=3,
-                    app_url="http://localhost:8765",
-                    enabled=True, on_zero_results=True,
-                )
+    def test_silent_when_plyer_unavailable(self, monkeypatch, caplog):
+        # Drive the not-installed path directly: plyer unavailable.
+        monkeypatch.setattr(mod, "_plyer_notification", None)
+        monkeypatch.setattr(mod, "_PLYER_AVAILABLE", False)
+        with caplog.at_level(logging.INFO):
+            # Must not raise
+            mod.notify_discovery_complete(
+                run_id=1, paper_count=3,
+                app_url="http://localhost:8765",
+                enabled=True, on_zero_results=True,
+            )
         assert any("plyer" in r.message.lower() for r in caplog.records)
 
 
 class TestPlyerFailure:
-    def test_plyer_raise_logged_not_propagated(self, caplog):
-        mock_plyer_module = MagicMock()
-        mock_plyer_module.notification.notify.side_effect = RuntimeError("dbus down")
-        with patch.dict("sys.modules", {"plyer": mock_plyer_module}):
-            import scripts.notify.os_notification as mod
-            importlib.reload(mod)
-            with caplog.at_level(logging.WARNING):
-                # Must not raise
-                mod.notify_discovery_complete(
-                    run_id=1, paper_count=3,
-                    app_url="http://localhost:8765",
-                    enabled=True, on_zero_results=True,
-                )
+    def test_plyer_raise_logged_not_propagated(self, monkeypatch, caplog):
+        mock_notify = _install_mock_plyer(monkeypatch)
+        mock_notify.side_effect = RuntimeError("dbus down")
+        with caplog.at_level(logging.WARNING):
+            # Must not raise
+            mod.notify_discovery_complete(
+                run_id=1, paper_count=3,
+                app_url="http://localhost:8765",
+                enabled=True, on_zero_results=True,
+            )
         assert any(
             "dbus down" in r.message.lower() or "failed" in r.message.lower()
             for r in caplog.records

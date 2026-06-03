@@ -1,6 +1,8 @@
 """N1: BioBERT NER wrapper tests (stub-based; no model download in CI)."""
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from scripts.graph.ner import BiobertNER, NerSpan
@@ -10,7 +12,7 @@ class TestNerSpan:
     def test_is_frozen_dataclass(self):
         """N1: NerSpan is immutable for safe sharing."""
         span = NerSpan(text="EGFR", label="GENE", start=0, end=4, confidence=0.95)
-        with pytest.raises(Exception):  # FrozenInstanceError
+        with pytest.raises(FrozenInstanceError):
             span.text = "ALTERED"
 
     def test_offset_round_trip(self):

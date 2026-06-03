@@ -37,6 +37,23 @@ def _reset_strict_mode():
 
 
 @pytest.fixture(autouse=True)
+def _reset_config_cache():
+    """Reset the module-level config cache before and after every unit test.
+
+    ``scripts.core.config.get_config()`` memoises the resolved ``Config`` in a
+    module-level ``_config_cache``. Without this fixture, the first test to call
+    ``get_config()`` would pin a Config built from whatever paths/env were active
+    at that moment, and every later test that relies on different config (or that
+    expects a fresh build) would silently see the stale cached object. Verified
+    safe: no unit test populates the cache except via monkeypatch.
+    """
+    import scripts.core.config as _cfg
+    _cfg._config_cache = None
+    yield
+    _cfg._config_cache = None
+
+
+@pytest.fixture(autouse=True)
 def _reset_chromadb_shared_system_cache():
     """Drop ChromaDB's cached System objects before every unit test."""
     try:

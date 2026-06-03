@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.integration._live import live_mode as _live_mode
 from tests.integration._live import skip_or_fail as _skip_or_fail
 
 logger = logging.getLogger(__name__)
@@ -115,16 +116,49 @@ def test_zotero_collection_returns_items(real_config, real_zotero):
 # ===========================================================================
 
 @pytest.mark.integration
-def test_obsidian_paper_note_written_to_vault(real_config):
+def test_obsidian_paper_note_written_to_vault(real_config, tmp_path):
     """
-    Write a test paper note to the actual Obsidian vault (Literature/Papers/).
+    Exercise the Obsidian writer end-to-end against a SANDBOXED vault.
+
     Validates:
     - Note file is created at the expected path
     - YAML frontmatter contains source_type and doi
     - Persist zone markers are present in the output
-    Cleanup: the test note is deleted after assertions pass.
+
+    Safety (P7.5): this test used to write into — and then ``unlink()`` from —
+    the user's *real* Obsidian vault (config.obsidian.vault_path). That violated
+    the "never delete without confirmation" rule and risked the user's notes.
+    It is now (a) gated behind LIT_MONITOR_LIVE so the default `pytest` run never
+    touches the vault at all, and (b) redirected to a per-test ``tmp_path`` vault
+    so even under LIT_MONITOR_LIVE no real-vault file is created or deleted.
+    The tmp_path is auto-removed by pytest, so there is no manual unlink of any
+    user-owned path.
     """
+    import copy as _copy
+
+    from scripts.core.config import _Namespace
     from scripts.output.obsidian_writer import write_paper_note
+
+    if not _live_mode():
+        _skip_or_fail(
+            "Obsidian writer test is gated behind LIT_MONITOR_LIVE so the default "
+            "run never writes into a vault. Set LIT_MONITOR_LIVE=1 to run it "
+            "(it writes only to a temp sandbox, never the real vault)."
+        )
+
+    # Redirect the writer to a throwaway sandbox vault. Shallow-copy the real
+    # config and replace ONLY the obsidian namespace, keeping the real
+    # papers_folder so the path-layout logic is genuinely exercised.
+    sandbox_vault = tmp_path / "sandbox_vault"
+    sandbox_vault.mkdir()
+    config = _copy.copy(real_config)
+    config.obsidian = _Namespace({
+        "vault_path": sandbox_vault,
+        "papers_folder": real_config.obsidian.papers_folder,
+        "books_folder": real_config.obsidian.books_folder,
+        "digests_folder": real_config.obsidian.digests_folder,
+        "connections_folder": real_config.obsidian.connections_folder,
+    })
 
     paper = {
         "doi": "10.9999/integration-test-note",
@@ -152,25 +186,25 @@ def test_obsidian_paper_note_written_to_vault(real_config):
         "study_type_confidence": "explicit",
     }
 
-    note_path = write_paper_note(paper, extraction, real_config)
+    note_path = write_paper_note(paper, extraction, config)
 
-    try:
-        path = Path(note_path)
-        assert path.exists(), f"Note not created at {path}"
-        content = path.read_text(encoding="utf-8")
+    # The note lives under the sandbox vault, not the user's real vault.
+    path = Path(note_path)
+    assert sandbox_vault in path.parents, (
+        f"Note written outside the sandbox vault: {path} (sandbox: {sandbox_vault})"
+    )
+    assert path.exists(), f"Note not created at {path}"
+    content = path.read_text(encoding="utf-8")
 
-        assert 'source_type: "paper"' in content, "Missing source_type in frontmatter"
-        assert "10.9999/integration-test-note" in content, "Missing DOI in note"
-        assert '{% persist "related_work" %}' in content, "Missing related_work persist zone"
-        assert '{% persist "synthesis" %}' in content, "Missing synthesis persist zone"
-        assert "## Related Work" in content, "Missing Related Work section"
+    assert 'source_type: "paper"' in content, "Missing source_type in frontmatter"
+    assert "10.9999/integration-test-note" in content, "Missing DOI in note"
+    assert '{% persist "related_work" %}' in content, "Missing related_work persist zone"
+    assert '{% persist "synthesis" %}' in content, "Missing synthesis persist zone"
+    assert "## Related Work" in content, "Missing Related Work section"
 
-        logger.info("Note written successfully: %s", path)
-    finally:
-        # Always clean up, even if assertions fail
-        if Path(note_path).exists():
-            Path(note_path).unlink()
-            logger.info("Cleaned up test note: %s", note_path)
+    logger.info("Note written successfully to sandbox: %s", path)
+    # No manual cleanup: pytest removes tmp_path automatically, and nothing was
+    # ever written to a user-owned path.
 
 
 # ===========================================================================

@@ -11,6 +11,7 @@ Tests verify:
 """
 from __future__ import annotations
 
+import contextlib
 import sys
 
 import pytest  # noqa: I001
@@ -445,7 +446,11 @@ class TestAddPaper:
             field = "methods_summary"
             span_start = 0
             span_end = 1
-        with pytest.raises(Exception):
+        # kuzu raises RuntimeError ("Unknown parameter type <class 'object'>")
+        # when a non-string is bound to a STRING-typed Cypher parameter. Pin the
+        # type (and message) so this catches the rollback path specifically,
+        # not any incidental error that would also satisfy bare Exception.
+        with pytest.raises(RuntimeError, match="Unknown parameter type"):
             db.add_paper(
                 doi="10.0/rollback",
                 entities=[BadEnt()],
@@ -559,29 +564,68 @@ class TestAddPaper:
 
 
 @pytest.mark.unit
+@contextlib.contextmanager
+def _kuzu_absent():
+    """Run a block with kuzu blocked and scripts.graph.* freshly re-imported.
+
+    monkeypatch's setitem/delitem only restore the *keys it touched*; the
+    re-import triggered inside the block adds NEW scripts.graph.* module objects
+    (built against the blocked kuzu slot) into sys.modules. Those re-imported
+    objects are not the same as the originals — leaving them in place poisons
+    later tests that monkeypatch attributes on the *original* scripts.graph
+    objects (e.g. test_graph_citations.py::test_safe_graph_db_path_precedence,
+    which patches scripts.graph.GraphDB but finds import_citations bound to a
+    different module object).
+
+    Fix: snapshot every relevant sys.modules slot and fully restore it on exit
+    — deleting any keys that were added during the block and reinstating the
+    originals — so the global module table is left byte-identical.
+    """
+    # Re-importing scripts.graph.* under a blocked kuzu rebinds two things:
+    #   1. the sys.modules["scripts.graph*"] slots, and
+    #   2. the submodule ATTRIBUTE on each parent package object — Python's
+    #      import machinery sets ``scripts.graph = <new module>`` on the
+    #      ``scripts`` package, ``scripts.graph.db`` on ``scripts.graph``, etc.
+    # A sys.modules-only restore leaves the parent-package attributes pointing at
+    # the stale re-imported modules. monkeypatch's string-target resolver (used by
+    # test_graph_citations.py::test_safe_graph_db_path_precedence) walks those
+    # *attributes*, not sys.modules — so it would patch the wrong object and the
+    # real GraphDB would run. Restore both sys.modules and the parent attrs.
+    snapshot = dict(sys.modules)
+    keys = ["kuzu"] + [k for k in sys.modules if k.startswith("scripts.graph")]
+    try:
+        sys.modules["kuzu"] = None  # type: ignore[assignment]
+        for k in keys:
+            if k.startswith("scripts.graph"):
+                sys.modules.pop(k, None)
+        yield
+    finally:
+        sys.modules.clear()
+        sys.modules.update(snapshot)
+        # Reinstate each submodule as an attribute of its parent package so that
+        # attribute-walking resolvers (monkeypatch, getattr) see the originals.
+        for name, module in snapshot.items():
+            if "." not in name or module is None:
+                continue
+            parent_name, _, child = name.rpartition(".")
+            parent = snapshot.get(parent_name)
+            if parent is not None:
+                setattr(parent, child, module)
+
+
 class TestGraphDBImportError:
     """GraphDB raises ImportError when kuzu is not installed."""
 
-    def test_import_error_without_kuzu(self, tmp_path, monkeypatch):
+    def test_import_error_without_kuzu(self, tmp_path):
         """Instantiating GraphDB without kuzu raises a clear ImportError."""
-        # Block the kuzu import via monkeypatch so cleanup is automatic.
-        monkeypatch.setitem(sys.modules, "kuzu", None)  # type: ignore[arg-type]
-        # Purge any cached scripts.graph modules so the import inside __init__
-        # re-runs against the blocked kuzu slot.
-        for mod_name in list(sys.modules.keys()):
-            if mod_name.startswith("scripts.graph"):
-                monkeypatch.delitem(sys.modules, mod_name, raising=False)
+        with _kuzu_absent():
+            from scripts.graph.db import GraphDB as FreshGraphDB
 
-        from scripts.graph.db import GraphDB as FreshGraphDB
+            with pytest.raises(ImportError, match="uv sync --extra graph"):
+                FreshGraphDB(persist_dir=str(tmp_path / "graph.kuzu"))
 
-        with pytest.raises(ImportError, match="uv sync --extra graph"):
-            FreshGraphDB(persist_dir=str(tmp_path / "graph.kuzu"))
-
-    def test_module_import_succeeds_without_kuzu(self, monkeypatch):
+    def test_module_import_succeeds_without_kuzu(self):
         """scripts.graph imports cleanly even when kuzu is absent."""
-        monkeypatch.setitem(sys.modules, "kuzu", None)  # type: ignore[arg-type]
-        for mod_name in list(sys.modules.keys()):
-            if mod_name.startswith("scripts.graph"):
-                monkeypatch.delitem(sys.modules, mod_name, raising=False)
-        # Importing the package must NOT raise — only instantiation does.
-        import scripts.graph  # noqa: F401
+        with _kuzu_absent():
+            # Importing the package must NOT raise — only instantiation does.
+            import scripts.graph  # noqa: F401

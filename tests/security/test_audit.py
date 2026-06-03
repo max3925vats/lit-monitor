@@ -9,6 +9,7 @@ All tests are marked @pytest.mark.unit — no external services required.
 from __future__ import annotations
 
 import ast
+import os
 import re
 from pathlib import Path
 
@@ -30,16 +31,42 @@ AUDIT_REPOS = [
 _MIT_PATTERN = re.compile(r"mit license", re.IGNORECASE)
 _APACHE_PATTERN = re.compile(r"apache license|apache-2\.0", re.IGNORECASE)
 
-# Skip every test in this file when the audit repo directory is absent.
-# These are one-time security-audit tests — they require the cloned repos
-# from the original audit session and are not part of the CI regression suite.
-pytestmark = pytest.mark.skipif(
-    not _AUDIT_ROOT.exists(),
-    reason=(
+# Gate the whole file on the audit-repo directory using the project-wide
+# LIT_MONITOR_LIVE convention (mirrors tests/integration/_live.py::skip_or_fail):
+#   * LIT_MONITOR_LIVE unset  → skip silently (these are one-time audit tests,
+#     not part of the CI regression suite).
+#   * LIT_MONITOR_LIVE set    → HARD-FAIL when the audit repos are absent, so an
+#     operator who explicitly asked for a live run can't get a false green from
+#     a silently-skipped security audit.
+#
+# `_live.py` lives under tests/integration and can't be cleanly imported from
+# tests/security without coupling the two suites, so the env-var logic is
+# replicated here (it is a 3-line contract).
+def _live_mode() -> bool:
+    return os.environ.get("LIT_MONITOR_LIVE", "").lower() in ("1", "true", "yes")
+
+
+def _audit_gate() -> None:
+    if _AUDIT_ROOT.exists():
+        return
+    reason = (
         f"Security audit repos not found at {_AUDIT_ROOT}. "
         "Clone the audit repos before running these tests."
-    ),
-)
+    )
+    if _live_mode():
+        pytest.fail(
+            f"LIT_MONITOR_LIVE set but the security-audit prerequisites are absent:\n"
+            f"  {reason}\n"
+            f"Either clone the audit repos and re-run, or unset LIT_MONITOR_LIVE "
+            f"to allow silent skips."
+        )
+    # allow_module_level: this runs at import/collection time, not inside a test.
+    pytest.skip(reason, allow_module_level=True)
+
+
+# Collection-time gate. When LIT_MONITOR_LIVE is unset and the repos are missing
+# this skips the whole module cleanly; when it is set it raises (hard fail).
+_audit_gate()
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

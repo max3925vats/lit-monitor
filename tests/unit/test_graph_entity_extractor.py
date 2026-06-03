@@ -9,6 +9,7 @@ Field map used (verified against config/extraction_schema.yaml):
   journal  → from paper_metadata["journal"]
 """
 import json
+from dataclasses import FrozenInstanceError
 
 import pytest
 
@@ -487,7 +488,7 @@ class TestMentionEdge:
             source="biobert", surface="EGFR", field=None,
             confidence=0.95, span_start=0, span_end=4,
         )
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             m.confidence = 0.5  # type: ignore[misc]
 
     def test_source_accepts_three_values(self):
