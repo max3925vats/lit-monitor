@@ -839,6 +839,154 @@ class TestCliRebuildCitations:
         assert result.exit_code == 0, result.output
         mock_relink.assert_not_called()
 
+    def _config_with_mode(self, mode: str) -> MagicMock:
+        """Config mock whose retrieval.default_mode is `mode` (A3)."""
+        config = MagicMock()
+        config.retrieval.default_mode = mode
+        return config
+
+    def test_graph_default_mode_wires_graph_db_into_relink(self, runner):
+        """A3: config default_mode=graph → rebuild-citations opens safe_graph_db
+        and passes graph_db + rag_mode='graph' into relink_note."""
+        mock_state_db = MagicMock()
+        mock_state_db.get_paper.return_value = {
+            "doi": "10.1/test", "note_path": "/vault/test.md"
+        }
+        mock_state_db.get_all_by_source_type.side_effect = lambda t: (
+            [{"doi": "10.1/test", "extraction_json": '{"key_citations": ["r1"]}'}]
+            if t == "paper" else []
+        )
+        mock_state_db.get_citation_edges.return_value = []
+        mock_graph_db = MagicMock()
+        with (
+            patch(
+                "scripts.cli._make_config",
+                return_value=self._config_with_mode("graph"),
+            ),
+            patch("scripts.cli._make_state_db", return_value=mock_state_db),
+            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
+            patch("scripts.cli._load_secrets", return_value={}),
+            # A3 relink graph_db is opened via scripts.graph.safe_graph_db.
+            patch(
+                "scripts.graph.safe_graph_db", return_value=mock_graph_db
+            ) as mock_safe_graph,
+            patch(
+                "scripts.search.citation_graph.build_citation_graph",
+                return_value=self._graph_result(),
+            ),
+            # G5 Kuzu mirror block opens its own safe_graph_db — stub it out so
+            # this test only exercises the A3 relink path.
+            patch(
+                "scripts.graph.import_citations.safe_graph_db", return_value=None
+            ),
+            patch("scripts.obsidian_tools.relink.relink_note") as mock_relink,
+        ):
+            result = runner.invoke(
+                main,
+                ["obsidian", "rebuild-citations", "--scope", "all"],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_safe_graph.assert_called_once()
+        mock_relink.assert_called_once()
+        kwargs = mock_relink.call_args.kwargs
+        assert kwargs.get("rag_mode") == "graph"
+        assert kwargs.get("graph_db") is mock_graph_db
+        # Connection must be released.
+        mock_graph_db.close.assert_called_once()
+
+    def test_vector_default_mode_does_not_open_graph_db_for_relink(self, runner):
+        """A3: config default_mode=vector → no graph_db opened for the relink;
+        relink_note gets rag_mode='vector' and graph_db=None (unchanged path)."""
+        mock_state_db = MagicMock()
+        mock_state_db.get_paper.return_value = {
+            "doi": "10.1/test", "note_path": "/vault/test.md"
+        }
+        mock_state_db.get_all_by_source_type.side_effect = lambda t: (
+            [{"doi": "10.1/test", "extraction_json": '{"key_citations": ["r1"]}'}]
+            if t == "paper" else []
+        )
+        mock_state_db.get_citation_edges.return_value = []
+        with (
+            patch(
+                "scripts.cli._make_config",
+                return_value=self._config_with_mode("vector"),
+            ),
+            patch("scripts.cli._make_state_db", return_value=mock_state_db),
+            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
+            patch("scripts.cli._load_secrets", return_value={}),
+            patch(
+                "scripts.graph.safe_graph_db", return_value=MagicMock()
+            ) as mock_safe_graph,
+            patch(
+                "scripts.search.citation_graph.build_citation_graph",
+                return_value=self._graph_result(),
+            ),
+            patch(
+                "scripts.graph.import_citations.safe_graph_db", return_value=None
+            ),
+            patch("scripts.obsidian_tools.relink.relink_note") as mock_relink,
+        ):
+            result = runner.invoke(
+                main,
+                ["obsidian", "rebuild-citations", "--scope", "all"],
+            )
+
+        assert result.exit_code == 0, result.output
+        # Vector mode must NOT open the relink graph_db.
+        mock_safe_graph.assert_not_called()
+        mock_relink.assert_called_once()
+        kwargs = mock_relink.call_args.kwargs
+        assert kwargs.get("rag_mode") == "vector"
+        assert kwargs.get("graph_db") is None
+
+
+class TestCliCompareModels:
+    """A4 — compare-models no longer exposes the dead --mode flag."""
+
+    def _result(self) -> MagicMock:
+        r = MagicMock()
+        r.scores = []
+        r.output_dir = "/tmp/comparison/x"
+        return r
+
+    def test_mode_flag_removed(self, runner):
+        """--mode was a single-choice no-op (R-10 removed textbook); now gone."""
+        result = runner.invoke(main, ["compare-models", "--help"])
+        assert result.exit_code == 0, result.output
+        # Match the exact option token, not the "--mode" substring inside
+        # "--models". The dead --mode flag must no longer appear.
+        assert "--mode " not in result.output
+        assert "--mode\n" not in result.output
+
+    def test_runs_without_mode_and_uses_paper(self, runner):
+        """compare-models runs with no --mode flag and calls run_model_comparison
+        with mode='paper' hardcoded."""
+        with (
+            patch("scripts.cli._make_config", return_value=MagicMock()),
+            patch("scripts.cli._make_state_db", return_value=MagicMock()),
+            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
+            patch("scripts.cli._load_secrets", return_value={}),
+            patch(
+                "scripts.pipelines.model_compare.run_model_comparison",
+                return_value=self._result(),
+            ) as mock_run,
+        ):
+            result = runner.invoke(main, ["compare-models", "--papers", "1"])
+
+        assert result.exit_code == 0, result.output
+        mock_run.assert_called_once()
+        assert mock_run.call_args.kwargs.get("mode") == "paper"
+
+    def test_rejects_explicit_mode_flag(self, runner):
+        """Passing the removed --mode flag is now an error (no such option)."""
+        result = runner.invoke(
+            main, ["compare-models", "--mode", "paper", "--papers", "1"]
+        )
+        assert result.exit_code != 0
+
 
 class TestMaybeSetOllamaKey:
     """Unit tests for _maybe_set_ollama_key (N2 — credential unification)."""

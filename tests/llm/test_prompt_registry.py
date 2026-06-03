@@ -269,6 +269,88 @@ def test_render_warns_on_unrendered_placeholder(caplog):
     assert "rationale" in msg, f"prompt name missing from warning: {msg!r}"
 
 
+@pytest.fixture()
+def _restore_strict():
+    """Save/restore the process-wide strict override around a test (A5)."""
+    from scripts.core.strict_mode import get_strict_override, set_strict
+    prior = get_strict_override()
+    try:
+        yield set_strict
+    finally:
+        set_strict(prior)
+
+
+@pytest.mark.unit
+def test_render_strict_raises_on_unknown_placeholder(_restore_strict):
+    """A5: under strict mode, a genuinely-unknown placeholder raises instead of
+    warning."""
+    from scripts.llm.prompt_registry import _render
+
+    _restore_strict(True)
+    with pytest.raises(Exception) as exc_info:
+        _render(
+            "text with {typo_field}",
+            {"known": "value"},
+            prompt_name="rationale",
+        )
+    assert "typo_field" in str(exc_info.value)
+
+
+@pytest.mark.unit
+def test_render_strict_does_not_raise_on_deferred_placeholder(_restore_strict):
+    """A5 critical nuance: an intentionally-deferred placeholder (listed in
+    allowed_extra, e.g. {cluster_context}) must NOT raise even under strict —
+    it is preserved verbatim for downstream rendering."""
+    from scripts.llm.prompt_registry import _render
+
+    _restore_strict(True)
+    # cluster_context is a downstream-render placeholder for ask_summarize.
+    out = _render(
+        "Summarize. {cluster_context}",
+        {"known": "value"},
+        prompt_name="ask_summarize",
+        allowed_extra={"cluster_context"},
+    )
+    assert "{cluster_context}" in out
+
+
+@pytest.mark.unit
+def test_render_strict_does_not_raise_on_json_braces(_restore_strict):
+    """A5 nuance: literal JSON braces never match _VAR_PLACEHOLDER, so strict
+    mode must not raise on them."""
+    from scripts.llm.prompt_registry import _render
+
+    _restore_strict(True)
+    out = _render(
+        'Respond with: {"<doi>": "<rationale>"}. Domain: {domain_focus}.',
+        {"domain_focus": "TEST_DOMAIN"},
+        prompt_name="rationale",
+    )
+    assert '{"<doi>": "<rationale>"}' in out
+    assert "TEST_DOMAIN" in out
+
+
+@pytest.mark.unit
+def test_render_non_strict_warns_not_raises(_restore_strict, caplog):
+    """A5: with strict explicitly OFF, the unknown placeholder still only WARNs
+    (prior behaviour preserved)."""
+    import logging
+
+    from scripts.llm.prompt_registry import _render
+
+    _restore_strict(False)
+    with caplog.at_level(logging.WARNING, logger="scripts.llm.prompt_registry"):
+        out = _render(
+            "text with {typo_field}",
+            {"known": "value"},
+            prompt_name="rationale",
+        )
+    assert "{typo_field}" in out
+    warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert warning_records, "Expected a WARNING (non-strict) about unrendered placeholders"
+    assert "typo_field" in warning_records[-1].getMessage()
+
+
 @pytest.mark.unit
 def test_loaded_rationale_prompt_has_rendered_domain_focus():
     """End-to-end: domain_focus must be rendered in the loaded rationale prompt."""

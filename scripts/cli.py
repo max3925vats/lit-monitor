@@ -1046,16 +1046,11 @@ def build_vocabulary_cmd(
               help="Number of items to run per model.")
 @click.option("--models", "models_str", default=None,
               help="Comma-separated provider:model list (default: extraction.yaml comparison_models).")
-@click.option("--mode", default="paper", show_default=True,
-              type=click.Choice(["paper"]),
-              help="Test on journal papers and reviews.")
 @click.pass_context
 def compare_models_cmd(
     ctx: click.Context,
     papers: int,
     models_str: str | None,
-
-    mode: str,
 ) -> None:
     """Compare LLM models on extraction quality. Review outputs in comparison/."""
     _setup_logging("compare", verbose=ctx.obj.get("verbose", False))
@@ -1069,6 +1064,9 @@ def compare_models_cmd(
     except Exception as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
+    # A4: the textbook mode was removed in R-10, leaving --mode a dead
+    # single-choice no-op. The flag is gone; "paper" is the only mode.
+    mode = "paper"
     models_list = [m.strip() for m in models_str.split(",")] if models_str else None
     click.echo(f"Running model comparison: mode={mode}, n={papers} items per model…")
     result = run_model_comparison(
@@ -2030,6 +2028,27 @@ def obsidian_rebuild_citations(
 
     api_key = os.environ.get("S2_API_KEY")
 
+    # A3: honour the config default_mode for the Pass-1 relink here, mirroring
+    # obsidian_relink's G9 fix. When the effective rag_mode is graph/hybrid we
+    # open a GraphDB and wire it into relink_note; default (vector) leaves
+    # _graph_db=None so behaviour is unchanged. There is no --rag-mode flag on
+    # rebuild-citations, so the mode comes purely from config (no explicit
+    # user request → implicit fallback to vector when the [graph] extra is
+    # missing, logged at INFO inside safe_graph_db).
+    from scripts.graph import safe_graph_db as _safe_graph_db
+    _effective_rag = getattr(
+        getattr(config, "retrieval", None), "default_mode", "vector"
+    ) or "vector"
+    _graph_db = _safe_graph_db() if _effective_rag in ("graph", "hybrid") else None
+    if _effective_rag in ("graph", "hybrid") and _graph_db is None:
+        # Config-default fallthrough only (no explicit flag here): degrade to
+        # vector for this run rather than erroring.
+        logger.info(
+            "Config default rag-mode is %r but [graph] extra is not installed; "
+            "relink falls back to vector for this run.", _effective_rag,
+        )
+        _effective_rag = "vector"
+
     def _resolve_and_relink(paper_doi: str) -> Any:
         """Run S2 resolution and optional note relink for one paper."""
         result = build_citation_graph(
@@ -2039,16 +2058,49 @@ def obsidian_rebuild_citations(
             record = state_db.get_paper(paper_doi)
             note_path = record.get("note_path") if record else None
             if note_path:
-                # NOTE: rebuild-citations is about Pass-2 citation-edge
-                # resolution; the relink here is a vector-only Pass-1 refresh.
-                # We intentionally do NOT open a GraphDB (no rag_mode/graph_db
-                # passed), so relink_note resolves rag_mode from config but
-                # always runs Pass 1 with graph_db=None. If a config
-                # default_mode of graph/hybrid should also apply here, this is
-                # the call to wire graph_db into (cf. obsidian_relink's G9 fix).
-                relink_note(note_path, embeddings_db, state_db, config=config)
+                # A3: pass the effective rag_mode + graph_db so a config
+                # default_mode of graph/hybrid drives the Pass-1 relink here
+                # (cf. obsidian_relink's G9 fix). Vector mode keeps graph_db
+                # None, preserving the prior vector-only behaviour.
+                relink_note(
+                    note_path, embeddings_db, state_db, config=config,
+                    rag_mode=_effective_rag, graph_db=_graph_db,
+                )
         return result
 
+    try:
+        _rebuild_citations_body(
+            scope=scope,
+            doi=doi,
+            config=config,
+            state_db=state_db,
+            zotero_client=zotero_client,
+            max_retries=max_retries,
+            no_graph=no_graph,
+            resolve_and_relink=_resolve_and_relink,
+        )
+    finally:
+        # A3: release the relink graph_db connection when it was opened.
+        if _graph_db is not None:
+            try:
+                _graph_db.close()
+            except Exception:  # pragma: no cover
+                pass
+
+
+def _rebuild_citations_body(
+    *,
+    scope: str,
+    doi: str | None,
+    config: Any,
+    state_db: Any,
+    zotero_client: Any,
+    max_retries: int,
+    no_graph: bool,
+    resolve_and_relink: Any,
+) -> None:
+    """Body of obsidian_rebuild_citations, extracted so the graph_db opened for
+    the Pass-1 relink (A3) can be reliably closed in a finally in the caller."""
     if scope == "doi":
         if not doi:
             raise click.UsageError("--doi is required when --scope doi.")
@@ -2061,11 +2113,11 @@ def obsidian_rebuild_citations(
             state_db=state_db,
             llm=llm,
             phases=["complex"],
-            rerender=False,  # relink happens below via _resolve_and_relink
+            rerender=False,  # relink happens below via resolve_and_relink
             zotero_client=zotero_client,
         )
         click.echo("Resolving citations via S2…")
-        r = _resolve_and_relink(doi.strip())
+        r = resolve_and_relink(doi.strip())
         click.echo(
             f"Done: {r.n_resolved} resolved, {r.n_unresolved} unresolved "
             f"({r.s2_references_count} S2 references)"
@@ -2089,7 +2141,7 @@ def obsidian_rebuild_citations(
             if scope == "failed" and state_db.get_citation_edges(paper_doi):
                 continue  # already has resolved edges — skip
             try:
-                r = _resolve_and_relink(paper_doi)
+                r = resolve_and_relink(paper_doi)
                 total += 1
                 resolved_total += r.n_resolved
                 unresolved_total += r.n_unresolved

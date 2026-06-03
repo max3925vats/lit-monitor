@@ -404,9 +404,6 @@ class MockLLMClient(LLMClient):
     def _infer_key(self, system: str, user: str) -> str:
         """Infer which mock response to return based on prompt content."""
         combined = (system + user).lower()
-        # Pass 4 prompt contains "citation & prior work" in the pass label line.
-        if "citation & prior" in combined:
-            return "paper_pass4"
         if "core_finding" in combined:
             return "paper_pass1"
         if "background_motivation" in combined:

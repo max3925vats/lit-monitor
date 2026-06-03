@@ -30,6 +30,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from scripts.core.path_utils import resolve_path as _resolve_path
+from scripts.core.strict_mode import strict_fallback
 from scripts.llm.extraction_schema import domain_context_values
 
 logger = logging.getLogger(__name__)
@@ -67,7 +68,12 @@ def _render(
     Only Python-identifier patterns match (e.g. {domain_focus}), so literal
     JSON blocks like {"<doi>": "<rationale>"} pass through untouched.
     Unknown placeholder names are left intact rather than raising, but a
-    WARNING is logged so typos in domain_context.yaml are visible.
+    WARNING is logged so typos in domain_context.yaml are visible.  Under
+    strict mode (A5) those genuinely-unknown leftovers raise instead, via
+    ``strict_fallback``.  Placeholders that are intentionally deferred for
+    downstream ``.format(...)`` (listed in ``allowed_extra``) and literal JSON
+    braces never enter the unmatched set, so they are never raised on — only
+    the same tokens that the WARNING covers today are escalated.
 
     Args:
         text: Raw prompt text that may contain {placeholder} tokens.
@@ -97,10 +103,14 @@ def _render(
 
     rendered = _VAR_PLACEHOLDER.sub(_replace, text)
     if unmatched:
-        logger.warning(
-            "Unrendered placeholders in prompt %r: %s",
-            prompt_name or "<unknown>",
-            sorted(set(unmatched)),
+        # A5: only genuinely-unknown placeholders reach here. Values and
+        # allowed_extra (intentionally-deferred) tokens were handled above and
+        # JSON braces never match _VAR_PLACEHOLDER. strict_fallback raises under
+        # strict mode and otherwise preserves the prior WARNING behaviour.
+        strict_fallback(
+            logger,
+            f"Unrendered placeholders in prompt "
+            f"{prompt_name or '<unknown>'!r}: {sorted(set(unmatched))}",
         )
     return rendered
 
