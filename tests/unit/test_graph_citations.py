@@ -143,6 +143,48 @@ class TestMirrorCitations:
         added = mirror_citations(graph_db=db, state_db=None)
         assert added == 0
 
+    def test_mirror_rolls_back_on_mid_loop_failure(self, tmp_path):
+        """P3.4: a failure partway through the CITES loop must leave NO partial
+        edges committed (all-or-nothing transaction).
+
+        We let the first CITES CREATE succeed inside the transaction, then make
+        the SECOND CITES CREATE raise. The whole batch must roll back, so after
+        the (re-raised) failure the graph contains zero CITES edges.
+        """
+        db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+        for doi in ["10.0/a", "10.0/b", "10.0/c", "10.0/d"]:
+            _make_paper(db, doi)
+
+        mock_state = MagicMock()
+        mock_state.get_all_citation_edges.return_value = [
+            {"source_doi": "10.0/a", "target_doi": "10.0/b", "resolution": "exact"},
+            {"source_doi": "10.0/c", "target_doi": "10.0/d", "resolution": "exact"},
+        ]
+
+        # Wrap the real connection.execute so the 2nd CITES CREATE raises while
+        # everything else (BEGIN, existence checks, 1st CREATE, ROLLBACK) runs
+        # for real against Kuzu.
+        real_execute = db._conn.execute
+        cites_creates = {"n": 0}
+
+        def flaky_execute(query, *args, **kwargs):
+            if "CREATE (s)-[r:CITES" in query:
+                cites_creates["n"] += 1
+                if cites_creates["n"] == 2:
+                    raise RuntimeError("simulated mid-loop CITES failure")
+            return real_execute(query, *args, **kwargs)
+
+        db._conn.execute = flaky_execute  # type: ignore[assignment]
+        try:
+            with pytest.raises(RuntimeError, match="simulated mid-loop"):
+                mirror_citations(db, mock_state)
+        finally:
+            db._conn.execute = real_execute  # type: ignore[assignment]
+
+        # The first edge was created inside the transaction but the batch
+        # rolled back, so NO CITES edges may remain.
+        assert _count_cites(db) == 0, "ROLLBACK must remove all partial CITES edges"
+
 
 # ---------------------------------------------------------------------------
 # safe_graph_db tests

@@ -859,14 +859,21 @@ def get_papers_by_query(
         return []
 
     # Acquire graph_db if not injected (lazy — avoids I/O when not needed).
+    # P3.6: track ownership so we close ONLY the instance we acquired here. A
+    # caller-injected graph_db must outlive this call and is NOT closed by us.
+    owns_graph_db = False
     if graph_db is None and mode in ("graph", "hybrid"):
         try:
             from scripts.graph.import_citations import safe_graph_db  # noqa: PLC0415
             graph_db = safe_graph_db()
+            if graph_db is not None:
+                owns_graph_db = True
         except Exception as exc:  # noqa: BLE001
             logger.warning("get_papers_by_query: could not acquire graph_db: %s", exc)
 
     # --- Vector-only path -------------------------------------------------------
+    # (mode == "vector" never lazily acquires graph_db, so owns_graph_db is
+    # False here and there is nothing to close on this early return.)
     if mode == "vector":
         if embeddings_db is None:
             logger.debug("get_papers_by_query: vector mode but no embeddings_db")
@@ -889,67 +896,80 @@ def get_papers_by_query(
             })
         return _coerce_jsonable(out_vec[:k])
 
-    # --- Graph leg (used by both "graph" and "hybrid") --------------------------
-    graph_results: list[tuple[str, float]] = []
-    if graph_db is not None:
-        try:
-            canonical_id = graph_db.resolve_query_entity(query, type_=None)
-            if canonical_id is not None:
-                graph_results = graph_db.find_papers_by_entities([canonical_id], k=k)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("get_papers_by_query: graph leg failed: %s", exc)
-
-    if mode == "graph":
-        doi_scores = graph_results
-    else:
-        # --- Hybrid: RRF-fuse graph + vector ------------------------------------
-        from scripts.retrieval.rrf import reciprocal_rank_fusion  # noqa: PLC0415
-
-        vector_results: list[tuple[str, float]] = []
-        if embeddings_db is not None:
+    # P3.6: from here on the graph leg may use graph_db. Wrap in try/finally so
+    # a lazily-acquired GraphDB is ALWAYS closed on every exit path (return or
+    # exception). A caller-injected graph_db (owns_graph_db False) is left open.
+    try:
+        # --- Graph leg (used by both "graph" and "hybrid") ----------------------
+        graph_results: list[tuple[str, float]] = []
+        if graph_db is not None:
             try:
-                raw = embeddings_db.find_similar_to_text(query, top_k=k)
-                vector_results = [
-                    (r.get("id") or r.get("doi", ""), float(r.get("score", 0.0)))
-                    for r in (raw or [])
-                    if r.get("id") or r.get("doi")
-                ]
+                canonical_id = graph_db.resolve_query_entity(query, type_=None)
+                if canonical_id is not None:
+                    graph_results = graph_db.find_papers_by_entities([canonical_id], k=k)
             except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "get_papers_by_query: hybrid vector leg failed: %s", exc
-                )
+                logger.warning("get_papers_by_query: graph leg failed: %s", exc)
 
-        g_ids = [d for d, _ in graph_results]
-        v_ids = [d for d, _ in vector_results]
-        # reciprocal_rank_fusion returns list[tuple[str, float]] sorted desc.
-        fused = reciprocal_rank_fusion([g_ids, v_ids]) if (g_ids or v_ids) else []
-        doi_scores = fused[:k]
+        if mode == "graph":
+            doi_scores = graph_results
+        else:
+            # --- Hybrid: RRF-fuse graph + vector --------------------------------
+            from scripts.retrieval.rrf import reciprocal_rank_fusion  # noqa: PLC0415
 
-    # --- Enrich with metadata --------------------------------------------------
-    out: list[dict[str, Any]] = []
-    if graph_db is not None:
-        for doi, score in doi_scores[:k]:
-            entry: dict[str, Any] = {"doi": doi, "score": float(score)}
+            vector_results: list[tuple[str, float]] = []
+            if embeddings_db is not None:
+                try:
+                    raw = embeddings_db.find_similar_to_text(query, top_k=k)
+                    vector_results = [
+                        (r.get("id") or r.get("doi", ""), float(r.get("score", 0.0)))
+                        for r in (raw or [])
+                        if r.get("id") or r.get("doi")
+                    ]
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "get_papers_by_query: hybrid vector leg failed: %s", exc
+                    )
+
+            g_ids = [d for d, _ in graph_results]
+            v_ids = [d for d, _ in vector_results]
+            # reciprocal_rank_fusion returns list[tuple[str, float]] sorted desc.
+            fused = reciprocal_rank_fusion([g_ids, v_ids]) if (g_ids or v_ids) else []
+            doi_scores = fused[:k]
+
+        # --- Enrich with metadata ----------------------------------------------
+        out: list[dict[str, Any]] = []
+        if graph_db is not None:
+            for doi, score in doi_scores[:k]:
+                entry: dict[str, Any] = {"doi": doi, "score": float(score)}
+                try:
+                    res = graph_db._conn.execute(
+                        "MATCH (p:Paper {doi: $d}) RETURN p.title, p.year, p.journal",
+                        {"d": doi},
+                    )
+                    if res.has_next():
+                        row = res.get_next()
+                        entry["title"] = str(row[0]) if row[0] else ""
+                        entry["year"] = int(row[1]) if row[1] is not None else None
+                        entry["journal"] = str(row[2]) if row[2] else ""
+                    else:
+                        entry["title"] = ""
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "get_papers_by_query: metadata fetch failed for %s: %s", doi, exc
+                    )
+                    entry.setdefault("title", "")
+                out.append(entry)
+        else:
+            # No graph_db — return bare doi + score
+            out = [{"doi": d, "title": "", "score": float(s)} for d, s in doi_scores[:k]]
+
+        return _coerce_jsonable(out)
+    finally:
+        # P3.6: close ONLY the GraphDB we acquired lazily; never a caller's.
+        if owns_graph_db and graph_db is not None:
             try:
-                res = graph_db._conn.execute(
-                    "MATCH (p:Paper {doi: $d}) RETURN p.title, p.year, p.journal",
-                    {"d": doi},
-                )
-                if res.has_next():
-                    row = res.get_next()
-                    entry["title"] = str(row[0]) if row[0] else ""
-                    entry["year"] = int(row[1]) if row[1] is not None else None
-                    entry["journal"] = str(row[2]) if row[2] else ""
-                else:
-                    entry["title"] = ""
-            except Exception as exc:  # noqa: BLE001
+                graph_db.close()
+            except Exception as exc:  # noqa: BLE001 — close must never mask the result
                 logger.warning(
-                    "get_papers_by_query: metadata fetch failed for %s: %s", doi, exc
+                    "get_papers_by_query: graph_db.close() failed: %s", exc
                 )
-                entry.setdefault("title", "")
-            out.append(entry)
-    else:
-        # No graph_db — return bare doi + score
-        out = [{"doi": d, "title": "", "score": float(s)} for d, s in doi_scores[:k]]
-
-    return _coerce_jsonable(out)

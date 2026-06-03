@@ -516,10 +516,15 @@ class TestMentionEdge:
 
 class TestFromBiobert:
     def test_biobert_spans_become_mention_edges(self):
-        """N3: NerSpan list → MentionEdge list with source='biobert'."""
+        """N3: NerSpan list → MentionEdge list with source='biobert'.
+
+        Uses labels that map deterministically (DISEASE→topic, TECHNIQUE→method)
+        so the test does not depend on the removed silent 'material' default
+        (P3.3).
+        """
         normalizer = EntityNormalizer(aliases={})
         spans = [
-            NerSpan(text="EGFR", label="GENE", start=0, end=4, confidence=0.95),
+            NerSpan(text="chromatography", label="TECHNIQUE", start=0, end=14, confidence=0.95),
             NerSpan(text="lung cancer", label="DISEASE", start=20, end=31, confidence=0.88),
         ]
         edges = from_biobert(spans, paper_id="10.0/a", normalizer=normalizer)
@@ -528,17 +533,36 @@ class TestFromBiobert:
         # BioBERT confidence carried through
         assert any(e.confidence == 0.95 for e in edges)
         # Offsets carried through
-        assert any(e.span_start == 0 and e.span_end == 4 for e in edges)
+        assert any(e.span_start == 0 and e.span_end == 14 for e in edges)
 
     def test_biobert_canonicalizes_via_normalizer(self):
-        """N3: surface form normalized to canonical entity_key via alias lookup."""
-        normalizer = EntityNormalizer(aliases={"material": {"mab": "monoclonal antibody"}})
-        spans = [NerSpan(text="mAb", label="material", start=0, end=3, confidence=0.9)]
+        """N3: surface form normalized to canonical entity_key via alias lookup.
+
+        Label METHOD maps to type 'method' (P3.3: 'material' is no longer a
+        default for arbitrary labels, so we use a label that maps explicitly).
+        """
+        normalizer = EntityNormalizer(aliases={"method": {"hplc": "high performance liquid chromatography"}})
+        spans = [NerSpan(text="HPLC", label="METHOD", start=0, end=4, confidence=0.9)]
         edges = from_biobert(spans, paper_id="10.0/a", normalizer=normalizer)
         # entity_key holds the canonical (alias-resolved) form
-        assert edges[0].entity_key == "monoclonal antibody"
+        assert edges[0].entity_key == "high performance liquid chromatography"
         # Surface preserves the original text
-        assert edges[0].surface == "mAb"
+        assert edges[0].surface == "HPLC"
+
+    def test_biobert_unknown_label_not_classified_material(self):
+        """P3.3: a span with an unrecognised NER label must NOT become a
+        'material' entity (the old silent default).  It is dropped instead.
+        """
+        normalizer = EntityNormalizer(aliases={})
+        spans = [
+            NerSpan(text="EGFR", label="GENE", start=0, end=4, confidence=0.95),
+            NerSpan(text="aspirin", label="DRUG", start=10, end=17, confidence=0.9),
+        ]
+        edges = from_biobert(spans, paper_id="10.0/a", normalizer=normalizer)
+        # No edge may carry type 'material' from these unknown labels.
+        assert all(e.type != "material" for e in edges)
+        # In fact, both unknown-label spans are dropped entirely.
+        assert edges == []
 
     def test_biobert_empty_spans_returns_empty(self):
         """N3: empty NerSpan list → empty MentionEdge list."""

@@ -396,27 +396,38 @@ class MentionEdge:
             )
 
 
-def _ner_label_to_type(label: str) -> str:
-    """N3: map a BioBERT NER label to one of the 6 closed entity types.
+def _ner_label_to_type(label: str) -> str | None:
+    """N3: map a BioBERT NER label to one of the closed entity types.
 
     Conservative heuristic for Phase 2.  Phase 3 can refine with per-corpus
     learning (N6 propose-aliases).
+
+    P3.3: a label we do not recognise returns ``None`` (caller drops the span)
+    rather than silently bucketing it as ``"material"``.  The old default
+    conflated distinct biomedical entity classes (genes, proteins, drugs) into
+    ``material``, polluting that type.  Dropping is the safe, schema-stable
+    choice: it introduces no new ``type`` value into the closed vocabulary
+    (topic / method / material / author / journal / keyword) and loses only
+    spans we cannot confidently type.  See the escalation note in the P3 report
+    about whether to add an explicit ``"other"`` catch-all type instead.
 
     Args:
         label: Raw NER label from the BioBERT pipeline (e.g. ``"GENE"``,
                ``"DISEASE"``).
 
     Returns:
-        One of: ``"topic"``, ``"method"``, ``"material"``.
+        One of ``"topic"`` / ``"method"``, or ``None`` for an unrecognised
+        label (the caller skips spans that map to ``None``).
     """
     label_upper = (label or "").upper()
     if "DISEASE" in label_upper or "CONDITION" in label_upper:
         return "topic"
     if "METHOD" in label_upper or "TECHNIQUE" in label_upper:
         return "method"
-    # Default: genetic / biomedical spans from biobert_genetic_ner are
-    # overwhelmingly material-type entities in biopharm corpora.
-    return "material"
+    # P3.3: unrecognised label — do NOT default to "material" (that conflated
+    # genes/proteins/drugs into the material bucket).  Return None so the
+    # caller drops the span instead of misclassifying it.
+    return None
 
 
 def from_biobert(
@@ -438,6 +449,10 @@ def from_biobert(
     out: list[MentionEdge] = []
     for span in spans:
         type_ = _ner_label_to_type(span.label)
+        # P3.3: drop spans whose NER label we cannot map to a known type
+        # instead of silently bucketing them as "material".
+        if type_ is None:
+            continue
         canonical, _via = normalizer.normalize(span.text, type_=type_)
         if not canonical:
             continue

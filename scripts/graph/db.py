@@ -30,6 +30,7 @@ when kuzu is not installed.  Only calling ``GraphDB(...)`` will raise an
 """
 from __future__ import annotations
 
+import datetime as _dt
 import logging
 import time
 from pathlib import Path
@@ -133,8 +134,9 @@ class GraphDB:
             )
 
         # G7: query-time EntityNormalizer cache.  None = not yet built.
-        # Call invalidate_query_cache() after add_paper() if you need
-        # resolve_query_entity to see the new entities in the same process.
+        # P3.2: add_paper() now calls invalidate_query_cache() on success, so
+        # resolve_query_entity sees newly-added entities in the same process
+        # without a manual invalidate.
         self._query_normalizer: EntityNormalizer | None = None
 
         logger.debug(
@@ -225,6 +227,7 @@ class GraphDB:
         paper_metadata: dict[str, Any],
         *,
         prompt_version: str = "phase1.0",
+        extracted_at: _dt.datetime | None = None,
     ) -> None:
         """G6: atomically write one paper + its entities + its typed relationships.
 
@@ -264,6 +267,14 @@ class GraphDB:
         prompt_version:
             Provenance tag written onto every edge created in this call.
             Defaults to ``"phase1.0"`` (the Phase 1 tag).
+        extracted_at:
+            Wall-clock extraction/ingest timestamp stamped onto every edge
+            (P3.1). When ``None`` (default) the current time is captured once
+            at call start and applied to every edge in this call, so all edges
+            from one ``add_paper`` share a consistent timestamp. Passing an
+            explicit value records that instant instead of relying on the DDL
+            ``current_timestamp()`` DEFAULT (which would record *migration*
+            time on some Kuzu paths, not extraction time).
 
         Raises
         ------
@@ -277,6 +288,12 @@ class GraphDB:
         conn = self._conn
         if conn is None:
             raise RuntimeError("GraphDB is closed; cannot add_paper")
+
+        # P3.1: capture extraction time once so every edge in this call shares
+        # a single, consistent timestamp instead of relying on the per-edge
+        # DDL current_timestamp() DEFAULT (which can record migration time).
+        if extracted_at is None:
+            extracted_at = _dt.datetime.now()
 
         # Defence-in-depth: predicates are interpolated into Cypher REL labels,
         # so the validator upstream is the only thing standing between user
@@ -293,9 +310,11 @@ class GraphDB:
         try:
             self._upsert_paper_node(doi, paper_metadata)
             for ent in entities:
-                self._upsert_entity_and_mentions(doi, ent, prompt_version)
+                self._upsert_entity_and_mentions(
+                    doi, ent, prompt_version, extracted_at
+                )
             for rel in relationships:
-                self._upsert_typed_edge(rel, prompt_version)
+                self._upsert_typed_edge(rel, prompt_version, extracted_at)
             conn.execute("COMMIT")
             # A1: invalidate schema cache after any successful write so that
             # subsequent describe_schema calls reflect the current graph state.
@@ -308,6 +327,10 @@ class GraphDB:
                 invalidate_schema_cache(self)
             except Exception:  # pragma: no cover — defensive
                 pass
+            # P3.2: drop the cached query-time EntityNormalizer so newly-added
+            # entities/aliases resolve in subsequent queries within the same
+            # process without a manual invalidate_query_cache() call.
+            self.invalidate_query_cache()
         except Exception as exc:
             # Best-effort rollback — if the rollback itself raises, log and
             # re-raise the ORIGINAL exception so the caller sees the real cause.
@@ -365,6 +388,7 @@ class GraphDB:
         doi: str,
         ent: Any,
         prompt_version: str,
+        extracted_at: _dt.datetime,
     ) -> None:
         """Create Entity node and MENTIONS edge iff missing.
 
@@ -419,7 +443,7 @@ class GraphDB:
             "CREATE (p)-[m:MENTIONS {"
             "source: $src, surface: $s, field: $f, "
             "span_start: $ss, span_end: $se, "
-            "confidence: $conf, prompt_version: $pv"
+            "confidence: $conf, prompt_version: $pv, extracted_at: $ea"
             "}]->(e)",
             {
                 "d": doi,
@@ -431,6 +455,8 @@ class GraphDB:
                 "se": int(span_end),
                 "conf": confidence,
                 "pv": prompt_version,
+                # P3.1: stamp extraction time explicitly, not migration time.
+                "ea": extracted_at,
             },
         )
 
@@ -438,6 +464,7 @@ class GraphDB:
         self,
         rel: Any,
         prompt_version: str,
+        extracted_at: _dt.datetime,
     ) -> None:
         """G6+R3: write one typed predicate edge with multi-source dedup.
 
@@ -478,7 +505,8 @@ class GraphDB:
         create_q = (
             f"MATCH (s:Paper {{doi: $sd}}), {target_match} "
             f"CREATE (s)-[r:{pred} {{"
-            "evidence: $ev, confidence: $cf, prompt_version: $pv"
+            "evidence: $ev, confidence: $cf, prompt_version: $pv, "
+            "extracted_at: $ea"
             "}]->(t)"
         )
         conn.execute(
@@ -489,6 +517,8 @@ class GraphDB:
                 "ev": str(rel.evidence or ""),
                 "cf": float(rel.confidence),
                 "pv": prompt_version,
+                # P3.1: stamp extraction time explicitly, not migration time.
+                "ea": extracted_at,
             },
         )
 
@@ -509,9 +539,10 @@ class GraphDB:
     def invalidate_query_cache(self) -> None:
         """G7: drop the cached query-time EntityNormalizer.
 
-        Call after adding new entities via add_paper() if you need
-        resolve_query_entity to see them in the same process.  Phase 2 will
-        invalidate automatically; Phase 1 defers to the caller.
+        P3.2: add_paper() calls this automatically on a successful write, so
+        resolve_query_entity sees newly-added entities/aliases in the same
+        process.  Still exposed for callers that mutate the graph by other
+        means and need to force a rebuild.
         """
         self._query_normalizer = None
 
@@ -569,11 +600,11 @@ class GraphDB:
         call and then cached on the ``GraphDB`` instance in ``_query_normalizer``.
 
         .. note::
-            Phase 1 limitation: ``_query_normalizer`` is a snapshot of the Entity
-            table at first call.  Entities added via ``add_paper`` after the first
-            resolve call will NOT be visible to the fuzzy matcher until the process
-            is restarted (or ``_query_normalizer`` is manually set to ``None``).
-            Phase 2 should add a cache-invalidation hook in ``add_paper``.
+            P3.2: ``add_paper`` invalidates ``_query_normalizer`` on every
+            successful write, so entities added via ``add_paper`` are visible to
+            the fuzzy matcher on the next resolve call within the same process.
+            The cache is rebuilt lazily from the live Entity table on first use
+            after invalidation.
 
         Parameters
         ----------
@@ -593,7 +624,8 @@ class GraphDB:
         t0 = time.perf_counter()
 
         # Build (and cache) the normalizer seeded with live Entity nodes.
-        # Call invalidate_query_cache() to clear after add_paper().
+        # P3.2: add_paper() invalidates this cache on write, so the rebuild
+        # below picks up newly-added entities automatically.
         if self._query_normalizer is None:
             normalizer: EntityNormalizer = EntityNormalizer(aliases=load_aliases())
             res = self._conn.execute(

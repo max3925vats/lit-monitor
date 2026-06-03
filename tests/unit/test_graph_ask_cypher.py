@@ -7,7 +7,8 @@ Test coverage:
   - mutation rejection: each of the 8 forbidden keywords + case-insensitive.
   - word-boundary safety: 'created_at' as a property name does NOT trigger
     CREATE rejection.
-  - query-shape gate: output must start with MATCH/CALL/RETURN/WITH/OPTIONAL MATCH.
+  - query-shape gate: output must start with MATCH/RETURN/WITH/OPTIONAL MATCH
+    (CALL is banned — F19).
   - empty/error responses: return None + INFO/WARNING log, never raise.
   - prompt round-trip: YAML carries required placeholders and lists all
     9-predicate vocabulary.
@@ -159,7 +160,7 @@ class TestMutationRejection:
 
 
 # ---------------------------------------------------------------------------
-# Query-shape gate — must start with MATCH/CALL/RETURN/WITH/OPTIONAL MATCH
+# Query-shape gate — must start with MATCH/RETURN/WITH/OPTIONAL MATCH (CALL banned)
 # ---------------------------------------------------------------------------
 class TestQueryShapeValidation:
     def test_rejects_prose_prefix(self) -> None:
@@ -177,9 +178,22 @@ class TestQueryShapeValidation:
         result = generate_cypher("q", "s", client=mock_client)
         assert result is not None
 
-    def test_accepts_call_keyword(self) -> None:
+    def test_rejects_call_keyword(self) -> None:
+        """F19 (P3.7): an LLM-emitted CALL procedure must be rejected.
+
+        Kuzu CALL procedures can have side effects; this path executes the
+        result via conn.execute(), so CALL must never pass the validator.
+        Mirrors the ban in scripts/mcp/cypher_guard.py.
+        """
         mock_client = MagicMock()
         mock_client.complete.return_value = "CALL show_tables() RETURN *"
+        result = generate_cypher("q", "s", client=mock_client)
+        assert result is None
+
+    def test_f19_read_only_match_still_passes(self) -> None:
+        """F19 (P3.7): banning CALL must not break legitimate read queries."""
+        mock_client = MagicMock()
+        mock_client.complete.return_value = "MATCH (p:Paper) RETURN p LIMIT 10"
         result = generate_cypher("q", "s", client=mock_client)
         assert result is not None
 

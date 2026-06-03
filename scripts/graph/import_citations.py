@@ -143,49 +143,65 @@ def mirror_citations(
     skipped_no_paper = 0
     skipped_dup = 0
 
-    for edge in edges:
-        src = edge.get("source_doi")
-        tgt = edge.get("target_doi")
+    # P3.4: wrap the whole CITES-creation loop in a single Kuzu write
+    # transaction so a mid-loop failure leaves NO partial edges committed.
+    # Previously each CREATE auto-committed individually, so a crash after N
+    # edges left those N edges behind. Mirroring GraphDB.add_paper's pattern:
+    # BEGIN, do the work, COMMIT; on any exception ROLLBACK and re-raise so the
+    # caller sees the real failure and the graph is unchanged. A per-edge
+    # CREATE failure now aborts the whole batch rather than being swallowed —
+    # all-or-nothing is the point of the transaction.
+    conn.execute("BEGIN TRANSACTION")
+    try:
+        for edge in edges:
+            src = edge.get("source_doi")
+            tgt = edge.get("target_doi")
 
-        # Skip rows where either DOI is absent (unresolved citations).
-        if not src or not tgt:
-            continue
+            # Skip rows where either DOI is absent (unresolved citations).
+            if not src or not tgt:
+                continue
 
-        # Skip if either Paper node doesn't exist in Kuzu yet.
-        # G6's ingest path or a later mirror run will handle these.
-        if not _paper_exists(conn, src) or not _paper_exists(conn, tgt):
-            skipped_no_paper += 1
-            continue
+            # Skip if either Paper node doesn't exist in Kuzu yet.
+            # G6's ingest path or a later mirror run will handle these.
+            if not _paper_exists(conn, src) or not _paper_exists(conn, tgt):
+                skipped_no_paper += 1
+                continue
 
-        # Idempotency: skip edges already present.
-        if _cites_exists(conn, src, tgt):
-            skipped_dup += 1
-            continue
+            # Idempotency: skip edges already present.
+            if _cites_exists(conn, src, tgt):
+                skipped_dup += 1
+                continue
 
-        # v4 schema: CITES uses 'evidence' (was 'resolution' before schema v4).
-        # Prefer the 'evidence' key from the edge dict; fall back to 'resolution'
-        # for backward-compat with any callers still passing the old key, then
-        # default to a descriptive sentinel so the column is never NULL.
-        evidence = (
-            edge.get("evidence")
-            or edge.get("resolution")
-            or "state_db_mirror"
-        )
+            # v4 schema: CITES uses 'evidence' (was 'resolution' before schema v4).
+            # Prefer the 'evidence' key from the edge dict; fall back to 'resolution'
+            # for backward-compat with any callers still passing the old key, then
+            # default to a descriptive sentinel so the column is never NULL.
+            evidence = (
+                edge.get("evidence")
+                or edge.get("resolution")
+                or "state_db_mirror"
+            )
 
-        try:
             conn.execute(
                 "MATCH (s:Paper {doi: $src}), (t:Paper {doi: $tgt}) "
                 "CREATE (s)-[r:CITES {evidence: $ev}]->(t)",
                 {"src": src, "tgt": tgt, "ev": evidence},
             )
             added += 1
-        except Exception as exc:
-            logger.warning(
-                "mirror_citations: failed to create CITES %s -> %s: %s",
-                src,
-                tgt,
+        conn.execute("COMMIT")
+    except Exception as exc:
+        # Best-effort rollback — re-raise the ORIGINAL exception so the caller
+        # sees the real cause even if the rollback itself fails.
+        try:
+            conn.execute("ROLLBACK")
+        except Exception as rb_exc:  # pragma: no cover — defensive
+            logger.error(
+                "mirror_citations: ROLLBACK also failed: %s (original: %s)",
+                rb_exc,
                 exc,
             )
+        logger.warning("mirror_citations rolled back: %s", exc)
+        raise
 
     if added or skipped_no_paper or skipped_dup:
         logger.info(

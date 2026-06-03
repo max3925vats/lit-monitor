@@ -20,6 +20,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -384,6 +385,70 @@ class TestClusteringSchema:
             ).fetchone()
         assert row is not None
         assert abs(dict(row)["distance_to_centroid"] - 0.15) < 1e-6
+
+    def test_replace_cluster_assignments_is_atomic(self, tmp_path):
+        """P3.5: a mid-batch failure leaves the cluster_assignments table
+        completely unchanged (all-or-nothing), not half-updated.
+
+        We seed papers + a cluster, then submit a batch whose SECOND row
+        violates the NOT NULL constraint on cluster_id. The whole
+        executemany must roll back, so the first (valid) row must NOT persist.
+        """
+        from scripts.core.state_db import StateDB
+
+        db = StateDB(tmp_path / "state.db")
+        centroid = np.zeros(8, dtype=np.float32)
+        with db._connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO papers (doi, title) VALUES (?, ?)",
+                ("10.test/a", "Paper A"),
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO papers (doi, title) VALUES (?, ?)",
+                ("10.test/b", "Paper B"),
+            )
+        cid = db.insert_cluster("Theme", 2, 0.5, centroid.tobytes())
+
+        # First row valid; second row has cluster_id=None → NOT NULL violation
+        # partway through the executemany.
+        bad_batch = [
+            ("10.test/a", cid, 0.10),
+            ("10.test/b", None, 0.20),  # type: ignore[list-item]
+        ]
+        with pytest.raises(Exception):
+            db.replace_cluster_assignments(bad_batch)  # type: ignore[arg-type]
+
+        # Rolled back: NEITHER row landed.
+        with db._connect() as conn:
+            count = conn.execute(
+                "SELECT count(*) FROM cluster_assignments"
+            ).fetchone()[0]
+        assert count == 0, "ROLLBACK must leave the table fully unchanged"
+
+    def test_replace_cluster_assignments_writes_full_batch(self, tmp_path):
+        """P3.5: the happy path writes every assignment in the batch."""
+        from scripts.core.state_db import StateDB
+
+        db = StateDB(tmp_path / "state.db")
+        centroid = np.zeros(8, dtype=np.float32)
+        with db._connect() as conn:
+            for doi in ("10.test/a", "10.test/b"):
+                conn.execute(
+                    "INSERT OR IGNORE INTO papers (doi, title) VALUES (?, ?)",
+                    (doi, doi),
+                )
+        cid = db.insert_cluster("Theme", 2, 0.5, centroid.tobytes())
+
+        n = db.replace_cluster_assignments(
+            [("10.test/a", cid, 0.1), ("10.test/b", cid, 0.2)]
+        )
+        assert n == 2
+        with db._connect() as conn:
+            count = conn.execute(
+                "SELECT count(*) FROM cluster_assignments WHERE cluster_id=?",
+                (cid,),
+            ).fetchone()[0]
+        assert count == 2
 
 
 # ---------------------------------------------------------------------------

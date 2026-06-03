@@ -1720,6 +1720,44 @@ class StateDB:
                 (doi, cluster_id, distance_to_centroid),
             )
 
+    def replace_cluster_assignments(
+        self,
+        assignments: list[tuple[str, int, float | None]],
+    ) -> int:
+        """P3.5: atomically batch-upsert many cluster assignments.
+
+        Every (doi, cluster_id, distance) upsert runs inside a SINGLE
+        ``with self._connect()`` block, i.e. one SQLite transaction (the same
+        precedent as ``replace_clusters``). ``_connect()`` commits on clean
+        exit and rolls back on any exception, so a crash partway through the
+        batch can NEVER leave the table half-updated: either every assignment
+        in this call lands (commit) or none of them do (rollback).
+
+        Upsert semantics match ``upsert_cluster_assignment`` exactly
+        (idempotent on the ``(doi, cluster_id)`` conflict key), so this is a
+        drop-in atomic replacement for a per-row write loop.
+
+        Args:
+            assignments: list of ``(doi, cluster_id, distance_to_centroid)``
+                tuples. ``distance_to_centroid`` may be ``None``.
+
+        Returns:
+            Number of assignment rows written.
+        """
+        if not assignments:
+            return 0
+        with self._connect() as conn:
+            conn.executemany(
+                "INSERT INTO cluster_assignments "
+                "(doi, cluster_id, distance_to_centroid, assigned_at) "
+                "VALUES (?, ?, ?, datetime('now')) "
+                "ON CONFLICT(doi, cluster_id) DO UPDATE SET "
+                "  distance_to_centroid=excluded.distance_to_centroid, "
+                "  assigned_at=datetime('now')",
+                assignments,
+            )
+        return len(assignments)
+
     def get_cluster_assignments(self, cluster_id: int) -> list[dict]:
         """Return all cluster_assignments rows for the given cluster_id."""
         with self._connect() as conn:

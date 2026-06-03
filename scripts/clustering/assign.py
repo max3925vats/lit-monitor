@@ -77,17 +77,19 @@ def assign_papers_to_clusters(
     nearest_idxs = np.argmin(distances, axis=1)  # (N,)
     nearest_dists = distances[np.arange(len(ids)), nearest_idxs]  # (N,)
 
-    count = 0
+    # P3.5: build the full assignment batch first, then write it in a SINGLE
+    # transaction via state_db.replace_cluster_assignments(). Previously each
+    # assignment was its own upsert call (its own transaction), so a failure
+    # partway through left the table half-updated. Batching all-or-nothing
+    # means a mid-write crash rolls back the whole batch.
+    batch: list[tuple[str, int, float | None]] = []
     for i, doi in enumerate(ids):
         cid = centroid_ids[nearest_idxs[i]]
         dist = float(nearest_dists[i])
         if cid is None:
             continue
-        try:
-            state_db.upsert_cluster_assignment(doi, cid, distance_to_centroid=dist)
-            count += 1
-        except Exception as exc:
-            logger.warning("C: failed to write assignment for %s: %s", doi, exc)
+        batch.append((doi, cid, dist))
 
+    count = state_db.replace_cluster_assignments(batch)
     logger.info("C: wrote %d cluster assignments.", count)
     return count

@@ -477,6 +477,86 @@ class TestAddPaper:
         )
         assert count == 1
 
+    def test_extracted_at_records_passed_timestamp_not_default(self, tmp_path):
+        """P3.1: edges record the extracted_at passed to add_paper, not the DDL
+        current_timestamp() DEFAULT.
+
+        We pass a fixed historical timestamp and assert both the MENTIONS edge
+        and the typed PROPOSES edge carry exactly that value (and that it is far
+        from 'now', proving the DEFAULT was overridden).
+        """
+        import datetime as dt
+
+        from scripts.graph import GraphDB
+
+        db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+        known = dt.datetime(2020, 1, 2, 3, 4, 5)
+        target_ent = self._entity_tuple(
+            canonical_id="future method",
+            type="method",
+            surface="future method",
+            field="future_work",
+            span_start=None,
+            span_end=None,
+        )
+        db.add_paper(
+            doi="10.0/a",
+            entities=[self._entity_tuple(), target_ent],
+            relationships=[self._rel_tuple()],
+            paper_metadata={"title": "T", "year": 2024, "journal": "X"},
+            extracted_at=known,
+        )
+
+        # MENTIONS edge extracted_at == known.
+        row = db._conn.execute(
+            "MATCH (:Paper)-[m:MENTIONS]->(:Entity {canonical_id: 'ion exchange'}) "
+            "RETURN m.extracted_at LIMIT 1"
+        ).get_next()
+        # Kuzu returns a datetime; compare to the known value.
+        assert row[0] == known, f"MENTIONS.extracted_at {row[0]!r} != {known!r}"
+
+        # Typed PROPOSES edge extracted_at == known.
+        row = db._conn.execute(
+            "MATCH (:Paper)-[r:PROPOSES]->(:Entity) RETURN r.extracted_at LIMIT 1"
+        ).get_next()
+        assert row[0] == known, f"PROPOSES.extracted_at {row[0]!r} != {known!r}"
+
+        # Sanity: the recorded value is clearly historical, not 'now' (which the
+        # DDL DEFAULT would have produced).
+        assert row[0].year == 2020
+
+    def test_add_paper_invalidates_query_cache(self, tmp_path):
+        """P3.2: after add_paper, a new entity resolves via resolve_query_entity
+        without a manual invalidate_query_cache() call.
+
+        We prime the query-time normalizer cache (first resolve builds it),
+        then add a NEW entity via add_paper, then resolve it — it must be found
+        because add_paper invalidated the cache.
+        """
+        from scripts.graph import GraphDB
+
+        db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+
+        # Prime the cache against an empty Entity table so a stale snapshot
+        # would NOT contain the entity we add below.
+        assert db.resolve_query_entity("ion exchange", type_="method") is None
+        assert db._query_normalizer is not None, "cache should be primed now"
+
+        # Add a new entity via add_paper — this must invalidate the cache.
+        db.add_paper(
+            doi="10.0/a",
+            entities=[self._entity_tuple()],
+            relationships=[],
+            paper_metadata={"title": "T", "year": 2024, "journal": "X"},
+        )
+
+        # Without P3.2's automatic invalidation the stale snapshot would miss
+        # this entity. With it, the rebuild sees the live Entity node.
+        resolved = db.resolve_query_entity("ion exchange", type_="method")
+        assert resolved == "ion exchange", (
+            f"newly-added entity must resolve without manual invalidate; got {resolved!r}"
+        )
+
 
 @pytest.mark.unit
 class TestGraphDBImportError:

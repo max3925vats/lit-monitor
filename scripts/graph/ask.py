@@ -29,25 +29,35 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Validator regexes.
 #
-# Mutation gate — word-boundary, case-insensitive. Rejects the 8 Cypher
+# Mutation gate — word-boundary, case-insensitive. Rejects the Cypher
 # mutation keywords. The \b anchors mean lowercase property names like
 # "creation_date" or "creator_name" do NOT match the keyword CREATE (because
 # the next char 'a' / 'o' is a word char and breaks the \b boundary).
 # Uppercase property names that happen to start with a forbidden keyword
 # (e.g. literal "CREATED") WILL match — accepted false-positive cost in
 # exchange for never letting a write query through.
+#
+# CALL is banned (audit F19, this path): Kuzu CALL procedures can have side
+# effects, so an LLM-emitted `CALL ...` must not reach conn.execute(). This
+# mirrors the ban already enforced in scripts/mcp/cypher_guard.py. We keep the
+# regex local rather than routing through cypher_guard.guard() because that
+# guard *raises* CypherSafetyError (and injects LIMIT), whereas this path's
+# contract is a defensive perimeter that returns None on rejection and never
+# raises — reusing the guard would materially change that error-handling
+# contract. CALL is the single source-of-truth keyword shared between both.
 # ---------------------------------------------------------------------------
 _MUTATION_RE = re.compile(
-    r"\b(?:CREATE|DELETE|DROP|MERGE|SET|REMOVE|ALTER|LOAD\s+CSV)\b",
+    r"\b(?:CREATE|DELETE|DROP|MERGE|SET|REMOVE|ALTER|CALL|LOAD\s+CSV)\b",
     re.IGNORECASE,
 )
 
 # Query-shape gate — output must START with one of the read-only Cypher
 # keywords. Defends against prose-prefixed responses ("Here is your query: …")
 # and against bare aggregations that bypass MATCH entirely is permitted via
-# RETURN/WITH (those are valid in Cypher).
+# RETURN/WITH (those are valid in Cypher). CALL is intentionally absent: it is
+# banned by the mutation gate above (F19), so it must not be a valid start.
 _VALID_START_RE = re.compile(
-    r"^\s*(?:OPTIONAL\s+MATCH|MATCH|CALL|RETURN|WITH)\b",
+    r"^\s*(?:OPTIONAL\s+MATCH|MATCH|RETURN|WITH)\b",
     re.IGNORECASE,
 )
 
@@ -223,7 +233,7 @@ def generate_cypher(
     if not _VALID_START_RE.match(cypher):
         logger.info(
             "A2: rejected by validator: must start with "
-            "MATCH/OPTIONAL MATCH/CALL/RETURN/WITH"
+            "MATCH/OPTIONAL MATCH/RETURN/WITH"
         )
         return None
 

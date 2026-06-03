@@ -384,3 +384,76 @@ class TestGetPapersByQuery:
         from scripts.api.queries import get_papers_by_query
         result = get_papers_by_query("x", mode="vector", k=100, embeddings_db=None)
         assert result == []
+
+    def test_lazy_graph_db_closed_on_happy_path(self, monkeypatch) -> None:
+        """P3.6: a lazily-acquired GraphDB is closed after a successful call."""
+        from unittest.mock import MagicMock
+
+        from scripts.api.queries import get_papers_by_query
+
+        mock_gdb = MagicMock()
+        mock_gdb.resolve_query_entity.return_value = "antibody|method"
+        mock_gdb.find_papers_by_entities.return_value = [("10.1/a", 2.0)]
+        mock_result = MagicMock()
+        mock_result.has_next.return_value = False
+        mock_gdb._conn.execute.return_value = mock_result
+
+        # safe_graph_db() is imported INSIDE get_papers_by_query via
+        # `from scripts.graph.import_citations import safe_graph_db`, which reads
+        # sys.modules directly. Patch the attribute on the LIVE sys.modules entry
+        # so we hit exactly the object the function imports — robust even if an
+        # earlier test purged/re-imported scripts.graph.* (a known isolation
+        # quirk in this suite).
+        import sys
+
+        import scripts.graph.import_citations  # noqa: F401 — ensure in sys.modules
+        ic_mod = sys.modules["scripts.graph.import_citations"]
+        monkeypatch.setattr(ic_mod, "safe_graph_db", lambda *a, **k: mock_gdb)
+
+        # graph_db not injected → function lazily acquires (and owns) mock_gdb.
+        results = get_papers_by_query("antibody", mode="graph", k=5)
+        assert len(results) == 1
+        # P3.6 invariant: the lazily-acquired instance was closed.
+        mock_gdb.close.assert_called_once()
+
+    def test_lazy_graph_db_closed_on_error(self, monkeypatch) -> None:
+        """P3.6: a lazily-acquired GraphDB is closed even when the graph leg
+        raises an unexpected error that escapes the function."""
+        from unittest.mock import MagicMock
+
+        from scripts.api.queries import get_papers_by_query
+
+        mock_gdb = MagicMock()
+        mock_gdb.resolve_query_entity.return_value = "x|method"
+        mock_gdb.find_papers_by_entities.return_value = [("10.1/a", 1.0)]
+        # _conn.execute raises a BaseException (not Exception) so it escapes the
+        # inner `except Exception` and reaches the finally block.
+        mock_gdb._conn.execute.side_effect = KeyboardInterrupt("boom")
+
+        import sys
+
+        import scripts.graph.import_citations  # noqa: F401 — ensure in sys.modules
+        ic_mod = sys.modules["scripts.graph.import_citations"]
+        monkeypatch.setattr(ic_mod, "safe_graph_db", lambda *a, **k: mock_gdb)
+
+        with pytest.raises(BaseException):
+            get_papers_by_query("antibody", mode="graph", k=5)
+        # Closed despite the error escaping.
+        mock_gdb.close.assert_called_once()
+
+    def test_injected_graph_db_not_closed(self) -> None:
+        """P3.6: a caller-injected GraphDB must NOT be closed by this function
+        (the caller owns its lifecycle)."""
+        from unittest.mock import MagicMock
+
+        from scripts.api.queries import get_papers_by_query
+
+        mock_gdb = MagicMock()
+        mock_gdb.resolve_query_entity.return_value = "antibody|method"
+        mock_gdb.find_papers_by_entities.return_value = [("10.1/a", 2.0)]
+        mock_result = MagicMock()
+        mock_result.has_next.return_value = False
+        mock_gdb._conn.execute.return_value = mock_result
+
+        get_papers_by_query("antibody", mode="graph", k=5, graph_db=mock_gdb)
+        mock_gdb.close.assert_not_called()

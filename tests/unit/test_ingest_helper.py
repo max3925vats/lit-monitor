@@ -230,7 +230,11 @@ class TestBuildMentionEdgesFullPath:
 
         class FakeBiobert:
             def extract(self, text: str):  # noqa: ARG002
-                return [NerSpan(text="EGFR", label="GENE", start=0, end=4, confidence=0.95)]
+                # P3.3: use a label that maps to a known type (DISEASE→topic).
+                # An unmappable label like "GENE" is now dropped (no longer
+                # silently bucketed as "material"), so it would not produce a
+                # biobert edge and this test would no longer exercise that leg.
+                return [NerSpan(text="lung cancer", label="DISEASE", start=0, end=11, confidence=0.95)]
 
         def fake_llm(text, low_conf):  # noqa: ARG001
             return {
