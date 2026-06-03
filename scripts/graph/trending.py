@@ -1,8 +1,22 @@
-"""Bundle E (v0.9): trending-concept detection via graph mention-count growth.
+"""Bundle E (v0.9): library-activity ("trending") concept detection.
 
-Identifies entities whose MENTIONS count grew significantly over the recent
-60-day window vs the prior 60-day window. Results are suggestion-only —
-never auto-applied to topics.yaml (per locked decision #4).
+Surfaces the concepts you've been adding to your library most actively in the
+recent window. It identifies entities whose MENTIONS count grew significantly
+over the recent 60-day window vs the prior 60-day window, where the window is
+keyed on each edge's ``extracted_at`` timestamp.
+
+IMPORTANT — what "trending" means here. ``extracted_at`` is the wall-clock
+INGEST/extraction time the MENTIONS edge was written to the graph (it defaults
+to ``current_timestamp()`` in the Kuzu DDL and ``add_paper`` never overrides
+it). So the 60-day windows bucket papers by WHEN THEY WERE ADDED TO YOUR
+LIBRARY, not by when they were published. This feature therefore measures
+ingest-recency / library-activity ("what am I reading and adding a lot of
+lately"), NOT field-level publication trends. Brain-build papers carry only a
+publication ``year``, so true publication-recency windows are not buildable
+here anyway.
+
+Results are suggestion-only — never auto-applied to topics.yaml (per locked
+decision #4).
 
 Defensive perimeter: find_trending_concepts() never raises. All failures
 are logged at WARNING level and an empty list is returned.
@@ -33,12 +47,16 @@ def find_trending_concepts(
     min_recent_mentions: int | None = None,
     cooldown_days: int | None = None,
 ) -> list[dict]:
-    """Bundle E: detect entities whose mention count grew significantly recently.
+    """Bundle E: detect concepts recently active in the user's library.
 
     Counts MENTIONS edges whose extracted_at falls within the recent 60-day
     window, compares to the prior 60-day window, and filters by growth-rate
     threshold and minimum noise floor. Cooldown prevents re-suggesting concepts
     dismissed within the configured window.
+
+    Because extracted_at is INGEST time (see module docstring), this measures
+    library-activity recency — concepts you've been adding to your library a lot
+    lately — not field-level publication trends.
 
     Args:
         graph_db:              GraphDB instance (must expose ._conn.execute).
@@ -121,6 +139,10 @@ def _query_mention_counts(graph_db: Any) -> list[dict]:
     one of two 60-day buckets relative to today. Returns a list of dicts with
     keys: concept_text, concept_type, n_mentions_new, n_mentions_prev.
 
+    NOTE: extracted_at is the INGEST/extraction time the edge was written, not
+    the paper's publication date — so these windows bucket by library-activity
+    recency (when papers were added), not by publication recency.
+
     Kuzu supports TIMESTAMP arithmetic and interval() — we use date subtraction
     via string comparison on ISO timestamps (Kuzu stores TIMESTAMP as ISO string
     internally for comparison purposes, matching SQLite/Cypher patterns).
@@ -128,6 +150,9 @@ def _query_mention_counts(graph_db: Any) -> list[dict]:
     # Kuzu TIMESTAMP comparisons work with ISO-8601 string literals.
     # Interval syntax: interval('60 days') is the Kuzu way to express durations.
     # We compute both windows relative to current_timestamp().
+    # NOTE: m.extracted_at is INGEST time (DEFAULT current_timestamp() in the DDL,
+    # never overridden by add_paper), so these windows measure when papers were
+    # ADDED to the library, i.e. ingest-recency — not publication-recency.
     cypher = (
         "MATCH (p:Paper)-[m:MENTIONS]->(e:Entity) "
         "WHERE m.extracted_at IS NOT NULL "

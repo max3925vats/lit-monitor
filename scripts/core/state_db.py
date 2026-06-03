@@ -212,7 +212,10 @@ CREATE TABLE IF NOT EXISTS cluster_assignments (
 );
 CREATE INDEX IF NOT EXISTS idx_cluster_assignments_cluster ON cluster_assignments(cluster_id);
 
--- Bundle E (v0.9): trending-concept suggestions from graph mention-count growth.
+-- Bundle E (v0.9): "trending"-concept suggestions from graph mention-count growth.
+-- "Trending" here = library-activity recency: growth is measured by bucketing
+-- MENTIONS edges on extracted_at (INGEST time), so it reflects concepts recently
+-- ADDED to the library, not field-level publication trends.
 -- One row per concept+detection-run. user_action: pending|accepted|dismissed.
 -- Cooldown is enforced by querying action_at < now - cooldown_days.
 CREATE TABLE IF NOT EXISTS trending_concepts_suggested (

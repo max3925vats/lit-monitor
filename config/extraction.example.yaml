@@ -192,8 +192,11 @@ clustering:
 # All three features are OFF by default — no behavior change on v0.8 installs.
 # ---------------------------------------------------------------------------
 
-# Trending-concept suggestions: entities whose MENTIONS count grew >threshold
-# in the last 60 days vs the prior 60-day window. Surfaces in digest and web UI.
+# "Trending" = concepts recently active in YOUR LIBRARY: entities whose MENTIONS
+# count grew >threshold in the last 60 days vs the prior 60-day window, bucketed
+# by INGEST time (extracted_at), i.e. when papers were added to your library —
+# NOT when they were published. This is library-activity recency, not a
+# field-level publication trend. Surfaces in digest and web UI.
 # Run: lit-monitor trending suggest  (then: trending view / accept / dismiss)
 trending_concepts:
   enabled: false               # default off; opt-in

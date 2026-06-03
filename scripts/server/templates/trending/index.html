@@ -1,11 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Trending concepts — lit-monitor{% endblock %}
+{% block title %}Trending in your library — lit-monitor{% endblock %}
 {% block content %}
 <section class="card">
-  <h2>Trending concepts</h2>
+  <h2>Trending in your library</h2>
   <p>
-    Entities whose mention count grew significantly in the last 60 days compared
-    to the prior 60-day window. Accept to add to
+    Concepts you've been <strong>adding to your library</strong> most actively
+    lately: entities whose mention count grew significantly over the last 60 days
+    of <em>ingested</em> papers compared to the prior 60-day window. This reflects
+    when papers were added to your library, <strong>not</strong> when they were
+    published — it is not a field-level publication trend. Accept to add to
     <code>config/topics.yaml</code>; dismiss to suppress for 60 days.
     Changes are never applied automatically.
   </p>
@@ -18,7 +21,7 @@
   </p>
 
   {% if not suggestions %}
-    <p><em>No pending suggestions. Run a brain-build or click Re-detect to find trending concepts.</em></p>
+    <p><em>No pending suggestions. Run a brain-build or click Re-detect to find concepts recently active in your library.</em></p>
   {% else %}
     <table class="data-table">
       <thead>

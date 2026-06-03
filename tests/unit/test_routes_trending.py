@@ -137,6 +137,37 @@ class TestDismissTrending:
         assert resp.status_code == 404
 
 
+class TestTrendingPageCopy:
+    """C2 (Audit-2): the /trending page must honestly frame the feature as
+    library-activity / ingest-recency, not field-level publication trends.
+
+    Renders the production template body block directly (the {% block content %}
+    is self-contained and needs no app.state context) and asserts the copy.
+    """
+
+    def _render_content(self) -> str:
+        import jinja2
+
+        templates_dir = Path(__file__).parents[2] / "scripts" / "server" / "templates"
+        env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(templates_dir)))
+        # Isolate the content block so we don't need base.html's app.state context.
+        template = env.get_template("trending/index.html")
+        ctx = template.new_context({"suggestions": []})
+        return "".join(template.blocks["content"](ctx))
+
+    def test_page_uses_honest_library_activity_framing(self):
+        body = self._render_content().lower()
+        # Honest framing present: the page makes clear this is about the user's
+        # own library and ingest time, not field-level publication trends.
+        assert "your library" in body
+        assert "ingest" in body or "added" in body
+        # The page must explicitly disclaim publication-recency / field trends so
+        # the user can't be misled (the word "published" may appear, but only in
+        # a disclaiming "not when they were published" sense).
+        assert "not" in body and "published" in body
+        assert "not a field-level publication trend" in body
+
+
 class TestSafeSaveTopics:
     def test_atomic_add_creates_file(self, tmp_path):
         from scripts.server.config_io import safe_save_topics

@@ -23,7 +23,16 @@ Paper → Paper predicates (4):
 Every REL TABLE carries three optional provenance properties introduced in G14
 (schema v2), populated by DB DEFAULTs when not explicitly set:
   confidence DOUBLE DEFAULT 1.0          — extraction confidence score
-  extracted_at TIMESTAMP DEFAULT ...     — wall-clock time of extraction
+  extracted_at TIMESTAMP DEFAULT ...     — wall-clock INGEST time the edge was
+                                           written (DEFAULT current_timestamp();
+                                           add_paper never overrides it, so this
+                                           is ingest/extraction time, NOT the
+                                           paper's publication date). Trending
+                                           detection (scripts/graph/trending.py)
+                                           buckets MENTIONS edges by this column,
+                                           so its "trending" signal is library-
+                                           activity / ingest-recency, not field-
+                                           level publication trends.
   prompt_version STRING DEFAULT 'phase1.0' — extractor prompt tag for
                                              reproducibility / re-extraction
 

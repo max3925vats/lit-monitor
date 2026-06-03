@@ -3670,12 +3670,22 @@ def cluster_writeback_collections_cmd(
 
 @main.group("trending")
 def trending_group() -> None:
-    """Trending-concept suggestions from the graph."""
+    """Concepts recently active in your library (ingest-recency, not field trends).
+
+    Surfaces entities you've been adding to your library most actively lately,
+    based on when papers were INGESTED (extracted_at), not when they were
+    published. This is library-activity recency, not a field-level publication
+    trend.
+    """
 
 
 @trending_group.command("suggest")
 def trending_suggest_cmd() -> None:
-    """Run trending detection and persist new suggestions to state.db."""
+    """Detect concepts recently active in your library; persist new suggestions.
+
+    Buckets MENTIONS edges by ingest time (extracted_at), so this measures what
+    you've been adding to your library lately — not field-level publication trends.
+    """
     from pathlib import Path
 
     from scripts.core.config import get_config
