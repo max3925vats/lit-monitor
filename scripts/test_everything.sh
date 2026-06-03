@@ -344,7 +344,7 @@ tier_4() {
     } > "$REPORT_PATH"
 
     info "compare-models on 2 papers"
-    if lit-monitor compare-models --papers 2 --mode paper >/dev/null 2>&1; then
+    if lit-monitor compare-models --papers 2 >/dev/null 2>&1; then
         local latest_dir
         latest_dir="$(ls -dt comparison/*_paper 2>/dev/null | head -1 || true)"
         if [[ -n "$latest_dir" && -f "$latest_dir/summary.md" ]]; then
