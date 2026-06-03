@@ -182,6 +182,114 @@ class TestSettingsPost:
 
 
 # ---------------------------------------------------------------------------
+# E3/B8 review fix: round-trip the EXACT nested body the reworked template emits
+#
+# The Advanced Settings UI was posting fictional flat keys (semantic_weight,
+# graph_weight, k, algorithm) that the per-section pydantic models reject with
+# 422. The template now posts the REAL nested config keys. These tests pin the
+# corrected shape (200 + written) and prove the old flat shape is rejected (422).
+# ---------------------------------------------------------------------------
+
+
+def _post_to_real_file(tmp_path, section, payload):
+    """POST through the route while pointing config_io at a tmp extraction.yaml.
+
+    Patches CONFIG_DIR so safe_save_settings_section reads/writes the tmp file
+    instead of the repo's real config. Returns (response, loaded_yaml_dict).
+    """
+    import scripts.server.config_io as cfg_io
+
+    config_path = tmp_path / "extraction.yaml"
+    config_path.write_text("{}\n", encoding="utf-8")
+
+    with patch.object(cfg_io, "CONFIG_DIR", tmp_path):
+        client = _make_client()
+        r = client.post(f"/api/settings/{section}", json=payload)
+
+    loaded = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    return r, loaded
+
+
+class TestSettingsUIRoundTrip:
+    """Round-trip the exact nested payloads the reworked template emits."""
+
+    # The complete ranking section the form serializes (all fields, nested).
+    RANKING_BODY = {
+        "weights": {
+            "domain_context": 0.3,
+            "cluster_centroid": 0.2,
+            "graph_entity_overlap": 0.15,
+            "graph_citation": 0.1,
+            "graph_shared_authors": 0.05,
+        },
+        "domain_filter": {
+            "enabled": True,
+            "threshold": 0.4,
+            "minimum_off_domain_slots_pct": 0.1,
+        },
+        "s2_supplement_cap": {
+            "enabled": True,
+            "min_relevance": 0.5,
+        },
+    }
+
+    # The complete clustering section the form serializes (all fields, nested).
+    CLUSTERING_BODY = {
+        "enabled": True,
+        "min_papers_threshold": 120,
+        "k_min": 6,
+        "k_max": 18,
+        "recompute_frequency": "nightly",
+        "use_existing_collections_as_priors": {
+            "enabled": True,
+            "collection_names": ["Chromatography", "Filtration"],
+        },
+        "write_back": {
+            "tags": {"enabled": True, "namespace": "lm"},
+            "collections": {"enabled": False, "parent_collection": "lit-monitor"},
+        },
+    }
+
+    def test_ranking_nested_payload_round_trips(self, tmp_path):
+        r, loaded = _post_to_real_file(tmp_path, "ranking", self.RANKING_BODY)
+        assert r.status_code == 200, r.text
+        assert loaded["ranking"]["weights"]["domain_context"] == 0.3
+        assert loaded["ranking"]["weights"]["graph_shared_authors"] == 0.05
+        assert loaded["ranking"]["domain_filter"]["enabled"] is True
+        assert loaded["ranking"]["domain_filter"]["threshold"] == 0.4
+        assert loaded["ranking"]["s2_supplement_cap"]["min_relevance"] == 0.5
+
+    def test_clustering_nested_payload_round_trips(self, tmp_path):
+        r, loaded = _post_to_real_file(tmp_path, "clustering", self.CLUSTERING_BODY)
+        assert r.status_code == 200, r.text
+        assert loaded["clustering"]["enabled"] is True
+        assert loaded["clustering"]["k_min"] == 6
+        assert loaded["clustering"]["k_max"] == 18
+        assert loaded["clustering"]["use_existing_collections_as_priors"][
+            "collection_names"
+        ] == ["Chromatography", "Filtration"]
+        assert loaded["clustering"]["write_back"]["tags"]["namespace"] == "lm"
+
+    def test_old_flat_ranking_payload_rejected_422(self):
+        """Migration proof: the pre-fix flat ranking shape now fails validation."""
+        client = _make_client()
+        r = client.post(
+            "/api/settings/ranking",
+            json={"semantic_weight": 0.4, "graph_weight": 0.3, "domain_weight": 0.3},
+        )
+        assert r.status_code == 422
+
+    def test_old_flat_clustering_payload_rejected_422(self):
+        """Migration proof: the pre-fix flat clustering shape now fails validation."""
+        client = _make_client()
+        r = client.post(
+            "/api/settings/clustering",
+            json={"k": 8, "algorithm": "kmeans"},
+        )
+        assert r.status_code == 422
+
+
+# ---------------------------------------------------------------------------
 # safe_save_settings_section unit tests
 # ---------------------------------------------------------------------------
 
