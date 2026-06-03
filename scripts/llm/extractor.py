@@ -430,6 +430,56 @@ def extract_complex(
     return PassResult(fields=normalized, n_chunks=1)
 
 
+# ---------------------------------------------------------------------------
+# B10 — phase failure contract
+# ---------------------------------------------------------------------------
+#
+# When a phase of extract_paper() crashes in non-strict mode, the failure is
+# recorded on the returned (and persisted) extraction dict under a single
+# structured key:
+#
+#     _phase_errors: dict[str, str]   # phase name -> error message
+#
+# The key is absent (or {}) when no phase failed. Callers should NOT string-
+# match this key directly; use the failed_phases() accessor below, which is
+# the public, documented way to ask which phases crashed.
+PHASE_ERRORS_KEY = "_phase_errors"
+
+
+def _record_phase_error(extraction: dict[str, Any], phase: str, exc: Exception) -> None:
+    """Record a non-strict phase failure under the _phase_errors key (B10)."""
+    errors = extraction.get(PHASE_ERRORS_KEY)
+    if not isinstance(errors, dict):
+        errors = {}
+    errors[phase] = str(exc)
+    extraction[PHASE_ERRORS_KEY] = errors
+
+
+def failed_phases(extraction: dict[str, Any]) -> list[str]:
+    """Return the names of phases that crashed during extraction (B10).
+
+    Reads the structured ``_phase_errors`` key written by ``extract_paper`` in
+    non-strict mode. Returns an empty list when both phases succeeded (or the
+    extraction predates this contract). Use this instead of string-matching the
+    old ``_simple_error`` / ``_complex_error`` keys.
+
+    Parameters
+    ----------
+    extraction:
+        A merged extraction dict as returned by ``extract_paper`` (or parsed
+        from persisted ``extraction_json``).
+
+    Returns
+    -------
+    list[str]
+        Phase names (e.g. ``["simple"]`` or ``["simple", "complex"]``).
+    """
+    errors = extraction.get(PHASE_ERRORS_KEY)
+    if not isinstance(errors, dict):
+        return []
+    return [phase for phase in errors if errors[phase]]
+
+
 def extract_paper(
     fulltext: str,
     llm: LLMClient,
@@ -476,11 +526,11 @@ def extract_paper(
             logger.error("Simple phase failed: %s", exc)
             # P4.1: escalate in --strict (raises) so a crashed phase is not
             # silently downgraded to an empty-fields result. In non-strict the
-            # _simple_error marker is preserved — re_extract_all_failed_phase()
-            # reads it to find papers that need re-running, so the failure stays
-            # detectable by callers rather than vanishing.
+            # failure is recorded under the structured _phase_errors key (B10)
+            # so re_extract_all_failed_phase() / failed_phases() can detect
+            # papers that need re-running, rather than vanishing.
             strict_fallback(logger, f"Simple phase failed: {exc}", exc)
-            merged["_simple_error"] = str(exc)
+            _record_phase_error(merged, "simple", exc)
 
     if "complex" in phases:
         try:
@@ -497,9 +547,9 @@ def extract_paper(
         except Exception as exc:
             logger.error("Complex phase failed: %s", exc)
             # P4.1: see the simple-phase note above — escalate in --strict,
-            # preserve the _complex_error marker in non-strict.
+            # record under _phase_errors in non-strict (B10).
             strict_fallback(logger, f"Complex phase failed: {exc}", exc)
-            merged["_complex_error"] = str(exc)
+            _record_phase_error(merged, "complex", exc)
 
     merged["_overall_confidence"] = compute_confidence_score(merged)
     merged["_max_n_chunks"] = max_n_chunks

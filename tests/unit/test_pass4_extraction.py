@@ -9,8 +9,8 @@ Replaces the old G2 / Pass-4 tests.  Covers:
   - re_extract() with phases=["complex"] routes to extract_paper(phases=("complex",))
   - COALESCE: complex re-run preserves existing simple-phase fields
   - re_extract() default (no phases arg) runs both phases
-  - re_extract_all_failed_phase("complex") targets _complex_error papers
-  - re_extract_all_failed_phase("simple") targets _simple_error papers
+  - re_extract_all_failed_phase("complex") targets papers whose _phase_errors records "complex"
+  - re_extract_all_failed_phase("simple") targets papers whose _phase_errors records "simple"
   - re_extract_all_failed_phase skips healthy papers and raises on bad phase name
 """
 from __future__ import annotations
@@ -322,7 +322,8 @@ def test_re_extract_raises_for_unknown_source_type():
 
 @pytest.mark.unit
 def test_re_extract_all_failed_phase_targets_complex_error_papers():
-    """re_extract_all_failed_phase("complex") re-runs papers with _complex_error."""
+    """re_extract_all_failed_phase("complex") re-runs papers whose stored
+    extraction recorded a complex-phase failure (B10 _phase_errors)."""
     from scripts.obsidian_tools.re_extract import re_extract_all_failed_phase
 
     errored = {
@@ -330,7 +331,7 @@ def test_re_extract_all_failed_phase_targets_complex_error_papers():
         "source_type": "paper",
         "extraction_json": json.dumps({
             "core_finding": "Simple ran fine.",
-            "_complex_error": "LLM timeout during complex phase.",
+            "_phase_errors": {"complex": "LLM timeout during complex phase."},
         }),
         "note_path": "",
         "ocr_heavy": 0,
@@ -361,14 +362,15 @@ def test_re_extract_all_failed_phase_targets_complex_error_papers():
 
 @pytest.mark.unit
 def test_re_extract_all_failed_phase_targets_simple_error_papers():
-    """re_extract_all_failed_phase("simple") re-runs papers with _simple_error."""
+    """re_extract_all_failed_phase("simple") re-runs papers whose stored
+    extraction recorded a simple-phase failure (B10 _phase_errors)."""
     from scripts.obsidian_tools.re_extract import re_extract_all_failed_phase
 
     errored = {
         "doi": "10.1/simple_fail",
         "source_type": "paper",
         "extraction_json": json.dumps({
-            "_simple_error": "Chunking failed unexpectedly.",
+            "_phase_errors": {"simple": "Chunking failed unexpectedly."},
         }),
         "note_path": "",
         "ocr_heavy": 0,
@@ -451,7 +453,7 @@ def test_re_extract_all_failed_phase_counts_individual_failures():
         {
             "doi": f"10.1/fail{i}",
             "source_type": "paper",
-            "extraction_json": json.dumps({"_complex_error": "timeout"}),
+            "extraction_json": json.dumps({"_phase_errors": {"complex": "timeout"}}),
             "note_path": "",
             "ocr_heavy": 0,
             "zotero_key": "",
@@ -486,7 +488,7 @@ def test_re_extract_all_failed_phase_raises_under_strict():
     record = {
         "doi": "10.1/fail",
         "source_type": "paper",
-        "extraction_json": json.dumps({"_complex_error": "timeout"}),
+        "extraction_json": json.dumps({"_phase_errors": {"complex": "timeout"}}),
         "note_path": "",
         "ocr_heavy": 0,
         "zotero_key": "",

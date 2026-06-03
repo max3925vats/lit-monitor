@@ -24,6 +24,7 @@ from scripts.llm.extractor import (
     compute_confidence_score,
     extract_fields,
     extract_paper,
+    failed_phases,
 )
 from scripts.llm.prompt_safety import sanitize_for_prompt
 from scripts.obsidian_tools.rerender import rerender_note
@@ -185,10 +186,12 @@ def re_extract_all_failed_phase(
     source_type: str = "paper",
     zotero_client=None,
 ) -> dict[str, int]:
-    """Re-run a specific phase for all items that have a _<phase>_error key.
+    """Re-run a specific phase for all items whose stored extraction recorded
+    a failure for that phase.
 
-    M3 replacement for re_extract_all_failed().  Scans extraction_json for
-    ``_simple_error`` or ``_complex_error`` markers and re-runs that phase.
+    M3 replacement for re_extract_all_failed().  Scans extraction_json and uses
+    the B10 ``failed_phases()`` accessor (over the structured ``_phase_errors``
+    key) to find papers whose ``phase`` crashed, then re-runs that phase.
 
     Returns
     -------
@@ -198,7 +201,6 @@ def re_extract_all_failed_phase(
         raise ValueError(f"phase must be 'simple' or 'complex', got {phase!r}")
     records = state_db.get_all_by_source_type(source_type)
     stats = {"re_extracted": 0, "failed": 0}
-    error_key = f"_{phase}_error"
     for record in records:
         doi = record.get("doi", "")
         raw = record.get("extraction_json", "")
@@ -208,7 +210,7 @@ def re_extract_all_failed_phase(
             extraction = json.loads(raw)
         except json.JSONDecodeError:
             continue
-        if error_key not in extraction:
+        if phase not in failed_phases(extraction):
             continue
         try:
             re_extract(

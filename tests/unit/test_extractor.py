@@ -106,8 +106,9 @@ def test_extract_paper_phase_failure_preserves_other_phase():
     result = extract_paper("full text", llm)
     # Simple phase fields should be present
     assert "core_finding" in result
-    # Complex phase error should be recorded, not raise
-    assert "_complex_error" in result
+    # Complex phase error should be recorded, not raise (B10 contract)
+    from scripts.llm.extractor import failed_phases
+    assert "complex" in failed_phases(result)
     # Complex phase fields are absent (extraction failed)
     assert result.get("novelty_statement") is None
 @pytest.mark.unit
@@ -155,8 +156,9 @@ def test_extract_paper_with_existing_extraction():
     assert "novelty_statement" in result                  # from complex phase
 @pytest.mark.unit
 def test_extract_paper_simple_phase_failure_records_error_continues():
-    """M3: If simple phase fails, _simple_error is recorded and complex phase still runs."""
-    from scripts.llm.extractor import extract_paper
+    """M3/B10: If simple phase fails, it is recorded in _phase_errors and the
+    complex phase still runs."""
+    from scripts.llm.extractor import PHASE_ERRORS_KEY, extract_paper, failed_phases
     call_count = [0]
     class SimpleFailClient(MockLLMClient):
         def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
@@ -166,22 +168,21 @@ def test_extract_paper_simple_phase_failure_records_error_continues():
             return super().complete(system, user, max_tokens)
     llm = SimpleFailClient()
     result = extract_paper("full text", llm)
-    # Simple phase failure is recorded
-    assert "_simple_error" in result
-    assert "timeout" in result["_simple_error"]
+    # Simple phase failure is recorded under the structured contract
+    assert failed_phases(result) == ["simple"]
+    assert "timeout" in result[PHASE_ERRORS_KEY]["simple"]
     # Complex phase should still have run successfully
     assert "novelty_statement" in result  # complex phase field
 @pytest.mark.unit
 def test_extract_paper_all_phases_fail_records_all_errors():
-    """M3: If every phase fails, both _simple_error and _complex_error are present."""
-    from scripts.llm.extractor import extract_paper
+    """M3/B10: If every phase fails, both phases appear in _phase_errors."""
+    from scripts.llm.extractor import extract_paper, failed_phases
     class AllFailClient(MockLLMClient):
         def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
             raise RuntimeError("LLM unavailable")
     llm = AllFailClient()
     result = extract_paper("text", llm)
-    assert "_simple_error" in result
-    assert "_complex_error" in result
+    assert failed_phases(result) == ["simple", "complex"]
     assert not result.get("core_finding")
 
 
@@ -217,9 +218,84 @@ def test_extract_paper_phase_failure_detectable_in_non_strict():
 
     _sm.set_strict(False)
     result = extract_paper("full text", SimpleFailClient(), phases=("simple",))
-    # Failure is recorded, not silently absent.
-    assert "_simple_error" in result
-    assert "timeout" in result["_simple_error"]
+    # Failure is recorded, not silently absent (B10 structured contract).
+    from scripts.llm.extractor import PHASE_ERRORS_KEY, failed_phases
+    assert failed_phases(result) == ["simple"]
+    assert "timeout" in result[PHASE_ERRORS_KEY]["simple"]
+
+
+# ---------------------------------------------------------------------------
+# B10 — failed_phases() accessor (structured phase-failure contract)
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_failed_phases_empty_when_both_ok():
+    """B10: a successful extraction (no _phase_errors) reports no failed phases."""
+    import scripts.core.strict_mode as _sm
+    from scripts.llm.extractor import extract_paper, failed_phases
+
+    _sm.set_strict(False)
+    result = extract_paper("Some paper text.", MockLLMClient())
+    assert failed_phases(result) == []
+
+
+@pytest.mark.unit
+def test_failed_phases_simple_only():
+    """B10: when only the simple phase crashes, accessor returns ['simple']."""
+    import scripts.core.strict_mode as _sm
+    from scripts.llm.extractor import extract_paper, failed_phases
+
+    call_count = [0]
+    class SimpleFailClient(MockLLMClient):
+        def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
+            call_count[0] += 1
+            if call_count[0] == 1:  # simple phase
+                raise RuntimeError("boom")
+            return super().complete(system, user, max_tokens)
+
+    _sm.set_strict(False)
+    result = extract_paper("text", SimpleFailClient())
+    assert failed_phases(result) == ["simple"]
+
+
+@pytest.mark.unit
+def test_failed_phases_both_fail():
+    """B10: when both phases crash, accessor returns both names in order."""
+    import scripts.core.strict_mode as _sm
+    from scripts.llm.extractor import extract_paper, failed_phases
+
+    class AllFailClient(MockLLMClient):
+        def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
+            raise RuntimeError("LLM unavailable")
+
+    _sm.set_strict(False)
+    result = extract_paper("text", AllFailClient())
+    assert failed_phases(result) == ["simple", "complex"]
+
+
+@pytest.mark.unit
+def test_failed_phases_ignores_legacy_or_missing_key():
+    """B10: accessor is a no-op (returns []) on dicts lacking _phase_errors."""
+    from scripts.llm.extractor import failed_phases
+    assert failed_phases({}) == []
+    assert failed_phases({"core_finding": "x"}) == []
+    # Defensive: a non-dict value under the key is ignored, not crashed on.
+    assert failed_phases({"_phase_errors": "oops"}) == []
+
+
+@pytest.mark.unit
+def test_failed_phases_accessor_strict_still_raises():
+    """B10: strict mode still raises via strict_fallback (P4 preserved); the
+    structured contract is the non-strict path only."""
+    import scripts.core.strict_mode as _sm
+    from scripts.llm.extractor import extract_paper
+
+    class SimpleFailClient(MockLLMClient):
+        def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
+            raise RuntimeError("Simulated simple phase timeout")
+
+    _sm.set_strict(True)
+    with pytest.raises(RuntimeError, match="Simple phase failed"):
+        extract_paper("text", SimpleFailClient(), phases=("simple",))
 
 
 # ---------------------------------------------------------------------------
@@ -441,8 +517,9 @@ def test_extract_paper_simple_only_returns_simple_fields():
     llm = MockLLMClient()
     result = extract_paper("Some paper text.", llm, phases=("simple",))
     assert "core_finding" in result
-    # No complex-phase error — complex simply wasn't run
-    assert "_complex_error" not in result
+    # No complex-phase error — complex simply wasn't run (B10 contract)
+    from scripts.llm.extractor import failed_phases
+    assert "complex" not in failed_phases(result)
 
 
 # ---------------------------------------------------------------------------
