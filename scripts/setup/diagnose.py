@@ -12,6 +12,7 @@ the validation logic with the web UI.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,7 @@ import yaml as _yaml
 # at import time would freeze the path before the patch applies.
 from scripts.core import config as _config_mod
 from scripts.core.path_utils import resolve_path as _resolve_path
-from scripts.core.strict_mode import set_strict
+from scripts.core.strict_mode import get_strict_override, set_strict
 from scripts.setup.health_check import run_health_check
 
 logger = logging.getLogger(__name__)
@@ -143,12 +144,19 @@ def _check_graph_extra() -> tuple[bool, str]:
         _persist_dir or "~/.config/lit-monitor/graph.kuzu"
     ).expanduser()
 
+    # This is a read-only diagnostic: probe writability WITHOUT creating any
+    # directories. Walk up to the nearest existing ancestor and check it is a
+    # writable directory; the missing leaves under it will be created by the
+    # actual GraphDB open, not by diagnose.
     parent = persist_path.parent
-    if not parent.exists():
-        try:
-            parent.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            return (False, f"persist dir parent not writable: {exc}")
+    probe = parent
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+
+    if not probe.is_dir():
+        return (False, f"persist dir parent not reachable: {probe}")
+    if not os.access(probe, os.W_OK):
+        return (False, f"persist dir parent not writable: {probe}")
 
     return (True, f"ok ({persist_path})")
 
@@ -170,32 +178,38 @@ def run_diagnose(*, config_only: bool = False) -> dict[str, tuple[bool, str]]:
         ``(True, ABSENT_OPTIONAL_MSG)`` rather than being omitted — the
         CLI wrapper relies on this to render the yellow "--" row.
     """
+    # Temporarily force strict mode, restoring the caller's prior override in a
+    # finally so this diagnostic never leaves a process-wide side effect behind
+    # (it used to set strict on and never reset it).
+    _prev_strict = get_strict_override()
     set_strict(True)
+    try:
+        results: dict[str, tuple[bool, str]] = {}
+        results.update(check_core_configs())
+        results.update(check_schemas())
+        results.update(check_optional_configs())
+        results.update(check_prompts())
 
-    results: dict[str, tuple[bool, str]] = {}
-    results.update(check_core_configs())
-    results.update(check_schemas())
-    results.update(check_optional_configs())
-    results.update(check_prompts())
+        # G13: always include a 'graph' row — optional extra, so absence is OK (not a failure)
+        results["graph"] = _check_graph_extra()
 
-    # G13: always include a 'graph' row — optional extra, so absence is OK (not a failure)
-    results["graph"] = _check_graph_extra()
+        if not config_only:
+            # The "config" sub-dict contains CheckResult NamedTuples (3-tuples
+            # of ok/message/severity), while the ollama/zotero/vault sub-dicts
+            # contain plain (ok, msg) 2-tuples. Use indexed access so both
+            # shapes pass through without ValueError. See Audit_28_May_2026.md
+            # bundle H2 for the regression that motivated this.
+            hc: dict[str, dict[str, Sequence[Any]]] = run_health_check()
+            for section, sub in hc.items():
+                for check_name, value in sub.items():
+                    ok, msg = value[0], value[1]
+                    # Namespace service-check keys so they don't collide with
+                    # config-file keys in the flat dict.
+                    results[f"{section}.{check_name}"] = (ok, msg)
 
-    if not config_only:
-        # The "config" sub-dict contains CheckResult NamedTuples (3-tuples
-        # of ok/message/severity), while the ollama/zotero/vault sub-dicts
-        # contain plain (ok, msg) 2-tuples. Use indexed access so both
-        # shapes pass through without ValueError. See Audit_28_May_2026.md
-        # bundle H2 for the regression that motivated this.
-        hc: dict[str, dict[str, Sequence[Any]]] = run_health_check()
-        for section, sub in hc.items():
-            for check_name, value in sub.items():
-                ok, msg = value[0], value[1]
-                # Namespace service-check keys so they don't collide with
-                # config-file keys in the flat dict.
-                results[f"{section}.{check_name}"] = (ok, msg)
-
-    return results
+        return results
+    finally:
+        set_strict(_prev_strict)
 
 
 __all__: list[Any] = [

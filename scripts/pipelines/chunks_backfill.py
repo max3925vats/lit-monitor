@@ -1,6 +1,6 @@
 """CB1: chunks backfill — close the R28 chunks retry gap.
 
-Walks state.db for papers WHERE chunks_indexed=0 AND fully_complete=1,
+Walks state.db for papers WHERE chunks_indexed=0 AND embeddings_indexed=1,
 re-chunks each via the stored fulltext_path, and (re-)indexes into
 ChromaDB. NO LLM calls — uses the existing chunk_markdown helper and
 EmbeddingsDB.add_chunks (which is delete-then-add, so idempotent).
@@ -27,7 +27,7 @@ def backfill_chunks(
 ) -> dict[str, int]:
     """CB1: re-chunk + re-index papers whose chunks_indexed=0.
 
-    Selects papers with ``chunks_indexed=0 AND fully_complete=1`` from
+    Selects papers with ``chunks_indexed=0 AND embeddings_indexed=1`` from
     state.db, reads their stored ``fulltext_path``, runs ``chunk_markdown``,
     calls ``embeddings_db.add_chunks``, then sets ``chunks_indexed=1`` on
     success. Per-paper exceptions are logged as WARNING and skipped

@@ -888,8 +888,9 @@ async def dev_dryrun_stop() -> str:
 async def dev_dryrun_stream(request: Request):
     """SSE stream of the newest discovery JSONL log.
 
-    ``lit-monitor run --dry-run`` writes its log under
-    ``logs/{date}_discovery.jsonl`` just like a normal run. The shared
+    ``lit-monitor run --dry-run`` writes its log under the canonical logs
+    dir (default ``~/.config/lit-monitor/logs/{date}_discovery.jsonl``; see
+    ``sse._resolve_logs_dir``) just like a normal run. The shared
     ``stream_log`` now emits prettified HTML fragments via
     ``sse._prettify_jsonl_line``, so this endpoint, /api/discovery/stream,
     and /api/brain-build/stream all render columnar log rows uniformly.

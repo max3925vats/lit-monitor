@@ -28,7 +28,9 @@ from dataclasses import dataclass, field
 # Conservative for scientific / technical text — BERT subword splits push the
 # average up versus the ~4-chars-per-token figure that holds for general prose.
 _CHARS_PER_TOKEN = 3.5
-_HEADING_RE = re.compile(r"^#{1,6}\s+.+", re.MULTILINE)
+# ``.*`` (not ``.+``) so a heading marker followed by only whitespace
+# (e.g. "## ") is still recognised as a heading rather than body text.
+_HEADING_RE = re.compile(r"^#{1,6}\s+.*", re.MULTILINE)
 
 
 @dataclass

@@ -309,6 +309,37 @@ def test_fetch_s2_references_rate_limit_retry_then_success():
 
 
 @pytest.mark.unit
+def test_fetch_s2_references_connection_refused_treated_as_rate_limit():
+    """P6.6: the S2 client maps HTTP 429 to ConnectionRefusedError.
+
+    Detection must key off that exception type, not just the message
+    substring, so a 429 with a message that lacks "429"/"rate"/"too many"
+    still triggers a retry.
+    """
+    call_count = 0
+
+    class _FakePaper:
+        references = [_make_s2_ref(paper_id="p1")]
+
+    class _FakeS2:
+        def get_paper(self, *a, **kw):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # No "429"/"rate"/"too many" substring on purpose.
+                raise ConnectionRefusedError("Too busy right now.")
+            return _FakePaper()
+
+    with patch("scripts.search.citation_graph._SemanticScholar", return_value=_FakeS2()), \
+         patch("scripts.search.citation_graph._S2_AVAILABLE", True), \
+         patch("time.sleep"):
+        refs = _fetch_s2_references("10.1/test", max_retries=2)
+
+    assert len(refs) == 1
+    assert call_count == 2  # retried after the ConnectionRefusedError
+
+
+@pytest.mark.unit
 def test_fetch_s2_references_passes_timeout_to_constructor():
     """H3: SemanticScholar must be instantiated with timeout=30 to bound network calls."""
     mock_sch = MagicMock()

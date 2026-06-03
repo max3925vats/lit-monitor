@@ -23,6 +23,7 @@ import yaml
 from scripts.llm.llm_client import LLMClient, parse_llm_json
 from scripts.llm.prompt_registry import load_clustering_prompts
 from scripts.llm.prompt_safety import sanitize_for_prompt
+from scripts.llm.token_budget import CHARS_PER_TOKEN, SYSTEM_PROMPT_RESERVE_TOKENS
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +35,11 @@ CONCEPTS_DRAFT_PATH = Path("config/concepts_draft.yaml")
 TOPICS_SUGGESTED_PATH = Path("config/topics_suggested.yaml")
 
 # ── N1 smart-chunking constants (mirror extractor.py A6 math) ───────────────
-_CHARS_PER_TOKEN: int = 4              # rule of thumb: English scientific text
+# Shared with extractor.py via scripts/llm/token_budget.py.
+_CHARS_PER_TOKEN: int = CHARS_PER_TOKEN              # English scientific text
+_SYSTEM_PROMPT_RESERVE_TOKENS: int = SYSTEM_PROMPT_RESERVE_TOKENS  # prompt overhead
+# Clusterer-local (intentionally NOT shared — see token_budget.py):
 _SAFETY_FACTOR: float = 0.75           # fraction of ctx to budget for input + output
-_SYSTEM_PROMPT_RESERVE_TOKENS: int = 500   # system prompt overhead estimate
 _FALLBACK_CTX: int = 8192              # build_vocabulary's traditional num_ctx
 _MIN_KEYWORDS_PER_CHUNK: int = 20      # floor: never split below this; smaller chunks waste calls
 _MAX_KEYWORDS_PER_CHUNK: int = 1000    # ceiling: even unlimited-context models cap here for sanity
@@ -457,8 +460,10 @@ def _refine_clustering(
         max_tokens=max_tokens,
     )
 
-    # Persist the raw response unconditionally so the caller can verify the
-    # pass completed and diagnose truncation even when parsing succeeds.
+    # The caller owns retention: this writes the raw refinement response only
+    # when it passed a debug_output_path. When set, the dump is unconditional
+    # within this function (written even on a successful parse) so the caller
+    # can verify the pass completed and diagnose truncation after the fact.
     if debug_output_path is not None:
         try:
             debug_output_path.parent.mkdir(parents=True, exist_ok=True)

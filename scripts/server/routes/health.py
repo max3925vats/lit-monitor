@@ -6,6 +6,7 @@ lazy-loads a per-check detail panel below the topnav.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Sequence
 from html import escape
 from typing import Any
@@ -16,6 +17,36 @@ from fastapi.responses import HTMLResponse
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# P6.23: short TTL cache around run_health_check().
+# The badge is polled every 30s by HTMX on every open page, and each tab is a
+# separate poller — without a cache, N tabs hammer Ollama+Zotero N times per
+# interval. A 30s TTL collapses a burst of near-simultaneous polls (and the
+# badge + its detail-panel open) into a single underlying check.
+# ---------------------------------------------------------------------------
+_HEALTH_CACHE_TTL_SECONDS: float = 30.0
+_health_cache: dict[str, Any] | None = None
+_health_cache_at: float = 0.0
+
+
+def _cached_health_check() -> dict[str, dict[str, Sequence[Any]]]:
+    """Return run_health_check() results, served from a TTL cache.
+
+    Within ``_HEALTH_CACHE_TTL_SECONDS`` of the last real check, the cached
+    result is returned and no underlying Ollama/Zotero probe runs.
+    """
+    global _health_cache, _health_cache_at
+    from scripts.setup.health_check import run_health_check
+
+    now = time.monotonic()
+    if _health_cache is not None and (now - _health_cache_at) < _HEALTH_CACHE_TTL_SECONDS:
+        return _health_cache
+
+    _health_cache = run_health_check()
+    _health_cache_at = now
+    return _health_cache
 
 
 def _severity_of(result) -> str:
@@ -99,8 +130,7 @@ async def health_badge() -> str:
     """Return the badge HTML fragment for HTMX swap-in."""
     # Lazy import — keep boot resilient if config is missing.
     try:
-        from scripts.setup.health_check import run_health_check
-        results = run_health_check()
+        results = _cached_health_check()
         state = _aggregate_state(results)
     except Exception as exc:  # noqa: BLE001 — defensive boot fallback
         logger.warning("Health badge fell back to 'unconfigured' due to: %s", exc)
@@ -121,8 +151,7 @@ async def health_badge() -> str:
 async def health_badge_detail() -> str:
     """Return the detail panel — full per-check table."""
     try:
-        from scripts.setup.health_check import run_health_check
-        results = run_health_check()
+        results = _cached_health_check()
     except Exception as exc:  # noqa: BLE001
         return f'<div class="health-detail-error">Could not compute health: {escape(str(exc))}</div>'
     rows = []

@@ -4,7 +4,7 @@ Test coverage:
   - happy path: returns Cypher string from LLM.
   - single-call invariant: exactly one client.complete() per question.
   - fence stripping: tolerates ```cypher / bare ``` wrappers.
-  - mutation rejection: each of the 8 forbidden keywords + case-insensitive.
+  - mutation rejection: each of the 9 forbidden keywords + case-insensitive.
   - word-boundary safety: 'created_at' as a property name does NOT trigger
     CREATE rejection.
   - query-shape gate: output must start with MATCH/RETURN/WITH/OPTIONAL MATCH
@@ -93,7 +93,8 @@ class TestFenceStripping:
 
 
 # ---------------------------------------------------------------------------
-# Mutation rejection — 8 forbidden keywords + case-insensitive
+# Mutation rejection — 9 forbidden keywords + case-insensitive
+# (CALL added in audit F19; see _FORBIDDEN_KEYWORDS in scripts/graph/ask.py.)
 # ---------------------------------------------------------------------------
 class TestMutationRejection:
     @pytest.mark.parametrize(
@@ -106,6 +107,7 @@ class TestMutationRejection:
             "MATCH (p) SET p.title = 'hacked' RETURN p",
             "MATCH (p) REMOVE p.title RETURN p",
             "ALTER TABLE Paper ADD foo STRING",
+            "CALL show_tables() RETURN *",
             "LOAD CSV FROM 'attack.csv' AS row RETURN row",
         ],
     )

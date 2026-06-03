@@ -178,6 +178,25 @@ def test_split_two_headings():
     assert any("Methods" in h for h in headings)
 
 
+@pytest.mark.unit
+def test_empty_heading_marker_is_recognised():
+    """P6.21: a heading marker with no text after it (e.g. "## ") must still
+    be treated as a heading boundary.
+
+    The regex broadened from ``\\s+.+`` to ``\\s+.*`` so a bare "## " no longer
+    falls through to body text. Here the empty heading precedes "Body one"; the
+    next real heading then starts a second section.
+    """
+    text = "## \n\nBody one paragraph.\n\n## Methods\n\nBody two paragraph."
+    sections = _split_into_sections(text)
+    headings = [h for h, _ in sections]
+    # "Methods" must be its own section, and "Body one" must NOT be glued to it.
+    assert any("Methods" in h for h in headings)
+    body_two = next(span.text for h, span in sections if "Methods" in h)
+    assert "Body two" in body_two
+    assert "Body one" not in body_two
+
+
 # ---------------------------------------------------------------------------
 # Regression: strip_end_matter should be applied before chunk_markdown
 # so that bibliography content never lands in the chunks collection (Q4 fix).

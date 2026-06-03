@@ -2039,6 +2039,13 @@ def obsidian_rebuild_citations(
             record = state_db.get_paper(paper_doi)
             note_path = record.get("note_path") if record else None
             if note_path:
+                # NOTE: rebuild-citations is about Pass-2 citation-edge
+                # resolution; the relink here is a vector-only Pass-1 refresh.
+                # We intentionally do NOT open a GraphDB (no rag_mode/graph_db
+                # passed), so relink_note resolves rag_mode from config but
+                # always runs Pass 1 with graph_db=None. If a config
+                # default_mode of graph/hybrid should also apply here, this is
+                # the call to wire graph_db into (cf. obsidian_relink's G9 fix).
                 relink_note(note_path, embeddings_db, state_db, config=config)
         return result
 

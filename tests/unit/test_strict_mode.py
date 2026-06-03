@@ -55,6 +55,30 @@ class TestIsStrict:
         assert _sm.is_strict() is True
 
 
+class TestGetStrictOverride:
+    def setup_method(self) -> None:
+        _reset()
+
+    def test_default_override_is_none(self) -> None:
+        """Unset override is None (distinct from is_strict()'s bool)."""
+        assert _sm.get_strict_override() is None
+
+    def test_reflects_set_strict(self) -> None:
+        _sm.set_strict(True)
+        assert _sm.get_strict_override() is True
+        _sm.set_strict(False)
+        assert _sm.get_strict_override() is False
+
+    def test_save_and_restore_roundtrip(self) -> None:
+        """P6.16: a caller can force strict then restore the prior override."""
+        _sm.set_strict(False)
+        prev = _sm.get_strict_override()
+        _sm.set_strict(True)  # temporarily force
+        assert _sm.get_strict_override() is True
+        _sm.set_strict(prev)  # restore
+        assert _sm.get_strict_override() is False
+
+
 # ---------------------------------------------------------------------------
 # strict_fallback()
 # ---------------------------------------------------------------------------

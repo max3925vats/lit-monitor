@@ -1008,3 +1008,43 @@ def test_ollama_client_no_warn_on_neg1_max_tokens_for_custom_local_host(caplog):
     assert not any("num_predict=-1" in r.message for r in caplog.records), (
         "No warning expected for a custom local host like http://my-pi:11434"
     )
+
+
+# ---------------------------------------------------------------------------
+# P6.22: mock-response fixtures load lazily, not at import time
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_mock_responses_load_lazily_and_cache() -> None:
+    """The fixtures load on first MockLLMClient use, not before, and are cached.
+
+    We do NOT importlib.reload the module here on purpose: reloading would
+    rebind RateLimitError to a fresh class object and break other tests'
+    ``except RateLimitError`` handlers. Instead we drive the module-level cache
+    directly and spy on the loader.
+    """
+    import scripts.llm.llm_client as _llm
+
+    original_cache = _llm._MOCK_RESPONSES
+    try:
+        # Simulate the pre-first-use state.
+        _llm._MOCK_RESPONSES = None
+        load_calls = {"n": 0}
+        real_loader = _llm._load_mock_responses
+
+        def _counting_loader():
+            load_calls["n"] += 1
+            return real_loader()
+
+        with patch.object(_llm, "_load_mock_responses", side_effect=_counting_loader):
+            # Cache untouched until first use.
+            assert _llm._MOCK_RESPONSES is None
+            assert load_calls["n"] == 0
+
+            _llm.MockLLMClient()  # first use → loads once
+            assert _llm._MOCK_RESPONSES is not None
+            assert load_calls["n"] == 1
+
+            _llm.MockLLMClient()  # second use → served from cache, no reload
+            assert load_calls["n"] == 1
+    finally:
+        _llm._MOCK_RESPONSES = original_cache

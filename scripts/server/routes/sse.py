@@ -1,7 +1,9 @@
 """Server-Sent Events streams for live pipeline progress.
 
 GET /api/brain-build/stream — tails the newest brain_build JSONL log
-under ``<repo>/logs/``, forwards each new line as a ``progress`` event.
+under the canonical logs dir (``<state_db parent>/logs``, default
+``~/.config/lit-monitor/logs/``; see ``_resolve_logs_dir`` below), forwards
+each new line as a ``progress`` event.
 GET /api/discovery/stream — same machinery, but tails the newest discovery
 log instead. Both routes are thin wrappers around ``stream_log``.
 

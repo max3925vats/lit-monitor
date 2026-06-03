@@ -423,3 +423,45 @@ def test_schema_max_pass_is_derived_from_schema(monkeypatch):
     monkeypatch.setattr(es, "_get_paper_schema", lambda: fake)
 
     assert es.schema_max_pass("paper") == 4
+
+
+# ---------------------------------------------------------------------------
+# P6.19: _validate_passes derives the required pass set from the schema, so a
+# 2-pass schema is legal but a pass gap is still rejected.
+# ---------------------------------------------------------------------------
+def _make_schema(pass_nums, pass_labels):
+    """Build an _ExtractionSchema with one field per pass number."""
+    from scripts.llm.extraction_schema import _ExtractionSchema
+
+    fields = [
+        {
+            "id": f"f{p}",
+            "label": f"Field {p}",
+            "prompt": f"Extract field {p}.",
+            "pass": p,
+        }
+        for p in pass_nums
+    ]
+    return _ExtractionSchema(
+        system_role="x",
+        json_format_instruction="x",
+        null_instruction="x",
+        ocr_warning="x",
+        confidence_values=["high", "low"],
+        pass_labels=pass_labels,
+        fields=fields,
+    )
+
+
+def test_two_pass_schema_is_valid():
+    """A schema whose fields only span passes 1 and 2 must validate."""
+    schema = _make_schema([1, 2], {1: "Quick", 2: "Deep"})
+    assert {f.pass_num for f in schema.fields} == {1, 2}
+
+
+def test_pass_gap_is_rejected():
+    """A non-contiguous pass set (1, 3 with 2 missing) must raise."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match=r"missing fields for pass"):
+        _make_schema([1, 3], {1: "a", 3: "c"})

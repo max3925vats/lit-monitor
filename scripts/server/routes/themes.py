@@ -75,8 +75,7 @@ def _get_cluster_papers(db: Any, cluster_id: int) -> list[dict]:
             SELECT
                 ca.doi,
                 p.title,
-                ca.distance_to_centroid,
-                p.extraction_json
+                ca.distance_to_centroid
             FROM cluster_assignments ca
             LEFT JOIN papers p ON p.doi = ca.doi
             WHERE ca.cluster_id = ?

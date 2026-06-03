@@ -330,11 +330,12 @@ def _re_extract_with_graph(
 
     prompt = load_prompt("re_extract_with_graph")
 
-    # Use title + abstract fields from the DB record if available; otherwise
-    # fall back to the full text (already sanitized by _load_fulltext).
+    # The papers table has no abstract column (see state_db schema), so the
+    # prompt's "abstract" slot is fed the sanitized full text from
+    # _load_fulltext.  Title still prefers the DB record over the extraction.
     extraction = existing or {}
     title = record.get("title") or extraction.get("title") or "(no title)"
-    abstract = record.get("abstract") or fulltext
+    abstract = fulltext
 
     user_msg = prompt.render_user(
         title=title,

@@ -24,6 +24,7 @@ from scripts.core.strict_mode import strict_fallback
 from scripts.llm import extraction_schema as _es
 from scripts.llm.llm_client import LLMClient, parse_llm_json
 from scripts.llm.prompt_safety import sanitize_for_prompt
+from scripts.llm.token_budget import CHARS_PER_TOKEN, SYSTEM_PROMPT_RESERVE_TOKENS
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +68,12 @@ _CONFIDENCE_WEIGHT: dict[str, float] = {"explicit": 1.0, "inferred": 0.5, "absen
 # ---------------------------------------------------------------------------
 # A6 — Context window chunking for long documents
 # ---------------------------------------------------------------------------
-_CHARS_PER_TOKEN: int = 4            # rule of thumb: English scientific text
+# Shared with vocabulary/clusterer.py via scripts/llm/token_budget.py.
+_CHARS_PER_TOKEN: int = CHARS_PER_TOKEN              # English scientific text
+_SYSTEM_PROMPT_RESERVE_TOKENS: int = SYSTEM_PROMPT_RESERVE_TOKENS  # prompt overhead
+# Extractor-local (intentionally NOT shared — see token_budget.py):
 _SAFETY_FACTOR: float = 0.75         # fraction of ctx to budget for input
 _OUTPUT_RESERVE_TOKENS: int = 2048   # realistic extraction output size per pass
-_SYSTEM_PROMPT_RESERVE_TOKENS: int = 500   # system prompt overhead estimate
 _FALLBACK_CTX: int = 16384           # conservative fallback (phi4-mini default)
 _MIN_CHUNK_CHARS: int = 4000         # floor: never split into < ~1 000 token chunks
 # Confidence level → numeric rank for merge decisions

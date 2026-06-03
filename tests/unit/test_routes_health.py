@@ -10,6 +10,19 @@ from scripts.server.app import create_app
 from scripts.setup.check_configured import CheckResult
 
 
+@pytest.fixture(autouse=True)
+def _reset_health_cache():
+    """P6.23: clear the badge TTL cache before each test so the patched
+    run_health_check is always re-invoked and tests don't pollute each other."""
+    import scripts.server.routes.health as _health
+
+    _health._health_cache = None
+    _health._health_cache_at = 0.0
+    yield
+    _health._health_cache = None
+    _health._health_cache_at = 0.0
+
+
 @pytest.fixture
 def client() -> TestClient:
     return TestClient(create_app())
@@ -225,3 +238,48 @@ def test_health_badge_detail_escapes_html_in_messages():
     assert "<script>" not in r.text  # raw `<` must be escaped
     assert "&lt;script&gt;" in r.text
     assert "ok &amp; fine" in r.text
+
+
+@pytest.mark.unit
+def test_health_badge_caches_within_ttl(client: TestClient) -> None:
+    """P6.23: two badge requests within the TTL trigger run_health_check once."""
+    fake_results = {
+        "config": {"secrets_file": CheckResult(True, "ok", "ok")},
+        "ollama": {"reachable": CheckResult(True, "ok", "ok")},
+        "zotero": {"reachable": CheckResult(True, "ok", "ok")},
+        "vault": {"vault_exists": CheckResult(True, "ok", "ok")},
+    }
+    with patch(
+        "scripts.setup.health_check.run_health_check", return_value=fake_results
+    ) as mock_check:
+        r1 = client.get("/api/health/badge")
+        # Second poll (e.g. another tab) within the TTL — served from cache.
+        r2 = client.get("/api/health/badge/detail")
+
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert mock_check.call_count == 1, (
+        "run_health_check should be invoked once and reused within the TTL"
+    )
+
+
+@pytest.mark.unit
+def test_health_badge_recomputes_after_ttl_expiry(client: TestClient) -> None:
+    """P6.23: once the TTL elapses, the next request recomputes."""
+    import scripts.server.routes.health as _health
+
+    fake_results = {
+        "config": {"secrets_file": CheckResult(True, "ok", "ok")},
+        "ollama": {"reachable": CheckResult(True, "ok", "ok")},
+        "zotero": {"reachable": CheckResult(True, "ok", "ok")},
+        "vault": {"vault_exists": CheckResult(True, "ok", "ok")},
+    }
+    with patch(
+        "scripts.setup.health_check.run_health_check", return_value=fake_results
+    ) as mock_check:
+        client.get("/api/health/badge")
+        # Force the cache timestamp into the past, beyond the TTL.
+        _health._health_cache_at -= _health._HEALTH_CACHE_TTL_SECONDS + 1
+        client.get("/api/health/badge")
+
+    assert mock_check.call_count == 2

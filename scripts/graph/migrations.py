@@ -44,6 +44,9 @@ Phase 4 (schema v4):
   CITES: renames 'resolution' column to 'evidence' so it matches all other
   typed Paper→Paper REL tables (EXTENDS, CONTRADICTS, COMPARES_TO).  The
   generic _upsert_typed_edge writes 'evidence'; CITES had diverged at G1.
+
+Bundle D (schema v5):
+  Paper: adds an ``authors`` STRING column (graph-in-ranker support).
 """
 from __future__ import annotations
 
@@ -51,9 +54,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Bumped to 4 (Phase 4): renames CITES.resolution → CITES.evidence.
 # History: v1 (G1) → v2 (G14, provenance cols) → v3 (Phase 3 R1, new Paper→Paper RELs)
-#          → v4 (Phase 4, CITES column parity fix).
+#          → v4 (Phase 4, CITES column parity fix) → v5 (Bundle D, Paper.authors column).
 SCHEMA_VERSION: int = 5
 
 # Default prompt version tag written to all REL TABLE edges by the DDL DEFAULT
@@ -261,11 +263,17 @@ def migrate_v1_to_v2(conn) -> None:  # type: ignore[type-arg]
                 logger.debug("migrate_v1_to_v2: added %s.%s", table, col_name)
             except RuntimeError as exc:
                 msg = str(exc).lower()
-                # Kuzu 0.11.x raises:
+                # FRAGILITY NOTE: idempotency here relies on matching Kuzu's
+                # error *message* text, which is not part of its API contract
+                # and can change between minor versions. Kuzu 0.11.x raises:
                 #   "MENTIONS table already has property confidence."
                 # when the column already exists.  We normalise both "already
                 # exists" (generic form) and "already has property" (Kuzu form)
                 # so the migration is idempotent across engine minor versions.
+                # The newer migrations (migrate_v3_to_v4 / migrate_v4_to_v5)
+                # use CALL table_info(...) introspection instead — the robust
+                # pattern.  This pre-v2 path predates that and is left as-is to
+                # avoid rewriting a migration that only runs on legacy v1 DBs.
                 if "already has property" in msg or "already exists" in msg:
                     logger.debug(
                         "migrate_v1_to_v2: %s.%s already exists, skipping.",

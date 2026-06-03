@@ -1,12 +1,13 @@
-"""MCP server exposing lit-monitor graph + vector RAG as 10 tools.
+"""MCP server exposing lit-monitor graph + vector RAG as 12 tools.
 
 Phase 4b B1: scaffold.  B2 fills in the 8 high-level tools.
 B3 fills in run_cypher (safety-guarded Cypher escape hatch).
 B6 fills in semantic_search.
+P9 adds the two discovery-run inspection tools (10 → 12).
 
 Architecture:
 - stdio transport (matches Claude Desktop's MCP client expectation).
-- Single Server instance with a 10-name registry.
+- Single Server instance with a 12-name registry.
 - Signal handler closes GraphDB on SIGTERM/SIGINT.
 """
 from __future__ import annotations
@@ -39,7 +40,10 @@ TOOL_NAMES: tuple[str, ...] = (
     "get_discovery_run_papers",
 )
 
-# Server bind host — localhost only by design (matches lit-monitor serve)
+# Documentation-only loopback marker.  The MCP server runs over stdio (see
+# main()/stdio_server) and never binds a network socket, so this constant is
+# not consumed by the transport.  It is retained as an explicit "loopback by
+# design" declaration and is asserted by tests/unit/test_mcp_server.py.
 SERVER_HOST: str = "127.0.0.1"
 
 # Module-level handle to the GraphDB; set in main(), closed in shutdown()
@@ -47,7 +51,7 @@ _graph_db: Any = None
 
 
 def _build_server():
-    """Build the MCP Server with all 10 tools registered.
+    """Build the MCP Server with all 12 tools registered.
 
     Returns the Server instance (not yet running). Caller invokes
     .run() via stdio_server depending on transport.

@@ -93,7 +93,15 @@ class _ExtractionSchema(BaseModel):
     @model_validator(mode="after")
     def _validate_passes(self) -> _ExtractionSchema:
         seen = {f.pass_num for f in self.fields}
-        missing_passes = {1, 2, 3} - seen
+        if not seen:
+            raise ValueError("Paper schema defines no fields (no passes present)")
+        # Derive the required pass set from the schema itself rather than
+        # hardcoding {1, 2, 3}: passes must form a contiguous range
+        # 1..max(seen) so a 2-pass schema is legal but a gap (e.g. {1, 3})
+        # is still rejected.
+        max_pass = max(seen)
+        expected = set(range(1, max_pass + 1))
+        missing_passes = expected - seen
         if missing_passes:
             raise ValueError(
                 f"Paper schema missing fields for pass(es): {sorted(missing_passes)}"

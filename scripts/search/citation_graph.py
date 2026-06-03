@@ -190,8 +190,19 @@ def _fetch_s2_references(
             logger.debug("S2: fetched %d references for %s", len(refs), doi)
             return refs
         except Exception as exc:
+            # The semanticscholar client maps an HTTP 429 to a plain
+            # ConnectionRefusedError (see semanticscholar/ApiRequester.py),
+            # so that type is the closest thing to a structured rate-limit
+            # signal it exposes. Match on it first, then fall back to a
+            # message substring scan as a defensive net for client versions
+            # / proxies that surface 429s through a different exception.
             msg = str(exc).lower()
-            is_rate_limit = "429" in msg or "rate" in msg or "too many" in msg
+            is_rate_limit = (
+                isinstance(exc, ConnectionRefusedError)
+                or "429" in msg
+                or "rate" in msg
+                or "too many" in msg
+            )
             if is_rate_limit and attempt < max_retries:
                 wait = _BASE_BACKOFF * (2 ** attempt)
                 logger.warning(

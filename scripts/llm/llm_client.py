@@ -359,7 +359,18 @@ def _load_mock_responses() -> dict[str, Any]:
     return {}
 
 
-_MOCK_RESPONSES = _load_mock_responses()
+# P6.22: loaded lazily on first MockLLMClient use rather than at import time,
+# so importing llm_client in production never walks the filesystem looking for
+# the test fixtures file. Cached after the first call.
+_MOCK_RESPONSES: dict[str, Any] | None = None
+
+
+def _get_mock_responses() -> dict[str, Any]:
+    """Return the cached mock-response fixtures, loading them on first call."""
+    global _MOCK_RESPONSES
+    if _MOCK_RESPONSES is None:
+        _MOCK_RESPONSES = _load_mock_responses()
+    return _MOCK_RESPONSES
 
 
 class MockLLMClient(LLMClient):
@@ -375,7 +386,7 @@ class MockLLMClient(LLMClient):
         mock_response_key: str | None = None,
         raise_on_call: Exception | None = None,
     ) -> None:
-        self._responses = responses or _MOCK_RESPONSES
+        self._responses = responses or _get_mock_responses()
         self._mock_key = mock_response_key
         self._raise = raise_on_call
         self.call_count = 0

@@ -18,10 +18,25 @@ _strict_override: bool | None = None
 T = TypeVar("T")
 
 
-def set_strict(value: bool) -> None:
-    """Called by Click main() when --strict appears on the command line."""
+def set_strict(value: bool | None) -> None:
+    """Set the process-wide strict override.
+
+    Called by Click main() when --strict appears on the command line. Accepts
+    None to clear the override (fall back to the LIT_MONITOR_STRICT env var),
+    which lets callers save and restore the prior state via get_strict_override.
+    """
     global _strict_override
     _strict_override = value
+
+
+def get_strict_override() -> bool | None:
+    """Return the raw process-wide strict override (None when unset).
+
+    Distinct from ``is_strict()``: this exposes the underlying override value
+    (which may be None, meaning "fall back to the env var") so callers that
+    temporarily force strict mode can save it and restore it afterwards.
+    """
+    return _strict_override
 
 
 def is_strict() -> bool:

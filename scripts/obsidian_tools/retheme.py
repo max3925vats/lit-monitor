@@ -19,10 +19,6 @@ from scripts.core.atomic_write import atomic_write_text
 from scripts.core.strict_mode import strict_fallback
 
 logger = logging.getLogger(__name__)
-# Matches [[Target]], [[Target|Alias]], [[Target#Heading]], [[Target#Heading|Alias]]
-_WIKILINK_PATTERN = re.compile(
-    r"\[\[([^\]|#]+?)(?:#[^\]|]*)? *(?:\|[^\]]*)?\]\]"
-)
 def retheme(vault_path: str | Path, old_theme: str, new_theme: str) -> dict[str, int]:
     """
     Rename a theme in the Obsidian vault.
