@@ -1,0 +1,60 @@
+# Reference papers — ground truth for two consumers:
+#
+#   1. The Tier-4 LLM-quality table in scripts/test_everything.sh, which prints
+#      your hand-written expected display values (core_finding, methods_summary,
+#      relevance_to_domain) alongside the live state-DB extraction so you can
+#      eyeball regressions.
+#
+#   2. The null-honesty score in `lit-monitor compare-models`
+#      (scripts/pipelines/model_compare.py). For each paper, `expected_null`
+#      lists extraction fields the paper GENUINELY LACKS. A model that emits a
+#      non-null value for one of those fields has fabricated content — that
+#      counts as a null-honesty violation (lower is better).
+#
+# Resolution order in model_compare.py: the real `reference_papers.yaml` is
+# used if it exists AND has at least one paper entry; otherwise this
+# `.example.yaml` is used as the fallback so the feature runs on a fresh clone.
+#
+# This is an EXAMPLE file. Copy it to `reference_papers.yaml` and replace the
+# entries with your own reference DOIs + expected values:
+#     cp docs/internal/reference_papers.example.yaml docs/internal/reference_papers.yaml
+#
+# After editing, re-run: ./scripts/test_everything.sh --tier 4
+
+papers:
+
+  # --- EXAMPLE ENTRY 1 — an experimental UFDF process-development paper. ---
+  # It reports wet-lab results with stats and a data-availability statement,
+  # so nothing is expected-null here.
+  "10.1016/j.memsci.2021.119000":
+    core_finding: >
+      Tangential-flow ultrafiltration of a monoclonal antibody shows a sharp
+      flux decline above ~120 g/L, driven by concentration polarization rather
+      than membrane fouling.
+    methods_summary: >
+      Bench-scale TFF with 30 kDa regenerated-cellulose cassettes; flux and
+      transmission measured across a feed-concentration sweep.
+    relevance_to_domain: >
+      Directly informs UFDF concentration targets and gel-layer limits in
+      downstream mAb manufacturing.
+    expected_null: []
+
+  # --- EXAMPLE ENTRY 2 — a conceptual / opinion review. ---
+  # No new experiments, no statistics, no released code or dataset. A faithful
+  # model should return null for these fields; fabricating any of them is a
+  # null-honesty violation.
+  "10.1002/btpr.0000example":
+    core_finding: >
+      Argues that continuous downstream processing will only displace batch
+      chromatography once integrated control strategies mature.
+    methods_summary: >
+      Narrative review of published continuous-bioprocessing case studies; no
+      primary experimental work.
+    relevance_to_domain: >
+      Frames the strategic case for continuous capture and polishing in the
+      author's process-development context.
+    expected_null:
+      - statistical_methods
+      - data_availability
+      - software_code
+      - experimental_conditions

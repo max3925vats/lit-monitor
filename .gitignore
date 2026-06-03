@@ -21,7 +21,12 @@ config/topics_suggested.yaml
 
 # --- Internal dev journals (kept locally under docs/internal/) ---
 CLAUDE.md
-docs/internal/
+# Ignore everything under docs/internal/ (the /* form lets a single child be
+# re-included below; a bare `docs/internal/` would make the negation impossible).
+docs/internal/*
+# ...but ship the reference-paper schema example so model_compare's
+# null-honesty fallback works on a fresh clone (real .yaml stays local).
+!docs/internal/reference_papers.example.yaml
 docs/superpowers/
 IMPLEMENTATION_PLAN*.md
 ANALYSIS_*.md

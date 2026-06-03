@@ -185,3 +185,121 @@ def test_resolve_output_dir_is_under_user_config_home():
     import scripts.pipelines.model_compare as mc
     pkg_root = Path(mc.__file__).parent.parent.parent
     assert pkg_root not in out.parents
+
+
+# ---------------------------------------------------------------------------
+# A7: reference_papers ground-truth → null-honesty scoring
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_load_reference_papers_real_overrides_example(tmp_path):
+    """When the real reference_papers.yaml has entries, it is used over example."""
+    import yaml
+
+    from scripts.pipelines import model_compare as mc
+
+    real = tmp_path / "reference_papers.yaml"
+    example = tmp_path / "reference_papers.example.yaml"
+    real.write_text(yaml.safe_dump({"papers": {"10.1/real": {"expected_null": ["a"]}}}))
+    example.write_text(yaml.safe_dump({"papers": {"10.1/example": {"expected_null": ["b"]}}}))
+
+    with patch.object(mc, "_REFERENCE_REAL", real), patch.object(mc, "_REFERENCE_EXAMPLE", example):
+        refs = mc._load_reference_papers()
+
+    assert "10.1/real" in refs
+    assert "10.1/example" not in refs
+
+
+@pytest.mark.unit
+def test_load_reference_papers_falls_back_to_example_when_real_empty(tmp_path):
+    """When the real file is missing or has no paper entries, example is used."""
+    import yaml
+
+    from scripts.pipelines import model_compare as mc
+
+    real = tmp_path / "reference_papers.yaml"
+    example = tmp_path / "reference_papers.example.yaml"
+    # Real file exists but its papers map is empty (the all-commented template case).
+    real.write_text(yaml.safe_dump({"papers": None}))
+    example.write_text(yaml.safe_dump({"papers": {"10.1/example": {"expected_null": ["b"]}}}))
+
+    with patch.object(mc, "_REFERENCE_REAL", real), patch.object(mc, "_REFERENCE_EXAMPLE", example):
+        refs = mc._load_reference_papers()
+
+    assert "10.1/example" in refs
+
+
+@pytest.mark.unit
+def test_null_honesty_violation_counted_for_fabricated_field():
+    """A non-null value for an expected_null field increments the violation count."""
+    from scripts.pipelines.model_compare import _ModelScore, _score_extraction
+
+    score = _ModelScore(model="test")
+    reference = {"expected_null": ["statistical_methods", "data_availability"]}
+    extraction = {
+        "core_finding": "Something.",
+        "statistical_methods": "ANOVA, p<0.05",  # fabricated — should be null
+        "data_availability": None,                # correctly null
+    }
+
+    _score_extraction(score, extraction, "paper", reference=reference)
+
+    assert score.null_honesty_violations == 1
+
+
+@pytest.mark.unit
+def test_null_honesty_zero_when_correctly_null():
+    """When all expected_null fields are null/empty/absent, no violation is counted."""
+    from scripts.pipelines.model_compare import _ModelScore, _score_extraction
+
+    score = _ModelScore(model="test")
+    reference = {"expected_null": ["statistical_methods", "data_availability"]}
+    extraction = {
+        "core_finding": "Something.",
+        "statistical_methods": None,
+        "data_availability": "",  # empty string also counts as honest-null
+        # software_code simply absent
+    }
+
+    _score_extraction(score, extraction, "paper", reference=reference)
+
+    assert score.null_honesty_violations == 0
+
+
+@pytest.mark.unit
+def test_null_honesty_no_reference_contributes_zero():
+    """A paper with no reference entry (reference=None) contributes 0 violations."""
+    from scripts.pipelines.model_compare import _ModelScore, _score_extraction
+
+    score = _ModelScore(model="test")
+    extraction = {"statistical_methods": "fabricated"}
+
+    _score_extraction(score, extraction, "paper", reference=None)
+
+    assert score.null_honesty_violations == 0
+
+
+@pytest.mark.unit
+def test_summary_includes_null_honesty_in_json_and_markdown(tmp_path):
+    """scores.json carries null_honesty_violations and the markdown table has the column."""
+    import json
+
+    from scripts.pipelines.model_compare import (
+        _ComparisonResult,
+        _ModelScore,
+        _write_summary,
+    )
+
+    score = _ModelScore(model="ollama:qwen2.5:3b", items_run=2, null_honesty_violations=3)
+    result = _ComparisonResult(mode="paper", n_items=2, run_date="2026-06-03_0000", scores=[score])
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    _write_summary(result, out_dir)
+
+    scores_data = json.loads((out_dir / "scores.json").read_text())
+    assert scores_data[0]["null_honesty_violations"] == 3
+
+    md = (out_dir / "summary.md").read_text()
+    assert "Null Violations" in md
+    assert "| 3 |" in md

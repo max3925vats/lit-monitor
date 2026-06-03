@@ -21,7 +21,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 logger = logging.getLogger(__name__)
+
+# Reference-paper ground-truth files (see docs/internal/reference_papers.yaml).
+# The real file is gitignored and user-maintained; the example ships as the
+# fallback so the null-honesty score works on a fresh clone.
+_REFERENCE_REAL = Path("docs/internal/reference_papers.yaml")
+_REFERENCE_EXAMPLE = Path("docs/internal/reference_papers.example.yaml")
 
 
 def _resolve_output_dir() -> Path:
@@ -114,6 +122,8 @@ def run_model_comparison(
         run_date=run_date,
         output_dir=str(out_dir),
     )
+    # Ground truth for null-honesty scoring: DOI → reference entry.
+    reference_map = _load_reference_papers()
     for model_spec in model_specs:
         parts = model_spec.split(":", 1)
         provider = parts[0] if len(parts) == 2 else "ollama"
@@ -166,8 +176,11 @@ def run_model_comparison(
                 score.items_failed += 1
             elapsed = time.monotonic() - start
             score.total_seconds += elapsed
-            # Score quality dimensions
-            _score_extraction(score, extraction, mode)
+            # Score quality dimensions (null-honesty needs this paper's
+            # ground-truth entry, if any — keyed by DOI).
+            _score_extraction(
+                score, extraction, mode, reference=reference_map.get(doi)
+            )
             # Write raw output
             output = {
                 "doi": doi,
@@ -217,14 +230,53 @@ def _select_items(
                 logger.debug("Skipping %s for comparison: %s", doi, exc)
     return items
 _PAPER_REQUIRED = {"core_finding", "methods_summary", "results_summary", "study_type"}
-# Fields that should be null rather than fabricated for absent content
-_NULL_HONEST_FIELDS = {
-    "statistical_methods", "funding_conflicts", "data_availability",
-    "software_code", "comparison_to_prior",
-    "methods_or_frameworks", "actionable_insights",
-}
-def _score_extraction(score: _ModelScore, extraction: dict, mode: str) -> None:
-    """Update score in-place based on extraction output quality."""
+
+
+def _load_reference_papers() -> dict[str, dict]:
+    """Return the DOI → reference-entry map for null-honesty scoring.
+
+    Resolution mirrors the example/real config convention used elsewhere
+    (see ``scripts.core.path_utils.resolve_path``): the real
+    ``reference_papers.yaml`` is used when it exists AND declares at least
+    one paper entry; otherwise the tracked ``reference_papers.example.yaml``
+    is the fallback. The real-file template ships all-commented, so an
+    existence check alone is insufficient — we require a non-empty ``papers``
+    map. Returns ``{}`` if neither source is usable (scoring then no-ops).
+    """
+    for path in (_REFERENCE_REAL, _REFERENCE_EXAMPLE):
+        try:
+            if not path.exists():
+                continue
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError) as exc:
+            logger.warning("Could not read reference papers from %s: %s", path, exc)
+            continue
+        papers = data.get("papers") or {}
+        if papers:
+            logger.info("Loaded %d reference paper(s) from %s", len(papers), path)
+            return papers
+    logger.info("No reference papers available — null-honesty scoring disabled.")
+    return {}
+
+
+def _score_extraction(
+    score: _ModelScore,
+    extraction: dict,
+    mode: str,
+    reference: dict | None = None,
+) -> None:
+    """Update score in-place based on extraction output quality.
+
+    Args:
+        score: The per-model score accumulator, mutated in place.
+        extraction: The model's extraction output for one paper.
+        mode: Comparison mode ("paper").
+        reference: The reference_papers entry for this paper's DOI, or None
+            when the paper has no ground-truth entry. When present, its
+            ``expected_null`` list names fields the paper genuinely LACKS;
+            a non-null/non-empty value for any of them is a fabrication and
+            increments ``null_honesty_violations`` (lower is better).
+    """
     if "_error" in extraction:
         return
     required = _PAPER_REQUIRED
@@ -234,6 +286,13 @@ def _score_extraction(score: _ModelScore, extraction: dict, mode: str) -> None:
     # JSON parse errors: if the whole extraction is empty, count it
     if not extraction or all(v is None for v in extraction.values()):
         score.json_parse_errors += 1
+    # Null-honesty: fabricating a value for a field the paper genuinely lacks.
+    # Truthiness covers None, "", [], {} as honest-null; any real value is a
+    # violation. Papers with no reference entry contribute nothing.
+    if reference:
+        for field_name in reference.get("expected_null") or []:
+            if extraction.get(field_name):
+                score.null_honesty_violations += 1
 def _write_summary(result: _ComparisonResult, out_dir: Path) -> None:
     """Write a Markdown summary table and a JSON scores file."""
     # JSON
@@ -244,8 +303,8 @@ def _write_summary(result: _ComparisonResult, out_dir: Path) -> None:
             "items_failed": s.items_failed,
             "avg_seconds": round(s.avg_seconds, 1),
             "json_parse_errors": s.json_parse_errors,
-
             "required_fields_missing": s.required_fields_missing,
+            "null_honesty_violations": s.null_honesty_violations,
         }
         for s in result.scores
     ]
@@ -256,13 +315,14 @@ def _write_summary(result: _ComparisonResult, out_dir: Path) -> None:
         "",
         f"Items tested per model: {result.n_items}",
         "",
-        "| Model | Run | Failed | Avg s | JSON Errors | Missing Required |",
-        "|-------|-----|--------|-------|-------------|-----------------|",
+        "| Model | Run | Failed | Avg s | JSON Errors | Missing Required | Null Violations |",
+        "|-------|-----|--------|-------|-------------|-----------------|-----------------|",
     ]
     for s in result.scores:
         md_lines.append(
             f"| {s.model} | {s.items_run} | {s.items_failed} | "
-            f"{s.avg_seconds:.1f} | {s.json_parse_errors} | {s.required_fields_missing} |"
+            f"{s.avg_seconds:.1f} | {s.json_parse_errors} | "
+            f"{s.required_fields_missing} | {s.null_honesty_violations} |"
         )
     md_lines += [
         "",
