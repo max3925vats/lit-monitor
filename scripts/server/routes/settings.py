@@ -12,7 +12,10 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from scripts.server.config_io import safe_save_settings_section
+from scripts.server.config_io import (
+    SettingsValidationError,
+    safe_save_settings_section,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +90,8 @@ async def save_settings_section(section: str, request: Request) -> dict:
 
     Raises:
         HTTPException(400): If section is not in the allowed set.
-        HTTPException(422): If request body is not a JSON object.
+        HTTPException(422): If request body is not a JSON object, or (E3/B8)
+            if it fails the section's schema (unknown keys / wrong types).
         HTTPException(500): On file I/O failure.
     """
     try:
@@ -100,6 +104,11 @@ async def save_settings_section(section: str, request: Request) -> dict:
 
     try:
         safe_save_settings_section(section, data)
+    except SettingsValidationError as exc:
+        # E3/B8: payload failed per-section schema (unknown key / wrong type).
+        # This is a malformed request body → 422, distinct from the 400 used
+        # for an unknown section name below.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OSError as exc:

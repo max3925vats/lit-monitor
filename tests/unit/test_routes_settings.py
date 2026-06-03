@@ -159,6 +159,17 @@ class TestSettingsPost:
             r = client.post("/api/settings/bad_section", json={"foo": "bar"})
         assert r.status_code == 400
 
+    def test_garbage_key_returns_422(self):
+        """B8 (route): an unknown key in a known section → HTTP 422.
+
+        Not mocked — the real safe_save_settings_section validates and raises
+        SettingsValidationError before any file write, which the route maps to
+        422 (distinct from the 400 used for an unknown section name).
+        """
+        client = _make_client()
+        r = client.post("/api/settings/ranking", json={"randomgarbage": True})
+        assert r.status_code == 422
+
     def test_non_object_body_422(self):
         client = _make_client()
         # Send a JSON array instead of an object.
@@ -181,20 +192,21 @@ class TestSafeSaveSettingsSection:
 
         config_path = tmp_path / "extraction.yaml"
         config_path.write_text(
-            "ranking:\n  semantic_weight: 0.4\nclustering:\n  k: 8\n",
+            "ranking:\n  weights:\n    domain_context: 0.4\n"
+            "clustering:\n  k_min: 8\n",
             encoding="utf-8",
         )
 
         safe_save_settings_section(
             "ranking",
-            {"semantic_weight": 0.9, "graph_weight": 0.1},
+            {"weights": {"domain_context": 0.9, "cluster_centroid": 0.1}},
             config_path=config_path,
         )
 
         result = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-        assert result["ranking"]["semantic_weight"] == 0.9
+        assert result["ranking"]["weights"]["domain_context"] == 0.9
         # Other sections untouched.
-        assert result["clustering"]["k"] == 8
+        assert result["clustering"]["k_min"] == 8
 
     def test_creates_file_if_absent(self, tmp_path):
         from scripts.server.config_io import safe_save_settings_section
@@ -237,6 +249,71 @@ class TestSafeSaveSettingsSection:
         # File must be untouched by the rejected write.
         assert config_path.read_text(encoding="utf-8") == original
 
+    def test_garbage_key_rejected_file_unchanged(self, tmp_path):
+        """B8: an unknown key in a known section → ValueError, file untouched.
+
+        ``{"randomgarbage": true}`` is a dict (so it survives the P2 non-dict
+        guard) but has no place in the ranking schema. The per-section model
+        uses extra="forbid", so this must raise and NOT corrupt the file.
+        """
+        from scripts.server.config_io import safe_save_settings_section
+
+        config_path = tmp_path / "extraction.yaml"
+        original = "ranking:\n  weights:\n    domain_context: 0.2\n"
+        config_path.write_text(original, encoding="utf-8")
+
+        with pytest.raises(ValueError):
+            safe_save_settings_section(
+                "ranking", {"randomgarbage": True}, config_path=config_path
+            )
+
+        assert config_path.read_text(encoding="utf-8") == original
+
+    def test_wrong_type_for_known_key_rejected(self, tmp_path):
+        """B8: a known key with the wrong type → ValueError, file untouched.
+
+        ``clustering.enabled`` is a bool; a non-coercible string must be
+        rejected rather than written verbatim.
+        """
+        from scripts.server.config_io import safe_save_settings_section
+
+        config_path = tmp_path / "extraction.yaml"
+        original = "clustering:\n  enabled: true\n"
+        config_path.write_text(original, encoding="utf-8")
+
+        with pytest.raises(ValueError):
+            safe_save_settings_section(
+                "clustering", {"enabled": "not-a-bool"}, config_path=config_path
+            )
+
+        assert config_path.read_text(encoding="utf-8") == original
+
+    @pytest.mark.parametrize(
+        ("section", "payload"),
+        [
+            ("ranking", {"weights": {"domain_context": 0.3}}),
+            ("clustering", {"enabled": True, "k_min": 6}),
+            ("trending_concepts", {"enabled": True, "min_recent_mentions": 4}),
+            ("query_expansion", {"enabled": True, "top_k_co_entities": 5}),
+            ("researcher_gating", {"enabled": True, "min_graph_overlap": 2}),
+            ("embedding", {"provider": "ollama", "ollama": {"dim": 768}}),
+            ("discovery", {"notify": {"enabled": False}}),
+            ("web_ui", {"show_feedback_buttons": True}),
+            ("feedback", {"anything": "allowed-here"}),
+        ],
+    )
+    def test_valid_payload_written(self, tmp_path, section, payload):
+        """B8: a valid payload for each section is accepted and persisted."""
+        from scripts.server.config_io import safe_save_settings_section
+
+        config_path = tmp_path / "extraction.yaml"
+        config_path.write_text("{}\n", encoding="utf-8")
+
+        safe_save_settings_section(section, payload, config_path=config_path)
+
+        result = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        assert section in result
+
     def test_preserves_comments_on_unchanged_sections(self, tmp_path):
         """v0.9.1 regression: comments + quoting on untouched sections survive the write.
 
@@ -255,14 +332,15 @@ class TestSafeSaveSettingsSection:
             "  chunk_chars: null\n"
             "\n"
             "ranking:\n"
-            "  semantic_weight: 0.4\n"
+            "  weights:\n"
+            "    domain_context: 0.4\n"
         )
         config_path.write_text(original, encoding="utf-8")
 
         # Toggle a setting via the production code path.
         safe_save_settings_section(
             "ranking",
-            {"semantic_weight": 0.9, "graph_weight": 0.1},
+            {"weights": {"domain_context": 0.9, "cluster_centroid": 0.1}},
             config_path=config_path,
         )
 
@@ -277,8 +355,8 @@ class TestSafeSaveSettingsSection:
         assert '"phi4-mini"' in written, "quoted scalar lost its quotes"
         # The actual edit landed.
         result = yaml.safe_load(written)
-        assert result["ranking"]["semantic_weight"] == 0.9
-        assert result["ranking"]["graph_weight"] == 0.1
+        assert result["ranking"]["weights"]["domain_context"] == 0.9
+        assert result["ranking"]["weights"]["cluster_centroid"] == 0.1
         # Untouched section semantically intact.
         assert result["brain_build"]["model"] == "phi4-mini"
         assert result["brain_build"]["chunk_chars"] is None

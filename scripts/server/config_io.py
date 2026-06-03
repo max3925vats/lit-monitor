@@ -29,6 +29,16 @@ logger = logging.getLogger(__name__)
 CONFIG_DIR = Path("config")
 
 
+class SettingsValidationError(ValueError):
+    """E3 / B8: a settings payload failed its per-section pydantic schema.
+
+    Subclasses ``ValueError`` so existing direct callers (and the helper's
+    documented contract) keep treating validation failures as ValueErrors.
+    The HTTP route catches this specific type to return 422 (malformed
+    payload) while a plain ValueError (e.g. unknown section) stays 400.
+    """
+
+
 def load_config(name: str) -> dict[str, Any]:
     """Load ``config/{name}.yaml``.
 
@@ -315,6 +325,52 @@ def safe_save_topics(
     _atomic_write(path, _round_trip_dump(yaml_rt, data))
 
 
+def _validate_settings_section(section: str, data: dict[str, Any]) -> None:
+    """E3 / B8: validate ``data`` against the section's pydantic schema.
+
+    Each schema sets ``extra="forbid"`` (except ``feedback``; see its model
+    docstring), so unknown keys or wrong types raise ``pydantic.ValidationError``.
+    That is re-raised as ``ValueError`` so the HTTP route's existing
+    ``except ValueError`` branch handles it uniformly.
+
+    The section name is assumed already validated against the allowed set by
+    the caller. An unmapped (but allowed) section would be a programming error,
+    so we fail loud rather than silently skipping validation.
+    """
+    from pydantic import ValidationError
+
+    from scripts.core.config_schema import (
+        ClusteringSettings,
+        DiscoverySettings,
+        EmbeddingSettings,
+        FeedbackSettings,
+        QueryExpansionSettings,
+        RankingSettings,
+        ResearcherGatingSettings,
+        TrendingConceptsSettings,
+        WebUiSettings,
+    )
+
+    section_models = {
+        "ranking": RankingSettings,
+        "clustering": ClusteringSettings,
+        "feedback": FeedbackSettings,
+        "trending_concepts": TrendingConceptsSettings,
+        "query_expansion": QueryExpansionSettings,
+        "researcher_gating": ResearcherGatingSettings,
+        "web_ui": WebUiSettings,
+        "embedding": EmbeddingSettings,
+        "discovery": DiscoverySettings,
+    }
+    model = section_models[section]
+    try:
+        model.model_validate(data)
+    except ValidationError as exc:
+        raise SettingsValidationError(
+            f"invalid payload for section {section!r}: {exc}"
+        ) from exc
+
+
 def safe_save_settings_section(
     section: str,
     data: dict[str, Any],
@@ -341,8 +397,9 @@ def safe_save_settings_section(
                      ``config/extraction.yaml``.  Override in tests.
 
     Raises:
-        ValueError: If ``section`` is not in the allowed set, or if ``data``
-            is not a dict (a top-level section must be a mapping).
+        ValueError: If ``section`` is not in the allowed set, if ``data`` is
+            not a dict, or (E3/B8) if ``data`` fails the section's pydantic
+            schema validation (unknown keys / wrong types).
         OSError:    If the file cannot be read or written.
     """
     _ALLOWED_SECTIONS: frozenset[str] = frozenset(
@@ -368,17 +425,24 @@ def safe_save_settings_section(
     # section's shape. This is defense-in-depth: the HTTP route already
     # rejects non-object bodies with 422, but safe_save_settings_section is
     # an importable helper that can be called directly, so it guards itself.
-    #
-    # NOTE: this does NOT validate the *keys/types inside* the dict — a dict
-    # with unknown keys (e.g. {"randomgarbage": true}) is still written. Full
-    # per-section key+type validation is intentionally NOT implemented here
-    # because the section shapes are not cleanly enumerable from existing code
-    # (see the audit report / escalation note). Inventing a speculative schema
-    # was explicitly out of scope.
     if not isinstance(data, dict):
         raise ValueError(
             f"section {section!r} data must be a mapping, got {type(data).__name__!r}"
         )
+
+    # E3 / B8: validate the incoming dict against the section's pydantic model
+    # (extra="forbid", so unknown keys and wrong types are rejected) BEFORE we
+    # touch the file. A ValidationError is re-raised as ValueError so the HTTP
+    # route's existing ValueError handler maps it to 4xx — see below for the
+    # 422-not-400 escalation note. Only the incoming section's data is checked;
+    # the rest of the file is round-tripped untouched, preserving comments and
+    # the other sections' formatting/ordering.
+    #
+    # We validate the raw dict but write the ORIGINAL ``data`` verbatim (not the
+    # model_dump), so we never inject schema defaults into a section the user
+    # only partially specified — the existing per-section "replace" semantics
+    # are preserved exactly; validation is a gate, not a normalizer.
+    _validate_settings_section(section, data)
 
     path = Path(config_path) if config_path is not None else CONFIG_DIR / "extraction.yaml"
 
