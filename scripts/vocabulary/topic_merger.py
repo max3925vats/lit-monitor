@@ -25,6 +25,8 @@ from typing import Any
 
 import yaml
 
+from scripts.core.strict_mode import strict_fallback
+
 logger = logging.getLogger(__name__)
 
 # Default paths — override in tests via the *_path parameters.
@@ -285,10 +287,20 @@ def merge_discovered_topics(
                 )
                 continue
 
+            # P4.3: track write outcomes so we never report a topic as
+            # "appended" when every attempted write actually failed. A write is
+            # "attempted" only for a file that exists; if neither file exists
+            # there is nothing to write to and the topic still counts as merged
+            # (preserves prior behaviour for the no-files case).
+            attempted = 0
+            wrote = 0
+
             # Append to topics.yaml if it exists.
             if topics_path.exists():
+                attempted += 1
                 try:
                     _append_topics_entry(topics_path, topic, doi, today)
+                    wrote += 1
                     logger.info(
                         "merge_discovered_topics: appended %r to %s (from %s)",
                         topic, topics_path, doi,
@@ -301,8 +313,10 @@ def merge_discovered_topics(
 
             # Append to concepts.yaml if it exists.
             if concepts_path.exists():
+                attempted += 1
                 try:
                     _append_concepts_entry(concepts_path, topic, doi, today)
+                    wrote += 1
                     logger.info(
                         "merge_discovered_topics: appended %r to %s (from %s)",
                         topic, concepts_path, doi,
@@ -312,6 +326,18 @@ def merge_discovered_topics(
                         "merge_discovered_topics: failed to append %r to %s: %s",
                         topic, concepts_path, exc,
                     )
+
+            # If we attempted at least one write and every one failed, the topic
+            # was NOT persisted — escalate in --strict (raises) and, in
+            # non-strict, skip reporting it as appended so callers don't act on
+            # a topic that never reached disk.
+            if attempted > 0 and wrote == 0:
+                strict_fallback(
+                    logger,
+                    f"merge_discovered_topics: all {attempted} write(s) failed "
+                    f"for topic {topic!r} (from {doi}); not reporting as appended",
+                )
+                continue
 
             already_appended.append(topic)
 

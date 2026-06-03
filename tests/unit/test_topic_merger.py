@@ -376,3 +376,60 @@ def test_append_with_two_indent_style_produces_valid_yaml(tmp_path):
     names = [s["name"] for s in parsed.get("searches", []) if isinstance(s, dict)]
     assert "protein aggregation" in names
     assert parsed.get("date_window_days") == 14
+
+
+# ---------------------------------------------------------------------------
+# P4.3 — all-writes-fail must not report success
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_all_writes_fail_not_reported_as_appended(tmp_path, monkeypatch):
+    """P4.3: when both _append_* raise, the topic is NOT reported as appended."""
+    import scripts.core.strict_mode as _sm
+    import scripts.vocabulary.topic_merger as tm
+
+    topics_path = tmp_path / "topics.yaml"
+    concepts_path = tmp_path / "concepts.yaml"
+    _make_topics_yaml(topics_path, [])
+    _make_concepts_yaml(concepts_path, [])
+
+    def _boom(*a, **kw):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(tm, "_append_topics_entry", _boom)
+    monkeypatch.setattr(tm, "_append_concepts_entry", _boom)
+
+    _sm.set_strict(False)
+    result = tm.merge_discovered_topics(
+        [("10.1/doi", ["system fouling"])],
+        topics_path=topics_path,
+        concepts_path=concepts_path,
+    )
+    # Topic never reached disk → must not be reported as appended.
+    assert result == []
+
+
+@pytest.mark.unit
+def test_all_writes_fail_raises_under_strict(tmp_path, monkeypatch):
+    """P4.3: in --strict, an all-writes-fail topic escalates to a raise."""
+    import scripts.core.strict_mode as _sm
+    import scripts.vocabulary.topic_merger as tm
+
+    topics_path = tmp_path / "topics.yaml"
+    concepts_path = tmp_path / "concepts.yaml"
+    _make_topics_yaml(topics_path, [])
+    _make_concepts_yaml(concepts_path, [])
+
+    def _boom(*a, **kw):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(tm, "_append_topics_entry", _boom)
+    monkeypatch.setattr(tm, "_append_concepts_entry", _boom)
+
+    _sm.set_strict(True)
+    with pytest.raises(Exception, match="all .* write\\(s\\) failed"):
+        tm.merge_discovered_topics(
+            [("10.1/doi", ["system fouling"])],
+            topics_path=topics_path,
+            concepts_path=concepts_path,
+        )

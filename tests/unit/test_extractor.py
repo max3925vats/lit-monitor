@@ -183,6 +183,45 @@ def test_extract_paper_all_phases_fail_records_all_errors():
     assert "_simple_error" in result
     assert "_complex_error" in result
     assert not result.get("core_finding")
+
+
+# ---------------------------------------------------------------------------
+# P4.1 — phase failures route through strict_fallback
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_extract_paper_phase_failure_raises_under_strict():
+    """P4.1: in --strict a crashed phase must raise, not be downgraded to an
+    empty-fields result carrying a magic _<phase>_error key."""
+    import scripts.core.strict_mode as _sm
+    from scripts.llm.extractor import extract_paper
+
+    class SimpleFailClient(MockLLMClient):
+        def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
+            raise RuntimeError("Simulated simple phase timeout")
+
+    _sm.set_strict(True)
+    with pytest.raises(RuntimeError, match="Simple phase failed"):
+        extract_paper("full text", SimpleFailClient(), phases=("simple",))
+
+
+@pytest.mark.unit
+def test_extract_paper_phase_failure_detectable_in_non_strict():
+    """P4.1: non-strict preserves the detectable _<phase>_error marker so a
+    caller (e.g. re_extract_all_failed_phase) can find the failed phase."""
+    import scripts.core.strict_mode as _sm
+    from scripts.llm.extractor import extract_paper
+
+    class SimpleFailClient(MockLLMClient):
+        def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
+            raise RuntimeError("Simulated simple phase timeout")
+
+    _sm.set_strict(False)
+    result = extract_paper("full text", SimpleFailClient(), phases=("simple",))
+    # Failure is recorded, not silently absent.
+    assert "_simple_error" in result
+    assert "timeout" in result["_simple_error"]
+
+
 # ---------------------------------------------------------------------------
 # A5 — reference stripping + Pass 3 field changes
 # ---------------------------------------------------------------------------

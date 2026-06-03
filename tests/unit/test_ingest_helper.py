@@ -73,6 +73,55 @@ def test_add_chunks_failure_still_marks_phases():
 
 
 # ---------------------------------------------------------------------------
+# P4.6 — strict-mode escalation of enrichment boundaries
+# ---------------------------------------------------------------------------
+
+def test_add_chunks_failure_raises_under_strict():
+    """P4.6: an enrichment-site failure (add_chunks) raises in --strict but is
+    downgraded to WARN + continue in non-strict (preserves prior behaviour)."""
+    import scripts.core.strict_mode as _sm
+    from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+    state_db = MagicMock()
+    embeddings_db = MagicMock()
+    embeddings_db.add_chunks.side_effect = RuntimeError("chunks down")
+    _sm.set_strict(True)
+    with pytest.raises(RuntimeError, match="add_chunks failed"):
+        index_embeddings_and_mark_phases(
+            doi="10.test/strict-chunks",
+            zotero_key="ZK",
+            fulltext="body",
+            paper_metadata={"title": "T", "year": 2020, "source_type": "paper"},
+            chunks=[],
+            state_db=state_db,
+            embeddings_db=embeddings_db,
+            phases_to_mark=("simple",),
+            logger=logging.getLogger("test"),
+        )
+
+
+def test_add_paper_failure_raises_under_strict():
+    """P4.6: the vector add_paper correctness gate also escalates in --strict."""
+    import scripts.core.strict_mode as _sm
+    from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+    state_db = MagicMock()
+    embeddings_db = MagicMock()
+    embeddings_db.add_paper.side_effect = RuntimeError("chromadb down")
+    _sm.set_strict(True)
+    with pytest.raises(RuntimeError, match="add_paper failed"):
+        index_embeddings_and_mark_phases(
+            doi="10.test/strict-paper",
+            zotero_key="ZK",
+            fulltext="body",
+            paper_metadata={"title": "T", "year": 2020, "source_type": "paper"},
+            chunks=[],
+            state_db=state_db,
+            embeddings_db=embeddings_db,
+            phases_to_mark=("simple",),
+            logger=logging.getLogger("test"),
+        )
+
+
+# ---------------------------------------------------------------------------
 # G6 — graph dual-write integration
 # ---------------------------------------------------------------------------
 
@@ -491,6 +540,31 @@ class TestMaybeExtractLlmRelationships:
             "llm" in r.message.lower() or "relationship" in r.message.lower()
             for r in caplog.records
         )
+
+    def test_extractor_exception_raises_under_strict(self, monkeypatch):
+        """P4.6: in --strict, an R2 extraction failure escalates to a raise
+        instead of being downgraded to an empty list."""
+        import scripts.core.strict_mode as _sm
+
+        def failing(*args, **kwargs):
+            raise RuntimeError("network exploded")
+
+        monkeypatch.setattr(
+            "scripts.pipelines._ingest.extract_llm_relationships",
+            failing,
+        )
+        cfg = MagicMock()
+        cfg.graph.relationships.llm_enabled = True
+
+        from scripts.pipelines._ingest import maybe_extract_llm_relationships
+        _sm.set_strict(True)
+        with pytest.raises(RuntimeError, match="relationship extraction failed"):
+            maybe_extract_llm_relationships(
+                paper_doi="10.0/a",
+                fulltext="paper text",
+                extraction_json={},
+                cfg=cfg,
+            )
 
     def test_no_fulltext_returns_empty(self, monkeypatch):
         """R4: empty fulltext skips the LLM call entirely."""

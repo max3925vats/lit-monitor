@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts.core.atomic_write import atomic_write_text
+from scripts.core.strict_mode import strict_fallback
 from scripts.llm.prompt_registry import load_prompt
 from scripts.llm.prompt_safety import sanitize_for_prompt
 
@@ -200,6 +201,8 @@ def synthesize(
 
     except Exception as exc:
         logger.error("LLM synthesis failed for topic %r: %s", topic, exc)
+        # P4.4: escalate in --strict; non-strict keeps the inline failure marker.
+        strict_fallback(logger, f"LLM synthesis failed for topic {topic!r}: {exc}", exc)
         synthesis_text = f"*Synthesis generation failed: {exc}*"
     # 5. Write note
     run_date = str(date.today())
@@ -310,7 +313,9 @@ def _build_reranker_document(record: dict) -> str:
     if extraction_raw:
         try:
             extraction = json.loads(extraction_raw)
-        except Exception:
+        except Exception as exc:
+            # P4.4: escalate in --strict; non-strict falls back to empty dict.
+            strict_fallback(logger, f"Could not parse extraction_json: {exc}", exc)
             extraction = {}
         abstract = (extraction.get("abstract") or "").strip()
         core_finding = (extraction.get("core_finding") or "").strip()
@@ -352,8 +357,9 @@ def _expand_query(topic: str, llm) -> list[str]:
             logger.info("G9 query expansion for %r: %r", topic, terms)
             return terms if terms else [topic]
     except Exception as exc:
-        logger.warning(
-            "Query expansion failed; falling back to topic-only: %s", exc
+        # P4.4: escalate in --strict; non-strict falls back to topic-only.
+        strict_fallback(
+            logger, f"Query expansion failed; falling back to topic-only: {exc}", exc
         )
     return [topic]
 
@@ -383,7 +389,9 @@ def _resolve_entity_ids(surface_forms: list[str], graph_db) -> list[str]:
         try:
             result = graph_db.resolve_query_entity(term)
         except Exception as exc:
-            logger.debug("Entity resolution failed for %r: %s", term, exc)
+            # P4.4: per-term best-effort resolution. Escalate in --strict;
+            # non-strict logs and skips this term.
+            strict_fallback(logger, f"Entity resolution failed for {term!r}: {exc}", exc)
             continue
         if not result:
             continue

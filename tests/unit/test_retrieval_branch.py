@@ -195,6 +195,24 @@ def test_expand_query_falls_back_to_topic_on_llm_failure():
 
 
 @pytest.mark.unit
+def test_expand_query_raises_under_strict():
+    """P4.4: in --strict, a query-expansion LLM failure escalates to a raise."""
+    import scripts.core.strict_mode as _sm
+    from scripts.obsidian_tools.synthesize import _expand_query
+
+    llm = MagicMock()
+    llm.complete.side_effect = RuntimeError("LLM offline")
+
+    _sm.set_strict(True)
+    with patch("scripts.obsidian_tools.synthesize.load_prompt") as mock_lp:
+        mock_lp.return_value.system = "You are a helper."
+        mock_lp.return_value.render_user.return_value = "Expand: topic"
+        mock_lp.return_value.max_tokens = 256
+        with pytest.raises(RuntimeError, match="Query expansion failed"):
+            _expand_query("membrane fouling", llm)
+
+
+@pytest.mark.unit
 def test_expand_query_returns_list_on_success():
     """G9: _expand_query returns LLM-parsed list on success."""
     from scripts.obsidian_tools.synthesize import _expand_query

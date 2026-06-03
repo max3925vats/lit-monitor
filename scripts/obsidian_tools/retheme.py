@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 
 from scripts.core.atomic_write import atomic_write_text
+from scripts.core.strict_mode import strict_fallback
 
 logger = logging.getLogger(__name__)
 # Matches [[Target]], [[Target|Alias]], [[Target#Heading]], [[Target#Heading|Alias]]
@@ -56,7 +57,9 @@ def retheme(vault_path: str | Path, old_theme: str, new_theme: str) -> dict[str,
                 stats["wikilinks_rewritten"] += n
                 logger.debug("Rewrote %d wikilink(s) in %s", n, md_file)
         except Exception as exc:
-            logger.warning("Could not process %s: %s", md_file, exc)
+            # P4.4: per-file best-effort. Escalate in --strict; non-strict logs
+            # and continues to the next file.
+            strict_fallback(logger, f"Could not process {md_file}: {exc}", exc)
     logger.info(
 
         "Retheme %r → %r: %d files, %d links, page renamed=%d",

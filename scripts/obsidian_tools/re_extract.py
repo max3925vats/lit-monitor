@@ -18,6 +18,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from scripts.core.strict_mode import strict_fallback
 from scripts.llm.extractor import (
     ALL_PAPER_FIELDS,
     compute_confidence_score,
@@ -136,7 +137,10 @@ def re_extract(
             try:
                 rerender_note(doi, config, state_db)
             except Exception as exc:
-                logger.warning("Rerender failed after field re-extract for %s: %s", doi, exc)
+                # P4.4: escalate in --strict; non-strict logs and continues.
+                strict_fallback(
+                    logger, f"Rerender failed after field re-extract for {doi}: {exc}", exc
+                )
         logger.info("Field re-extract %s: %s", doi, fields)
         return merged
 
@@ -169,7 +173,8 @@ def re_extract(
         try:
             rerender_note(doi, config, state_db)
         except Exception as exc:
-            logger.warning("Rerender failed after re-extract for %s: %s", doi, exc)
+            # P4.4: escalate in --strict; non-strict logs and continues.
+            strict_fallback(logger, f"Rerender failed after re-extract for {doi}: {exc}", exc)
     logger.info("Re-extracted %s: %s", source_type, doi)
     return merged
 def re_extract_all_failed_phase(
@@ -213,6 +218,9 @@ def re_extract_all_failed_phase(
             stats["re_extracted"] += 1
         except Exception as exc:
             logger.error("Phase re-extract failed for %s: %s", doi, exc)
+            # P4.4: escalate in --strict; non-strict records the failure in
+            # stats["failed"] and continues to the next paper.
+            strict_fallback(logger, f"Phase re-extract failed for {doi}: {exc}", exc)
             stats["failed"] += 1
     logger.info(
         "Re-extract all failed (phase=%s, %s): %d ok, %d failed",
@@ -293,7 +301,9 @@ def _fetch_graph_context(graph_db: Any, doi: str, k: int = 8) -> str:
         return "\n".join(lines)
 
     except Exception as exc:
-        logger.warning("N7: _fetch_graph_context failed for %s: %s", doi, exc)
+        # P4.4: escalate in --strict; non-strict logs and returns "" so graph
+        # re-extraction can still proceed with an empty context block.
+        strict_fallback(logger, f"N7: _fetch_graph_context failed for {doi}: {exc}", exc)
         return ""
 
 
@@ -365,8 +375,9 @@ def _re_extract_with_graph(
         try:
             rerender_note(doi, config, state_db)
         except Exception as exc:
-            logger.warning(
-                "N7: Rerender failed after graph re-extract for %s: %s", doi, exc
+            # P4.4: escalate in --strict; non-strict logs and continues.
+            strict_fallback(
+                logger, f"N7: Rerender failed after graph re-extract for {doi}: {exc}", exc
             )
     logger.info("N7: Graph re-extracted %s: %s", source_type, doi)
     return merged

@@ -402,6 +402,36 @@ def test_ranker_llm_failure_returns_empty_rationale():
 
 
 @pytest.mark.unit
+def test_get_rationales_raises_under_strict():
+    """P4.2: rationale-LLM failure must raise in --strict, not return empty."""
+    import scripts.core.strict_mode as _sm
+    from scripts.llm.ranker import _get_rationales
+
+    llm = MagicMock()
+    llm.complete.side_effect = RuntimeError("Ollama down")
+    _sm.set_strict(True)
+    with pytest.raises(RuntimeError, match="rationale generation failed"):
+        _get_rationales([{"doi": "10.1/p1", "title": "P", "abstract": ""}], llm, "")
+
+
+@pytest.mark.unit
+def test_get_rationales_non_strict_logs_and_returns_empty(caplog):
+    """P4.2: non-strict logs at WARNING and returns {} (empty rationales)."""
+    import logging
+
+    import scripts.core.strict_mode as _sm
+    from scripts.llm.ranker import _get_rationales
+
+    llm = MagicMock()
+    llm.complete.side_effect = RuntimeError("Ollama down")
+    _sm.set_strict(False)
+    with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        result = _get_rationales([{"doi": "10.1/p1", "title": "P", "abstract": ""}], llm, "")
+    assert result == {}
+    assert any("rationale generation failed" in r.message for r in caplog.records)
+
+
+@pytest.mark.unit
 def test_ranker_propagates_chromadb_connection_error():
     """L3: a chromadb backend error must surface, not silently default to 0.0.
 
@@ -540,6 +570,23 @@ def test_retheme_survives_replace_failure_per_file(tmp_path, monkeypatch):
         if p.name.startswith(".") and p.name.endswith(".tmp")
     ]
     assert leftovers == [], f"leaked temp files: {leftovers}"
+@pytest.mark.unit
+def test_retheme_per_file_failure_raises_under_strict(tmp_path, monkeypatch):
+    """P4.4: in --strict, a per-file retheme failure escalates to a raise."""
+    import scripts.core.strict_mode as _sm
+    from scripts.obsidian_tools.retheme import retheme
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "a.md").write_text("Link to [[OldTheme]] here.\n", encoding="utf-8")
+
+    _sm.set_strict(True)
+    with patch(
+        "scripts.obsidian_tools.retheme.atomic_write_text",
+        side_effect=OSError("disk full"),
+    ):
+        with pytest.raises(Exception, match="Could not process"):
+            retheme(vault, "OldTheme", "NewTheme")
 @pytest.mark.unit
 def test_rerender_paper_note(tmp_path):
     """rerender_note() calls write_paper_note with extraction from state DB."""

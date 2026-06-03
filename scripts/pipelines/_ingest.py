@@ -30,7 +30,26 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from scripts.core.strict_mode import strict_fallback
+
 _module_logger = logging.getLogger(__name__)
+
+# P4.6 — "enrichment, not a gate" invariant.
+#
+# The except sites in this module that route through ``strict_fallback`` are
+# enrichment boundaries: graph payload construction, chunk indexing, graph
+# writes, and LLM relationship extraction. In normal (non-strict) operation a
+# failure here is logged at WARNING and the vector ingest proceeds — none of
+# these is a correctness gate for the vector-only path (R28). Under ``--strict``
+# every routed site escalates to a raise so a degraded enrichment path is loud.
+#
+# Three sites are deliberately NOT routed because raising there would be wrong
+# even in strict mode:
+#   * the two graph-extra ``import`` guards (build_graph_tuples /
+#     build_ner_mention_edges) — a missing optional [graph] extra is a
+#     supported configuration, not an error; and
+#   * the config-flag guard in maybe_extract_llm_relationships — an absent
+#     ``graph.relationships.llm_enabled`` section legitimately means "disabled".
 
 # R4: lazy module-level binding so monkeypatch can override the symbol.
 # The real import is deferred to keep this module importable without the
@@ -84,9 +103,12 @@ def build_graph_tuples(
         )
         return entities, relationships
     except Exception as exc:
-        _module_logger.warning(
-            "G6 build_graph_tuples failed for %s (non-fatal, graph_indexed stays 0): %s",
-            source_doi, exc,
+        # P4.6: enrichment, not a gate — escalate in --strict, WARN otherwise.
+        strict_fallback(
+            _module_logger,
+            f"G6 build_graph_tuples failed for {source_doi} "
+            f"(non-fatal, graph_indexed stays 0): {exc}",
+            exc,
         )
         return [], []
 
@@ -137,9 +159,12 @@ def build_ner_mention_edges(
             use_cloud_llm=use_cloud_llm,
         )
     except Exception as exc:
-        _module_logger.warning(
-            "N4 build_ner_mention_edges failed for %s (non-fatal, graph_indexed stays 0): %s",
-            source_doi, exc,
+        # P4.6: enrichment, not a gate — escalate in --strict, WARN otherwise.
+        strict_fallback(
+            _module_logger,
+            f"N4 build_ner_mention_edges failed for {source_doi} "
+            f"(non-fatal, graph_indexed stays 0): {exc}",
+            exc,
         )
         return []
 
@@ -192,7 +217,11 @@ def index_embeddings_and_mark_phases(
     try:
         embeddings_db.add_paper(doi, fulltext, paper_metadata)
     except Exception as exc:
-        logger.warning("Embed add_paper failed for %s: %s", doi, exc)
+        # P4.6: the vector add_paper is the R28 correctness gate — failure
+        # already blocks phase marking via the (False, err) return. Escalate in
+        # --strict so the failure is loud; non-strict preserves the honest
+        # error-signal return.
+        strict_fallback(logger, f"Embed add_paper failed for {doi}: {exc}", exc)
         return False, f"add_paper_failed: {exc}"
 
     try:
@@ -203,7 +232,8 @@ def index_embeddings_and_mark_phases(
     except Exception as exc:
         # Non-fatal: chunks are an enrichment, not a correctness gate.
         # Matches existing behaviour in discovery.py and brain_build.py.
-        logger.warning("Embed add_chunks failed for %s: %s", doi, exc)
+        # P4.6: escalate in --strict, WARN otherwise.
+        strict_fallback(logger, f"Embed add_chunks failed for {doi}: {exc}", exc)
 
     # G6: graph write — non-fatal enrichment.  Same precedence as chunks:
     # the vector add_paper must succeed first; graph_db is allowed to be
@@ -232,9 +262,11 @@ def index_embeddings_and_mark_phases(
             # and must NOT flip graph_indexed.  The user keeps a usable
             # vector index; a subsequent re-ingest or backfill will retry
             # the graph write.
-            logger.warning(
-                "G6: graph add_paper failed for %s; graph_indexed stays 0: %s",
-                doi, exc,
+            # P4.6: escalate in --strict, WARN otherwise.
+            strict_fallback(
+                logger,
+                f"G6: graph add_paper failed for {doi}; graph_indexed stays 0: {exc}",
+                exc,
             )
 
     for phase in phases_to_mark:
@@ -257,8 +289,10 @@ def maybe_extract_llm_relationships(
       - ``extract_llm_relationships`` raises for any reason (R28 invariant:
         LLM failure must NEVER abort ingest or block phase marking)
 
-    Never raises.  Matches the N4 ``build_ner_mention_edges`` enrichment
-    pattern: single call per paper, guarded, returns [] on any failure.
+    In non-strict mode this never raises and matches the N4
+    ``build_ner_mention_edges`` enrichment pattern: single call per paper,
+    guarded, returns [] on any failure. Under ``--strict`` (P4.6) the
+    extraction failure escalates to a raise via ``strict_fallback``.
     """
     # --- flag check ---
     try:
@@ -286,10 +320,11 @@ def maybe_extract_llm_relationships(
             extraction_json=extraction_json or {},
         )
     except Exception as exc:
-        _module_logger.warning(
-            "R4: LLM relationship extraction failed for %s (non-fatal, "
-            "graph_indexed unaffected): %s",
-            paper_doi,
+        # P4.6: enrichment, not a gate — escalate in --strict, WARN otherwise.
+        strict_fallback(
+            _module_logger,
+            f"R4: LLM relationship extraction failed for {paper_doi} "
+            f"(non-fatal, graph_indexed unaffected): {exc}",
             exc,
         )
         return []

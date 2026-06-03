@@ -349,6 +349,32 @@ class TestCliBrainBuild:
         assert "Papers processed" in result.output
         assert "3" in result.output
 
+    def test_brain_build_rate_limit_exhausted_maps_to_exit_2(self, runner):
+        """P4.5: the CLI catches RateLimitExhausted (raised by run_brain_build)
+        and maps it to exit code 2, preserving the historical exit-code-2
+        behaviour now that the library no longer raises SystemExit."""
+        from scripts.core.state_db import CURRENT_SCHEMA_VERSION
+        from scripts.pipelines.brain_build import RateLimitExhausted
+        mock_state_db = MagicMock()
+        mock_state_db.get_schema_version.return_value = CURRENT_SCHEMA_VERSION
+        with (
+            patch("scripts.cli._make_config", return_value=MagicMock()),
+            patch("scripts.cli._make_state_db", return_value=mock_state_db),
+            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
+            patch("scripts.cli._make_llm", return_value=MagicMock()),
+            patch("scripts.cli._load_secrets", return_value={}),
+            patch("scripts.output.embeddings.check_embed_model_change"),
+            patch(
+                "scripts.pipelines.brain_build.run_brain_build",
+                side_effect=RateLimitExhausted("rate limit persists"),
+            ),
+        ):
+            result = runner.invoke(main, ["brain-build"])
+        assert result.exit_code == 2, (
+            f"Expected exit code 2 from RateLimitExhausted; got {result.exit_code}"
+        )
+
     def test_brain_build_all_library_flag_is_passed_through(self, runner):
         """N22: ``brain-build --all-library`` must reach run_brain_build with
         ``all_library=True``.  Closes the CLI-plumbing gap surfaced in Audit R27.

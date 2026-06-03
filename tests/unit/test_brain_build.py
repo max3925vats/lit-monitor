@@ -586,11 +586,14 @@ def test_pass_strategy_all_review_dispatches_with_review_schema(tmp_path):
 @pytest.mark.unit
 def test_rate_limit_abort_after_three_consecutive_429s(tmp_path):
     """
-    V-9: when 3 consecutive RateLimitErrors are raised, run_brain_build must
-    call state_db.finish_run with status='rate_limited' and raise SystemExit(2).
-    The failing paper is NOT marked as 'error' — --resume should retry it.
+    V-9 / P4.5: when 3 consecutive RateLimitErrors are raised, run_brain_build
+    must call state_db.finish_run with status='rate_limited' and raise the
+    catchable domain exception RateLimitExhausted (NOT SystemExit — that was
+    uncatchable in API/web contexts). The failing paper is NOT marked as
+    'error' — --resume should retry it.
     """
     from scripts.llm.llm_client import RateLimitError
+    from scripts.pipelines.brain_build import RateLimitExhausted
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
     embeddings_db = MagicMock()
@@ -605,13 +608,10 @@ def test_rate_limit_abort_after_three_consecutive_429s(tmp_path):
     # Each markdown read raises RateLimitError — simulates 3 consecutive 429s.
     zotero_client.get_markdown_attachment.side_effect = RateLimitError("429 Too Many Requests")
 
-    with pytest.raises(SystemExit) as exc_info:
+    # P4.5: a domain exception, not SystemExit — and definitely not SystemExit.
+    with pytest.raises(RateLimitExhausted):
         with patch("scripts.pipelines.brain_build.time.sleep"):  # skip actual sleep
             run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
-
-    assert exc_info.value.code == 2, (
-        f"Expected SystemExit(2) after 3 consecutive RateLimitErrors; got code={exc_info.value.code}"
-    )
     # The run log should record status='rate_limited', not 'error'
     import sqlite3
     with sqlite3.connect(tmp_path / "state.db") as conn:

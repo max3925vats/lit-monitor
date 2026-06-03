@@ -474,3 +474,34 @@ def test_re_extract_all_failed_phase_counts_individual_failures():
 
     assert stats["re_extracted"] == 0
     assert stats["failed"] == 3
+
+
+@pytest.mark.unit
+def test_re_extract_all_failed_phase_raises_under_strict():
+    """P4.4: in --strict a per-paper re-extract failure escalates to a raise
+    instead of being silently counted in stats['failed']."""
+    import scripts.core.strict_mode as _sm
+    from scripts.obsidian_tools.re_extract import re_extract_all_failed_phase
+
+    record = {
+        "doi": "10.1/fail",
+        "source_type": "paper",
+        "extraction_json": json.dumps({"_complex_error": "timeout"}),
+        "note_path": "",
+        "ocr_heavy": 0,
+        "zotero_key": "",
+    }
+    state_db = MagicMock()
+    state_db.get_all_by_source_type.return_value = [record]
+    state_db.get_paper.return_value = record
+
+    _sm.set_strict(True)
+    with patch("scripts.obsidian_tools.re_extract._load_fulltext",
+               side_effect=RuntimeError("disk error")):
+        with pytest.raises(Exception, match="Phase re-extract failed"):
+            re_extract_all_failed_phase(
+                phase="complex",
+                config=SimpleNamespace(),
+                state_db=state_db,
+                llm=MockLLMClient(),
+            )

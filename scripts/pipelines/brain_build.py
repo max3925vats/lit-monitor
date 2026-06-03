@@ -56,6 +56,15 @@ except Exception:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 
+class RateLimitExhausted(Exception):
+    """P4.5: raised when consecutive rate-limit hits exhaust the retry budget.
+
+    Raised from library code (``run_brain_build``) instead of ``SystemExit(2)``
+    so the failure is catchable in API/web contexts. The CLI boundary catches
+    it and maps it to exit code 2; non-CLI callers can handle it normally.
+    """
+
+
 def _llm_model_str(llm) -> str:
     """Concise model string for extraction metadata — handles single client and dict (F15).
 
@@ -321,7 +330,13 @@ def run_brain_build(
                                 failed=summary.papers_failed,
                                 errors=summary.errors,
                             )
-                            raise SystemExit(2)
+                            # P4.5: raise a domain exception, not SystemExit, so
+                            # API/web callers can catch it. The CLI maps it to
+                            # exit code 2 at its boundary.
+                            raise RateLimitExhausted(
+                                f"Rate limit persists after {consecutive_429} "
+                                "consecutive hits; brain-build aborted."
+                            )
                         wait = 60 * (2 ** (consecutive_429 - 1))  # 60 s, 120 s
                         logger.warning("Sleeping %ds before next paper", wait)
                         time.sleep(wait)

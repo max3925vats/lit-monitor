@@ -471,6 +471,12 @@ def extract_paper(
             )
         except Exception as exc:
             logger.error("Simple phase failed: %s", exc)
+            # P4.1: escalate in --strict (raises) so a crashed phase is not
+            # silently downgraded to an empty-fields result. In non-strict the
+            # _simple_error marker is preserved — re_extract_all_failed_phase()
+            # reads it to find papers that need re-running, so the failure stays
+            # detectable by callers rather than vanishing.
+            strict_fallback(logger, f"Simple phase failed: {exc}", exc)
             merged["_simple_error"] = str(exc)
 
     if "complex" in phases:
@@ -487,6 +493,9 @@ def extract_paper(
             )
         except Exception as exc:
             logger.error("Complex phase failed: %s", exc)
+            # P4.1: see the simple-phase note above — escalate in --strict,
+            # preserve the _complex_error marker in non-strict.
+            strict_fallback(logger, f"Complex phase failed: {exc}", exc)
             merged["_complex_error"] = str(exc)
 
     merged["_overall_confidence"] = compute_confidence_score(merged)

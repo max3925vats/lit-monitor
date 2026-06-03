@@ -20,6 +20,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from scripts.core.strict_mode import strict_fallback
+
 logger = logging.getLogger(__name__)
 
 
@@ -105,7 +107,9 @@ def sync_notes(
             logger.info("P10 sync: rendered note for %s", d)
         except Exception as exc:
             failed += 1
-            logger.warning("P10 sync: failed for %s — %s", d, exc)
+            # P4.4: per-paper best-effort. Escalate in --strict; non-strict logs,
+            # leaves notes_synced=0 (retried next run), and continues.
+            strict_fallback(logger, f"P10 sync: failed for {d}: {exc}", exc)
             # notes_synced stays 0; paper will be retried on next run.
 
     logger.info(

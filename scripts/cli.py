@@ -1114,6 +1114,7 @@ def brain_build_cmd(
     from scripts.core.state_db import CURRENT_SCHEMA_VERSION
     from scripts.output.embeddings import check_embed_model_change
     from scripts.pipelines.brain_build import (
+        RateLimitExhausted,
         _process_paper,
         run_brain_build,
         write_brain_build_report,
@@ -1174,18 +1175,28 @@ def brain_build_cmd(
         f"Starting brain build (batch_size={batch_size}, resume={resume}"
         f"{max_label}{scope_label})…"
     )
-    summary = run_brain_build(
-        config=config,
-        state_db=state_db,
-        zotero_client=zotero_client,
-        embeddings_db=embeddings_db,
-        llm=llm,
-        batch_size=batch_size,
-        resume=resume,
-        max_papers=max_papers,
-        show_progress=True,
-        all_library=all_library,
-    )
+    try:
+        summary = run_brain_build(
+            config=config,
+            state_db=state_db,
+            zotero_client=zotero_client,
+            embeddings_db=embeddings_db,
+            llm=llm,
+            batch_size=batch_size,
+            resume=resume,
+            max_papers=max_papers,
+            show_progress=True,
+            all_library=all_library,
+        )
+    except RateLimitExhausted as exc:
+        # P4.5: preserve the historical exit-code-2 behaviour at the CLI
+        # boundary; the library now raises a catchable domain exception.
+        click.echo(click.style(f"\n{exc}", fg="red"), err=True)
+        click.echo(
+            "Resume with `lit-monitor brain-build --resume` once quota resets.",
+            err=True,
+        )
+        sys.exit(2)
     click.echo(click.style("\n── Brain Build Summary ──", bold=True))
     click.echo(f"  Papers processed: {summary.papers_processed}")
     click.echo(f"  Papers skipped:   {summary.papers_skipped}")

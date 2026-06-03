@@ -4,6 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 class TestNotesSyncedColumn:
     def test_column_exists(self, tmp_path):
@@ -154,6 +156,26 @@ class TestSyncNotes:
                 "SELECT notes_synced FROM papers WHERE doi='10/fail'"
             ).fetchone()
         assert row[0] == 0
+
+    def test_per_paper_failure_raises_under_strict(self, tmp_path):
+        """P4.4: in --strict, a per-paper sync failure escalates to a raise."""
+        import scripts.core.strict_mode as _sm
+        from scripts.core.state_db import StateDB
+        db = StateDB(tmp_path / "state.db")
+        with db._connect() as conn:
+            conn.execute(
+                "INSERT INTO papers (doi, embeddings_indexed, notes_synced) VALUES ('10/fail', 1, 0)"
+            )
+            conn.commit()
+
+        _sm.set_strict(True)
+        with patch(
+            "scripts.obsidian_tools.sync._rerender_one",
+            side_effect=RuntimeError("boom"),
+        ):
+            from scripts.obsidian_tools.sync import sync_notes
+            with pytest.raises(RuntimeError, match="P10 sync: failed"):
+                sync_notes(db, MagicMock())
 
     def test_doi_filter(self, tmp_path):
         from scripts.core.state_db import StateDB
