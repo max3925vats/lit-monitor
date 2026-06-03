@@ -40,6 +40,262 @@ TOOL_NAMES: tuple[str, ...] = (
     "get_discovery_run_papers",
 )
 
+# === Per-tool input schemas (B11) =========================================
+# Each entry is a JSON Schema object derived directly from the matching
+# handler signature in scripts/mcp/tools.py (the source of truth for params,
+# types, defaults, and required-ness).  These replace the previous permissive
+# empty schema so MCP clients get accurate type hints.
+#
+# Conventions:
+# - additionalProperties is False everywhere: every tool has a closed,
+#   fully-enumerated parameter set (none take arbitrary **kwargs), so clients
+#   can rely on the advertised properties being exhaustive.
+# - enum values for the closed-vocabulary params are pulled from the same
+#   constants the handlers validate against (no duplicated literals), so the
+#   schema can never drift from the runtime check.
+# - This is metadata only: call_tool still dispatches **arguments unchanged.
+
+
+def _build_tool_schemas() -> dict[str, dict[str, Any]]:
+    """Return {tool_name: {description, inputSchema}} for all 12 tools.
+
+    Built lazily inside a function (not at import time) so importing the
+    closed-vocabulary constants from scripts.mcp.tools / the validator does
+    not run at module import — keeps import-only tests cheap and avoids
+    pulling heavy deps before they are needed.
+    """
+    # Closed vocabularies — imported from their single source of truth so the
+    # advertised enums stay in lock-step with the handlers' runtime validation.
+    from scripts.graph.relationship_validator import VALID_PREDICATES  # noqa: PLC0415
+    from scripts.mcp.tools import _ENTITY_TYPES  # noqa: PLC0415
+
+    predicate_enum = sorted(VALID_PREDICATES)
+    entity_type_enum = sorted(_ENTITY_TYPES)
+
+    return {
+        "find_papers_by_entity": {
+            "description": "Find papers mentioning an entity (alias-resolved).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "entity": {
+                        "type": "string",
+                        "description": "Surface form or canonical ID of the entity.",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Max papers to return.",
+                    },
+                },
+                "required": ["entity"],
+                "additionalProperties": False,
+            },
+        },
+        "find_papers_by_relationship": {
+            "description": "Find papers participating in a typed relationship.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "predicate": {
+                        "type": "string",
+                        "enum": predicate_enum,
+                        "description": "One of the closed-vocabulary predicates.",
+                    },
+                    "target": {
+                        "type": "string",
+                        "description": (
+                            "Optional target entity canonical_id or paper DOI "
+                            "to filter by."
+                        ),
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Max papers to return.",
+                    },
+                },
+                "required": ["predicate"],
+                "additionalProperties": False,
+            },
+        },
+        "get_paper_details": {
+            "description": "Full snapshot of one paper (metadata, entities, edges).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "doi": {
+                        "type": "string",
+                        "description": "Paper DOI (matches ^10.[0-9]+/[^ ]+$).",
+                    },
+                },
+                "required": ["doi"],
+                "additionalProperties": False,
+            },
+        },
+        "get_corpus_stats": {
+            "description": "Aggregate paper/entity/edge counts for the corpus.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+        "list_entities_by_type": {
+            "description": "List entities of a given type, ranked by mention count.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "entity_type": {
+                        "type": "string",
+                        "enum": entity_type_enum,
+                        "description": "One of the 6 closed entity types.",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Max entities to return.",
+                    },
+                },
+                "required": ["entity_type"],
+                "additionalProperties": False,
+            },
+        },
+        "get_schema": {
+            "description": "Markdown-formatted graph schema description.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+        "run_cypher": {
+            "description": "Execute a read-only, safety-guarded Cypher query.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Raw read-only Cypher (mutation keywords rejected)."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 100,
+                        "description": "Max rows (appended as LIMIT if absent).",
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+        "semantic_search": {
+            "description": "Vector retrieval over the ChromaDB index.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Free-text query (embedded on the fly).",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "default": 10,
+                        "minimum": 1,
+                        "maximum": 100,
+                        "description": "Number of results (1-100).",
+                    },
+                    "granularity": {
+                        "type": "string",
+                        "enum": sorted(("paper", "chunk")),
+                        "default": "paper",
+                        "description": "paper-level or chunk-level hits.",
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+        "find_papers_by_query": {
+            "description": "Free-text query via the graph entity alias chain.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Free-text search string.",
+                    },
+                    "k": {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Max results.",
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+        "find_papers_by_query_hybrid": {
+            "description": "Free-text query via RRF-fused graph + vector retrieval.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Free-text search string.",
+                    },
+                    "k": {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Max results.",
+                    },
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+        "get_recent_discovery_runs": {
+            "description": "Most recent discovery runs (newest first).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "default": 5,
+                        "minimum": 1,
+                        "maximum": 100,
+                        "description": "Max runs to return (1-100).",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+        "get_discovery_run_papers": {
+            "description": "Paper results for a discovery run, sorted by score DESC.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "run_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Primary key of the discovery_runs row.",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "default": 20,
+                        "minimum": 1,
+                        "maximum": 100,
+                        "description": "Max papers to return (1-100).",
+                    },
+                },
+                "required": ["run_id"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
 # Documentation-only loopback marker.  The MCP server runs over stdio (see
 # main()/stdio_server) and never binds a network socket, so this constant is
 # not consumed by the transport.  It is retained as an explicit "loopback by
@@ -87,20 +343,23 @@ def _build_server():
 
     server = Server("lit-monitor-graph")
 
+    # B11: accurate per-tool input schemas, derived from the handler
+    # signatures in scripts/mcp/tools.py.  Built once per server instance.
+    _schemas = _build_tool_schemas()
+
     @server.list_tools()
     async def _list_tools() -> list[Tool]:
-        return [
-            Tool(
-                name=name,
-                description=f"lit-monitor graph tool: {name}",
-                inputSchema={
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": True,
-                },
+        tools_out: list[Tool] = []
+        for name in TOOL_NAMES:
+            spec = _schemas[name]
+            tools_out.append(
+                Tool(
+                    name=name,
+                    description=spec["description"],
+                    inputSchema=spec["inputSchema"],
+                )
             )
-            for name in TOOL_NAMES
-        ]
+        return tools_out
 
     @server.call_tool()
     async def _call_tool(name: str, arguments: dict) -> list[TextContent]:
