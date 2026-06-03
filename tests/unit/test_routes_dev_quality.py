@@ -76,7 +76,10 @@ def test_quality_report_absent(
 def test_quality_report_present(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
-    """Existing report file → success pill + first 500 chars + file:// link."""
+    """Existing report file → success pill + first 500 chars + web-served link.
+
+    A6: the link must point at the HTTP route, not a dead ``file://`` URL.
+    """
     client = _make_dev_client(monkeypatch)
     report = tmp_path / "release-quality-report.md"
     report.write_text(
@@ -92,7 +95,74 @@ def test_quality_report_present(
     assert "Report found" in body
     assert "Quality report" in body
     assert "Tier 4 ran clean" in body
-    assert f"file://{report}" in body
+    # A6: no dead file:// link; the page links to the web-served route instead.
+    assert "file://" not in body
+    assert "/api/dev/quality-report/raw" in body
+
+
+@pytest.mark.unit
+def test_quality_report_raw_serves_content(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """A6 — GET /api/dev/quality-report/raw returns the full report (200)."""
+    client = _make_dev_client(monkeypatch)
+    report = tmp_path / "release-quality-report.md"
+    body_text = "# Quality report\n\nTier 4 ran clean. All checks green.\n"
+    report.write_text(body_text, encoding="utf-8")
+    monkeypatch.setattr(
+        "scripts.server.routes.dev.QUALITY_REPORT_PATH", report
+    )
+    resp = client.get("/api/dev/quality-report/raw")
+    assert resp.status_code == 200
+    assert resp.text == body_text
+    assert resp.headers["content-type"].startswith("text/markdown")
+
+
+@pytest.mark.unit
+def test_quality_report_raw_404_when_absent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """A6 — GET /api/dev/quality-report/raw → 404 when no report exists."""
+    client = _make_dev_client(monkeypatch)
+    missing = tmp_path / "definitely-not-here.md"
+    monkeypatch.setattr(
+        "scripts.server.routes.dev.QUALITY_REPORT_PATH", missing
+    )
+    resp = client.get("/api/dev/quality-report/raw")
+    assert resp.status_code == 404
+
+
+@pytest.mark.unit
+def test_quality_report_raw_rejects_path_traversal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    """A6 security — the route resolves a fixed server-side path and accepts no
+    client-supplied filename, so a traversal attempt cannot reach an arbitrary
+    file. The report path is pinned inside ``tmp_path``; a crafted URL trying to
+    walk out to a secret file must not return that file's contents.
+    """
+    client = _make_dev_client(monkeypatch)
+    report = tmp_path / "release-quality-report.md"
+    report.write_text("# Quality report\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "scripts.server.routes.dev.QUALITY_REPORT_PATH", report
+    )
+
+    # Plant a secret outside the report dir and try to reach it via traversal.
+    secret = tmp_path.parent / "secret.txt"
+    secret.write_text("TOP SECRET", encoding="utf-8")
+
+    for attack in (
+        "/api/dev/quality-report/raw/../../etc/passwd",
+        "/api/dev/quality-report/raw?path=/etc/passwd",
+        "/api/dev/quality-report/raw/..%2f..%2fsecret.txt",
+    ):
+        resp = client.get(attack)
+        # Either the route ignores the extra path/param and serves the pinned
+        # report, or the URL simply doesn't match (404). In no case may the
+        # secret leak.
+        assert "TOP SECRET" not in resp.text
+        assert resp.status_code in (200, 404)
 
 
 @pytest.mark.unit

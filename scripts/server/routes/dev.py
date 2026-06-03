@@ -10,8 +10,8 @@ import subprocess
 from html import escape
 from pathlib import Path
 
-from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from scripts.server.app import templates
 
@@ -1185,9 +1185,34 @@ async def dev_quality_report() -> str:
         "<div class='dev-result'>"
         "<span class='pill success'>Report found</span>"
         f"<pre class='dev-output'>{escape(head)}</pre>"
-        f"<p><a href='file://{escape(str(report_path))}' target='_blank'>"
+        # Web-serve the report over HTTP (A6). A file:// link is dead from an
+        # http://localhost page — modern browsers block it. The target route
+        # serves the fixed server-side report path; the client never names it.
+        "<p><a href='/api/dev/quality-report/raw' target='_blank'>"
         "open full report</a></p></div>"
     )
+
+
+@router.get("/api/dev/quality-report/raw", response_class=PlainTextResponse)
+async def dev_quality_report_raw() -> PlainTextResponse:
+    """Serve the full Tier-4 quality report over HTTP as text/markdown.
+
+    Security (A6): the report location is resolved entirely server-side from
+    the module-level ``QUALITY_REPORT_PATH`` constant. No path or filename is
+    accepted from the client, so there is no path-traversal surface. The whole
+    /dev router is mounted only under ``serve --dev`` (see ``create_app``), so
+    this route inherits that gate. Returns 404 when no report exists yet.
+    """
+    report_path = QUALITY_REPORT_PATH
+    if not report_path.exists():
+        raise HTTPException(status_code=404, detail="No quality report on disk")
+    try:
+        content = report_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail=f"read failed: {exc.__class__.__name__}"
+        ) from exc
+    return PlainTextResponse(content, media_type="text/markdown; charset=utf-8")
 
 
 # ---------------------------------------------------------------------------

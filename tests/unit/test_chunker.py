@@ -288,3 +288,61 @@ def test_references_absent_when_strip_end_matter_applied_first():
     assert not any(ref_sentinel in c.text for c in chunks_with_strip), (
         "Reference text leaked into chunks despite strip_end_matter"
     )
+
+
+# ---------------------------------------------------------------------------
+# A2 — sentence-boundary lookahead: allow lowercase starts, exclude digits
+# ---------------------------------------------------------------------------
+
+def _sentence_texts(paragraph: str, max_chars: int) -> list[str]:
+    """Run ``_split_on_sentences`` over ``paragraph`` and return the source
+    substrings of the resulting spans, one per detected sentence.
+
+    ``max_chars`` is chosen by the caller to be >= the longest individual
+    sentence (so nothing is hard-sliced) but < the combined length of any two
+    adjacent sentences (so the greedy merge keeps each detected sentence in its
+    own span).  This exposes the boundary-detection behaviour directly.  Span
+    offsets are document-relative, so we slice the original paragraph to
+    recover each fragment's exact text.
+    """
+    from scripts.core.chunker import _Span, _split_on_sentences
+
+    para = _Span(text=paragraph, char_start=0, char_end=len(paragraph))
+    spans = _split_on_sentences(para, max_chars=max_chars)
+    return [paragraph[s.char_start:s.char_end] for s in spans]
+
+
+@pytest.mark.unit
+def test_lowercase_sentence_start_splits():
+    """A2 — a sentence beginning with a lowercased word now splits.
+
+    Before the fix the lookahead required ``[A-Z(]``, so the boundary after
+    "...as shown." was missed and both sentences stayed glued together.
+    """
+    paragraph = "The effect is clear as shown. see Table 2 for details."
+    # Longest sentence is 29 chars ("The effect is clear as shown."); a
+    # max_chars of 29 keeps each sentence whole yet blocks the two from merging.
+    parts = _sentence_texts(paragraph, max_chars=29)
+    assert parts == [
+        "The effect is clear as shown.",
+        "see Table 2 for details.",
+    ], parts
+
+
+@pytest.mark.unit
+def test_scientific_abbreviations_do_not_split_on_digits():
+    """A2 — protective: digits stay excluded from the lookahead, so a period
+    followed by a number ("Fig. 3", "Eq. 5") is NOT treated as a boundary.
+
+    The only real sentence boundary here is between "Fig. 3 shows X." and
+    "Eq. 5 follows." (a capital-E start), giving exactly two sentences.
+    """
+    paragraph = "Fig. 3 shows X. Eq. 5 follows."
+    # Longest sentence is 15 chars ("Fig. 3 shows X."); max_chars=15 keeps each
+    # whole while preventing a merge.  If digits were allowed in the lookahead,
+    # "Fig. 3"/"Eq. 5" would split into extra fragments and break this equality.
+    parts = _sentence_texts(paragraph, max_chars=15)
+    assert parts == [
+        "Fig. 3 shows X.",
+        "Eq. 5 follows.",
+    ], parts

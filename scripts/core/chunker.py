@@ -281,8 +281,11 @@ def _split_on_sentences(para: _Span, max_chars: int) -> list[_Span]:
     A sentence that itself exceeds ``max_chars`` is hard-sliced into
     ``max_chars``-sized windows.  Sentence boundaries are detected with a
     conservative regex that requires ``[.?!]`` followed by whitespace + a
-    capital letter — avoids splitting on abbreviations like "Fig. 3" or
-    decimal numbers ("0.5").
+    letter (upper- or lowercase) or ``(``.  Digits are deliberately excluded
+    from the lookahead so scientific abbreviations like "Fig. 3", "Eq. 5", or
+    decimal numbers ("0.5") are not mistaken for sentence boundaries; allowing
+    a lowercase start lets sentences beginning with a lowercased word
+    (e.g. "see Table 2 …") split correctly.
 
     Returned spans carry document-coordinate offsets.
     """
@@ -291,7 +294,7 @@ def _split_on_sentences(para: _Span, max_chars: int) -> list[_Span]:
     text = para.text
     base = para.char_start
     boundaries = [0]
-    for m in re.finditer(r"(?<=[.?!])\s+(?=[A-Z(])", text):
+    for m in re.finditer(r"(?<=[.?!])\s+(?=[A-Za-z(])", text):
         boundaries.append(m.end())  # next sentence starts after the whitespace
     boundaries.append(len(text))
 
