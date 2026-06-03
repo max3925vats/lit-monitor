@@ -14,6 +14,32 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Production default kuzu location, used when neither an explicit persist_dir nor
+# a configured retrieval.graph_db.persist_dir is available.
+_DEFAULT_GRAPH_PATH = "~/.config/lit-monitor/graph.kuzu"
+
+
+def _configured_graph_path() -> str | None:
+    """Return ``retrieval.graph_db.persist_dir`` from config, or None if unset.
+
+    Defensive throughout: config loading is optional here, and pre-graph configs
+    may lack the ``retrieval.graph_db`` block entirely, so any failure simply
+    yields None and the caller falls back to the production default.
+    """
+    try:
+        from scripts.core.config import get_config
+
+        graph_cfg = getattr(getattr(get_config(), "retrieval", None), "graph_db", None)
+        if graph_cfg is None:
+            return None
+        # graph_db is a dot-access _Namespace when present (.get is safe); a
+        # non-dict raw value won't have .get and yields None.
+        persist_dir = graph_cfg.get("persist_dir") if hasattr(graph_cfg, "get") else None
+        return persist_dir or None
+    except Exception as exc:  # noqa: BLE001 — config optional; fall back to default
+        logger.debug("safe_graph_db: could not read graph path from config: %s", exc)
+        return None
+
 
 def safe_graph_db(persist_dir: str | None = None) -> Any | None:
     """Construct a GraphDB if the [graph] extra is installed; else log + return None.
@@ -22,8 +48,9 @@ def safe_graph_db(persist_dir: str | None = None) -> Any | None:
     the ``[graph]`` optional extra.
 
     Args:
-        persist_dir: path to pass to GraphDB.  Defaults to the production path
-            ``~/.config/lit-monitor/graph.kuzu``.
+        persist_dir: explicit path to pass to GraphDB. If omitted, the path is
+            read from ``retrieval.graph_db.persist_dir`` in extraction.yaml, then
+            falls back to the production default ``~/.config/lit-monitor/graph.kuzu``.
 
     Returns:
         A ``GraphDB`` instance, or ``None`` if kuzu is not installed or the DB
@@ -37,7 +64,7 @@ def safe_graph_db(persist_dir: str | None = None) -> Any | None:
             "Install with `uv sync --extra graph` to enable."
         )
         return None
-    resolved_dir = persist_dir or "~/.config/lit-monitor/graph.kuzu"
+    resolved_dir = persist_dir or _configured_graph_path() or _DEFAULT_GRAPH_PATH
     try:
         return GraphDB(persist_dir=resolved_dir)
     except Exception as exc:

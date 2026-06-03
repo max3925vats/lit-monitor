@@ -43,7 +43,12 @@ from scripts.core.strict_mode import strict_fallback
 from scripts.graph import safe_graph_db
 from scripts.llm.extractor import extract_paper
 from scripts.llm.llm_client import RateLimitError
-from scripts.llm.ranker import rank_papers
+from scripts.llm.ranker import (
+    _GRAPH_AUTHORS_NORM_CAP,
+    _GRAPH_CITATION_NORM_CAP,
+    _GRAPH_ENTITY_NORM_CAP,
+    rank_papers,
+)
 from scripts.obsidian_tools.relink import relink_note
 from scripts.output.obsidian_writer import write_paper_note
 from scripts.pipelines._ingest import (
@@ -66,6 +71,31 @@ from scripts.search.search_runner import DEFAULT_DATABASES, filter_known_dois, r
 from scripts.search.semantic_scholar import enrich_paper
 
 logger = logging.getLogger(__name__)
+
+# Historical default for the notification deep-link target; used when no
+# [server] block is configured or the [server] extra isn't installed.
+_DEFAULT_APP_URL = "http://localhost:8765"
+
+
+def _resolve_app_url() -> str:
+    """Build the web-app base URL for notification deep links from the persisted
+    ``[server]`` config block, falling back to the historical default when the
+    block is absent or the optional ``[server]`` extra (which reads it) is not
+    installed. Isolated in its own try/except so a failure here never suppresses
+    the notification itself.
+    """
+    try:
+        from scripts.server.config_io import load_server_config
+
+        srv = load_server_config()
+        host = srv.get("host") or "localhost"
+        port = srv.get("port") or 8765
+        return f"http://{host}:{port}"
+    except Exception as exc:  # noqa: BLE001 — [server] extra optional; keep default
+        logger.debug("discovery: falling back to default app_url (%s): %s", _DEFAULT_APP_URL, exc)
+        return _DEFAULT_APP_URL
+
+
 @dataclass
 class _RunSummary:
     new_papers_found: int = 0
@@ -286,7 +316,7 @@ def run_discovery(
             notify_discovery_complete(
                 run_id=_disc_run_id if _disc_run_id is not None else 0,
                 paper_count=summary.papers_ingested,
-                app_url="http://localhost:8765",  # P4 will replace with cfg.server.base_url
+                app_url=_resolve_app_url(),
                 enabled=getattr(notify_cfg, "enabled", False) if notify_cfg else False,
                 on_zero_results=(
                     getattr(notify_cfg, "on_zero_results", True) if notify_cfg else True
@@ -482,15 +512,19 @@ def _apply_graph_signals_to_scored(
         doi = paper.get("doi") or paper.get("id", "")
         sig = graph_signals.get(doi, {})
 
-        entity_norm = min(float(sig.get("n_shared_entities", 0)) / 5.0, 1.0)
+        entity_norm = min(
+            float(sig.get("n_shared_entities", 0)) / _GRAPH_ENTITY_NORM_CAP, 1.0
+        )
         citation_total = (
             float(sig.get("n_cites_in_library", 0))
             + float(sig.get("n_cited_by_library", 0))
             + float(sig.get("n_extends_in_library", 0))
             + float(sig.get("n_compares_to_library", 0))
         )
-        citation_norm = min(citation_total / 3.0, 1.0)
-        authors_norm = min(float(sig.get("n_shared_authors", 0)) / 3.0, 1.0)
+        citation_norm = min(citation_total / _GRAPH_CITATION_NORM_CAP, 1.0)
+        authors_norm = min(
+            float(sig.get("n_shared_authors", 0)) / _GRAPH_AUTHORS_NORM_CAP, 1.0
+        )
 
         paper["_graph_entity_norm"] = entity_norm
         paper["_graph_citation_norm"] = citation_norm

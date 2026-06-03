@@ -85,7 +85,7 @@ def resolve_doi(
         result = cr.works(
             query_bibliographic=title.strip(),
             query_author=author_str,
-            limit=3,
+            limit=1,  # only items[0] (top relevance) is ever consumed below
         )
     except Exception as exc:
         strict_fallback(

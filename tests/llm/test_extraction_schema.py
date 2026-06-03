@@ -400,3 +400,26 @@ def test_all_fields_for_schema_per_content_type(content_type, expected_count):
     assert len(fields) == len(set(fields)), (
         f"all_fields_for_schema({content_type!r}) contains duplicate fields"
     )
+
+
+# ---------------------------------------------------------------------------
+# schema_max_pass — derived from the loaded schema (E3), not hardcoded.
+# (paper/review/unknown cases already covered above; this pins the derivation.)
+# ---------------------------------------------------------------------------
+def test_schema_max_pass_is_derived_from_schema(monkeypatch):
+    """Regression guard for E3: the value must come from the schema's field
+    definitions, not a hardcoded 3. If a hypothetical 4th pass were added to the
+    paper schema, schema_max_pass('paper') must reflect it.
+    """
+    from types import SimpleNamespace
+
+    import scripts.llm.extraction_schema as es
+
+    # Fake schema whose fields span passes 1..4 (the real _validate_passes
+    # requires 1/2/3 present; 4 is an allowed extra).
+    fake = SimpleNamespace(
+        fields=[SimpleNamespace(pass_num=p) for p in (1, 2, 3, 4)]
+    )
+    monkeypatch.setattr(es, "_get_paper_schema", lambda: fake)
+
+    assert es.schema_max_pass("paper") == 4

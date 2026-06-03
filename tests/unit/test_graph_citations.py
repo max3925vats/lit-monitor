@@ -160,3 +160,79 @@ class TestSafeGraphDB:
 
     # The "extra not installed" path requires sys.modules manipulation — covered
     # by G1's test_module_import_succeeds_without_kuzu.  Not duplicated here.
+
+
+# ---------------------------------------------------------------------------
+# E2c: graph-path resolution (config-driven with fallback)
+# ---------------------------------------------------------------------------
+class TestGraphPathResolution:
+    def test_configured_graph_path_returns_persist_dir(self, monkeypatch):
+        """_configured_graph_path reads retrieval.graph_db.persist_dir."""
+        from types import SimpleNamespace
+
+        import scripts.graph.import_citations as ic
+
+        cfg = SimpleNamespace(
+            retrieval=SimpleNamespace(graph_db={"persist_dir": "/tmp/custom.kuzu"})
+        )
+        monkeypatch.setattr("scripts.core.config.get_config", lambda: cfg)
+        assert ic._configured_graph_path() == "/tmp/custom.kuzu"
+
+    def test_configured_graph_path_with_production_namespace_shape(self, monkeypatch):
+        """Fidelity: production builds graph_db as a config _Namespace (dot-access
+        with .get), not a plain dict — exercise that exact shape too."""
+        from types import SimpleNamespace
+
+        import scripts.graph.import_citations as ic
+        from scripts.core.config import _Namespace
+
+        cfg = SimpleNamespace(
+            retrieval=SimpleNamespace(
+                graph_db=_Namespace({"persist_dir": "/ns/graph.kuzu"})
+            )
+        )
+        monkeypatch.setattr("scripts.core.config.get_config", lambda: cfg)
+        assert ic._configured_graph_path() == "/ns/graph.kuzu"
+
+    def test_configured_graph_path_none_when_block_absent(self, monkeypatch):
+        """A pre-graph config (no graph_db block) yields None, not a crash."""
+        from types import SimpleNamespace
+
+        import scripts.graph.import_citations as ic
+
+        cfg = SimpleNamespace(retrieval=SimpleNamespace(graph_db=None))
+        monkeypatch.setattr("scripts.core.config.get_config", lambda: cfg)
+        assert ic._configured_graph_path() is None
+
+    def test_configured_graph_path_none_on_config_error(self, monkeypatch):
+        """Any failure loading config falls through to None (→ default path)."""
+        import scripts.graph.import_citations as ic
+
+        def boom():
+            raise RuntimeError("config unavailable")
+
+        monkeypatch.setattr("scripts.core.config.get_config", boom)
+        assert ic._configured_graph_path() is None
+
+    def test_safe_graph_db_path_precedence(self, monkeypatch):
+        """Precedence: explicit persist_dir > configured path > default literal."""
+        import scripts.graph.import_citations as ic
+
+        captured: dict[str, str] = {}
+
+        class _FakeGraphDB:
+            def __init__(self, persist_dir: str) -> None:
+                captured["dir"] = persist_dir
+
+        monkeypatch.setattr("scripts.graph.GraphDB", _FakeGraphDB)
+        monkeypatch.setattr(ic, "_configured_graph_path", lambda: "/from/config.kuzu")
+
+        ic.safe_graph_db(persist_dir="/explicit.kuzu")
+        assert captured["dir"] == "/explicit.kuzu"  # explicit wins
+
+        ic.safe_graph_db()
+        assert captured["dir"] == "/from/config.kuzu"  # config used when no explicit
+
+        monkeypatch.setattr(ic, "_configured_graph_path", lambda: None)
+        ic.safe_graph_db()
+        assert captured["dir"] == ic._DEFAULT_GRAPH_PATH  # default when neither

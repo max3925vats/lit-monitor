@@ -33,11 +33,6 @@ CONCEPTS_DRAFT_PATH = Path("config/concepts_draft.yaml")
 # topics.yaml.  Gitignored; never committed directly.
 TOPICS_SUGGESTED_PATH = Path("config/topics_suggested.yaml")
 
-# Fallback / hard-cap chunk size.  Smart sizing (N1, 2026-05-17) computes the
-# actual chunk count from the LLM's num_ctx; this constant is used only as a
-# safety floor / explicit hard cap when the user passes --chunk-size.
-_CHUNK_SIZE = 60
-
 # ── N1 smart-chunking constants (mirror extractor.py A6 math) ───────────────
 _CHARS_PER_TOKEN: int = 4              # rule of thumb: English scientific text
 _SAFETY_FACTOR: float = 0.75           # fraction of ctx to budget for input + output

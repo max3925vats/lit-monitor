@@ -299,12 +299,18 @@ def load_schema(content_type: str) -> Any:
 def schema_max_pass(content_type: str) -> int:
     """Return the highest pass number defined for a given content type.
 
-    Used by I4 to determine when a paper/review is fully complete.
-    paper, review → 3 passes
+    Derived from the loaded schema's field definitions (max ``field.pass_num``)
+    rather than a hardcoded literal, so it tracks the YAML automatically if a
+    pass is ever added or removed. Both shipped schemas span passes 1/2/3, so
+    this returns 3 today. Used by I4 to decide when a paper/review is complete.
     """
-    if content_type in ("paper", "review"):
-        return 3
-    raise ValueError(f"Unknown content_type: {content_type!r}")
+    if content_type == "paper":
+        schema = _get_paper_schema()
+    elif content_type == "review":
+        schema = _get_review_schema()
+    else:
+        raise ValueError(f"Unknown content_type: {content_type!r}")
+    return max(f.pass_num for f in schema.fields)
 
 
 def all_fields_for_schema(content_type: str) -> list[str]:

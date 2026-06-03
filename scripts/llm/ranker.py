@@ -28,6 +28,14 @@ from scripts.llm.prompt_safety import sanitize_for_prompt
 
 logger = logging.getLogger(__name__)
 
+# Graph-signal normalization caps. Each raw count is divided by its cap and
+# clamped to [0, 1] before weighting. Conservative v0.9 baselines. These are
+# imported by scripts/pipelines/discovery.py so the two ranking paths stay in
+# lock-step — do not re-hardcode the divisors there.
+_GRAPH_ENTITY_NORM_CAP: float = 5.0
+_GRAPH_CITATION_NORM_CAP: float = 3.0
+_GRAPH_AUTHORS_NORM_CAP: float = 3.0
+
 
 def rank_papers(
     candidates: list[dict[str, Any]],
@@ -190,16 +198,19 @@ def rank_papers(
             sig = graph_signals.get(doi, {}) if graph_signals else {}  # type: ignore[union-attr]
 
             # Normalize each raw count to [0, 1] before weighting.
-            # Caps are conservative v0.9 baselines; tune in later bundles.
-            entity_norm = min(float(sig.get("n_shared_entities", 0)) / 5.0, 1.0)
+            entity_norm = min(
+                float(sig.get("n_shared_entities", 0)) / _GRAPH_ENTITY_NORM_CAP, 1.0
+            )
             citation_total = (
                 float(sig.get("n_cites_in_library", 0))
                 + float(sig.get("n_cited_by_library", 0))
                 + float(sig.get("n_extends_in_library", 0))
                 + float(sig.get("n_compares_to_library", 0))
             )
-            citation_norm = min(citation_total / 3.0, 1.0)
-            authors_norm = min(float(sig.get("n_shared_authors", 0)) / 3.0, 1.0)
+            citation_norm = min(citation_total / _GRAPH_CITATION_NORM_CAP, 1.0)
+            authors_norm = min(
+                float(sig.get("n_shared_authors", 0)) / _GRAPH_AUTHORS_NORM_CAP, 1.0
+            )
 
             # Store raw normalised values for score_breakdown assembly below.
             paper["_graph_entity_norm"] = entity_norm
