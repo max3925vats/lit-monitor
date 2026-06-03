@@ -1,0 +1,1153 @@
+# ============================================================================
+# magic_numbers_reference.yaml
+# ----------------------------------------------------------------------------
+# DOCUMENTATION ONLY. This file is NOT read by the application. It is a hand-
+# verified inventory of behaviour-affecting hardcoded numeric constants in the
+# codebase, so a maintainer can see — in one place — every "magic number",
+# where it lives, and what it controls.
+#
+# Generated: 2026-06-03, against branch fix/audit2-remediation (commit 5fca566).
+# Method: read-only ground-truth sweep of scripts/ (implementation, not
+# docstrings); every line number below was grep-confirmed at generation time.
+# Line numbers drift as code changes — treat them as "as-of" pointers, not
+# guarantees. Re-run the sweep after large refactors.
+#
+# Scope note: test files are excluded. HTTP status codes, array indices, and
+# trivial 0/1/-1 sentinels are excluded unless they gate real behaviour.
+#
+# ---- Field legend ----------------------------------------------------------
+#   line     : line number in `file` (as of the commit above)
+#   value    : the literal currently in source
+#   category : token_budget | chunk_size | threshold | cap_or_limit |
+#              timeout | retry | weight | dimension | interval | other
+#   does     : one-line description of what the number controls (from code)
+#   tunable  : true  = a maintainer would realistically want to change this
+#              false = structural/incidental; documented for completeness
+#   status   : hardcoded      = literal in source, no config override
+#              config_default = the fallback default for a value already
+#                               overridable via a YAML key (see that section)
+#   flag     : (optional) DRIFT / BUG / DEAD / DUPLICATE — see notes inline
+#
+# This is an inventory, not a work order. Externalizing all of these is NOT
+# recommended — most are sensible constants no one will ever tune. The
+# `tunable: true` + `flag:` entries are the candidates worth a closer look.
+# ============================================================================
+
+
+# ---------------------------------------------------------------------------
+# 1. LLM token budget / context windows / sampling
+#    (extractor.py token-math + llm_client.py ctx defaults + temperature)
+# ---------------------------------------------------------------------------
+llm_token_budget:
+  - name: _CHARS_PER_TOKEN
+    file: scripts/llm/extractor.py
+    line: 70
+    value: 4
+    category: weight
+    does: chars→tokens estimate for English scientific text; drives chunk sizing.
+    tunable: true
+    status: hardcoded
+  - name: _SAFETY_FACTOR
+    file: scripts/llm/extractor.py
+    line: 71
+    value: 0.75
+    category: weight
+    does: fraction of the context window allotted to input text (rest = prompt+output).
+    tunable: true
+    status: hardcoded
+  - name: _OUTPUT_RESERVE_TOKENS
+    file: scripts/llm/extractor.py
+    line: 72
+    value: 2048
+    category: token_budget
+    does: tokens reserved for model output when budgeting a pass.
+    tunable: true
+    status: hardcoded
+  - name: _SYSTEM_PROMPT_RESERVE_TOKENS
+    file: scripts/llm/extractor.py
+    line: 73
+    value: 500
+    category: token_budget
+    does: estimated token overhead of the system prompt.
+    tunable: true
+    status: hardcoded
+  - name: _FALLBACK_CTX
+    file: scripts/llm/extractor.py
+    line: 74
+    value: 16384
+    category: cap_or_limit
+    does: assumed context window when the model's real num_ctx can't be discovered.
+    tunable: true
+    status: hardcoded
+  - name: _MIN_CHUNK_CHARS
+    file: scripts/llm/extractor.py
+    line: 75
+    value: 4000
+    category: chunk_size
+    does: floor on chunk size; never split text below ~1000 tokens.
+    tunable: true
+    status: hardcoded
+  - name: search_window_floor
+    file: scripts/llm/extractor.py
+    line: 120
+    value: 200
+    category: chunk_size
+    does: minimum width of the window scanned for a natural break when splitting.
+    tunable: true
+    status: hardcoded
+  - name: max_tokens (extract_simple)
+    file: scripts/llm/extractor.py
+    line: 345
+    value: 12288
+    category: token_budget
+    does: output-token cap for the simple extraction pass.
+    tunable: true
+    status: hardcoded
+  - name: max_tokens (extract_complex)
+    file: scripts/llm/extractor.py
+    line: 399
+    value: 12288
+    category: token_budget
+    does: output-token cap for the complex extraction pass.
+    tunable: true
+    status: hardcoded
+  - name: max_tokens (extract_paper)
+    file: scripts/llm/extractor.py
+    line: 437
+    value: 12288
+    category: token_budget
+    does: output-token cap for full two-phase paper extraction.
+    tunable: true
+    status: hardcoded
+  - name: max_tokens (extract_fields)
+    file: scripts/llm/extractor.py
+    line: 507
+    value: 4096
+    category: token_budget
+    does: output-token cap for targeted single-field re-extraction.
+    tunable: true
+    status: hardcoded
+  - name: _CONFIDENCE_WEIGHT (explicit/inferred/absent)
+    file: scripts/llm/extractor.py
+    line: 65
+    value: "1.0 / 0.5 / 0.0"
+    category: weight
+    does: weights turning per-field confidence labels into a quality score.
+    tunable: true
+    status: hardcoded
+  - name: _CONFIDENCE_RANK (explicit/inferred/absent)
+    file: scripts/llm/extractor.py
+    line: 77
+    value: "2 / 1 / 0"
+    category: weight
+    does: tie-break priority when merging the same field across chunks.
+    tunable: true
+    status: hardcoded
+  - name: Prompt.max_tokens default
+    file: scripts/llm/prompt_registry.py
+    line: 116
+    value: 4096
+    category: token_budget
+    does: default output-token cap for prompts loaded from YAML that omit max_tokens.
+    tunable: true
+    status: hardcoded
+  - name: LLMClient.complete max_tokens default
+    file: scripts/llm/llm_client.py
+    line: 61
+    value: 4096
+    category: token_budget
+    does: default output-token cap across all client implementations.
+    tunable: true
+    status: hardcoded
+  - name: _OLLAMA_NUM_CTX_DEFAULTS[brain_build]
+    file: scripts/llm/llm_client.py
+    line: 457
+    value: 32768
+    category: token_budget
+    does: context window for brain-build (full paper text + thinking + large JSON).
+    tunable: true
+    status: hardcoded
+  - name: _OLLAMA_NUM_CTX_DEFAULTS[build_vocabulary]
+    file: scripts/llm/llm_client.py
+    line: 458
+    value: 8192
+    category: token_budget
+    does: context window for vocabulary building (~60-keyword chunks).
+    tunable: true
+    status: hardcoded
+  - name: OllamaClient fallback num_ctx
+    file: scripts/llm/llm_client.py
+    line: 111
+    value: 16384
+    category: token_budget
+    does: ctx used when no explicit num_ctx is set and discovery fails.
+    tunable: false
+    status: hardcoded
+  - name: OllamaClient default temperature
+    file: scripts/llm/llm_client.py
+    line: 88
+    value: 0.1
+    category: weight
+    does: sampling temperature for local Ollama completions (low = deterministic).
+    tunable: true
+    status: hardcoded
+  - name: LiteLLMClient default temperature
+    file: scripts/llm/llm_client.py
+    line: 290
+    value: 0.1
+    category: weight
+    does: sampling temperature for cloud LiteLLM completions.
+    tunable: true
+    status: hardcoded
+
+# ---------------------------------------------------------------------------
+# 2. Chunking + embedding input sizing
+# ---------------------------------------------------------------------------
+chunking_and_embedding_sizing:
+  - name: _CHARS_PER_TOKEN
+    file: scripts/core/chunker.py
+    line: 30
+    value: 3.5
+    category: dimension
+    does: chars-to-tokens estimate used by the ChromaDB chunker (differs from extractor's 4).
+    tunable: true
+    status: hardcoded
+    note: INTENTIONAL (verified 2026-06-03) — 3.5 is a deliberate conservative figure for the embedding (BERT-family) tokenizer; extractor's 4 targets the generation LLM. Different tokenizers; do NOT unify.
+  - name: target_tokens (chunk_markdown)
+    file: scripts/core/chunker.py
+    line: 66
+    value: 320
+    category: token_budget
+    does: target tokens/chunk (~1120 chars); kept under mxbai-embed-large's 512-token limit.
+    tunable: true
+    status: hardcoded
+  - name: _EMBED_TRUNCATE_CHARS
+    file: scripts/output/embeddings.py
+    line: 563
+    value: 1400
+    category: chunk_size
+    does: hard cap on chars sent to the embedder (~400 tokens) before truncation.
+    tunable: true
+    status: hardcoded
+  - name: _EMBED_TRUNCATE_FLOOR_CHARS
+    file: scripts/output/embeddings.py
+    line: 567
+    value: 200
+    category: chunk_size
+    does: floor below which truncation stops and an error is raised (model/config mismatch).
+    tunable: true
+    status: hardcoded
+  - name: _END_MATTER_SEARCH_WINDOW
+    file: scripts/core/markdown_processor.py
+    line: 24
+    value: 0.30
+    category: threshold
+    does: scans the last 30% of a document for end-matter (references/appendix) detection.
+    tunable: true
+    status: hardcoded
+
+# ---------------------------------------------------------------------------
+# 3. Embedding model dims + per-instance cache + reranker fan-out
+# ---------------------------------------------------------------------------
+embeddings:
+  - name: _DEFAULT_OLLAMA_DIM
+    file: scripts/output/embeddings.py
+    line: 67
+    value: 1024
+    category: dimension
+    does: embedding dimension for mxbai-embed-large (Ollama). Model-coupled.
+    tunable: false
+    status: hardcoded
+  - name: _DEFAULT_LITELLM_DIM
+    file: scripts/output/embeddings.py
+    line: 69
+    value: 3072
+    category: dimension
+    does: embedding dimension for text-embedding-3-large (LiteLLM). Model-coupled.
+    tunable: false
+    status: hardcoded
+  - name: _EMBED_TEXT_CACHE_MAXSIZE
+    file: scripts/output/embeddings.py
+    line: 71
+    value: 32
+    category: cap_or_limit
+    does: per-instance LRU size for embed_text() results (added in Tier-3 leak fix).
+    tunable: true
+    status: hardcoded
+  - name: embed HTTP timeout
+    file: scripts/output/embeddings.py
+    line: 660
+    value: 60
+    category: timeout
+    does: socket timeout (s) for Ollama /api/embed calls.
+    tunable: true
+    status: hardcoded
+  - name: reranker cosine-candidate multiplier
+    file: scripts/output/embeddings.py
+    line: 699
+    value: 3
+    category: weight
+    does: fetch 3× top_k cosine candidates before cross-encoder reranking.
+    tunable: true
+    status: hardcoded
+  - name: dedupe fetch_k multiplier
+    file: scripts/output/embeddings.py
+    line: 369
+    value: 3
+    category: weight
+    does: fetch up to 3× top_k chunks before per-paper dedup.
+    tunable: true
+    status: hardcoded
+
+# ---------------------------------------------------------------------------
+# 4. Ranking signals (normalization divisors + cosine guards)
+#    NOTE: ranker.py and discovery.py carry the SAME divisors (5/3/3) — they
+#    are duplicated across the two files. Unify if you ever tune them.
+# ---------------------------------------------------------------------------
+ranking_signals:
+  - name: entity-overlap norm divisor (ranker)
+    file: scripts/llm/ranker.py
+    line: 194
+    value: 5.0
+    category: weight
+    does: divides shared-entity count into [0,1] for the graph entity signal.
+    tunable: true
+    status: hardcoded
+    flag: DUPLICATE  # mirrored at discovery.py:485
+  - name: citation norm divisor (ranker)
+    file: scripts/llm/ranker.py
+    line: 201
+    value: 3.0
+    category: weight
+    does: divides citation count into [0,1] for the graph citation signal.
+    tunable: true
+    status: hardcoded
+    flag: DUPLICATE  # mirrored at discovery.py:492
+  - name: shared-authors norm divisor (ranker)
+    file: scripts/llm/ranker.py
+    line: 202
+    value: 3.0
+    category: weight
+    does: divides shared-author count into [0,1] for the author signal.
+    tunable: true
+    status: hardcoded
+    flag: DUPLICATE  # mirrored at discovery.py:493
+  - name: cosine zero-norm guards (ranker)
+    file: scripts/llm/ranker.py
+    line: "136, 150, 158"
+    value: 1e-9
+    category: threshold
+    does: norms below this are treated as zero to avoid divide-by-zero in cosine.
+    tunable: false
+    status: hardcoded
+  - name: rationale abstract slice
+    file: scripts/llm/ranker.py
+    line: 287
+    value: 300
+    category: chunk_size
+    does: max chars of abstract sent to the LLM for rationale generation.
+    tunable: true
+    status: hardcoded
+  - name: query-text abstract slice
+    file: scripts/llm/ranker.py
+    line: 317
+    value: 500
+    category: chunk_size
+    does: max chars of abstract used to build the embedding query text.
+    tunable: true
+    status: hardcoded
+  - name: top_k (rank_papers default)
+    file: scripts/llm/ranker.py
+    line: 36
+    value: 20
+    category: cap_or_limit
+    does: how many top candidates get an LLM rationale.
+    tunable: true
+    status: hardcoded
+
+# ---------------------------------------------------------------------------
+# 5. Discovery pipeline (search windows, off-domain floor, rate-limit backoff)
+# ---------------------------------------------------------------------------
+discovery_pipeline:
+  - name: _MAX_SINCE_DAYS
+    file: scripts/pipelines/discovery.py
+    line: 140
+    value: 90
+    category: cap_or_limit
+    does: caps the search look-back window after a long gap (avoid overwhelming DBs).
+    tunable: true
+    status: hardcoded
+  - name: default since_days
+    file: scripts/pipelines/discovery.py
+    line: 148
+    value: 14
+    category: interval
+    does: fallback look-back window when no last_run_date is stored.
+    tunable: true
+    status: hardcoded
+  - name: top_k (run default)
+    file: scripts/pipelines/discovery.py
+    line: 84
+    value: 20
+    category: cap_or_limit
+    does: candidates getting an LLM rationale per discovery run.
+    tunable: true
+    status: hardcoded
+  - name: sim_threshold (run default)
+    file: scripts/pipelines/discovery.py
+    line: 85
+    value: 0.3
+    category: threshold
+    does: similarity cutoff for highlighting a result in the digest.
+    tunable: true
+    status: hardcoded
+  - name: entity/citation/author norm divisors
+    file: scripts/pipelines/discovery.py
+    line: "485, 492, 493"
+    value: "5.0 / 3.0 / 3.0"
+    category: weight
+    does: graph-signal normalization (DUPLICATE of ranker.py:194/201/202).
+    tunable: true
+    status: hardcoded
+    flag: DUPLICATE
+  - name: domain_threshold (soft filter)
+    file: scripts/pipelines/discovery.py
+    line: 557
+    value: 0.35
+    category: threshold
+    does: cosine cutoff sending a candidate to the in-domain pool.
+    tunable: true
+    status: hardcoded
+  - name: min_off_domain_pct
+    file: scripts/pipelines/discovery.py
+    line: 614
+    value: 0.05
+    category: threshold
+    does: reserves ≥5% of digest slots for off-domain (serendipity) candidates.
+    tunable: true
+    status: hardcoded
+  - name: consecutive-429 abort threshold
+    file: scripts/pipelines/discovery.py
+    line: 1083
+    value: 3
+    category: retry
+    does: aborts ingestion after 3 consecutive rate-limit (429) hits.
+    tunable: true
+    status: hardcoded
+  - name: base rate-limit backoff
+    file: scripts/pipelines/discovery.py
+    line: 1101
+    value: 60
+    category: interval
+    does: initial backoff (s) on 429; doubles per consecutive hit (60/120/240).
+    tunable: true
+    status: hardcoded
+  - name: app_url (OS notification)
+    file: scripts/pipelines/discovery.py
+    line: 289
+    value: "http://localhost:8765"
+    category: other
+    does: hardcoded local app URL in the desktop-notification deep link.
+    tunable: false
+    status: hardcoded
+    flag: DRIFT  # should read the [server] host/port config, not a literal
+
+# ---------------------------------------------------------------------------
+# 6. Brain-build pipeline
+# ---------------------------------------------------------------------------
+brain_build:
+  - name: batch_size default
+    file: scripts/pipelines/brain_build.py
+    line: 106
+    value: 50
+    category: cap_or_limit
+    does: papers processed per batch.
+    tunable: true
+    status: hardcoded
+  - name: consecutive-429 abort threshold
+    file: scripts/pipelines/brain_build.py
+    line: 185
+    value: 3
+    category: retry
+    does: aborts brain-build after 3 consecutive rate-limit hits.
+    tunable: true
+    status: hardcoded
+  - name: base rate-limit backoff
+    file: scripts/pipelines/brain_build.py
+    line: 325
+    value: 60
+    category: interval
+    does: initial backoff (s) on rate limit.
+    tunable: true
+    status: hardcoded
+  - name: max_tokens_per_call
+    file: scripts/pipelines/brain_build.py
+    line: 480
+    value: 12288
+    category: token_budget
+    does: output-token cap per extraction call in the all-pass strategy.
+    tunable: true
+    status: hardcoded
+  - name: clustering min-papers trigger
+    file: scripts/pipelines/brain_build.py
+    line: 874
+    value: 100
+    category: cap_or_limit
+    does: min library size before auto-clustering runs at build completion.
+    tunable: true
+    status: hardcoded
+
+# ---------------------------------------------------------------------------
+# 7. Vocabulary clustering + keyword normalization + topic merge
+# ---------------------------------------------------------------------------
+vocabulary:
+  - name: _CHUNK_SIZE
+    file: scripts/vocabulary/clusterer.py
+    line: 39
+    value: 60
+    category: chunk_size
+    does: keyword-chunk cap referenced in the docstring but never used in code.
+    tunable: true
+    status: hardcoded
+    flag: DEAD  # defined but unused; remove or wire up
+  - name: smart-chunk budget constants (_CHARS_PER_TOKEN / _SAFETY_FACTOR / _SYSTEM_PROMPT_RESERVE_TOKENS / _FALLBACK_CTX / _OUTPUT_MULTIPLIER / _THEME_OVERHEAD_CHARS)
+    file: scripts/vocabulary/clusterer.py
+    line: "42, 43, 44, 45, 48, 49"
+    value: "4 / 0.75 / 500 / 8192 / 1.5 / 800"
+    category: token_budget
+    does: token-budget math for sizing keyword chunks per LLM call.
+    tunable: true
+    status: hardcoded
+  - name: _MIN_KEYWORDS_PER_CHUNK / _MAX_KEYWORDS_PER_CHUNK
+    file: scripts/vocabulary/clusterer.py
+    line: "46, 47"
+    value: "20 / 1000"
+    category: cap_or_limit
+    does: floor/ceiling on keywords per clustering call.
+    tunable: true
+    status: hardcoded
+  - name: max_tokens (refinement / clustering)
+    file: scripts/vocabulary/clusterer.py
+    line: "393, 527"
+    value: "32768 / 16384"
+    category: token_budget
+    does: output-token caps for the refinement pass and per-chunk clustering pass.
+    tunable: true
+    status: hardcoded
+  - name: representative-term selection (max_terms / preferred word count)
+    file: scripts/vocabulary/clusterer.py
+    line: "686, 702"
+    value: "4 / (2-3 words)"
+    category: cap_or_limit
+    does: how many search terms to pick per theme and the preferred phrase length.
+    tunable: true
+    status: hardcoded
+  - name: _NOVELTY_THRESHOLD
+    file: scripts/vocabulary/topic_merger.py
+    line: 35
+    value: 85.0
+    category: threshold
+    does: rapidfuzz ratio above which a discovered topic counts as "already present".
+    tunable: true
+    status: hardcoded
+    note: TUNING (verified 2026-06-03) — NOT a bug; _is_novel logic is correct (>=85 means already present) and matches its docstring. 85 is a sensitivity knob; optionally make configurable, otherwise leave.
+  - name: keyword dedupe threshold (_THRESHOLD)
+    file: scripts/vocabulary/normalizer.py
+    line: 35
+    value: 88
+    category: threshold
+    does: fuzzy-dedup cutoff (0-100) collapsing raw keywords into canonical clusters.
+    tunable: true
+    status: hardcoded
+  - name: assign_themes default threshold
+    file: scripts/vocabulary/normalizer.py
+    line: 88
+    value: 85
+    category: threshold
+    does: cutoff for matching a paper's keywords to a vocabulary theme (looser than dedup).
+    tunable: true
+    status: hardcoded
+  - name: keyword extractor retries (max_retries / retry_delay)
+    file: scripts/vocabulary/keyword_extractor.py
+    line: "19, 20"
+    value: "3 / 5.0"
+    category: retry
+    does: Zotero API retry count and inter-retry delay (s) before raising.
+    tunable: true
+    status: hardcoded
+
+# ---------------------------------------------------------------------------
+# 8. Graph DB + ask (NL→Cypher) + shared query layer
+# ---------------------------------------------------------------------------
+graph_db_and_query:
+  - name: _SLOW_QUERY_THRESHOLD_S
+    file: scripts/graph/db.py
+    line: 45
+    value: 0.5
+    category: timeout
+    does: queries slower than this emit a WARN log.
+    tunable: true
+    status: hardcoded
+  - name: _NULL_INT
+    file: scripts/graph/db.py
+    line: 53
+    value: -1
+    category: other
+    does: sentinel for a missing integer char-offset on MENTIONS edges.
+    tunable: false
+    status: hardcoded
+  - name: k (find_similar_papers / find_papers_by_entities)
+    file: scripts/graph/db.py
+    line: "525, 644"
+    value: 20
+    category: cap_or_limit
+    does: default result counts for the two graph similarity queries.
+    tunable: true
+    status: hardcoded
+  - name: row_cap (execute_cypher)
+    file: scripts/graph/ask.py
+    line: 271
+    value: 100
+    category: cap_or_limit
+    does: hard cap on rows consumed from a result set (defense if the LLM omits LIMIT).
+    tunable: true
+    status: hardcoded
+  - name: max_rows (render / pipeline display)
+    file: scripts/graph/ask.py
+    line: "322, 704"
+    value: 20
+    category: cap_or_limit
+    does: rows rendered in the markdown result table; excess noted in a footnote.
+    tunable: true
+    status: hardcoded
+  - name: max_tokens (generate_cypher / summarize fallbacks)
+    file: scripts/graph/ask.py
+    line: "188, 640"
+    value: "400 / 500"
+    category: token_budget
+    does: output-token caps for the NL→Cypher and prose-summary LLM steps.
+    tunable: true
+    status: hardcoded
+  - name: cluster-context similarity threshold
+    file: scripts/graph/ask.py
+    line: 421
+    value: 0.3
+    category: threshold
+    does: min cosine to annotate an ask answer with relevant-cluster context.
+    tunable: true
+    status: hardcoded
+  - name: table cell truncation (width / cut position)
+    file: scripts/graph/ask.py
+    line: "369, 370"
+    value: "80 / 79"
+    category: chunk_size
+    does: truncates result-table cell values wider than 80 chars.
+    tunable: false
+    status: hardcoded
+  - name: get_entity_neighborhood co-entity LIMIT
+    file: scripts/api/queries.py
+    line: 334
+    value: 25
+    category: cap_or_limit
+    does: max co-occurring entities returned in an entity neighborhood.
+    tunable: true
+    status: hardcoded
+  - name: get_discovery_runs / run_papers defaults
+    file: scripts/api/queries.py
+    line: "467, 518"
+    value: 20
+    category: cap_or_limit
+    does: default page size / per-run paper count for discovery listings.
+    tunable: true
+    status: hardcoded
+  - name: get_papers_by_query k (default / max)
+    file: scripts/api/queries.py
+    line: "815, 854"
+    value: "20 / 100"
+    category: cap_or_limit
+    does: default and hard-max top-K for free-text paper retrieval.
+    tunable: true
+    status: hardcoded
+
+# ---------------------------------------------------------------------------
+# 9. Graph entity/relationship extraction + NER + alias proposal + trending
+# ---------------------------------------------------------------------------
+graph_extraction_and_ner:
+  - name: long-tail _MAX_TEXT_CHARS / max_tokens
+    file: scripts/graph/long_tail.py
+    line: "72, 306"
+    value: "6000 / 1500"
+    category: chunk_size
+    does: fulltext char cap and output-token cap for cloud-Ollama long-tail NER.
+    tunable: true
+    status: hardcoded
+  - name: relationship_llm (_MIN_CONFIDENCE / _MAX_FULLTEXT_CHARS / _MAX_TRIPLES / _EVIDENCE_MAX_CHARS / max_tokens)
+    file: scripts/graph/relationship_llm.py
+    line: "53, 58, 63, 66, 417"
+    value: "0.5 / 8000 / 25 / 200 / 2500"
+    category: threshold
+    does: confidence floor, input cap, max triples/paper, evidence-excerpt cap, output cap.
+    tunable: true
+    status: hardcoded
+  - name: relationship_extractor _EVIDENCE_MAX_CHARS
+    file: scripts/graph/relationship_extractor.py
+    line: 43
+    value: 200
+    category: chunk_size
+    does: evidence-excerpt cap on schema-source (G4) relationship edges.
+    tunable: true
+    status: hardcoded
+  - name: entity_extractor confidences (_LLM_CLOUD_CONFIDENCE / _SCHEMA_CONFIDENCE)
+    file: scripts/graph/entity_extractor.py
+    line: "345, 346"
+    value: "0.85 / 1.0"
+    category: weight
+    does: default confidence for cloud-LLM vs schema-sourced entity mentions.
+    tunable: true
+    status: hardcoded
+  - name: _BIOBERT_LOW_CONF_THRESHOLD
+    file: scripts/graph/ner_pipeline.py
+    line: 22
+    value: 0.65
+    category: threshold
+    does: BioBERT spans below this are escalated to cloud-Ollama (N2) validation.
+    tunable: true
+    status: hardcoded
+  - name: normalizer fuzzy ratios (DEFAULT_INGEST_RATIO / DEFAULT_QUERY_RATIO)
+    file: scripts/graph/normalizer.py
+    line: "121, 122"
+    value: "90 / 85"
+    category: threshold
+    does: rapidfuzz cutoffs for entity collapse at ingest (strict) vs query (loose).
+    tunable: true
+    status: hardcoded
+  - name: propose_aliases _DEFAULT_MIN_RATIO / max_tokens
+    file: scripts/graph/propose_aliases.py
+    line: "38, 303"
+    value: "80 / 2000"
+    category: threshold
+    does: fuzz cutoff for clustering alias surfaces; output cap for the consensus LLM call.
+    tunable: true
+    status: hardcoded
+  - name: query_expansion _DEFAULT_TOP_K
+    file: scripts/graph/query_expansion.py
+    line: 17
+    value: 3
+    category: cap_or_limit
+    does: number of co-entity suggestions used to expand a query.
+    tunable: true
+    status: hardcoded
+  - name: trending (_WINDOW_DAYS / LIMIT)
+    file: scripts/graph/trending.py
+    line: "38, 171"
+    value: "60 / 500"
+    category: interval
+    does: growth-rate window (days) and max trending candidates from the query.
+    tunable: true
+    status: hardcoded
+  - name: import_citations graph path
+    file: scripts/graph/import_citations.py
+    line: 40
+    value: "~/.config/lit-monitor/graph.kuzu"
+    category: other
+    does: kuzu DB path hardcoded inside the function rather than read from config.
+    tunable: false
+    status: hardcoded
+    flag: DRIFT
+
+# ---------------------------------------------------------------------------
+# 10. Search APIs + HTTP client + Zotero + DOI resolution
+# ---------------------------------------------------------------------------
+search_and_http:
+  - name: S2_TIMEOUT_SECONDS / FINDPAPERS_TIMEOUT_SECONDS
+    file: scripts/search/_constants.py
+    line: "11, 3"
+    value: "30 / 180"
+    category: timeout
+    does: timeouts for Semantic Scholar calls and a single findpapers.search().
+    tunable: true
+    status: hardcoded
+  - name: result limits (semantic_scholar / search_runner / researcher_tracker)
+    file: scripts/search/semantic_scholar.py
+    line: "139"
+    value: "100 / 200 / 50"
+    category: cap_or_limit
+    does: max results per query (S2=100; per-DB-per-topic=200@search_runner.py:73; per-author=50@researcher_tracker.py:43).
+    tunable: true
+    status: hardcoded
+  - name: doi_resolver (min_score / limit / author-slice)
+    file: scripts/core/doi_resolver.py
+    line: "40, 88, 81"
+    value: "70.0 / 3 / 3"
+    category: threshold
+    does: CrossRef accept score; results limit (only items[0] used); max author surnames in query.
+    tunable: true
+    status: hardcoded
+    flag: DRIFT  # limit=3 requested but only the top result is consumed
+  - name: http_client retry/backoff (stop_after_attempt / wait min,max / timeout)
+    file: scripts/core/http_client.py
+    line: "26, 27, 34"
+    value: "3 / 2-30 / 15.0"
+    category: retry
+    does: shared HTTP retry count, exponential backoff bounds (s), per-request timeout.
+    tunable: true
+    status: hardcoded
+  - name: zotero_client list_items page_size
+    file: scripts/core/zotero_client.py
+    line: 112
+    value: 100
+    category: cap_or_limit
+    does: page size when paginating Zotero library reads.
+    tunable: true
+    status: hardcoded
+
+# ---------------------------------------------------------------------------
+# 11. Obsidian tools (relink / re-extract / synthesize)
+# ---------------------------------------------------------------------------
+obsidian_tools:
+  - name: relink _CITATION_SCORE_CUTOFF
+    file: scripts/obsidian_tools/relink.py
+    line: 30
+    value: 75
+    category: threshold
+    does: rapidfuzz token_sort_ratio cutoff for matching a citation to a known paper.
+    tunable: true
+    status: hardcoded
+  - name: relink top_k / _FOCUSED_EMBED_QUERY_MAX_CHARS
+    file: scripts/obsidian_tools/relink.py
+    line: "158, 289"
+    value: "10 / 1300"
+    category: cap_or_limit
+    does: similar papers added per relink; char cap on the focused embed query.
+    tunable: true
+    status: hardcoded
+  - name: re_extract graph_k
+    file: scripts/obsidian_tools/re_extract.py
+    line: "41, 239"
+    value: 8
+    category: cap_or_limit
+    does: related papers/entities fetched for graph-mode context injection.
+    tunable: true
+    status: hardcoded
+  - name: synthesize top_k
+    file: scripts/obsidian_tools/synthesize.py
+    line: 50
+    value: 15
+    category: cap_or_limit
+    does: similar notes synthesized across.
+    tunable: true
+    status: hardcoded
+  - name: synthesize excerpt caps (passage / core_finding / methods / slug / expansion)
+    file: scripts/obsidian_tools/synthesize.py
+    line: "185, 236, 237, 290, 351"
+    value: "600 / 400 / 200 / 60 / 5"
+    category: chunk_size
+    does: per-field truncation lengths and expanded-term cap in the synthesis prompt.
+    tunable: false
+    status: hardcoded
+
+# ---------------------------------------------------------------------------
+# 12. Digest rendering
+# ---------------------------------------------------------------------------
+digest:
+  - name: _DEFAULT_SIM_THRESHOLD / _DEFAULT_N_DATABASES
+    file: scripts/output/digest_renderer.py
+    line: "26, 27"
+    value: "0.3 / 5"
+    category: threshold
+    does: digest top-results cutoff and the "N databases searched" subtitle number.
+    tunable: true
+    status: hardcoded
+  - name: top-results slice
+    file: scripts/output/digest_renderer.py
+    line: 79
+    value: 20
+    category: cap_or_limit
+    does: max papers shown in the digest "Top Results" section.
+    tunable: true
+    status: hardcoded
+
+# ---------------------------------------------------------------------------
+# 13. CLI option defaults (scripts/cli.py)
+#     These are Click --option defaults; overridable per-invocation on the CLI,
+#     but the baked default is the literal below.
+# ---------------------------------------------------------------------------
+cli_option_defaults:
+  - name: build-vocabulary --min-count / --chunk-size
+    file: scripts/cli.py
+    line: "773, 784"
+    value: "2 / 0"
+    category: cap_or_limit
+    does: min library appearances to include a keyword; 0 = smart-size chunks only.
+    tunable: true
+    status: hardcoded
+  - name: compare-models --papers
+    file: scripts/cli.py
+    line: 1021
+    value: 3
+    category: cap_or_limit
+    does: papers run per model in a comparison.
+    tunable: true
+    status: hardcoded
+  - name: brain-build --batch-size
+    file: scripts/cli.py
+    line: 1072
+    value: 50
+    category: cap_or_limit
+    does: papers per batch (mirrors brain_build.py:106 default).
+    tunable: true
+    status: hardcoded
+  - name: run --top-k / --sim-threshold
+    file: scripts/cli.py
+    line: "1252, 1254"
+    value: "20 / 0.3"
+    category: cap_or_limit
+    does: discovery rationale count and digest similarity cutoff.
+    tunable: true
+    status: hardcoded
+  - name: obsidian synthesize --top-k
+    file: scripts/cli.py
+    line: 1514
+    value: 15
+    category: cap_or_limit
+    does: related notes included in a synthesis.
+    tunable: true
+    status: hardcoded
+  - name: build/rebuild citations --max-retries
+    file: scripts/cli.py
+    line: "1819, 1934"
+    value: 4
+    category: retry
+    does: S2 API retry attempts on rate-limit.
+    tunable: true
+    status: hardcoded
+  - name: graph propose-aliases --min-ratio
+    file: scripts/cli.py
+    line: 2611
+    value: 80
+    category: threshold
+    does: fuzzy cutoff for alias clustering (mirrors propose_aliases.py:38).
+    tunable: true
+    status: hardcoded
+  - name: ask --max-rows
+    file: scripts/cli.py
+    line: 2797
+    value: 20
+    category: cap_or_limit
+    does: rows rendered from a Cypher result.
+    tunable: true
+    status: hardcoded
+  - name: discovery view --top-k / export cap
+    file: scripts/cli.py
+    line: "3054, 3162"
+    value: "20 / 1000"
+    category: cap_or_limit
+    does: papers shown in the run view; hard cap on papers fetched for MD export.
+    tunable: true
+    status: hardcoded
+  - name: topics expansions suggest --top-k
+    file: scripts/cli.py
+    line: 3836
+    value: 3
+    category: cap_or_limit
+    does: co-entity suggestions for topic expansion.
+    tunable: true
+    status: hardcoded
+  - name: serve default port
+    file: scripts/cli.py
+    line: 473
+    value: 8765
+    category: other
+    does: default web-server TCP port (overridable via --port / [server] config).
+    tunable: true
+    status: hardcoded
+
+# ---------------------------------------------------------------------------
+# 14. Web server routes (pagination caps, poll/stream intervals, dev timeouts)
+# ---------------------------------------------------------------------------
+server_routes:
+  - name: discovery runs / run-papers limits
+    file: scripts/server/routes/discovery.py
+    line: "315, 345"
+    value: 20
+    category: cap_or_limit
+    does: default page size / per-run paper count for the discovery API.
+    tunable: true
+    status: hardcoded
+  - name: feedback recent limit
+    file: scripts/server/routes/feedback.py
+    line: 112
+    value: 50
+    category: cap_or_limit
+    does: default page size for recent feedback events (max 500).
+    tunable: true
+    status: hardcoded
+  - name: papers related k / entities top_k
+    file: scripts/server/routes/papers.py
+    line: 53
+    value: 20
+    category: cap_or_limit
+    does: default related-papers count (papers.py:53) and entity list size (entities.py:38, max 200).
+    tunable: true
+    status: hardcoded
+  - name: setup mode timeout default
+    file: scripts/server/routes/setup.py
+    line: 193
+    value: 7200
+    category: timeout
+    does: default LLM operation timeout (s) written into extraction.yaml (2h).
+    tunable: true
+    status: hardcoded
+  - name: SSE log-tail poll interval
+    file: scripts/server/routes/sse.py
+    line: 37
+    value: 0.5
+    category: interval
+    does: seconds between readline attempts at EOF when streaming a log.
+    tunable: false
+    status: hardcoded
+  - name: dev panel timeouts / output caps (ruff / compare-models / stdout / stderr)
+    file: scripts/server/routes/dev.py
+    line: "38, 1104, 53, 54"
+    value: "60 / 600 / 50 / 10"
+    category: timeout
+    does: ruff timeout, compare-models timeout, and stdout/stderr line caps in the dev dashboard.
+    tunable: false
+    status: hardcoded
+
+# ---------------------------------------------------------------------------
+# 15. Already config-backed: defaults that live in scripts/core/config.py
+#     These are the FALLBACK defaults for values you can already override via
+#     YAML (topics.yaml / extraction.yaml). They are not "hardcoded" in the
+#     problematic sense — listed for completeness so the table is exhaustive.
+# ---------------------------------------------------------------------------
+config_yaml_backed_defaults:
+  - name: discovery top_k / date_window_days
+    file: scripts/core/config.py
+    line: "290, 291"
+    value: "20 / 14"
+    category: cap_or_limit
+    does: default discovery candidate count and date window (override in topics.yaml).
+    tunable: true
+    status: config_default
+  - name: embedding dims (ollama / litellm)
+    file: scripts/core/config.py
+    line: "185, 189"
+    value: "1024 / 3072"
+    category: dimension
+    does: default embedding dims (override in extraction.yaml embedding block).
+    tunable: false
+    status: config_default
+  - name: domain signal (weight / filter threshold / off-domain floor / s2 min_relevance)
+    file: scripts/core/config.py
+    line: "202, 207, 210, 216"
+    value: "0.0 / 0.35 / 0.05 / 0.4"
+    category: threshold
+    does: domain-aware ranking knobs (default off; override in extraction.yaml).
+    tunable: true
+    status: config_default
+  - name: clustering (min_papers / k_min / k_max)
+    file: scripts/core/config.py
+    line: "229, 230, 231"
+    value: "100 / 5 / 15"
+    category: cap_or_limit
+    does: clustering enablement size and k-means k range.
+    tunable: true
+    status: config_default
+  - name: graph signal weights (centroid / entity / citation / authors)
+    file: scripts/core/config.py
+    line: "256, 261, 264, 267"
+    value: 0.0
+    category: weight
+    does: hybrid-ranking signal weights (all default 0.0 = off).
+    tunable: true
+    status: config_default
+  - name: trending (growth_rate / min_mentions / cooldown_days)
+    file: scripts/core/config.py
+    line: "274, 275, 276"
+    value: "0.3 / 5 / 60"
+    category: threshold
+    does: trending-concept detection knobs (mirrored as trending.py defaults).
+    tunable: true
+    status: config_default
+  - name: query_expansion top_k_co_entities / researcher min_graph_overlap
+    file: scripts/core/config.py
+    line: "281, 286"
+    value: "3 / 1"
+    category: cap_or_limit
+    does: query-expansion co-entity count and researcher-gating overlap floor.
+    tunable: true
+    status: config_default
+  - name: state_db feedback weights (Rocchio)
+    file: scripts/core/state_db.py
+    line: "1837-1842"
+    value: "opened 0.3 / saved 1.0 / dismissed -0.5 / rated 0.5 / thumbs ±0.8"
+    category: weight
+    does: Rocchio-style relevance-feedback weights per interaction type.
+    tunable: true
+    status: hardcoded
+  - name: state_db pagination defaults (progress / recent runs / feedback list)
+    file: scripts/core/state_db.py
+    line: "648, 1199, 1208, 1897"
+    value: "100 / 10 / 10 / 50"
+    category: cap_or_limit
+    does: default page sizes for various state.db listing queries.
+    tunable: true
+    status: hardcoded
+
+# ---------------------------------------------------------------------------
+# 16. Sentinels / structural constants (documented, not for tuning)
+# ---------------------------------------------------------------------------
+sentinels_and_structural:
+  - name: schema_max_pass
+    file: scripts/llm/extraction_schema.py
+    line: 306
+    value: 3
+    category: cap_or_limit
+    does: returns a hardcoded 3 for both paper and review schemas regardless of YAML.
+    tunable: false
+    status: hardcoded
+    flag: DRIFT  # ignores schema content; revisit if a 4th pass is ever added
+  - name: obsidian_writer filename caps (short_title words / chars / collision limit)
+    file: scripts/output/obsidian_writer.py
+    line: "379, 115, 129"
+    value: "5 / 40 / 1000"
+    category: cap_or_limit
+    does: title-word count, filename char cap, and max collision-suffix iterations.
+    tunable: false
+    status: hardcoded
+  - name: embeddings_migration cost-estimate + progress (secs/paper, log interval, version floor)
+    file: scripts/pipelines/embeddings_migration.py
+    line: "226, 341, 244"
+    value: "0.08/0.05 / 100 / 2"
+    category: interval
+    does: per-embed time estimates (ollama/litellm), progress log cadence, version start.
+    tunable: false
+    status: hardcoded
+  - name: log/error-message truncations (cosmetic)
+    file: "scripts/llm/llm_client.py, embedding_client.py, output/embeddings.py, graph/*.py"
+    line: "various (e.g. llm_client.py:216,449; embedding_client.py:89; embeddings.py:665,670)"
+    value: "300 / 500 / 80 / 60 / 200 / 120"
+    category: cap_or_limit
+    does: char caps on response/error snippets in log lines; purely cosmetic.
+    tunable: false
+    status: hardcoded
+
+# ============================================================================
+# Triage of flagged entries (each verified against source on 2026-06-03).
+#
+# Slated for fix (bundles E1-E3 on branch fix/audit2-remediation):
+#   E1  DEAD      clusterer.py:39          _CHUNK_SIZE — defined, never used → delete
+#   E1  DRIFT     doi_resolver.py:88       limit=3 but only items[0] consumed → limit=1
+#   E2  DUPLICATE ranker.py + discovery.py graph norm divisors 5/3/3 in two files → unify
+#   E2  DRIFT     discovery.py:289         app_url hardcoded localhost:8765 → read [server] cfg
+#   E2  DRIFT     import_citations.py:40   graph.kuzu path hardcoded → read retrieval.graph_db
+#   E3  DRIFT     extraction_schema.py:306 schema_max_pass returns 3 unconditionally → derive
+#
+# Re-triaged as NOT defects (verified — left as-is, no fix):
+#   topic_merger.py:35  _NOVELTY_THRESHOLD 85 — logic correct; just a tuning knob
+#   chunker.py:30 vs extractor.py:70  _CHARS_PER_TOKEN 3.5 vs 4 — intentional
+#                        (embedding tokenizer vs generation LLM); do NOT unify
+#
+# Everything else in this file is a sensible constant documented for visibility.
+# ============================================================================
