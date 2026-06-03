@@ -70,3 +70,9 @@ run_comparison_benchmarks.sh
 # --- Accidental test artifacts ---
 MagicMock/
 test_pass_extraction.py
+
+# coverage artifacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
