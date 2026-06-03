@@ -25,6 +25,8 @@ from typing import Literal
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from scripts.core.atomic_write import atomic_write_text
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -230,7 +232,7 @@ def write_schedule(spec: ScheduleSpec) -> Path:
         }
         _LAUNCHD_DIR.mkdir(parents=True, exist_ok=True)
         rendered = _ENV.get_template("launchd.plist.j2").render(**ctx)
-        _LAUNCHD_PLIST.write_text(rendered, encoding="utf-8")
+        atomic_write_text(_LAUNCHD_PLIST, rendered, encoding="utf-8")
         # Unload any previous incarnation (best-effort), then load the new one.
         subprocess.run(
             ["launchctl", "unload", str(_LAUNCHD_PLIST)],
@@ -255,8 +257,8 @@ def write_schedule(spec: ScheduleSpec) -> Path:
         _SYSTEMD_DIR.mkdir(parents=True, exist_ok=True)
         timer_text = _ENV.get_template("systemd.timer.j2").render(**ctx)
         service_text = _ENV.get_template("systemd.service.j2").render(**ctx)
-        _SYSTEMD_TIMER.write_text(timer_text, encoding="utf-8")
-        _SYSTEMD_SERVICE.write_text(service_text, encoding="utf-8")
+        atomic_write_text(_SYSTEMD_TIMER, timer_text, encoding="utf-8")
+        atomic_write_text(_SYSTEMD_SERVICE, service_text, encoding="utf-8")
         subprocess.run(
             ["systemctl", "--user", "daemon-reload"],
             capture_output=True, check=True,

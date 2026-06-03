@@ -97,6 +97,58 @@ def test_write_linux_renders_timer_and_calls_systemctl(linux_tmp_dirs):
     assert any("enable" in cmd for cmd in cmds)
 
 
+@pytest.mark.unit
+def test_write_macos_uses_atomic_write(macos_tmp_dirs):
+    """P1.2: the macOS plist is written via atomic_write_text (crash-safe).
+
+    Asserts the helper is invoked with the plist path + rendered content, that
+    the final file is valid, and that no ``.tmp`` dropping is left behind.
+    """
+    spec = scheduler.ScheduleSpec.parse("mon", "08:00")
+    with (
+        patch("scripts.server.scheduler.subprocess.run") as mock_run,
+        patch(
+            "scripts.server.scheduler.atomic_write_text",
+            wraps=scheduler.atomic_write_text,
+        ) as mock_atomic,
+    ):
+        mock_run.return_value.returncode = 0
+        path = scheduler.write_schedule(spec)
+
+    # atomic_write_text was used for the plist write.
+    assert mock_atomic.call_count == 1
+    called_path, called_content = mock_atomic.call_args.args[:2]
+    assert called_path == scheduler._LAUNCHD_PLIST
+    assert "<key>Weekday</key>" in called_content
+    # Final file is valid and complete; no temp leftovers.
+    assert path.exists()
+    assert "<key>Weekday</key>" in path.read_text()
+    assert not list(path.parent.glob("*.tmp"))
+
+
+@pytest.mark.unit
+def test_write_linux_uses_atomic_write_for_both_units(linux_tmp_dirs):
+    """P1.2: both systemd timer and service files are written atomically."""
+    spec = scheduler.ScheduleSpec.parse("fri", "14:30")
+    with (
+        patch("scripts.server.scheduler.subprocess.run") as mock_run,
+        patch(
+            "scripts.server.scheduler.atomic_write_text",
+            wraps=scheduler.atomic_write_text,
+        ) as mock_atomic,
+    ):
+        mock_run.return_value.returncode = 0
+        scheduler.write_schedule(spec)
+
+    # Two atomic writes: timer + service.
+    written_paths = {c.args[0] for c in mock_atomic.call_args_list}
+    assert written_paths == {scheduler._SYSTEMD_TIMER, scheduler._SYSTEMD_SERVICE}
+    assert scheduler._SYSTEMD_TIMER.exists()
+    assert scheduler._SYSTEMD_SERVICE.exists()
+    assert "OnCalendar=Fri" in scheduler._SYSTEMD_TIMER.read_text()
+    assert not list(scheduler._SYSTEMD_TIMER.parent.glob("*.tmp"))
+
+
 # ---------------------------------------------------------------------------
 # read_schedule round-trip
 # ---------------------------------------------------------------------------

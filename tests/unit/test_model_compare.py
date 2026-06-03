@@ -74,7 +74,10 @@ def test_compare_models_no_extraction_failures(tmp_path):
 
     # extract_paper is imported inside run_model_comparison — patch at its definition site.
     with (
-        patch("scripts.pipelines.model_compare._OUTPUT_DIR", tmp_path / "comparison"),
+        patch(
+            "scripts.pipelines.model_compare._resolve_output_dir",
+            return_value=tmp_path / "comparison",
+        ),
         patch(
             "scripts.llm.extractor.extract_paper",
             return_value=mock_extraction,
@@ -135,7 +138,10 @@ def test_compare_models_writes_output_json(tmp_path):
     }
 
     with (
-        patch("scripts.pipelines.model_compare._OUTPUT_DIR", tmp_path / "comparison"),
+        patch(
+            "scripts.pipelines.model_compare._resolve_output_dir",
+            return_value=tmp_path / "comparison",
+        ),
         patch(
             "scripts.llm.extractor.extract_paper",
             return_value=mock_extraction,
@@ -156,3 +162,26 @@ def test_compare_models_writes_output_json(tmp_path):
     # At least one JSON file written
     json_files = list(out_dir.rglob("*.json"))
     assert json_files, "No JSON output files written by run_model_comparison"
+
+
+@pytest.mark.unit
+def test_resolve_output_dir_is_under_user_config_home():
+    """P1.2/P1.3: output dir resolves under ~/.config/lit-monitor, not into the
+    install location (site-packages) or the repo checkout.
+
+    Pre-fix, ``_OUTPUT_DIR = Path(__file__).parent.parent.parent / "comparison"``
+    pointed at the package install root, which is read-only for wheel installs.
+    """
+    from scripts.pipelines.model_compare import _resolve_output_dir
+
+    out = _resolve_output_dir()
+    expected = Path("~/.config/lit-monitor/comparison").expanduser()
+    assert out == expected
+    # Must live under the user config home, not under site-packages or the repo.
+    config_home = Path("~/.config/lit-monitor").expanduser()
+    assert str(out).startswith(str(config_home))
+    assert "site-packages" not in str(out)
+    # Not resolved relative to the source file's install tree.
+    import scripts.pipelines.model_compare as mc
+    pkg_root = Path(mc.__file__).parent.parent.parent
+    assert pkg_root not in out.parents

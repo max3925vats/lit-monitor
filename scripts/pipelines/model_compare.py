@@ -22,7 +22,18 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
-_OUTPUT_DIR = Path(__file__).parent.parent.parent / "comparison"
+
+
+def _resolve_output_dir() -> Path:
+    """Return the user-writable base directory for comparison outputs.
+
+    Resolves to ``~/.config/lit-monitor/comparison`` to match the app's config
+    convention. The previous ``Path(__file__).parent.parent.parent`` resolution
+    pointed into the install location (site-packages for a wheel install), which
+    is read-only on many systems. The directory is created lazily on write, not
+    at import time.
+    """
+    return Path("~/.config/lit-monitor/comparison").expanduser()
 # ---------------------------------------------------------------------------
 # Result dataclass
 # ---------------------------------------------------------------------------
@@ -74,7 +85,7 @@ def run_model_comparison(
     from scripts.llm.extractor import extract_paper
     from scripts.llm.llm_client import LiteLLMClient, OllamaClient
     run_date = datetime.now().strftime("%Y-%m-%d_%H%M")
-    out_dir = _OUTPUT_DIR / f"{run_date}_{mode}"
+    out_dir = _resolve_output_dir() / f"{run_date}_{mode}"
     out_dir.mkdir(parents=True, exist_ok=True)
     # Determine model list
     if models:

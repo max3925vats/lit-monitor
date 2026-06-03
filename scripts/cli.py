@@ -1850,7 +1850,7 @@ def obsidian_build_citation_graph(
     from scripts.search.citation_graph import build_citation_graph
 
     config = Config()
-    state_db = StateDB(config.paths.state_db)
+    state_db = StateDB(config.state_db.path)
 
     api_key = os.environ.get("S2_API_KEY")
 
@@ -2595,7 +2595,7 @@ def graph_rebuild(all_data: bool, aliases_only: bool) -> None:
 
     try:
         if all_data:
-            count = rebuild_all(state_db, graph_db)
+            count = rebuild_all(state_db, graph_db, confirm=True)
             click.echo(f"Rebuilt graph from scratch; {count} papers re-indexed.")
         else:
             count = rebuild_aliases_only(graph_db)

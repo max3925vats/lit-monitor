@@ -1163,6 +1163,52 @@ def test_rebuild_citations_no_rerender_skips_relink(tmp_path):
     assert relink_calls == [], "relink_note must not be called when --no-rerender is set"
 
 
+@pytest.mark.unit
+def test_build_citation_graph_uses_state_db_path_not_paths(tmp_path):
+    """P1.1: `obsidian build-citation-graph` must build StateDB from
+    ``config.state_db.path``, not the non-existent ``config.paths.state_db``.
+
+    Pre-fix the handler did ``StateDB(config.paths.state_db)`` which raised
+    AttributeError because Config has no ``paths`` attribute. The handler
+    constructs ``Config()`` directly, so we patch the source module's Config
+    to expose only ``config.state_db.path`` (and explicitly NO ``paths``).
+    """
+    from click.testing import CliRunner
+
+    from scripts.cli import main
+
+    state_db = _make_state_db(tmp_path)
+    captured: dict = {}
+
+    # Config stub exposing state_db.path; accessing .paths raises, matching
+    # the real Config (which has no such attribute).
+    class _CfgStub:
+        def __init__(self) -> None:
+            self.state_db = SimpleNamespace(path=str(tmp_path / "state.db"))
+
+        @property
+        def paths(self):  # pragma: no cover - asserts the buggy path is dead
+            raise AssertionError("config.paths must not be accessed")
+
+    def fake_state_db_ctor(path):
+        captured["path"] = path
+        return state_db
+
+    runner = CliRunner()
+    with patch("scripts.core.config.Config", _CfgStub), \
+         patch("scripts.core.state_db.StateDB", fake_state_db_ctor), \
+         patch("scripts.cli._load_secrets", return_value={}), \
+         patch("scripts.cli._maybe_set_s2_key"):
+        result = runner.invoke(
+            main,
+            ["obsidian", "build-citation-graph", "--scope", "all"],
+        )
+
+    # No AttributeError; StateDB built from config.state_db.path.
+    assert "AttributeError" not in result.output, result.output
+    assert captured.get("path") == str(tmp_path / "state.db")
+
+
 # ===========================================================================
 # H1 — state-machine cleanup regression tests
 # ===========================================================================

@@ -111,7 +111,7 @@ class TestRebuildAll:
         # Initial backfill
         backfill_papers(state_db, graph_db, filter_doi=None, since=None)
         # Now rebuild — should process 1 paper again after resetting graph_indexed
-        processed = rebuild_all(state_db, graph_db)
+        processed = rebuild_all(state_db, graph_db, confirm=True)
         assert processed == 1
 
     def test_rebuild_all_resets_graph_indexed_flags(self, tmp_path):
@@ -124,8 +124,49 @@ class TestRebuildAll:
         state_db.set_graph_indexed("10.0/a", 1)
         state_db.set_graph_indexed("10.0/b", 1)
         # rebuild_all should re-process both
-        processed = rebuild_all(state_db, graph_db)
+        processed = rebuild_all(state_db, graph_db, confirm=True)
         assert processed == 2
+
+    def test_rebuild_all_without_confirm_raises_and_does_not_drop(self):
+        """P1.4: rebuild_all() without confirm raises before any destructive op."""
+        import pytest
+
+        state_db = MagicMock()
+        graph_db = MagicMock()
+        mock_conn = MagicMock()
+        graph_db._conn = mock_conn
+
+        with pytest.raises(ValueError):
+            rebuild_all(state_db, graph_db)
+
+        # No DROP TABLE (or any) statement should have been executed.
+        mock_conn.execute.assert_not_called()
+        # And the state DB graph_indexed reset must not have run.
+        state_db._connect.assert_not_called()
+
+    def test_rebuild_all_with_confirm_proceeds_to_drops(self):
+        """P1.4: rebuild_all(confirm=True) runs the destructive DROP TABLE path."""
+        from unittest.mock import patch
+
+        state_db = MagicMock()
+        graph_db = MagicMock()
+        mock_conn = MagicMock()
+        graph_db._conn = mock_conn
+
+        # Stub out schema re-apply and the follow-up backfill so the test stays
+        # focused on the guard + drop behaviour (all I/O mocked).
+        with (
+            patch("scripts.graph.backfill.apply_schema"),
+            patch("scripts.graph.backfill.backfill_papers", return_value=0),
+        ):
+            rebuild_all(state_db, graph_db, confirm=True)
+
+        # At least one DROP TABLE statement must have been issued.
+        drop_calls = [
+            c for c in mock_conn.execute.call_args_list
+            if c.args and "DROP TABLE" in str(c.args[0])
+        ]
+        assert drop_calls, "expected DROP TABLE statements when confirm=True"
 
 
 class TestRebuildAliasesOnly:

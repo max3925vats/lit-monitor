@@ -422,7 +422,7 @@ def backfill_relationships(
     return summary
 
 
-def rebuild_all(state_db: Any, graph_db: Any) -> int:
+def rebuild_all(state_db: Any, graph_db: Any, confirm: bool = False) -> int:
     """Drop all graph data, reset graph_indexed flags, and re-run full backfill.
 
     Drops every Kuzu node and edge table in dependency order, re-applies the
@@ -432,10 +432,23 @@ def rebuild_all(state_db: Any, graph_db: Any) -> int:
     Args:
         state_db: Open :class:`StateDB` instance.
         graph_db: Open :class:`GraphDB` instance.
+        confirm: Must be ``True`` to proceed. This is a function-level guard so
+            that a programmatic caller cannot silently wipe the graph; without
+            it a :class:`ValueError` is raised before any destructive op runs.
+            The CLI passes ``confirm=True`` only after its own user confirmation.
 
     Returns:
         Count of papers re-indexed after the rebuild.
+
+    Raises:
+        ValueError: When ``confirm`` is not ``True``.
     """
+    if not confirm:
+        raise ValueError(
+            "rebuild_all is destructive (drops all graph tables); "
+            "pass confirm=True to proceed."
+        )
+
     conn = graph_db._conn
 
     # Drop in reverse dependency order: edges before nodes.
