@@ -52,6 +52,13 @@ def load_aliases(path: Path | None = None) -> dict[str, dict[str, str]]:
     out: dict[str, dict[str, str]] = {}
     for type_, mapping in raw.items():
         if not isinstance(mapping, dict):
+            # Malformed YAML row (e.g. a type mapped to a scalar/list instead of
+            # a surface→canonical dict). Warn so the bad entry is observable
+            # rather than silently dropped, then skip it.
+            logger.warning(
+                "Skipping malformed alias entry %r in %s: expected a mapping, got %s.",
+                type_, path, type(mapping).__name__,
+            )
             continue
         # Lowercase the surface-form keys so lookup is always case-insensitive.
         out[type_] = {str(k).lower(): str(v) for k, v in mapping.items()}

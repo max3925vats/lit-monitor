@@ -80,7 +80,9 @@ def push_tags_to_zotero(
                         doi, zkey, exc,
                     )
             else:
-                report["tags_added"] += 1  # count planned ops
+                # Dry-run: count this as a planned op on BOTH counters so the
+                # dry-run summary mirrors what a real write would report.
+                report["tags_added"] += 1
                 report["papers_processed"] += 1
 
     if dry_run:
