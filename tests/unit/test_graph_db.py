@@ -76,24 +76,23 @@ class TestGraphDBInit:
         assert row[0] == 1
 
     def test_all_tables_created(self, tmp_path):
-        """All 10 node and rel tables from the G1 DDL must exist after init."""
+        """All node + rel tables from the schema DDL must exist after init.
+
+        Strengthened (round-3 audit A3-1): the old subset omitted EXTENDS +
+        CONTRADICTS, so it stayed green even if those tables were never created.
+        We now derive the expected REL set from
+        ``relationship_validator.VALID_PREDICATES`` (single source of truth) so a
+        missing REL table fails this test instead of slipping through.
+        """
         from scripts.graph import GraphDB
+        from scripts.graph.relationship_validator import VALID_PREDICATES
 
         g = GraphDB(persist_dir=str(tmp_path / "graph.kuzu"))
         tables = _tables(g._conn)
 
-        expected = {
-            "Paper",
-            "Entity",
-            "MENTIONS",
-            "CITES",
-            "COMPARES_TO",
-            "DEPENDS_ON",
-            "PROPOSES",
-            "LIMITED_BY",
-            "INTRODUCES",
-            "RAISES_QUESTION",
-        }
+        # All 10 REL tables (= VALID_PREDICATES, incl. EXTENDS + CONTRADICTS) +
+        # the 2 node tables.
+        expected = set(VALID_PREDICATES) | {"Paper", "Entity"}
         assert expected <= tables, f"Missing tables: {expected - tables}"
 
     def test_reinit_is_idempotent(self, tmp_path):

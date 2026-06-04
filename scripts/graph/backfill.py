@@ -452,9 +452,14 @@ def rebuild_all(state_db: Any, graph_db: Any, confirm: bool = False) -> int:
     conn = graph_db._conn
 
     # Drop in reverse dependency order: edges before nodes.
+    # All 10 REL tables defined in migrations.py _DDL_STATEMENTS (= the
+    # VALID_PREDICATES vocabulary). EXTENDS + CONTRADICTS are the two R2
+    # LLM-only Paper→Paper predicates; omitting them (A3-1) left stale edges and
+    # made the later DROP TABLE Paper fail its dependency check.
     edge_tables = [
         "MENTIONS", "CITES", "COMPARES_TO", "DEPENDS_ON",
         "PROPOSES", "LIMITED_BY", "INTRODUCES", "RAISES_QUESTION",
+        "EXTENDS", "CONTRADICTS",
     ]
     node_tables = ["Paper", "Entity"]
 

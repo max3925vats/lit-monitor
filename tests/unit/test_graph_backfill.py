@@ -145,8 +145,22 @@ class TestRebuildAll:
         state_db._connect.assert_not_called()
 
     def test_rebuild_all_with_confirm_proceeds_to_drops(self):
-        """P1.4: rebuild_all(confirm=True) runs the destructive DROP TABLE path."""
+        """P1.4 / A3-1: rebuild_all(confirm=True) drops the EXACT set of tables.
+
+        Strengthened (round-3 audit A3-1): the old assertion only checked
+        ``bool(drop_calls)``, which stayed green even though backfill.py omitted
+        EXTENDS + CONTRADICTS from edge_tables (8 of 10 REL tables dropped).
+
+        We derive the authoritative REL-table set from
+        ``relationship_validator.VALID_PREDICATES`` (the single source of truth
+        for the predicate vocabulary; every predicate has a same-named REL TABLE
+        in migrations.py's _DDL_STATEMENTS). Plus the two node tables. If a new
+        predicate is added to the schema but not to rebuild_all's drop list, this
+        test fails instead of silently leaving stale edges.
+        """
         from unittest.mock import patch
+
+        from scripts.graph.relationship_validator import VALID_PREDICATES
 
         state_db = MagicMock()
         graph_db = MagicMock()
@@ -161,12 +175,20 @@ class TestRebuildAll:
         ):
             rebuild_all(state_db, graph_db, confirm=True)
 
-        # At least one DROP TABLE statement must have been issued.
-        drop_calls = [
-            c for c in mock_conn.execute.call_args_list
-            if c.args and "DROP TABLE" in str(c.args[0])
-        ]
-        assert drop_calls, "expected DROP TABLE statements when confirm=True"
+        # Collect the exact set of table names passed to DROP TABLE.
+        dropped: set[str] = set()
+        for c in mock_conn.execute.call_args_list:
+            if c.args and "DROP TABLE" in str(c.args[0]):
+                # statement form: "DROP TABLE <Name>"
+                dropped.add(str(c.args[0]).split()[-1])
+
+        # Authoritative expected set: all 10 REL tables (= VALID_PREDICATES) +
+        # the 2 node tables. See migrations.py _DDL_STATEMENTS for the schema.
+        expected = set(VALID_PREDICATES) | {"Paper", "Entity"}
+        assert dropped == expected, (
+            f"rebuild_all must drop EXACTLY {sorted(expected)}; "
+            f"missing={sorted(expected - dropped)}, extra={sorted(dropped - expected)}"
+        )
 
 
 class TestRebuildAliasesOnly:

@@ -137,6 +137,38 @@ class TestDismissTrending:
         assert resp.status_code == 404
 
 
+class TestTrendingPageRender:
+    """TF-2 (Audit-3 A3-2): GET /trending must render the full HTML page (200).
+
+    This is the test that would have caught A3-2: the route used the legacy
+    2-arg ``TemplateResponse("name", {"request": ...})`` form, which Starlette
+    1.1+ rejects → 500. We exercise the real production handler (which renders
+    via ``scripts.server.app.templates``) through the test client, mocking only
+    the data layer (_safe_db) as the other route tests do.
+    """
+
+    def test_get_trending_renders_page_200(self, client):
+        pending = [_make_row(1), _make_row(2, "distillation")]
+        with patch("scripts.server.routes.trending._safe_db") as mock_db_fn:
+            mock_db = MagicMock()
+            mock_db.get_pending_trending_suggestions.return_value = pending
+            mock_db_fn.return_value = mock_db
+
+            resp = client.get("/trending")
+
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+        # The suggestions must render into the page body.
+        assert "biorefinery" in resp.text
+
+    def test_get_trending_renders_with_no_db(self, client):
+        """Even with no DB (empty suggestions), the page must render 200, not 500."""
+        with patch("scripts.server.routes.trending._safe_db", return_value=None):
+            resp = client.get("/trending")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+
+
 class TestTrendingPageCopy:
     """C2 (Audit-2): the /trending page must honestly frame the feature as
     library-activity / ingest-recency, not field-level publication trends.

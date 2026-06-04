@@ -138,7 +138,10 @@ def trending_page(request: Request) -> HTMLResponse:
         except Exception as exc:
             logger.warning("E: trending page: failed to load suggestions: %s", exc)
 
+    # Starlette 1.1+ rejects the legacy 2-arg ("name", {"request": ...}) form;
+    # use the modern (request, name, context) signature (A3-2).
     return templates.TemplateResponse(
+        request,
         "trending/index.html",
-        {"request": request, "suggestions": suggestions},
+        {"suggestions": suggestions},
     )
