@@ -188,7 +188,17 @@ def rank_papers(
                 continue
             cand_arr = np.asarray(cand_emb, dtype=np.float32)
             cand_norm = float(np.linalg.norm(cand_arr))
-            if cand_norm < 1e-9:
+            if cand_norm < 1e-9 or not np.isfinite(cand_norm):
+                # Degenerate candidate embedding: all-zero (norm≈0) or non-finite
+                # (NaN/inf — a NaN norm slips past the zero-norm check since
+                # `nan < 1e-9` is False and would corrupt cluster_score via the
+                # dot product). Skip it from cluster scoring, consistent with the
+                # domain-context block above.
+                logger.warning(
+                    "Candidate %s has a degenerate embedding (norm≈0 or "
+                    "non-finite); skipping cluster-centroid score for it.",
+                    paper.get("doi", "?"),
+                )
                 continue
             # Cosine similarities to all centroids; pick the max
             dots = _centroid_matrix @ cand_arr          # (K,)

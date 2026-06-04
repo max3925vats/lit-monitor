@@ -328,6 +328,54 @@ class TestDomainContextSignal:
             for rec in caplog.records
         ), f"expected a degenerate-embedding warning, got: {[r.message for r in caplog.records]}"
 
+    def test_nan_candidate_embedding_skipped_in_cluster_scoring(self, caplog):
+        """Q3b follow-up: the cluster-centroid block (Bundle C) had the same
+        bare zero-norm guard as the domain block. A NaN candidate norm slips past
+        `cand_norm < 1e-9` and would corrupt cluster_score via the centroid dot
+        product. It must be treated as degenerate: skipped + warned, score finite."""
+        import logging
+        import math
+
+        from scripts.clustering.kmeans import Cluster
+        from scripts.llm.ranker import rank_papers
+
+        cluster = Cluster(
+            id=1,
+            display_name="C1",
+            centroid_vec=np.array([1.0, 0.0, 0.0], dtype=np.float32),
+            members=["10.1/x"],
+            cohesion_score=0.5,
+        )
+        # Degenerate candidate: stored embedding is all-NaN (norm is NaN).
+        candidates = [{
+            "doi": "10.1/nan-cluster",
+            "title": "NaN",
+            "abstract": "",
+            "_embedding": np.full(3, np.nan, dtype=np.float32),
+        }]
+
+        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+            ranked = rank_papers(
+                candidates,
+                self._make_db(0.5),
+                self._make_llm(),
+                cluster_centroids=[cluster],
+                cluster_centroid_weight=1.0,  # non-zero → cluster leg runs
+            )
+
+        # Score unchanged AND finite (NaN candidate skipped, not multiplied in).
+        assert math.isfinite(ranked[0]["similarity_score"]), (
+            f"NaN embedding corrupted the cluster score: {ranked[0]['similarity_score']}"
+        )
+        assert ranked[0]["similarity_score"] == pytest.approx(0.5)
+        # No cluster annotations should have been written for the skipped paper.
+        assert "_cluster_score" not in ranked[0]
+        # And the skip was surfaced as a warning naming the candidate.
+        assert any(
+            "degenerate embedding" in rec.message and "10.1/nan-cluster" in rec.message
+            for rec in caplog.records
+        ), f"expected a degenerate-embedding warning, got: {[r.message for r in caplog.records]}"
+
     def test_weight_nonzero_adds_to_score(self):
         """ranking.weights.domain_context > 0 → score includes cosine*weight."""
         from scripts.llm.ranker import rank_papers
