@@ -94,8 +94,15 @@ def create_schedule(
             stderr = exc.stderr.decode("utf-8", errors="replace")
         else:
             stderr = exc.stderr or ""
+        # A3-5 info-leak guard: the subprocess stderr can embed absolute paths
+        # and command lines. Log it server-side; the client gets a generic
+        # message that points the operator at the server logs.
+        logger.error(
+            "%s schedule install failed: %s", plat, stderr or exc, exc_info=True
+        )
         return HTMLResponse(
-            f'<div class="card danger">{plat} schedule install failed: {stderr or exc}</div>',
+            f'<div class="card danger">{plat} schedule install failed — '
+            "check server logs for details.</div>",
             status_code=500,
         )
     except NotImplementedError as exc:
@@ -120,10 +127,13 @@ def delete_schedule(request: Request) -> HTMLResponse:
         )
     try:
         remove_schedule()
-    except Exception as exc:
+    except Exception:
+        # A3-5 info-leak guard: full exception logged server-side; generic
+        # client message (the raw error can embed launchd/systemd paths).
         logger.exception("remove_schedule failed")
         return HTMLResponse(
-            f'<div class="card danger">Could not remove schedule: {exc}</div>',
+            '<div class="card danger">Could not remove schedule — '
+            "check server logs for details.</div>",
             status_code=500,
         )
     return HTMLResponse(

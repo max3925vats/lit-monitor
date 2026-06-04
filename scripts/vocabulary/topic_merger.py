@@ -25,6 +25,7 @@ from typing import Any
 
 import yaml
 
+from scripts.core.atomic_write import atomic_write_text
 from scripts.core.strict_mode import strict_fallback
 
 logger = logging.getLogger(__name__)
@@ -186,7 +187,10 @@ def _append_topics_entry(topics_path: Path, topic: str, doi: str, today: str) ->
         f"{sub}databases: [pubmed, arxiv]\n"
     )
     new_text = _splice_into_list_block(text, "searches:", new_entry)
-    topics_path.write_text(new_text, encoding="utf-8")
+    # A3-3: atomic write (temp file + fsync + os.replace) so a crash mid-write
+    # can never corrupt the user's config/topics.yaml — they end up with either
+    # the old file or the fully-written new one, never a truncated splice.
+    atomic_write_text(topics_path, new_text)
 
 
 def _append_concepts_entry(concepts_path: Path, topic: str, doi: str, today: str) -> None:
@@ -227,7 +231,9 @@ def _append_concepts_entry(concepts_path: Path, topic: str, doi: str, today: str
             f"  - {_yaml_scalar(seed_keyword)}\n"
         )
         new_text = text.rstrip("\n") + "\n" + new_entry
-    concepts_path.write_text(new_text, encoding="utf-8")
+    # A3-3: atomic write — see _append_topics_entry. Guards config/concepts.yaml
+    # against corruption from a crash partway through the write.
+    atomic_write_text(concepts_path, new_text)
 
 
 # ---------------------------------------------------------------------------

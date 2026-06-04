@@ -48,16 +48,17 @@ markdown). This is EXPECTED, not an error — the queue row is set to
 Duplicate handling
 ------------------
 The ingest_queue PK is doi, so the duplicate check (SELECT before INSERT)
-is the guard. Concurrent requests to the same DOI could race past the
-SELECT and collide on the INSERT — SQLite's default serialised-writer
-isolation means the second INSERT raises IntegrityError, which will
-propagate as a 500 rather than a 409. Accepted limitation for v1; a
-proper fix would use INSERT OR IGNORE + check rowcount.
+is the first-line guard. Concurrent requests to the same DOI can race past
+the SELECT and collide on the INSERT — SQLite's serialised-writer isolation
+means the loser's INSERT raises IntegrityError. A3-6: that IntegrityError is
+caught around the INSERT and mapped to the same 409 the SELECT path returns,
+so a concurrent duplicate is never surfaced as a 500.
 """
 from __future__ import annotations
 
 import logging
 import re
+import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
@@ -138,6 +139,18 @@ class IngestRequest(BaseModel):
 def _utcnow() -> str:
     """Return current UTC time as an ISO-8601 string (timezone-aware)."""
     return datetime.now(UTC).isoformat()
+
+
+def _duplicate_response(doi: str) -> JSONResponse:
+    """409 returned for a DOI already in the queue.
+
+    Single source of truth so the SELECT-found path and the INSERT-race path
+    (A3-6) return byte-identical bodies — clients can't tell which guard fired.
+    """
+    return JSONResponse(
+        {"status": "duplicate", "paper_id": doi},
+        status_code=409,
+    )
 
 
 def _build_zotero_item(body: IngestRequest) -> dict[str, Any]:
@@ -387,21 +400,31 @@ def ingest(body: IngestRequest, background_tasks: BackgroundTasks) -> JSONRespon
         ).fetchone()
 
     if existing is not None:
-        return JSONResponse(
-            {"status": "duplicate", "paper_id": body.doi},
-            status_code=409,
-        )
+        return _duplicate_response(body.doi)
 
     # --- Insert queue row BEFORE scheduling the task ---
     # The row must exist so the background task always has something to
-    # transition. If the INSERT itself fails (e.g. race-condition duplicate),
-    # the IntegrityError propagates as a 500 — acceptable for v1.
+    # transition.
+    #
+    # A3-6: the SELECT above is NOT a sufficient guard against concurrency.
+    # ingest_queue.doi is the PK, so two simultaneous requests for the same DOI
+    # can both pass the SELECT (neither row exists yet) and then race on the
+    # INSERT — the loser hits a UNIQUE/PK violation. Treat that as a duplicate
+    # (the SELECT path's outcome) rather than letting it surface as a 500.
     queued_at = _utcnow()
-    with state_db._connect() as conn:
-        conn.execute(
-            "INSERT INTO ingest_queue (doi, status, queued_at) VALUES (?, ?, ?)",
-            (body.doi, _STATUS_QUEUED, queued_at),
-        )
+    try:
+        with state_db._connect() as conn:
+            conn.execute(
+                "INSERT INTO ingest_queue (doi, status, queued_at) VALUES (?, ?, ?)",
+                (body.doi, _STATUS_QUEUED, queued_at),
+            )
+    except sqlite3.IntegrityError:
+        # Concurrent same-DOI insert won the race. The DOI is already queued,
+        # so this request is a duplicate — return the identical 409 the SELECT
+        # path returns. The winning request owns the row and its background
+        # task; we do NOT schedule a second one.
+        logger.info("A3-6: ingest INSERT lost race for doi=%s; treating as duplicate", body.doi)
+        return _duplicate_response(body.doi)
 
     # --- Schedule real async ingestion ---
     # Synthesize the Zotero-shaped item the background task feeds to

@@ -231,6 +231,74 @@ def test_concepts_yaml_append_lands_as_sibling_theme(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# A3-3 (TF-4) — appends must be atomic
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_topics_append_uses_atomic_write(tmp_path, monkeypatch):
+    """A3-3: appending to topics.yaml must go through atomic_write_text, not a
+    raw write_text — a crash mid-write must not corrupt the user's config.
+
+    We spy on the module-level atomic_write_text symbol (mirroring the
+    obsidian_writer atomicity tests) and assert it is invoked with the topics
+    path. The content assertions in the other tests still guarantee the write
+    actually lands.
+    """
+    import scripts.vocabulary.topic_merger as tm
+
+    topics_path = tmp_path / "topics.yaml"
+    _make_topics_yaml(topics_path, [])
+    calls: list[Path] = []
+    real = tm.atomic_write_text
+
+    def _spy(path, content, *a, **kw):
+        calls.append(Path(path))
+        return real(path, content, *a, **kw)
+
+    monkeypatch.setattr(tm, "atomic_write_text", _spy)
+
+    merge_result = tm.merge_discovered_topics(
+        [("10.1/doi", ["system fouling"])],
+        topics_path=topics_path,
+        concepts_path=tmp_path / "concepts.yaml",  # absent → no concepts write
+    )
+    assert merge_result == ["system fouling"]
+    # atomic_write_text was used for the topics file (and not bypassed).
+    assert topics_path in calls, (
+        f"topics.yaml append did not route through atomic_write_text; calls={calls}"
+    )
+    # And the content actually landed.
+    assert "system fouling" in topics_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.unit
+def test_concepts_append_uses_atomic_write(tmp_path, monkeypatch):
+    """A3-3: appending to concepts.yaml must also route through atomic_write_text."""
+    import scripts.vocabulary.topic_merger as tm
+
+    concepts_path = tmp_path / "concepts.yaml"
+    _make_concepts_yaml(concepts_path, ["Biologics"])
+    calls: list[Path] = []
+    real = tm.atomic_write_text
+
+    def _spy(path, content, *a, **kw):
+        calls.append(Path(path))
+        return real(path, content, *a, **kw)
+
+    monkeypatch.setattr(tm, "atomic_write_text", _spy)
+
+    tm.merge_discovered_topics(
+        [("10.1/doi", ["IgG aggregation"])],
+        topics_path=tmp_path / "topics.yaml",  # absent → no topics write
+        concepts_path=concepts_path,
+    )
+    assert concepts_path in calls, (
+        f"concepts.yaml append did not route through atomic_write_text; calls={calls}"
+    )
+    assert "IgG aggregation" in concepts_path.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
 # Deduplication across DOIs
 # ---------------------------------------------------------------------------
 

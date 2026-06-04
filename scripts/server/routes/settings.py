@@ -112,8 +112,13 @@ async def save_settings_section(section: str, request: Request) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OSError as exc:
-        logger.error("settings save failed for section %r: %s", section, exc)
-        raise HTTPException(status_code=500, detail=f"File I/O error: {exc}") from exc
+        # A3-5 info-leak guard: an OSError from the atomic write embeds the
+        # absolute config path ([Errno 13] Permission denied: '/.../config/...').
+        # Log it (with traceback) server-side; return a generic client detail.
+        logger.error(
+            "settings save failed for section %r", section, exc_info=True
+        )
+        raise HTTPException(status_code=500, detail="File I/O error") from exc
 
     logger.info("Bundle H: settings section %r saved", section)
     return {"ok": True, "section": section}

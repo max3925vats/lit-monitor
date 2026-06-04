@@ -123,10 +123,12 @@ async def save_preference_endpoint(body: SavePreferenceBody) -> JSONResponse:
     if body.remember:
         try:
             safe_save_preference(body.viewer)
-        except Exception as exc:
-            logger.warning("P3: safe_save_preference failed: %s", exc)
+        except Exception:
+            # A3-5 info-leak guard: log full exception server-side, return a
+            # generic error to the client (str(exc) can embed config paths).
+            logger.error("P3: safe_save_preference failed", exc_info=True)
             return JSONResponse(
-                {"ok": False, "error": str(exc)},
+                {"ok": False, "error": "Internal error"},
                 status_code=500,
             )
     return JSONResponse(

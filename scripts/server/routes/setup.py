@@ -628,10 +628,13 @@ def update_collection(
     paths["zotero"] = z
     try:
         save_config("paths", paths)
-    except OSError as exc:
-        logger.error("update_collection: write failed: %s", exc)
+    except OSError:
+        # A3-5 info-leak guard: an OSError from the atomic write embeds the
+        # absolute config path. Log it (with traceback) server-side; the client
+        # gets a generic message only.
+        logger.error("update_collection: write failed", exc_info=True)
         return HTMLResponse(
-            f'<div class="card danger">Could not save: {exc}</div>',
+            '<div class="card danger">Could not save — check server logs.</div>',
             status_code=500,
         )
     from html import escape
@@ -1292,12 +1295,14 @@ def save_routing(
         target = config_io.CONFIG_DIR / "item_routing.yaml"
         target.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_text(target, raw_yaml)
-    except OSError as exc:
-        logger.error("save_routing: write failed: %s", exc)
+    except OSError:
+        # A3-5 info-leak guard: the OSError embeds the absolute config path.
+        # Log it server-side (with traceback); the client gets a generic error.
+        logger.error("save_routing: write failed", exc_info=True)
         return templates.TemplateResponse(
             request,
             "setup/_routing_result.html",
-            {"ok": False, "errors": [f"Could not save: {exc}"]},
+            {"ok": False, "errors": ["Could not save — check server logs."]},
             status_code=500,
         )
     return templates.TemplateResponse(

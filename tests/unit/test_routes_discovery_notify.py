@@ -93,6 +93,34 @@ class TestSavePreferencePost:
         )
         assert r.status_code == 422
 
+    def test_save_failure_500_no_leak(self, client, caplog):
+        """A3-5: when safe_save_preference raises, the 500 body must NOT contain
+        the exception text/path, and the failure must be logged server-side.
+        """
+        import logging
+
+        secret = "/Users/secret/config/extraction.yaml"
+        with caplog.at_level(
+            logging.ERROR, logger="scripts.server.routes.discovery_notify"
+        ):
+            with patch(
+                "scripts.server.routes.discovery_notify.safe_save_preference",
+                side_effect=OSError(secret),
+            ):
+                r = client.post(
+                    "/discovery/notify-handler/save-preference",
+                    json={"viewer": "browser", "remember": True},
+                )
+        assert r.status_code == 500
+        body = r.json()
+        assert body == {"ok": False, "error": "Internal error"}
+        # No path / exception text in the body.
+        assert secret not in str(body)
+        # Logged server-side with the real exception.
+        assert any(
+            secret in rec.getMessage() or rec.exc_info for rec in caplog.records
+        )
+
 
 class TestQueryParam:
     def test_missing_run_id_422(self, client):

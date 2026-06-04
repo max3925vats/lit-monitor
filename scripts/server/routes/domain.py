@@ -13,7 +13,6 @@ All persistent state lives in state.db::domain_focus_extracted.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -21,6 +20,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from scripts.domain.extract import analyze_domain
+from scripts.server import config_io
 from scripts.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
@@ -35,11 +35,15 @@ def _read_domain_text() -> str:
     when it loads but contains no usable text. Tolerates both the new
     ``domain_focus:`` key and a bare-string YAML body for forward-compat.
     """
-    path = Path("config/domain_context.yaml")
+    # A3-4: resolve against the project's config dir (config_io.CONFIG_DIR)
+    # rather than a CWD-relative literal, so the route reads the same file the
+    # rest of the server uses regardless of the process working directory.
+    # Reference the attribute at call time so tests can monkeypatch CONFIG_DIR.
+    path = config_io.CONFIG_DIR / "domain_context.yaml"
     if not path.exists():
         raise HTTPException(
             status_code=404,
-            detail="config/domain_context.yaml not found",
+            detail="domain_context.yaml not found",
         )
     data: Any
     try:
@@ -47,7 +51,7 @@ def _read_domain_text() -> str:
     except yaml.YAMLError as exc:
         raise HTTPException(
             status_code=422,
-            detail=f"config/domain_context.yaml is not valid YAML: {exc}",
+            detail=f"domain_context.yaml is not valid YAML: {exc}",
         ) from exc
 
     # Accept both {domain_focus: "..."} (current schema) and bare strings
@@ -63,7 +67,7 @@ def _read_domain_text() -> str:
     if not text:
         raise HTTPException(
             status_code=422,
-            detail="config/domain_context.yaml is empty — fill in 'domain_focus'.",
+            detail="domain_context.yaml is empty — fill in 'domain_focus'.",
         )
     return text
 

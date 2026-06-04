@@ -230,6 +230,45 @@ class TestWriteBack:
         r = client.post(f"/api/themes/{cluster_id}/write-back/invalid")
         assert r.status_code == 400
 
+    def test_write_back_error_returns_generic_500_no_leak(
+        self, seeded_db, monkeypatch, caplog
+    ):
+        """A3-5 / TF-3: when the write-back tool raises, the 500 body must NOT
+        contain the exception text/path — only a generic detail — and the full
+        exception must be logged server-side.
+        """
+        import logging
+
+        db, cluster_id = seeded_db
+        rt = MagicMock()
+        rt.state_db = db
+        rt.zotero_client = MagicMock()
+        monkeypatch.setattr("scripts.server.routes.themes.get_runtime", lambda: rt)
+
+        # A path-shaped secret the raw str(exc) would leak to the client.
+        secret = "/Users/secret/zotero/storage/ABCD1234/leak.sqlite"
+        with caplog.at_level(logging.ERROR, logger="scripts.server.routes.themes"):
+            with patch(
+                "scripts.clustering.write_back.push_tags_to_zotero",
+                side_effect=FileNotFoundError(secret),
+            ):
+                app = FastAPI()
+                app.include_router(themes_router)
+                client = TestClient(app, raise_server_exceptions=False)
+                r = client.post(f"/api/themes/{cluster_id}/write-back/tags")
+
+        assert r.status_code == 500
+        body = r.json()
+        assert body["detail"] == "Internal error"
+        # Info-leak guard: no path / exception type / traceback in the body.
+        serialized = str(body)
+        assert secret not in serialized
+        assert "FileNotFoundError" not in serialized
+        # The real error must still be logged server-side (with the path).
+        assert any(
+            secret in rec.getMessage() or rec.exc_info for rec in caplog.records
+        ), "write-back failure must be logged server-side with the full exception"
+
 
 # ---------------------------------------------------------------------------
 # HTML page tests

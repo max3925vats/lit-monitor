@@ -75,10 +75,13 @@ async def brain_build_start(
                 all_library=all_library,
             )
             slot.started_at = datetime.now(UTC).isoformat(timespec="seconds")
-        except Exception as exc:  # noqa: BLE001 — surface any spawn failure
+        except Exception:  # noqa: BLE001 — surface any spawn failure
+            # A3-5 info-leak guard: full exception (with traceback) logged
+            # server-side; client gets a generic reason only — the raw spawn
+            # error can embed argv / filesystem paths.
             logger.exception("Failed to spawn brain-build")
             return JSONResponse(
-                {"started": False, "reason": f"spawn failed: {exc}"},
+                {"started": False, "reason": "spawn failed"},
                 status_code=500,
             )
     return JSONResponse(

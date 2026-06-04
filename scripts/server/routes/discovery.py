@@ -240,10 +240,12 @@ async def discovery_start(
             slot.process = await _spawn_discovery(dry_run=dry_run)
             slot.started_at = datetime.now(UTC).isoformat(timespec="seconds")
             slot.dry_run = dry_run
-        except Exception as exc:  # noqa: BLE001 — surface any spawn failure
+        except Exception:  # noqa: BLE001 — surface any spawn failure
+            # A3-5 info-leak guard: full exception logged server-side; client
+            # gets a generic reason (raw spawn error can embed argv / paths).
             logger.exception("Failed to spawn discovery")
             return JSONResponse(
-                {"started": False, "reason": f"spawn failed: {exc}"},
+                {"started": False, "reason": "spawn failed"},
                 status_code=500,
             )
     return JSONResponse(

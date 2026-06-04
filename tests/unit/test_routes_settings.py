@@ -184,6 +184,35 @@ class TestSettingsPost:
         r, _ = _post_to_real_file(tmp_path, "feedback", {"anything": "value"})
         assert r.status_code == 400
 
+    def test_oserror_returns_generic_500_no_leak(self, caplog):
+        """A3-5: an OSError from the writer → 500 whose body does NOT contain
+        the exception text/path, and the failure is logged server-side.
+        """
+        import logging
+
+        secret = "/Users/secret/config/extraction.yaml"
+        with caplog.at_level(
+            logging.ERROR, logger="scripts.server.routes.settings"
+        ):
+            with patch(
+                "scripts.server.routes.settings.safe_save_settings_section",
+                side_effect=OSError(f"[Errno 13] Permission denied: '{secret}'"),
+            ):
+                client = _make_client()
+                r = client.post(
+                    "/api/settings/ranking", json={"semantic_weight": 0.6}
+                )
+        assert r.status_code == 500
+        body = r.json()
+        assert body["detail"] == "File I/O error"
+        # Info-leak guard: the path must not reach the client.
+        assert secret not in str(body)
+        assert "Permission denied" not in str(body)
+        # But it must be logged server-side.
+        assert any(
+            secret in rec.getMessage() or rec.exc_info for rec in caplog.records
+        )
+
     def test_non_object_body_422(self):
         client = _make_client()
         # Send a JSON array instead of an object.

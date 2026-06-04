@@ -224,6 +224,50 @@ class TestDuplicateDOI:
         body = r2.json()
         assert body.get("paper_id") == "10.1234/dup.002"
 
+    def test_concurrent_insert_race_returns_409_not_500(self, client, db, monkeypatch):
+        """A3-6: a same-DOI row appearing BETWEEN the SELECT and the INSERT must
+        yield a 409 (duplicate), not a 500 IntegrityError.
+
+        Deterministic race simulation: wrap state_db._connect so that just
+        before the route's INSERT connection is opened, a 'concurrent' request
+        inserts the queue row. The route's own INSERT then hits the PK/UNIQUE
+        constraint — which must be caught and mapped to the same 409 the SELECT
+        path returns, NOT propagated as a 500.
+        """
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
+
+        doi = "10.1234/race.001"
+        real_connect = db._connect
+        call_count = {"n": 0}
+
+        def racing_connect(*a, **kw):
+            # The route opens _connect() twice: 1st for the SELECT, 2nd for the
+            # INSERT. Before the 2nd open, slip in the conflicting row via a
+            # fresh real connection — exactly the "another request won" race.
+            call_count["n"] += 1
+            if call_count["n"] == 2:
+                with real_connect() as conn:
+                    conn.execute(
+                        "INSERT INTO ingest_queue (doi, status, queued_at) "
+                        "VALUES (?, ?, ?)",
+                        (doi, "queued", "2020-01-01T00:00:00+00:00"),
+                    )
+            return real_connect(*a, **kw)
+
+        monkeypatch.setattr(db, "_connect", racing_connect)
+
+        r = client.post("/api/ingest", json={"doi": doi, "title": "T"})
+
+        assert r.status_code == 409, (
+            f"Concurrent INSERT race must return 409, got {r.status_code}: {r.text}"
+        )
+        body = r.json()
+        # Same shape as the SELECT-path duplicate response.
+        assert body.get("status") == "duplicate"
+        assert body.get("paper_id") == doi
+
 
 # ---------------------------------------------------------------------------
 # R28 hardening — pipeline failure must mark queue row 'failed'

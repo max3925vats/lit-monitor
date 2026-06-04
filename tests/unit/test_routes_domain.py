@@ -145,6 +145,73 @@ class TestPostAnalyze:
         assert get_body["topics"][0]["value"] == "bioprocessing"
 
 
+class TestConfigDirResolution:
+    """A3-4: _read_domain_text must resolve domain_context.yaml against
+    config_io.CONFIG_DIR, NOT a CWD-relative literal. Patching CONFIG_DIR to a
+    tmp dir (while CWD stays elsewhere) must make the route read that file.
+    """
+
+    def test_reads_from_patched_config_dir_regardless_of_cwd(
+        self,
+        client_with_runtime: TestClient,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from scripts.server import config_io
+
+        # CWD is some OTHER directory with no config/ in it — proves the route
+        # does not depend on the process working directory.
+        other_cwd = tmp_path / "elsewhere"
+        other_cwd.mkdir()
+        monkeypatch.chdir(other_cwd)
+
+        # The real config lives in a dir we point CONFIG_DIR at.
+        cfg_dir = tmp_path / "resolved_config"
+        cfg_dir.mkdir()
+        (cfg_dir / "domain_context.yaml").write_text(
+            "domain_focus: 'resolved via CONFIG_DIR.'\n"
+        )
+        monkeypatch.setattr(config_io, "CONFIG_DIR", cfg_dir)
+
+        captured: dict = {}
+
+        def _capture(text: str) -> dict:
+            captured["text"] = text
+            return {
+                "topics": ["t"], "methods": [], "materials": [],
+                "adjacent_fields": [], "exclusions": [],
+            }
+
+        monkeypatch.setattr(
+            "scripts.server.routes.domain.analyze_domain", _capture
+        )
+
+        r = client_with_runtime.post("/api/domain/analyze")
+        assert r.status_code == 200, r.text
+        # The route read the file from the patched CONFIG_DIR, not from CWD.
+        assert captured["text"] == "resolved via CONFIG_DIR."
+
+    def test_missing_in_config_dir_returns_404(
+        self,
+        client_with_runtime: TestClient,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A3-4: a config dir without the file → 404 (resolution honored)."""
+        from scripts.server import config_io
+
+        other_cwd = tmp_path / "elsewhere2"
+        other_cwd.mkdir()
+        monkeypatch.chdir(other_cwd)
+
+        empty_cfg = tmp_path / "empty_config"
+        empty_cfg.mkdir()  # no domain_context.yaml inside
+        monkeypatch.setattr(config_io, "CONFIG_DIR", empty_cfg)
+
+        r = client_with_runtime.post("/api/domain/analyze")
+        assert r.status_code == 404
+
+
 class TestConfirmReject:
     def test_confirm_toggles_on(self, client_with_runtime: TestClient) -> None:
         db = client_with_runtime.state_db  # type: ignore[attr-defined]

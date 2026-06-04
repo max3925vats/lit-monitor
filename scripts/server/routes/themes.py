@@ -206,8 +206,13 @@ def write_back_cluster(
             from scripts.clustering.write_back import push_collections_to_zotero
             report = push_collections_to_zotero(db, zot, dry_run=dry_run)
     except Exception as exc:
-        logger.error("write_back_cluster %s/%s failed: %s", cluster_id, mode, exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        # A3-5 info-leak guard: log the full exception (with traceback) server-
+        # side, but return only a generic detail to the client — str(exc) here
+        # can embed Zotero internals / filesystem paths.
+        logger.error(
+            "write_back_cluster %s/%s failed", cluster_id, mode, exc_info=True
+        )
+        raise HTTPException(status_code=500, detail="Internal error") from exc
 
     return {"dry_run": dry_run, "diff": report}
 
