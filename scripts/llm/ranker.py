@@ -135,12 +135,15 @@ def rank_papers(
     #    When either is absent/zero: no change to scores → v0.8.0 behavior.
     if domain_context_emb is not None and domain_context_weight > 0.0:
         _domain_norm = float(np.linalg.norm(domain_context_emb))
-        if _domain_norm < 1e-9:
-            # Degenerate (all-zero) domain-context embedding: the whole domain
-            # leg is a silent no-op for every paper. Surface it once so a
-            # misconfigured/empty domain context is observable, not invisible.
+        if _domain_norm < 1e-9 or not np.isfinite(_domain_norm):
+            # Degenerate domain-context embedding: either all-zero (norm≈0) or
+            # non-finite (NaN/inf norm — a NaN would otherwise slip past the
+            # zero-norm check since `nan < 1e-9` is False and corrupt every
+            # score via np.dot). Either way the whole domain leg is a no-op;
+            # surface it once so a misconfigured/empty/NaN domain context is
+            # observable, not invisible.
             logger.warning(
-                "Domain-context embedding is degenerate (norm≈0); "
+                "Domain-context embedding is degenerate (norm≈0 or non-finite); "
                 "skipping domain-context scoring for this run."
             )
         for paper in scored:
@@ -150,14 +153,18 @@ def rank_papers(
                 continue
             cand_arr = np.asarray(cand_emb, dtype=np.float32)
             _cand_norm = float(np.linalg.norm(cand_arr))
-            if _cand_norm < 1e-9 or _domain_norm < 1e-9:
-                if _cand_norm < 1e-9:
-                    # Degenerate (all-zero) candidate embedding: numerically
-                    # skipped (correct), but log it so a bad stored vector is
-                    # observable rather than silently dropped from scoring.
+            _cand_degenerate = _cand_norm < 1e-9 or not np.isfinite(_cand_norm)
+            if _cand_degenerate or _domain_norm < 1e-9:
+                if _cand_degenerate:
+                    # Degenerate candidate embedding: all-zero (norm≈0) or
+                    # non-finite (NaN/inf — a NaN norm slips past the zero-norm
+                    # check since `nan < 1e-9` is False and would corrupt the
+                    # score via np.dot). Numerically skipped (correct), but log
+                    # it so a bad stored vector is observable rather than
+                    # silently dropped from scoring.
                     logger.warning(
-                        "Candidate %s has a degenerate embedding (norm≈0); "
-                        "skipping domain-context score for it.",
+                        "Candidate %s has a degenerate embedding (norm≈0 or "
+                        "non-finite); skipping domain-context score for it.",
                         paper.get("doi", "?"),
                     )
                 continue

@@ -1532,6 +1532,27 @@ class TestConfigLoadGuards:
         # A clean guarded exit, not an uncaught exception bubbling through Click.
         assert result.exception is None or isinstance(result.exception, SystemExit)
 
+    def test_trending_accept_guards_config_load(self, runner) -> None:
+        """`trending accept` must exit 1 with a friendly error when config fails.
+
+        Mirrors the `trending dismiss` guard: previously the command called
+        get_config()/StateDB() bare, so a malformed config surfaced as an
+        uncaught exception. The guard converts that into echo("Error: …") +
+        exit(1).
+        """
+        # get_config is imported lazily inside the command from this module.
+        with patch(
+            "scripts.core.config.get_config",
+            side_effect=RuntimeError("boom: bad config"),
+        ):
+            result = runner.invoke(main, ["trending", "accept", "1"])
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        assert "boom: bad config" in result.output
+        # A clean guarded exit, not an uncaught exception bubbling through Click.
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+
     def test_obsidian_sync_guards_config_load(self, runner) -> None:
         """`obsidian sync --all` must exit 1 with a friendly error on config failure."""
         # _make_config is a module-level helper in scripts.cli.

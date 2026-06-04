@@ -289,6 +289,45 @@ class TestDomainContextSignal:
             for rec in caplog.records
         ), f"expected a degenerate-embedding warning, got: {[r.message for r in caplog.records]}"
 
+    def test_nan_candidate_embedding_skipped_not_corrupting_score(self, caplog):
+        """Q3b follow-up: a NaN candidate embedding has a non-finite norm
+        (`np.linalg.norm([nan,nan,nan]) == nan`), which slips past the zero-norm
+        guard since `nan < 1e-9` is False. It must be treated as degenerate:
+        skipped + warned, and crucially the score must NOT become NaN."""
+        import logging
+        import math
+
+        from scripts.llm.ranker import rank_papers
+
+        domain_emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        # Degenerate candidate: stored embedding is all-NaN (norm is NaN).
+        candidates = [{
+            "doi": "10.1/nan",
+            "title": "NaN",
+            "abstract": "",
+            "_embedding": np.full(3, np.nan, dtype=np.float32),
+        }]
+
+        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+            ranked = rank_papers(
+                candidates,
+                self._make_db(0.5),
+                self._make_llm(),
+                domain_context_emb=domain_emb,
+                domain_context_weight=1.0,  # non-zero → domain leg runs
+            )
+
+        # Score unchanged AND finite (NaN candidate skipped, not multiplied in).
+        assert math.isfinite(ranked[0]["similarity_score"]), (
+            f"NaN embedding corrupted the score: {ranked[0]['similarity_score']}"
+        )
+        assert ranked[0]["similarity_score"] == pytest.approx(0.5)
+        # And the skip was surfaced as a warning naming the candidate.
+        assert any(
+            "degenerate embedding" in rec.message and "10.1/nan" in rec.message
+            for rec in caplog.records
+        ), f"expected a degenerate-embedding warning, got: {[r.message for r in caplog.records]}"
+
     def test_weight_nonzero_adds_to_score(self):
         """ranking.weights.domain_context > 0 → score includes cosine*weight."""
         from scripts.llm.ranker import rank_papers

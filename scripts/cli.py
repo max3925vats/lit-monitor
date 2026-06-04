@@ -3883,8 +3883,15 @@ def trending_accept_cmd(suggestion_id: int) -> None:
     from scripts.core.state_db import StateDB
     from scripts.server.config_io import safe_save_topics
 
-    cfg = get_config()
-    db = StateDB(Path(cfg.state_db.path).expanduser())
+    # Guard config/state-db load with the canonical friendly-error pattern used
+    # by sibling main-level commands: a malformed config should exit cleanly
+    # with a message rather than surfacing a raw traceback.
+    try:
+        cfg = get_config()
+        db = StateDB(Path(cfg.state_db.path).expanduser())
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
     row = db.get_trending_suggestion_by_id(suggestion_id)
     if row is None:
         click.echo(f"Error: no suggestion with id={suggestion_id}", err=True)
