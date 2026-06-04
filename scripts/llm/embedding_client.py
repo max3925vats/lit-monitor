@@ -82,7 +82,7 @@ def embed_via_ollama(
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310
-            body: dict[str, Any] = json.loads(resp.read())
+            raw_body = resp.read()
     except urllib.error.HTTPError as exc:
         err_body = ""
         try:
@@ -94,6 +94,18 @@ def embed_via_ollama(
             exc.code, model, len(text), err_body,
         )
         raise
+
+    # A 200 response with a non-JSON body (proxy error page, truncated
+    # stream, etc.) must not surface as a bare json.JSONDecodeError — wrap it
+    # in a typed RuntimeError matching how the rest of the module raises.
+    try:
+        body: dict[str, Any] = json.loads(raw_body)
+    except (json.JSONDecodeError, ValueError) as exc:
+        snippet = raw_body.decode("utf-8", errors="replace")[:500] if raw_body else ""
+        raise RuntimeError(
+            f"embed_via_ollama: Ollama embedding returned non-JSON response "
+            f"(model={model!r}): {exc}. Body={snippet!r}"
+        ) from exc
 
     embeddings = body.get("embeddings") or body.get("embedding")
     if not embeddings:

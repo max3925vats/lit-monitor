@@ -96,6 +96,49 @@ class TestValidation:
             with pytest.raises(ValueError, match="entity"):
                 tools.find_papers_by_entity("")
 
+    # Q3.1 (A3-7/TF-5): the three free-text/relationship tools must validate
+    # inputs the same way find_papers_by_entity/semantic_search do.
+
+    def test_find_papers_by_query_empty_string_raises(self, fake_db):
+        with patch.object(tools, "_get_graph_db", return_value=fake_db):
+            with pytest.raises(ValueError, match="query"):
+                tools.find_papers_by_query("")
+
+    def test_find_papers_by_query_whitespace_raises(self, fake_db):
+        with patch.object(tools, "_get_graph_db", return_value=fake_db):
+            with pytest.raises(ValueError, match="query"):
+                tools.find_papers_by_query("   ")
+
+    def test_find_papers_by_query_k_too_small_raises(self, fake_db):
+        with patch.object(tools, "_get_graph_db", return_value=fake_db):
+            with pytest.raises(ValueError, match="k must be int"):
+                tools.find_papers_by_query("ion exchange", k=0)
+
+    def test_find_papers_by_query_k_too_large_raises(self, fake_db):
+        with patch.object(tools, "_get_graph_db", return_value=fake_db):
+            with pytest.raises(ValueError, match="k must be int"):
+                tools.find_papers_by_query("ion exchange", k=101)
+
+    def test_find_papers_by_query_hybrid_empty_string_raises(self, fake_db):
+        with patch.object(tools, "_get_graph_db", return_value=fake_db):
+            with pytest.raises(ValueError, match="query"):
+                tools.find_papers_by_query_hybrid("")
+
+    def test_find_papers_by_query_hybrid_k_too_large_raises(self, fake_db):
+        with patch.object(tools, "_get_graph_db", return_value=fake_db):
+            with pytest.raises(ValueError, match="k must be int"):
+                tools.find_papers_by_query_hybrid("ion exchange", k=101)
+
+    def test_find_by_relationship_top_k_too_small_raises(self, fake_db):
+        with patch.object(tools, "_get_graph_db", return_value=fake_db):
+            with pytest.raises(ValueError, match="top_k must be int"):
+                tools.find_papers_by_relationship("PROPOSES", top_k=0)
+
+    def test_find_by_relationship_top_k_too_large_raises(self, fake_db):
+        with patch.object(tools, "_get_graph_db", return_value=fake_db):
+            with pytest.raises(ValueError, match="top_k must be int"):
+                tools.find_papers_by_relationship("PROPOSES", top_k=101)
+
 
 # ---------------------------------------------------------------------------
 # Happy-path tests — find_papers_by_entity

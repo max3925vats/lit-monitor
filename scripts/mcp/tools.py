@@ -19,6 +19,12 @@ Also implemented (B3):
 
 Also implemented (B6):
 - semantic_search — ChromaDB vector path (paper + chunk granularity)
+
+Also implemented (P9):
+- get_recent_discovery_runs — most recent discovery runs (newest first)
+- get_discovery_run_papers  — paper results for a specific discovery run
+
+Total: 12 tools (cross-check scripts/mcp/graph_server.py::TOOL_NAMES).
 """
 from __future__ import annotations
 
@@ -179,13 +185,16 @@ def find_papers_by_relationship(
         list of {doi, title, year, journal} dicts.
 
     Raises:
-        ValueError: When predicate is not in the closed vocabulary.
+        ValueError: When predicate is not in the closed vocabulary, or when
+            top_k is not an int in [1, 100].
     """
     if predicate not in _PREDICATES:
         raise ValueError(
             f"unknown predicate: {predicate!r}; "
             f"expected one of {sorted(_PREDICATES)}"
         )
+    if not isinstance(top_k, int) or not (1 <= top_k <= 100):
+        raise ValueError("top_k must be int in [1, 100]")
 
     db = _get_graph_db()
     if db is None:
@@ -384,7 +393,15 @@ def find_papers_by_query(query: str, k: int = 20) -> list[dict[str, Any]]:
 
     Returns:
         list of {doi, title, year, journal} dicts.
+
+    Raises:
+        ValueError: When query is empty/blank, or k is not an int in [1, 100].
     """
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError(f"query must be a non-empty string, got {query!r}")
+    if not isinstance(k, int) or not (1 <= k <= 100):
+        raise ValueError("k must be int in [1, 100]")
+
     db = _get_graph_db()
     if db is None:
         logger.warning("find_papers_by_query: graph backend unavailable")
@@ -427,7 +444,15 @@ def find_papers_by_query_hybrid(query: str, k: int = 20) -> list[dict[str, Any]]
     Returns:
         list of {doi, title, year, journal} dicts, RRF-fused when both legs
         are available, otherwise graph-only.
+
+    Raises:
+        ValueError: When query is empty/blank, or k is not an int in [1, 100].
     """
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError(f"query must be a non-empty string, got {query!r}")
+    if not isinstance(k, int) or not (1 <= k <= 100):
+        raise ValueError("k must be int in [1, 100]")
+
     db = _get_graph_db()
     if db is None:
         logger.warning("find_papers_by_query_hybrid: graph backend unavailable")

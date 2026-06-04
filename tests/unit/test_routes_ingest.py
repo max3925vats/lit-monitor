@@ -182,6 +182,32 @@ class TestValidation:
         )
         assert r.status_code == 202
 
+    def test_oversized_doi_returns_422(self, client):
+        """Q3.5: a DOI longer than the cap (255) → 422 (validator rejects).
+
+        _DOI_RE's \\S+ suffix is unbounded, so without the length cap this
+        regex-valid but absurdly long DOI would slip through.
+        """
+        from scripts.server.routes.ingest import _MAX_DOI_LEN
+
+        # Regex-valid prefix + an oversized suffix pushing past the cap.
+        oversized = "10.1234/" + ("x" * _MAX_DOI_LEN)
+        r = client.post(
+            "/api/ingest", json={"doi": oversized, "title": "T"}
+        )
+        assert r.status_code == 422
+
+    def test_normal_doi_accepted(self, client, monkeypatch):
+        """Q3.5: a normal-length DOI still passes (regression guard)."""
+        from scripts.server.routes import ingest as ingest_route
+
+        monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
+
+        r = client.post(
+            "/api/ingest", json={"doi": "10.1234/normal.doi", "title": "T"}
+        )
+        assert r.status_code == 202
+
 
 # ---------------------------------------------------------------------------
 # Duplicate DOI (409)

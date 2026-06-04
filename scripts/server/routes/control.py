@@ -52,7 +52,9 @@ async def _spawn_brain_build(
 async def brain_build_start(
     request: Request,
     resume: bool = Form(True),
-    max_papers: int | None = Form(None),
+    # Bound max_papers so negative/absurd values are rejected (422) before
+    # reaching the CLI. Upper cap is a sane ceiling on a single build batch.
+    max_papers: int | None = Form(None, ge=1, le=100000),
     all_library: bool = Form(False),
 ) -> JSONResponse:
     """Spawn a brain-build subprocess. Refuses if a build is already running."""

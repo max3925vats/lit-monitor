@@ -57,3 +57,26 @@ def test_stop_returns_false_when_nothing_running(client):
     r = client.post("/api/brain-build/stop")
     assert r.status_code == 200
     assert r.json() == {"stopped": False}
+
+
+# Q3.5: max_papers must be bounded (ge=1, le=100000) so absurd/negative
+# values are rejected with 422 before reaching the CLI subprocess.
+
+
+@pytest.mark.unit
+def test_start_rejects_negative_max_papers(client):
+    """POST /start with max_papers=-1 → 422 (below ge=1)."""
+    r = client.post(
+        "/api/brain-build/start", data={"resume": "true", "max_papers": "-1"}
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.unit
+def test_start_rejects_absurd_max_papers(client):
+    """POST /start with a huge max_papers → 422 (above le=100000)."""
+    r = client.post(
+        "/api/brain-build/start",
+        data={"resume": "true", "max_papers": "999999999"},
+    )
+    assert r.status_code == 422

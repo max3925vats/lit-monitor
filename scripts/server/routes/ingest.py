@@ -77,6 +77,11 @@ _DOI_RE = re.compile(r"^10\.\d{4,9}/\S+$")
 # bloat downstream storage, logs, and LLM prompts. Reject with 422.
 _MAX_TITLE_LEN = 500
 
+# P3: hard cap on DOI length. _DOI_RE matches an unbounded suffix (\S+), so a
+# pathologically long string could pass the regex; real DOIs are well under
+# this. An oversized DOI is almost certainly malformed/abusive. Reject with 422.
+_MAX_DOI_LEN = 255
+
 # Single source of truth for the ingest_queue state machine. These bare
 # string literals were previously scattered across the route, the background
 # task, and the tests; a typo like "no markdown" would silently create an
@@ -108,10 +113,20 @@ class IngestRequest(BaseModel):
     @field_validator("doi")
     @classmethod
     def _validate_doi(cls, v: str) -> str:
-        """Reject strings that don't look like a real DOI (must start with 10.)."""
-        if not _DOI_RE.match(v.strip()):
+        """Reject strings that don't look like a real DOI (must start with 10.).
+
+        Also caps length: _DOI_RE's ``\\S+`` suffix is unbounded, so the length
+        check (on the stripped value) is the only guard against an absurdly
+        long DOI slipping through.
+        """
+        stripped = v.strip()
+        if len(stripped) > _MAX_DOI_LEN:
+            raise ValueError(
+                f"DOI too long: {len(stripped)} chars (max {_MAX_DOI_LEN})"
+            )
+        if not _DOI_RE.match(stripped):
             raise ValueError(f"invalid DOI: {v!r} — expected format '10.NNNN/...'")
-        return v.strip()
+        return stripped
 
     @field_validator("title")
     @classmethod
