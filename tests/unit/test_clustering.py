@@ -655,6 +655,40 @@ class TestRecomputeAtomicity:
         assert after, "must NEVER leave zero active clusters"
         assert after == before
 
+    def test_recompute_skips_malformed_centroid_blob(self, tmp_path, caplog):
+        """Q3.8: a stored centroid whose width != the embedding dim must be
+        skipped with a warning, not fed into map_to_existing_clusters (where a
+        ragged centroid stack would raise or corrupt the distance matrix).
+
+        Seed one cluster with a 4-d centroid while the library embeddings are
+        8-d. recompute must log a skip warning and still complete (returns > 0).
+        """
+        import logging
+
+        from scripts.clustering.recompute import recompute_clusters
+        from scripts.core.state_db import StateDB
+
+        db = StateDB(tmp_path / "state.db")
+        # Malformed: 4-d centroid blob, but embeddings below are 8-d.
+        bad_centroid = np.zeros(4, dtype=np.float32)
+        db.insert_cluster("Stale 4d", 2, 0.5, bad_centroid.tobytes())
+
+        edb = self._make_embeddings_db()  # dim=8
+        cfg = self._make_cfg()
+
+        with caplog.at_level(logging.WARNING, logger="scripts.clustering.recompute"), \
+             patch("scripts.clustering.recompute.name_cluster", return_value=None), \
+             patch("scripts.clustering.recompute.assign_papers_to_clusters"):
+            created = recompute_clusters(db, edb, cfg)
+
+        # Recompute still produced clusters (the bad centroid did not break it).
+        assert created > 0
+        # And the malformed blob was explicitly skipped with a warning.
+        assert any(
+            "does not" in rec.message and "match embedding dim" in rec.message
+            for rec in caplog.records
+        ), f"expected a centroid-shape skip warning, got: {[r.message for r in caplog.records]}"
+
 
 # ---------------------------------------------------------------------------
 # Threshold gating

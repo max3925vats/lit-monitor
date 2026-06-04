@@ -134,7 +134,15 @@ def rank_papers(
     #    Runs only when both the embedding AND a non-zero weight are provided.
     #    When either is absent/zero: no change to scores → v0.8.0 behavior.
     if domain_context_emb is not None and domain_context_weight > 0.0:
-        _domain_norm = np.linalg.norm(domain_context_emb)
+        _domain_norm = float(np.linalg.norm(domain_context_emb))
+        if _domain_norm < 1e-9:
+            # Degenerate (all-zero) domain-context embedding: the whole domain
+            # leg is a silent no-op for every paper. Surface it once so a
+            # misconfigured/empty domain context is observable, not invisible.
+            logger.warning(
+                "Domain-context embedding is degenerate (norm≈0); "
+                "skipping domain-context scoring for this run."
+            )
         for paper in scored:
             cand_emb = paper.get("_embedding")
             if cand_emb is None:
@@ -143,6 +151,15 @@ def rank_papers(
             cand_arr = np.asarray(cand_emb, dtype=np.float32)
             _cand_norm = float(np.linalg.norm(cand_arr))
             if _cand_norm < 1e-9 or _domain_norm < 1e-9:
+                if _cand_norm < 1e-9:
+                    # Degenerate (all-zero) candidate embedding: numerically
+                    # skipped (correct), but log it so a bad stored vector is
+                    # observable rather than silently dropped from scoring.
+                    logger.warning(
+                        "Candidate %s has a degenerate embedding (norm≈0); "
+                        "skipping domain-context score for it.",
+                        paper.get("doi", "?"),
+                    )
                 continue
             domain_score = float(np.dot(cand_arr, domain_context_emb) / (_cand_norm * _domain_norm))
             # Store raw domain cosine for Bundle B's score decomposition / explainability.

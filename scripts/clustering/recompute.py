@@ -85,6 +85,12 @@ def recompute_clusters(
         logger.info("C: compute_clusters returned empty list — not enough distinct papers.")
         return 0
 
+    # Embedding dimensionality from the freshly-fetched library embeddings.
+    # Every stored centroid must match this width; map_to_existing_clusters
+    # stacks centroids into one (E, dim) array and does centroid @ new_vec, so a
+    # wrong-width centroid would raise or silently corrupt the distance matrix.
+    embedding_dim = int(embeddings.shape[1])
+
     # Load existing clusters for stable ID mapping
     existing_raw = state_db.list_active_clusters()
     existing_clusters: list[Cluster] = []
@@ -93,6 +99,17 @@ def recompute_clusters(
         if blob:
             try:
                 vec = np.frombuffer(blob, dtype=np.float32).copy()
+                # Validate the centroid shape before it reaches the distance
+                # math. A malformed/stale-dimension blob is skipped with a
+                # warning (same warn-and-skip style as the parse failure below)
+                # rather than poisoning map_to_existing_clusters.
+                if vec.ndim != 1 or vec.shape[0] != embedding_dim:
+                    logger.warning(
+                        "C: skipping cluster %d — centroid blob shape %s does not "
+                        "match embedding dim %d (malformed or stale-dimension blob).",
+                        row["id"], vec.shape, embedding_dim,
+                    )
+                    continue
                 existing_clusters.append(Cluster(
                     id=row["id"],
                     display_name=row.get("display_name"),

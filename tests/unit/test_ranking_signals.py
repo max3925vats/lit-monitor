@@ -255,6 +255,40 @@ class TestDomainContextSignal:
         # Weight=0 → no change to similarity_score
         assert ranked[0]["similarity_score"] == pytest.approx(0.5)
 
+    def test_degenerate_candidate_embedding_logs_warning(self, caplog):
+        """Q3.8: an all-zero candidate embedding is numerically skipped (correct)
+        AND now logs a warning, so a bad stored vector is observable instead of
+        silently dropped from domain-context scoring. The score is unchanged."""
+        import logging
+
+        from scripts.llm.ranker import rank_papers
+
+        domain_emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        # Degenerate candidate: stored embedding is all-zero (norm ≈ 0).
+        candidates = [{
+            "doi": "10.1/zero",
+            "title": "Zero",
+            "abstract": "",
+            "_embedding": np.zeros(3, dtype=np.float32),
+        }]
+
+        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+            ranked = rank_papers(
+                candidates,
+                self._make_db(0.5),
+                self._make_llm(),
+                domain_context_emb=domain_emb,
+                domain_context_weight=1.0,  # non-zero → domain leg runs
+            )
+
+        # Score unchanged (degenerate candidate skipped, not corrupted).
+        assert ranked[0]["similarity_score"] == pytest.approx(0.5)
+        # And the skip was surfaced as a warning naming the candidate.
+        assert any(
+            "degenerate embedding" in rec.message and "10.1/zero" in rec.message
+            for rec in caplog.records
+        ), f"expected a degenerate-embedding warning, got: {[r.message for r in caplog.records]}"
+
     def test_weight_nonzero_adds_to_score(self):
         """ranking.weights.domain_context > 0 → score includes cosine*weight."""
         from scripts.llm.ranker import rank_papers

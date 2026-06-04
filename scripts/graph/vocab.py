@@ -14,6 +14,12 @@ PredicateVocab and EntityTypeVocab share a ``_BaseVocab`` implementation and
 Downstream consumers:
 - G3 (entity_extractor.py) will call ``EntityTypeVocab.resolve``
 - G4 (relationship_validator.py) will call ``PredicateVocab.resolve``
+
+NOTE (intentionally unwired): this is a foundation module for the v0.8+
+closed-vocabulary feature and is deliberately NOT yet wired into the active
+pipeline — no production code imports it today. It is kept on purpose (user
+decision) as the staging point for the planned predicate/entity-type
+resolution work; it is NOT dead code awaiting removal.
 """
 from __future__ import annotations
 

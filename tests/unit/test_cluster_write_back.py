@@ -154,6 +154,40 @@ class TestPushTagsToZotero:
         tags = [t["tag"] for t in call_args["data"]["tags"]]
         assert "lm/Membrane Filtration" in tags
 
+    def test_report_splits_success_and_failure(self):
+        """Q3.3: a failed Zotero op must NOT be counted as written.
+
+        One of two items raises on update. The report must show exactly one
+        success (tags_added=1, papers_processed=1) and one failure
+        (tags_failed=1) — never all-success.
+        """
+        from scripts.clustering.write_back import push_tags_to_zotero
+
+        clusters = [{"id": 1, "display_name": "Theme", "n_papers": 2}]
+        assignments = [
+            {"doi": "10.1000/ok", "cluster_id": 1},
+            {"doi": "10.1000/bad", "cluster_id": 1},
+        ]
+        sdb = _make_state_db_with_clusters(clusters, assignments)
+        sdb.get_paper.side_effect = lambda doi: {
+            "10.1000/ok": {"zotero_key": "KEYOK"},
+            "10.1000/bad": {"zotero_key": "KEYBAD"},
+        }.get(doi)
+
+        zot = _make_zot_client()
+        # Fresh item dict per call (avoid a shared mutable return_value that
+        # would make the second item appear already-tagged and skip the write).
+        zot._zot.item.side_effect = lambda zkey: {"data": {"tags": []}}
+
+        # First update_item call (KEYOK) succeeds, second (KEYBAD) raises.
+        zot._zot.update_item.side_effect = [{}, RuntimeError("zotero write failed")]
+
+        report = push_tags_to_zotero(sdb, zot, dry_run=False)
+
+        assert report["tags_added"] == 1
+        assert report["papers_processed"] == 1
+        assert report["tags_failed"] == 1
+
     def test_dry_run_calls_zotero_noop(self):
         """Audit-2 F2: dry-run must not touch any Zotero mutating method.
 

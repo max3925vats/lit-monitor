@@ -52,7 +52,7 @@ def synthesize(
     connections_folder: str | None = None,
     rag_mode: str | None = None,
     graph_db=None,
-) -> str:
+) -> str | None:
     """
     Generate and write a synthesis note for the given topic.
     Parameters
@@ -78,7 +78,10 @@ def synthesize(
         Optional GraphDB instance; required for graph/hybrid modes.
     Returns
     -------
-    str: Path to the written synthesis note.
+    str | None: Path to the written synthesis note, or None when there is no
+        result to write (no similar notes / no extractable summaries). The
+        empty-string sentinel was replaced with None so the type contract is a
+        clean Optional; callers already branch on truthiness.
     """
     # G9: resolve rag_mode; default from config, fallback "vector".
     _cfg_mode = (
@@ -154,7 +157,7 @@ def synthesize(
         use_chunks = False  # no chunk-level passages in graph/hybrid mode
     if not similar:
         logger.warning("No similar notes found for topic %r", topic)
-        return ""
+        return None
     # 2. Load extractions — resolve DOI from chunk metadata or direct id
     source_summaries: list[dict[str, Any]] = []
     for result in similar[:top_k]:
@@ -188,7 +191,7 @@ def synthesize(
         })
     if not source_summaries:
         logger.warning("No extractable summaries for topic %r", topic)
-        return ""
+        return None
     # 3. Build LLM prompt
     n_sources = len(source_summaries)
     prompt = load_prompt("synthesis")

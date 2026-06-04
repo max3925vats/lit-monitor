@@ -29,8 +29,11 @@ def seeded_db(tmp_path, monkeypatch):
     # Make get_config return a cfg whose state_db.path points here
     fake_cfg = MagicMock()
     fake_cfg.state_db.path = str(tmp_path / "state.db")
+    # The CLI resolves config via ``from scripts.core.config import get_config``
+    # at call time, so patching the source symbol is what actually controls it.
+    # (A former second patch on "scripts.cli.get_config" was dead: that name is
+    # never bound on the cli module, and raising=False made it a silent no-op.)
     monkeypatch.setattr("scripts.core.config.get_config", lambda: fake_cfg)
-    monkeypatch.setattr("scripts.cli.get_config", lambda: fake_cfg, raising=False)
     return db, run_id
 
 
@@ -38,8 +41,8 @@ class TestDiscoveryView:
     def test_no_runs_friendly_message(self, runner, tmp_path, monkeypatch):
         fake_cfg = MagicMock()
         fake_cfg.state_db.path = str(tmp_path / "empty.db")
+        # Patch the source symbol only; "scripts.cli.get_config" is never bound.
         monkeypatch.setattr("scripts.core.config.get_config", lambda: fake_cfg)
-        monkeypatch.setattr("scripts.cli.get_config", lambda: fake_cfg, raising=False)
         from scripts.cli import main
 
         result = runner.invoke(main, ["discovery", "view"])

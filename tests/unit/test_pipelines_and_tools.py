@@ -680,8 +680,10 @@ def test_synthesize_writes_note(tmp_path):
     assert "TopicX transport mechanism" in content
     assert "[[Smith2021_Relevant]]" in content
 @pytest.mark.unit
-def test_synthesize_empty_results_returns_empty(tmp_path):
-    """synthesize() returns empty string if no similar notes found."""
+def test_synthesize_empty_results_returns_none(tmp_path):
+    """Q3.8: synthesize() returns None (the no-result sentinel) when no similar
+    notes are found — NOT an empty string. Callers branch on truthiness, so the
+    type contract is str | None, and None is the correct 'nothing written'."""
     from scripts.obsidian_tools.synthesize import synthesize
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
@@ -693,7 +695,8 @@ def test_synthesize_empty_results_returns_empty(tmp_path):
     embeddings_db.find_similar_to_text.return_value = []
     llm = MagicMock()
     result = synthesize("some obscure topic", config, state_db, embeddings_db, llm)
-    assert result == ""
+    assert result is None
+    assert result != ""  # explicit: the empty-string sentinel is gone
     llm.complete.assert_not_called()
 @pytest.mark.unit
 def test_synthesize_survives_replace_failure(tmp_path, monkeypatch):

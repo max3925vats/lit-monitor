@@ -2222,8 +2222,15 @@ def obsidian_sync(
         raise click.exceptions.Exit(2)
 
     _setup_logging("obsidian_sync", verbose=ctx.obj.get("verbose", False))
-    config = _make_config()
-    state_db = _make_state_db(config)
+    # Guard config/state-db load with the canonical friendly-error pattern used
+    # by sibling commands (e.g. db_cleanup_stale): a malformed config should
+    # exit cleanly with a message, not dump a traceback.
+    try:
+        config = _make_config()
+        state_db = _make_state_db(config)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
 
     from scripts.obsidian_tools.sync import sync_notes
 
@@ -3908,8 +3915,15 @@ def trending_dismiss_cmd(suggestion_id: int) -> None:
     from scripts.core.config import get_config
     from scripts.core.state_db import StateDB
 
-    cfg = get_config()
-    db = StateDB(Path(cfg.state_db.path).expanduser())
+    # Guard config/state-db load with the canonical friendly-error pattern used
+    # by sibling main-level commands: a malformed config should exit cleanly
+    # with a message rather than surfacing a raw traceback.
+    try:
+        cfg = get_config()
+        db = StateDB(Path(cfg.state_db.path).expanduser())
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
     row = db.get_trending_suggestion_by_id(suggestion_id)
     if row is None:
         click.echo(f"Error: no suggestion with id={suggestion_id}", err=True)

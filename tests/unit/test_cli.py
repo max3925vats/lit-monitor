@@ -1504,3 +1504,44 @@ class TestDiagnoseCommand:
 
         mock_ollama.assert_not_called()
         mock_zotero.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Q3.4: config-load guards on commands that previously loaded config bare.
+# A malformed config must exit cleanly (code 1, friendly "Error:" message)
+# rather than propagating a raw traceback to the user.
+# ---------------------------------------------------------------------------
+class TestConfigLoadGuards:
+    def test_trending_dismiss_guards_config_load(self, runner) -> None:
+        """`trending dismiss` must exit 1 with a friendly error when config fails.
+
+        Before Q3.4 the command called get_config()/StateDB() bare, so a
+        malformed config surfaced as an uncaught exception (non-clean exit,
+        traceback). The guard converts that into echo("Error: …") + exit(1).
+        """
+        # get_config is imported lazily inside the command from this module.
+        with patch(
+            "scripts.core.config.get_config",
+            side_effect=RuntimeError("boom: bad config"),
+        ):
+            result = runner.invoke(main, ["trending", "dismiss", "1"])
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        assert "boom: bad config" in result.output
+        # A clean guarded exit, not an uncaught exception bubbling through Click.
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+
+    def test_obsidian_sync_guards_config_load(self, runner) -> None:
+        """`obsidian sync --all` must exit 1 with a friendly error on config failure."""
+        # _make_config is a module-level helper in scripts.cli.
+        with patch(
+            "scripts.cli._make_config",
+            side_effect=RuntimeError("boom: bad config"),
+        ):
+            result = runner.invoke(main, ["obsidian", "sync", "--all"])
+
+        assert result.exit_code == 1
+        assert "Error:" in result.output
+        assert "boom: bad config" in result.output
+        assert result.exception is None or isinstance(result.exception, SystemExit)

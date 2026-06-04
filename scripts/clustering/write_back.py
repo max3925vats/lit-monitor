@@ -42,6 +42,7 @@ def push_tags_to_zotero(
     report: dict = {
         "dry_run": dry_run,
         "tags_added": 0,
+        "tags_failed": 0,
         "papers_processed": 0,
         "papers_skipped": 0,
         "operations": [],
@@ -69,15 +70,18 @@ def push_tags_to_zotero(
                 try:
                     _add_tag_to_item(zotero_client, zkey, tag_value)
                     report["tags_added"] += 1
+                    report["papers_processed"] += 1
                 except Exception as exc:
+                    # Op failed: surface it as a failure, do NOT count it as
+                    # written/processed (accounting must reflect real outcomes).
+                    report["tags_failed"] += 1
                     logger.warning(
                         "C write-back: tag update failed for %s (%s): %s",
                         doi, zkey, exc,
                     )
             else:
                 report["tags_added"] += 1  # count planned ops
-
-            report["papers_processed"] += 1
+                report["papers_processed"] += 1
 
     if dry_run:
         logger.info(
@@ -86,8 +90,8 @@ def push_tags_to_zotero(
         )
     else:
         logger.info(
-            "C write-back: added %d tags across %d papers.",
-            report["tags_added"], report["papers_processed"],
+            "C write-back: added %d tags across %d papers (%d failed).",
+            report["tags_added"], report["papers_processed"], report["tags_failed"],
         )
 
     return report
@@ -119,6 +123,7 @@ def push_collections_to_zotero(
         "dry_run": dry_run,
         "collections_to_create": 0,
         "items_to_add": 0,
+        "items_failed": 0,
         "operations": [],
     }
 
@@ -165,18 +170,24 @@ def push_collections_to_zotero(
             if not paper_row or not paper_row.get("zotero_key"):
                 continue
             zkey = paper_row["zotero_key"]
-            report["items_to_add"] += 1
             report["operations"].append({
                 "action": "add_to_collection", "doi": doi, "collection": theme,
             })
             if not dry_run and sub_key:
                 try:
                     zotero_client._zot.addto_collection(sub_key, zkey)
+                    report["items_to_add"] += 1
                 except Exception as exc:
+                    # Only count an item as added when the op actually succeeded;
+                    # track failures separately rather than reporting all-success.
+                    report["items_failed"] += 1
                     logger.warning(
                         "C write-back: failed to add %s to collection %r: %s",
                         doi, theme, exc,
                     )
+            else:
+                # dry-run (or no resolved sub-collection): count as planned.
+                report["items_to_add"] += 1
 
     if dry_run:
         logger.info(
@@ -185,8 +196,8 @@ def push_collections_to_zotero(
         )
     else:
         logger.info(
-            "C write-back collections: created %d, added %d items.",
-            report["collections_to_create"], report["items_to_add"],
+            "C write-back collections: created %d, added %d items (%d failed).",
+            report["collections_to_create"], report["items_to_add"], report["items_failed"],
         )
 
     return report
