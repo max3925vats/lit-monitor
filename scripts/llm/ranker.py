@@ -137,41 +137,41 @@ def rank_papers(
         _domain_norm = float(np.linalg.norm(domain_context_emb))
         if _domain_norm < 1e-9 or not np.isfinite(_domain_norm):
             # Degenerate domain-context embedding: either all-zero (norm≈0) or
-            # non-finite (NaN/inf norm — a NaN would otherwise slip past the
-            # zero-norm check since `nan < 1e-9` is False and corrupt every
-            # score via np.dot). Either way the whole domain leg is a no-op;
-            # surface it once so a misconfigured/empty/NaN domain context is
-            # observable, not invisible.
+            # non-finite (NaN/inf norm). The whole domain leg is a no-op, so skip
+            # it entirely — do NOT fall into the per-candidate loop. Critically,
+            # a NaN norm would slip past a bare `_domain_norm < 1e-9` check
+            # (`nan < 1e-9` is False) and corrupt every finite candidate's score
+            # via `np.dot(...) / (... * nan)`; guarding the whole leg here is the
+            # only place that closes that path. Surface it once so a
+            # misconfigured/empty/NaN domain context is observable, not invisible.
             logger.warning(
                 "Domain-context embedding is degenerate (norm≈0 or non-finite); "
                 "skipping domain-context scoring for this run."
             )
-        for paper in scored:
-            cand_emb = paper.get("_embedding")
-            if cand_emb is None:
-                # Candidate has no stored embedding — skip silently (no score change).
-                continue
-            cand_arr = np.asarray(cand_emb, dtype=np.float32)
-            _cand_norm = float(np.linalg.norm(cand_arr))
-            _cand_degenerate = _cand_norm < 1e-9 or not np.isfinite(_cand_norm)
-            if _cand_degenerate or _domain_norm < 1e-9:
-                if _cand_degenerate:
+        else:
+            for paper in scored:
+                cand_emb = paper.get("_embedding")
+                if cand_emb is None:
+                    # Candidate has no stored embedding — skip silently (no score change).
+                    continue
+                cand_arr = np.asarray(cand_emb, dtype=np.float32)
+                _cand_norm = float(np.linalg.norm(cand_arr))
+                if _cand_norm < 1e-9 or not np.isfinite(_cand_norm):
                     # Degenerate candidate embedding: all-zero (norm≈0) or
                     # non-finite (NaN/inf — a NaN norm slips past the zero-norm
                     # check since `nan < 1e-9` is False and would corrupt the
-                    # score via np.dot). Numerically skipped (correct), but log
-                    # it so a bad stored vector is observable rather than
-                    # silently dropped from scoring.
+                    # score via np.dot). Numerically skipped, but log it so a bad
+                    # stored vector is observable rather than silently dropped.
                     logger.warning(
                         "Candidate %s has a degenerate embedding (norm≈0 or "
                         "non-finite); skipping domain-context score for it.",
                         paper.get("doi", "?"),
                     )
-                continue
-            domain_score = float(np.dot(cand_arr, domain_context_emb) / (_cand_norm * _domain_norm))
-            # Store raw domain cosine for Bundle B's score decomposition / explainability.
-            paper["_domain_score"] = domain_score
-            paper["similarity_score"] = paper["similarity_score"] + domain_context_weight * domain_score
+                    continue
+                domain_score = float(np.dot(cand_arr, domain_context_emb) / (_cand_norm * _domain_norm))
+                # Store raw domain cosine for Bundle B's score decomposition / explainability.
+                paper["_domain_score"] = domain_score
+                paper["similarity_score"] = paper["similarity_score"] + domain_context_weight * domain_score
 
     # 2b. Bundle C: optional cluster-centroid additive score.
     #     Runs only when both cluster_centroids AND non-zero weight are provided.
@@ -182,36 +182,47 @@ def rank_papers(
         )  # (K, dim)
         _cen_norms = np.linalg.norm(_centroid_matrix, axis=1) + 1e-9  # (K,)
 
-        for paper in scored:
-            cand_emb = paper.get("_embedding")
-            if cand_emb is None:
-                continue
-            cand_arr = np.asarray(cand_emb, dtype=np.float32)
-            cand_norm = float(np.linalg.norm(cand_arr))
-            if cand_norm < 1e-9 or not np.isfinite(cand_norm):
-                # Degenerate candidate embedding: all-zero (norm≈0) or non-finite
-                # (NaN/inf — a NaN norm slips past the zero-norm check since
-                # `nan < 1e-9` is False and would corrupt cluster_score via the
-                # dot product). Skip it from cluster scoring, consistent with the
-                # domain-context block above.
-                logger.warning(
-                    "Candidate %s has a degenerate embedding (norm≈0 or "
-                    "non-finite); skipping cluster-centroid score for it.",
-                    paper.get("doi", "?"),
-                )
-                continue
-            # Cosine similarities to all centroids; pick the max
-            dots = _centroid_matrix @ cand_arr          # (K,)
-            cosines = dots / (_cen_norms * cand_norm)   # (K,)
-            best_idx = int(np.argmax(cosines))
-            cluster_score = float(cosines[best_idx])
-            paper["_cluster_score"] = cluster_score
-            paper["_cluster_matched_idx"] = best_idx
-            paper["similarity_score"] = (
-                paper["similarity_score"] + cluster_centroid_weight * cluster_score
+        if not np.isfinite(_centroid_matrix).all():
+            # A stored centroid contains non-finite values (NaN/inf). The matmul
+            # would propagate NaN into every candidate's cosines and np.argmax
+            # would still pick a garbage cluster, silently poisoning cluster_score
+            # (symmetric to the candidate-side guard below). Skip the whole
+            # cluster leg, surfaced once, rather than corrupt the ranking.
+            logger.warning(
+                "One or more cluster centroids contain non-finite values; "
+                "skipping cluster-centroid scoring for this run."
             )
-            # Annotate matched cluster name for Bundle B's web UI
-            paper["cluster_matched"] = cluster_centroids[best_idx].display_name or ""
+        else:
+            for paper in scored:
+                cand_emb = paper.get("_embedding")
+                if cand_emb is None:
+                    continue
+                cand_arr = np.asarray(cand_emb, dtype=np.float32)
+                cand_norm = float(np.linalg.norm(cand_arr))
+                if cand_norm < 1e-9 or not np.isfinite(cand_norm):
+                    # Degenerate candidate embedding: all-zero (norm≈0) or non-finite
+                    # (NaN/inf — a NaN norm slips past the zero-norm check since
+                    # `nan < 1e-9` is False and would corrupt cluster_score via the
+                    # dot product). Skip it from cluster scoring, consistent with the
+                    # domain-context block above.
+                    logger.warning(
+                        "Candidate %s has a degenerate embedding (norm≈0 or "
+                        "non-finite); skipping cluster-centroid score for it.",
+                        paper.get("doi", "?"),
+                    )
+                    continue
+                # Cosine similarities to all centroids; pick the max
+                dots = _centroid_matrix @ cand_arr          # (K,)
+                cosines = dots / (_cen_norms * cand_norm)   # (K,)
+                best_idx = int(np.argmax(cosines))
+                cluster_score = float(cosines[best_idx])
+                paper["_cluster_score"] = cluster_score
+                paper["_cluster_matched_idx"] = best_idx
+                paper["similarity_score"] = (
+                    paper["similarity_score"] + cluster_centroid_weight * cluster_score
+                )
+                # Annotate matched cluster name for Bundle B's web UI
+                paper["cluster_matched"] = cluster_centroids[best_idx].display_name or ""
 
     # 2c. Bundle D: optional graph-signal additive scores.
     #     Runs only when graph_signals dict AND graph_weights are provided AND

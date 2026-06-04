@@ -376,6 +376,101 @@ class TestDomainContextSignal:
             for rec in caplog.records
         ), f"expected a degenerate-embedding warning, got: {[r.message for r in caplog.records]}"
 
+    def test_degenerate_domain_norm_skips_whole_leg_not_corrupt(self, caplog):
+        """Q3 review follow-up: a NON-FINITE *domain-context* norm (NaN/inf) must
+        skip the ENTIRE domain leg. Previously the degenerate-norm branch only
+        warned, then fell into the per-candidate loop where the guard
+        `_domain_norm < 1e-9` evaluated `nan < 1e-9` == False, so a FINITE
+        candidate proceeded into `np.dot(...) / (... * nan)` and got a NaN score.
+        This pins that finite candidates keep their score when the domain emb is
+        NaN — the previously-uncovered corruption path."""
+        import logging
+        import math
+
+        from scripts.llm.ranker import rank_papers
+
+        # Degenerate DOMAIN embedding (all-NaN → NaN norm); candidate is FINITE.
+        domain_emb = np.full(3, np.nan, dtype=np.float32)
+        candidates = [{
+            "doi": "10.1/finite",
+            "title": "Finite",
+            "abstract": "",
+            "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),
+        }]
+
+        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+            ranked = rank_papers(
+                candidates,
+                self._make_db(0.5),
+                self._make_llm(),
+                domain_context_emb=domain_emb,
+                domain_context_weight=1.0,  # non-zero → domain leg would run
+            )
+
+        # Finite candidate's score must be untouched and finite (whole leg skipped).
+        assert math.isfinite(ranked[0]["similarity_score"]), (
+            f"NaN domain embedding corrupted a finite candidate's score: "
+            f"{ranked[0]['similarity_score']}"
+        )
+        assert ranked[0]["similarity_score"] == pytest.approx(0.5)
+        # No per-candidate domain score should have been written.
+        assert "_domain_score" not in ranked[0]
+        # The leg-skip was surfaced once.
+        assert any(
+            "Domain-context embedding is degenerate" in rec.message
+            for rec in caplog.records
+        ), f"expected a degenerate-domain warning, got: {[r.message for r in caplog.records]}"
+
+    def test_non_finite_stored_centroid_skips_cluster_leg(self, caplog):
+        """Q3 review follow-up (symmetric to the candidate guard): a NaN/inf in a
+        STORED centroid vector must skip the whole cluster leg. Otherwise the
+        matmul propagates NaN into every candidate's cosines and np.argmax still
+        picks a garbage cluster, silently poisoning cluster_score. Pins that a
+        finite candidate keeps its score when a centroid is non-finite."""
+        import logging
+        import math
+
+        from scripts.clustering.kmeans import Cluster
+        from scripts.llm.ranker import rank_papers
+
+        # One healthy centroid, one with a NaN component.
+        good = Cluster(
+            id=1, display_name="C1",
+            centroid_vec=np.array([1.0, 0.0, 0.0], dtype=np.float32),
+            members=["10.1/x"], cohesion_score=0.5,
+        )
+        bad = Cluster(
+            id=2, display_name="C2",
+            centroid_vec=np.array([np.nan, 0.0, 0.0], dtype=np.float32),
+            members=["10.1/y"], cohesion_score=0.5,
+        )
+        candidates = [{
+            "doi": "10.1/finite",
+            "title": "Finite",
+            "abstract": "",
+            "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),
+        }]
+
+        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+            ranked = rank_papers(
+                candidates,
+                self._make_db(0.5),
+                self._make_llm(),
+                cluster_centroids=[good, bad],
+                cluster_centroid_weight=1.0,
+            )
+
+        assert math.isfinite(ranked[0]["similarity_score"]), (
+            f"non-finite centroid corrupted a finite candidate's score: "
+            f"{ranked[0]['similarity_score']}"
+        )
+        assert ranked[0]["similarity_score"] == pytest.approx(0.5)
+        assert "_cluster_score" not in ranked[0]
+        assert any(
+            "cluster centroids contain non-finite" in rec.message
+            for rec in caplog.records
+        ), f"expected a non-finite-centroid warning, got: {[r.message for r in caplog.records]}"
+
     def test_weight_nonzero_adds_to_score(self):
         """ranking.weights.domain_context > 0 → score includes cosine*weight."""
         from scripts.llm.ranker import rank_papers
