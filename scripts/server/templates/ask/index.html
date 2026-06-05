@@ -29,8 +29,10 @@
       <span id="ask-spin" class="htmx-indicator status-badge loading">thinking…</span>
     </form>
 
-    {# WA1 placeholders; later bundles (history) fill #ask-history. #}
+    {# WA1 placeholders; WA4 fills #ask-history client-side (localStorage). #}
     <div id="ask-result"></div>
+
+    <h3 class="muted">Recent questions</h3>
     <div id="ask-history"></div>
   {% endif %}
 </section>

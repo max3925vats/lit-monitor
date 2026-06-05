@@ -45,6 +45,31 @@ class TestAskPage:
         assert 'href="/ask"' in r.text
 
 
+class TestAskHistory:
+    """WA4: recent-questions history container + site.js wiring.
+
+    The history itself lives in localStorage (client-side); here we only pin
+    the server-rendered wiring: the container exists when the graph is
+    available, the page loads site.js (the module that drives it), and the
+    container is NOT rendered on the no-graph page.
+    """
+
+    def test_ask_page_includes_history_container(self, client):
+        with patch("scripts.server.routes.ask.safe_graph_db", return_value=object()):
+            r = client.get("/ask")
+        assert r.status_code == 200
+        assert 'id="ask-history"' in r.text  # history mount point
+        assert "Recent questions" in r.text  # WA4 heading (the new element)
+        assert "/static/site.js" in r.text  # the module that drives it (base.html)
+
+    def test_history_container_absent_without_graph(self, client):
+        with patch("scripts.server.routes.ask.safe_graph_db", return_value=None):
+            r = client.get("/ask")
+        assert r.status_code == 200
+        assert 'id="ask-history"' not in r.text  # only shown when form is shown
+        assert "Recent questions" not in r.text  # heading gated with the form too
+
+
 class TestAskAnswer:
     def _result(self):
         from scripts.graph.ask import AskResult  # noqa: PLC0415
