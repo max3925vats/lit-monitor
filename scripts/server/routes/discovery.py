@@ -15,6 +15,7 @@ Routes:
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import logging
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -28,7 +29,6 @@ from scripts.api.queries import (
     get_discovery_run_papers,
     get_discovery_runs,
 )
-from scripts.graph import safe_graph_db
 from scripts.server.app import templates
 from scripts.server.routes.sse import stream_log
 from scripts.server.runtime import get_runtime
@@ -41,6 +41,16 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # FG-3: valid retrieval modes for the discovery start form's rag_mode select.
 _VALID_RAG_MODES = ("vector", "graph", "hybrid")
+
+
+def _graph_extra_available() -> bool:
+    """True when the optional [graph] extra (kuzu) is importable.
+
+    A lightweight availability probe — does NOT open the production graph DB
+    (which would run migrations + take the write lock and mask a 'DB busy'
+    error as 'extra missing').
+    """
+    return importlib.util.find_spec("kuzu") is not None
 
 
 def _default_rag_mode() -> str:
@@ -262,28 +272,23 @@ async def discovery_start(
     slot = runtime.processes["discovery"]
     # FG-3: validate the requested mode; fall back to config default otherwise.
     mode = rag_mode if rag_mode in _VALID_RAG_MODES else _default_rag_mode()
-    # FG-3 / W4-mirror: graph|hybrid require the [graph] extra. Probe with
-    # safe_graph_db() (returns None when the extra is missing) and refuse to
-    # start before any search begins, so the user gets a clear warning instead
-    # of a subprocess that dies partway through.
-    if mode in ("graph", "hybrid"):
-        _probe = safe_graph_db()
-        if _probe is None:
-            return JSONResponse(
-                {
-                    "started": False,
-                    "reason": (
-                        f"--rag-mode {mode} requires the [graph] extra. "
-                        "Install with: uv sync --extra graph"
-                    ),
-                },
-                status_code=400,
-            )
-        # Probe opened a real DB handle — close it; the subprocess opens its own.
-        try:
-            _probe.close()
-        except Exception:
-            pass
+    # FG-3 / W4-mirror: graph|hybrid require the [graph] extra. Probe via a
+    # lightweight import check (does NOT open the production graph DB) and
+    # refuse to start before any search begins, so the user gets a clear
+    # warning instead of a subprocess that dies partway through. We do not
+    # pre-check whether the graph is *built* here — only whether the extra is
+    # *installed* — matching the CLI's W4 guard.
+    if mode in ("graph", "hybrid") and not _graph_extra_available():
+        return JSONResponse(
+            {
+                "started": False,
+                "reason": (
+                    f"--rag-mode {mode} requires the [graph] extra. "
+                    "Install with: uv sync --extra graph"
+                ),
+            },
+            status_code=400,
+        )
     async with slot.lock:
         if slot.is_running():
             return JSONResponse(

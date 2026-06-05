@@ -136,11 +136,15 @@ def test_discovery_default_mode_from_config(client, monkeypatch):
 
 @pytest.mark.unit
 def test_graph_mode_without_extra_refuses_with_warning(client, monkeypatch):
-    """W4-mirror: rag_mode=graph without [graph] extra refuses (no crash)."""
+    """W4-mirror: rag_mode=graph without [graph] extra refuses (no crash).
+
+    Patches the lightweight import probe (NOT a prod-DB open): when the extra
+    is reported unavailable the route returns 400 and never spawns.
+    """
     # Simulate missing [graph] extra.
     monkeypatch.setattr(
-        "scripts.server.routes.discovery.safe_graph_db",
-        lambda: None,
+        "scripts.server.routes.discovery._graph_extra_available",
+        lambda: False,
     )
     # Ensure spawn would NOT be reached; if it is, fail loudly.
     async def _boom(*a, **k):
