@@ -6,6 +6,7 @@ Panels 3-7 are rendered as disabled placeholders and land in Tasks #68-#72.
 """
 from __future__ import annotations
 
+import logging
 import subprocess
 from html import escape
 from pathlib import Path
@@ -14,6 +15,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from scripts.server.app import templates
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -1027,6 +1030,260 @@ async def dev_dryrun_result() -> str:
         f'<div class="dev-result">{leak_pill}'
         f'<p class="muted">dry-run started at {escape(started)}.</p>'
         f"{digest_html}</div>"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Panel 8 — Knowledge Graph backfill (FG-5)
+#
+# Mirrors the Panel-5 dry-run SSE mechanics — a single dedicated ProcessSlot
+# (``dev_graph_backfill``, distinct from ``dev_dryrun`` so the two never
+# collide), spawn via ``asyncio.create_subprocess_exec``, an SSE stream, a
+# stop handler, and a 2s status poll. The ONE deviation from the dry-run panel:
+# ``lit-monitor graph backfill`` does NOT call ``_setup_logging`` (cli.py:2648),
+# so it writes no ``*_graph.jsonl`` file for ``sse.stream_log`` to tail. We
+# therefore stream the subprocess's piped stdout directly — the same idiom the
+# build-vocabulary panel already uses (setup.py ``/api/build-vocabulary/stream``).
+#
+# Checkbox → real CLI flag mapping (confirmed against cli.py:2604-2647):
+#   all                       → --all
+#   ner + with_llm            → --ner-with-llm
+#   ner (alone)               → --ner
+#   relationships + with_llm  → --relationships-with-llm
+#   relationships (alone)     → --relationships
+# Default scope: if no scope/relationship/ner flag is chosen, fall back to
+# --all so the spawned CLI invocation is always valid (it errors otherwise).
+# ---------------------------------------------------------------------------
+
+
+def _map_backfill_flags(
+    *, want_all: bool, ner: bool, relationships: bool, with_llm: bool
+) -> list[str]:
+    """Translate the Panel-8 checkboxes into real ``graph backfill`` CLI flags.
+
+    See the module comment above for the confirmed mapping. ``with_llm`` only
+    upgrades ner/relationships to their ``--*-with-llm`` variants — it is not a
+    standalone flag. When nothing meaningful is selected, default to ``--all``
+    so the resulting argv is a valid backfill invocation.
+    """
+    flags: list[str] = []
+    if want_all:
+        flags.append("--all")
+    if ner:
+        flags.append("--ner-with-llm" if with_llm else "--ner")
+    if relationships:
+        flags.append("--relationships-with-llm" if with_llm else "--relationships")
+    if not flags:
+        # Dev convenience: an empty selection would make the CLI raise
+        # UsageError. Default to the full-corpus schema backfill.
+        flags.append("--all")
+    return flags
+
+
+@router.post("/api/dev/graph/backfill/start", response_class=HTMLResponse)
+async def dev_graph_backfill_start(request: Request) -> str:
+    """Spawn ``lit-monitor graph backfill <flags>`` and stream its stdout.
+
+    Refuses if the ``dev_graph_backfill`` slot is already busy. The checkbox
+    form fields (``all`` / ``ner`` / ``relationships`` / ``with_llm``) map to
+    the real CLI flags via :func:`_map_backfill_flags`.
+    """
+    from scripts.server.runtime import get_runtime
+
+    form = await request.form()
+
+    def _checked(name: str) -> bool:
+        # HTMX sends checkboxes as ``name=on`` only when ticked; absent = False.
+        return bool(form.get(name))
+
+    flags = _map_backfill_flags(
+        want_all=_checked("all"),
+        ner=_checked("ner"),
+        relationships=_checked("relationships"),
+        with_llm=_checked("with_llm"),
+    )
+
+    runtime = get_runtime()
+    slot = runtime.processes["dev_graph_backfill"]
+    async with slot.lock:
+        if slot.is_running():
+            return (
+                '<div class="dev-result"><span class="pill danger">'
+                "✗ graph backfill already running"
+                f"{f' (pid {slot.process.pid})' if slot.process else ''}"
+                "</span></div>"
+            )
+        slot.output = []  # reset per-run buffer
+        argv = ["uv", "run", "lit-monitor", "graph", "backfill", *flags]
+        try:
+            slot.process = await asyncio.create_subprocess_exec(
+                *argv,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                cwd=str(_REPO_ROOT),
+            )
+            slot.started_at = datetime.now(UTC).isoformat(timespec="seconds")
+        except Exception as exc:  # noqa: BLE001 — surface any spawn failure
+            return (
+                '<div class="dev-result"><span class="pill danger">'
+                f"✗ spawn failed: {escape(str(exc))}</span></div>"
+            )
+    return (
+        '<div class="dev-result"><span class="pill success">'
+        f"✓ graph backfill started (pid {slot.process.pid}) — "
+        f"<code>{escape(' '.join(flags))}</code></span></div>"
+    )
+
+
+@router.post("/api/dev/graph/backfill/stop", response_class=HTMLResponse)
+async def dev_graph_backfill_stop() -> str:
+    """SIGTERM the running graph-backfill subprocess (SIGKILL after 30s).
+
+    No-op-with-pill if nothing is running.
+    """
+    from scripts.server.runtime import get_runtime
+
+    runtime = get_runtime()
+    slot = runtime.processes["dev_graph_backfill"]
+    if not slot.is_running():
+        return (
+            '<div class="dev-result"><span class="pill" '
+            'style="background:#eee;color:#555;">'
+            "nothing to stop — no graph backfill is currently running</span></div>"
+        )
+    await slot.stop(timeout=30.0)
+    return (
+        '<div class="dev-result"><span class="pill warning">'
+        "⊠ stop requested (SIGTERM → SIGKILL after 30s)</span></div>"
+    )
+
+
+@router.get("/api/dev/graph/backfill/stream")
+async def dev_graph_backfill_stream(request: Request):
+    """SSE stream of the graph-backfill subprocess's piped stdout.
+
+    Unlike the dry-run panel (which tails a JSONL log), ``graph backfill``
+    emits no structured log file, so we forward the subprocess's combined
+    stdout/stderr line-by-line — the build-vocabulary panel's idiom. Each line
+    is HTML-escaped before emission so a noisy log line can't break the page.
+    """
+    from sse_starlette.sse import EventSourceResponse
+
+    from scripts.server.runtime import get_runtime
+
+    slot = get_runtime().processes["dev_graph_backfill"]
+
+    async def _gen():
+        proc = slot.process
+        if proc is None or proc.stdout is None:
+            yield {"event": "error", "data": "no graph backfill running"}
+            return
+        while True:
+            if await request.is_disconnected():
+                return
+            line = await proc.stdout.readline()
+            if not line:
+                break
+            text = line.decode("utf-8", errors="replace").rstrip()
+            slot.append_line(text)
+            yield {
+                "event": "progress",
+                "data": f'<div class="log-line log-raw">{escape(text)}</div>',
+            }
+        rc = await proc.wait()
+        yield {
+            "event": "progress",
+            "data": f'<div class="log-line log-INFO">exit code: {escape(str(rc))}</div>',
+        }
+
+    return EventSourceResponse(_gen(), ping=15)
+
+
+@router.get("/api/dev/graph/backfill/status", response_class=HTMLResponse)
+async def dev_graph_backfill_status() -> str:
+    """Status pill: idle / running (elapsed) / completed / failed.
+
+    Polled every ~2s by Panel 8. Reads the ``dev_graph_backfill`` slot
+    directly. Degrades gracefully (no 500) on a malformed ``started_at``.
+    """
+    from scripts.server.runtime import get_runtime
+
+    runtime = get_runtime()
+    slot = runtime.processes["dev_graph_backfill"]
+    proc = slot.process
+    if proc is None:
+        return (
+            '<span class="pill" style="background:#eee;color:#555;border:1px solid #ccc;">'
+            'idle — pick flags and click "Start backfill"</span>'
+        )
+    if slot.is_running():
+        elapsed = ""
+        if slot.started_at:
+            try:
+                start_dt = datetime.fromisoformat(slot.started_at)
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=UTC)
+                secs = int((datetime.now(UTC) - start_dt).total_seconds())
+                elapsed = f" ({secs}s)"
+            except (TypeError, ValueError):
+                elapsed = ""
+        return (
+            f'<span class="pill warning">⟳ running{escape(elapsed)} — '
+            "live log streaming below</span>"
+        )
+    exit_code = getattr(proc, "returncode", None)
+    if exit_code == 0:
+        return '<span class="pill success">✓ completed (exit 0)</span>'
+    return (
+        f'<span class="pill danger">✗ exited with code {escape(str(exit_code))}</span>'
+    )
+
+
+@router.get("/api/dev/graph/backfill/stats", response_class=HTMLResponse)
+async def dev_graph_backfill_stats() -> str:
+    """Render a small graph-corpus stats readout (reuses FG-1 get_corpus_stats).
+
+    Acquires a graph handle via ``safe_graph_db`` (None when the [graph] extra
+    is absent or the DB isn't built), runs ``queries.get_corpus_stats``, and
+    renders paper/entity counts + per-predicate edge counts. Always closes the
+    handle. Never 500-leaks — any failure degrades to an advisory notice.
+    """
+    from scripts.api.queries import get_corpus_stats
+    from scripts.graph.import_citations import safe_graph_db
+
+    db = safe_graph_db()
+    if db is None:
+        return (
+            '<div class="dev-result"><span class="pill warning">'
+            "⚠ Graph not built — install the [graph] extra and run a backfill, "
+            'or open <a href="/graph">/graph</a>.</span></div>'
+        )
+    try:
+        stats = await asyncio.to_thread(get_corpus_stats, db)
+    except Exception:  # noqa: BLE001 — advisory readout, never 500-leak
+        logger.error("dev graph stats failed", exc_info=True)
+        return (
+            '<div class="dev-result"><span class="pill danger">'
+            "✗ stats query failed (see server log)</span></div>"
+        )
+    finally:
+        try:
+            db.close()
+        except Exception:  # noqa: BLE001 — defensive close, never fatal
+            pass
+
+    paper_n = stats.get("paper_count", 0)
+    entity_n = stats.get("entity_count", 0)
+    edge_rows = "".join(
+        f"<tr><td>{escape(str(pred))}</td><td>{escape(str(cnt))}</td></tr>"
+        for pred, cnt in sorted((stats.get("edge_counts_by_predicate") or {}).items())
+    )
+    return (
+        '<div class="dev-result">'
+        f'<span class="pill success">papers {escape(str(paper_n))} · '
+        f"entities {escape(str(entity_n))}</span>"
+        '<table class="dev-checks-table"><tbody>'
+        f"{edge_rows}</tbody></table></div>"
     )
 
 
