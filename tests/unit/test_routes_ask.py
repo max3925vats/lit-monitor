@@ -68,8 +68,8 @@ class TestAskAnswer:
 
     def test_answer_empty_question_is_rejected(self, client):
         r = client.post("/ask/answer", data={"question": "   "})
-        assert r.status_code in (200, 422)
-        assert "enter a question" in r.text.lower() or r.status_code == 422
+        assert r.status_code == 200
+        assert "enter a question" in r.text.lower()
 
     def test_answer_empty_rows_says_no_matches(self, client):
         from scripts.graph.ask import AskResult  # noqa: PLC0415
@@ -95,3 +95,37 @@ class TestAskAnswer:
         assert r.status_code == 200  # fragment, not a 500 page
         assert secret not in r.text  # no leak to browser
         assert any(secret in rec.getMessage() for rec in caplog.records)  # logged
+
+
+class TestAskCypher:
+    """WA2: POST /ask/cypher — B3-guarded, read-only Cypher re-run.
+
+    The guard MUST run before any execution: a mutation is rejected
+    pre-exec, so the executor spy never fires.
+    """
+
+    def test_cypher_rerun_renders_table(self, client):
+        rows = [{"name": "Smith"}]
+        with patch(
+            "scripts.server.routes.ask._execute_guarded_cypher", return_value=rows
+        ):
+            r = client.post("/ask/cypher", data={"cypher": "MATCH (p) RETURN p"})
+        assert r.status_code == 200
+        assert "Smith" in r.text
+
+    def test_cypher_mutation_blocked_not_executed(self, client):
+        called = {"n": 0}
+
+        def _spy(*a, **k):
+            called["n"] += 1
+            return []
+
+        with patch(
+            "scripts.server.routes.ask._execute_guarded_cypher", side_effect=_spy
+        ):
+            r = client.post(
+                "/ask/cypher", data={"cypher": "MATCH (p) DETACH DELETE p"}
+            )
+        # guard runs BEFORE execution; a mutation must be rejected pre-exec.
+        assert "read-only" in r.text.lower()
+        assert called["n"] == 0

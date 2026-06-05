@@ -18,5 +18,17 @@
       <summary>Show Cypher</summary>
       <pre><code>{{ result.cypher }}</code></pre>
     </details>
+
+    {# WA2: editable Cypher + re-run (B3-guarded, read-only). #}
+    <form hx-post="/ask/cypher"
+          hx-target="#cypher-result"
+          hx-swap="innerHTML">
+      <div class="input-row">
+        <textarea name="cypher" rows="3"
+                  class="ask-cypher-edit">{{ result.cypher }}</textarea>
+      </div>
+      <button type="submit" class="btn-secondary">Run</button>
+    </form>
+    <div id="cypher-result"></div>
   {% endif %}
 {% endif %}

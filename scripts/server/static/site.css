@@ -645,3 +645,30 @@ a:hover {
 .page-header { margin-bottom: 1.5rem; }
 .page-header h1 { margin: 0 0 0.3rem; }
 .page-header .field-note { margin: 0.25rem 0 0.75rem; }
+
+/* --- /ask page (WA1/WA2): prose answer + mono Cypher panel --- */
+/* Matches the existing mono-panel convention (.digest-pre): card-bg surface,
+ * border, radius, mono font — all via tokens, no color literals. */
+.ask-prose {
+  margin: var(--space) 0;
+  white-space: pre-wrap;
+}
+.ask-cypher {
+  margin: var(--space) 0 0.5rem;
+}
+.ask-cypher pre {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  overflow-x: auto;
+}
+.ask-cypher-edit {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem;
+}

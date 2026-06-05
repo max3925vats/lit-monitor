@@ -1,0 +1,8 @@
+{# WA2: Cypher re-run result fragment — error | results table. #}
+{% if error %}
+  <div class="card danger">
+    <p>{{ error }}</p>
+  </div>
+{% else %}
+  {% include "ask/_table.html" %}
+{% endif %}

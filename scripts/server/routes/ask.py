@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse
 
 from scripts.graph.ask import run_pipeline  # patched in tests
 from scripts.graph.import_citations import safe_graph_db  # patched in tests
+from scripts.mcp.cypher_guard import CypherSafetyError, guard
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,68 @@ async def ask_answer(request: Request, question: str = Form("")) -> HTMLResponse
         request,
         "ask/_answer.html",
         {"result": result, "question": q, "error": None},
+    )
+
+
+def _execute_guarded_cypher(safe_query: str) -> list[dict]:
+    """Execute an ALREADY-GUARDED read-only Cypher; return jsonable rows.
+
+    Mirrors query.py::_execute_cypher (scripts/server/routes/query.py:91): open
+    the graph via ``safe_graph_db``, run via ``execute_cypher`` (which does the
+    JSON-coercion of each row), and surface unavailability/failure as a raised
+    error so the route's generic-error handler catches it — the browser never
+    sees backend detail.
+    """
+    from scripts.graph.ask import execute_cypher  # noqa: PLC0415
+
+    db = safe_graph_db()
+    if db is None:
+        raise RuntimeError("graph backend unavailable")
+    try:
+        rows = execute_cypher(db, safe_query)
+    finally:
+        try:
+            db.close()
+        except Exception:  # noqa: BLE001 — defensive close, never fatal
+            pass
+    if rows is None:
+        raise RuntimeError("cypher execution failed")
+    return rows
+
+
+@router.post("/ask/cypher", response_class=HTMLResponse)
+async def ask_cypher(request: Request, cypher: str = Form("")) -> HTMLResponse:
+    """B3-guarded, read-only Cypher re-run; returns the _cypher_result fragment.
+
+    The guard runs BEFORE any execution: mutations / CALL / empty raise
+    ``CypherSafetyError`` and we return a read-only notice WITHOUT touching the
+    graph. Only a guard-approved query reaches ``_execute_guarded_cypher`` (run
+    off-thread). Execution failure → generic fragment + a full server-side log,
+    mirroring /ask/answer's 500-leak discipline.
+    """
+    try:
+        safe_q = guard(cypher or "")
+    except CypherSafetyError as exc:
+        # Fixed string only — never echo the rejected query back to the browser.
+        logger.warning("ask/cypher rejected: %s", exc)
+        return _get_templates().TemplateResponse(
+            request,
+            "ask/_cypher_result.html",
+            {"error": "Read-only queries only (mutations are blocked).", "rows": None},
+        )
+    try:
+        rows = await asyncio.to_thread(_execute_guarded_cypher, safe_q)
+    except Exception:  # noqa: BLE001 — advisory page surface, never 500-leak
+        logger.error("ask/cypher execution failed", exc_info=True)
+        return _get_templates().TemplateResponse(
+            request,
+            "ask/_cypher_result.html",
+            {"error": "Query execution failed — check the server logs.", "rows": None},
+        )
+    return _get_templates().TemplateResponse(
+        request,
+        "ask/_cypher_result.html",
+        {"rows": rows, "error": None},
     )
 
 
