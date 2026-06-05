@@ -14,15 +14,39 @@
     {% if request.app.state.dev_mode %}
     <div class="dev-banner">DEV MODE — sandbox active. Test surface at <a href="/dev">/dev</a>.</div>
     {% endif %}
+    {# Current path drives server-side active-state (no JS). #}
+    {% set _path = request.url.path %}
+    {% set _run = ["/discovery", "/brain-build", "/schedule"] %}
+    {% set _explore = ["/themes", "/trending"] %}
+    {% set _tune = ["/domain", "/feedback", "/settings"] %}
     <header class="topnav">
       <a class="brand" href="/">lit-monitor</a>
       <nav>
-        <a href="/">Home</a>
-        <a href="/setup">Setup</a>
-        <a href="/discovery">Discovery</a>
-        <a href="/brain-build">Brain-Build</a>
-        <a href="/ask">Ask</a>
-        <a href="/schedule">Schedule</a>
+        <div class="navgroup">
+          <button type="button" class="navgroup-label{% if _path in _run %} active{% endif %}" aria-haspopup="true" aria-expanded="false">Run ▾</button>
+          <div class="navmenu" role="menu">
+            <a href="/discovery" role="menuitem"{% if _path == "/discovery" %} class="active"{% endif %}>Discovery</a>
+            <a href="/brain-build" role="menuitem"{% if _path == "/brain-build" %} class="active"{% endif %}>Brain-Build</a>
+            <a href="/schedule" role="menuitem"{% if _path == "/schedule" %} class="active"{% endif %}>Schedule</a>
+          </div>
+        </div>
+        <a href="/ask"{% if _path == "/ask" %} class="active"{% endif %}>Ask</a>
+        <div class="navgroup">
+          <button type="button" class="navgroup-label{% if _path in _explore %} active{% endif %}" aria-haspopup="true" aria-expanded="false">Explore ▾</button>
+          <div class="navmenu" role="menu">
+            <a href="/themes" role="menuitem"{% if _path == "/themes" %} class="active"{% endif %}>Themes</a>
+            <a href="/trending" role="menuitem"{% if _path == "/trending" %} class="active"{% endif %}>Trending</a>
+          </div>
+        </div>
+        <div class="navgroup">
+          <button type="button" class="navgroup-label{% if _path in _tune %} active{% endif %}" aria-haspopup="true" aria-expanded="false">Tune ▾</button>
+          <div class="navmenu" role="menu">
+            <a href="/domain" role="menuitem"{% if _path == "/domain" %} class="active"{% endif %}>Domain</a>
+            <a href="/feedback" role="menuitem"{% if _path == "/feedback" %} class="active"{% endif %}>Feedback</a>
+            <a href="/settings" role="menuitem"{% if _path == "/settings" %} class="active"{% endif %}>Settings</a>
+          </div>
+        </div>
+        <a href="/setup"{% if _path == "/setup" %} class="active"{% endif %}>Setup</a>
       </nav>
       <div id="health-badge" hx-get="/api/health/badge" hx-trigger="load, every 30s" hx-swap="innerHTML">
         <span class="status-badge loading">checking…</span>
