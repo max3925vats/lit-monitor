@@ -1,0 +1,13 @@
+# domain_context.yaml — short prose passed into the extractor system prompt.
+# Synthetic example for an ML/DL research focus. Copy into
+# config/domain_context.yaml and replace with your own field description.
+
+domain_focus: >
+  Machine learning and deep learning research, with an emphasis on methods
+  papers from venues such as NeurIPS, ICML, and ICLR. Core topics: transformer
+  architectures and attention mechanisms, large language models and their
+  fine-tuning (parameter-efficient methods, instruction tuning, RLHF and
+  alignment), generative models (diffusion, autoregressive), representation
+  learning, graph neural networks, and retrieval-augmented systems. The
+  library favors model architecture, training methodology, and empirical
+  evaluation over pure theory or domain-specific applications.

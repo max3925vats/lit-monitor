@@ -1,0 +1,13 @@
+# domain_context.yaml — short prose passed into the extractor system prompt.
+# Synthetic example for a downstream bioprocessing focus. Copy into
+# config/domain_context.yaml and replace with your own field description.
+
+domain_focus: >
+  Downstream process development for biopharmaceuticals at lab and
+  manufacturing scale. Core topics: chromatographic capture and polishing
+  (protein A, ion exchange, mixed-mode, hydrophobic interaction), membrane
+  filtration (ultrafiltration, diafiltration, tangential flow filtration),
+  aggregate and host-cell-protein removal, viral clearance, continuous and
+  integrated bioprocessing, and process scale-up. The library leans toward
+  unit-operation mechanism, resin and membrane characterization, and
+  process robustness rather than upstream cell culture or clinical work.

@@ -1,0 +1,41 @@
+# topics.yaml — recurring search queries for a downstream bioprocessing focus.
+#
+# Synthetic example. Copy into config/topics.yaml and edit for your own work.
+# Each entry runs on every `lit-monitor run`. Results dedupe by DOI across
+# searches. See config/topics.example.yaml for the full field documentation.
+
+searches:
+  - name: Protein A capture
+    query: protein A AND chromatography AND monoclonal antibody AND capture
+    databases:
+      - pubmed
+      - arxiv
+
+  - name: Ion exchange polishing
+    query: ion exchange chromatography AND aggregate removal AND polishing
+    databases:
+      - pubmed
+      - arxiv
+
+  - name: Ultrafiltration diafiltration
+    query: ultrafiltration AND diafiltration AND protein AND concentration
+    databases:
+      - pubmed
+      - arxiv
+
+  - name: Viral clearance
+    query: viral clearance AND filtration AND biopharmaceutical AND validation
+    databases:
+      - pubmed
+
+  - name: Continuous bioprocessing
+    query: continuous chromatography AND perfusion AND integrated bioprocessing
+    databases:
+      - pubmed
+      - arxiv
+
+  - name: Membrane fouling
+    query: membrane fouling AND protein AND tangential flow filtration
+    databases:
+      - pubmed
+      - arxiv

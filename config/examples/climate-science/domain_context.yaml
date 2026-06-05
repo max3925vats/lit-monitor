@@ -1,0 +1,12 @@
+# domain_context.yaml — short prose passed into the extractor system prompt.
+# Synthetic example for a climate / atmospheric science focus. Copy into
+# config/domain_context.yaml and replace with your own field description.
+
+domain_focus: >
+  Climate and atmospheric science, spanning physical climate dynamics and
+  impacts. Core topics: global and regional climate model projections (CMIP),
+  the carbon cycle and greenhouse gas forcing, atmospheric aerosols and
+  cloud-radiation interactions, extreme weather and event attribution, sea
+  level rise and cryosphere change, and climate adaptation and resilience.
+  The library favors quantitative modeling, observational analysis, and
+  attribution over policy or purely economic treatments.

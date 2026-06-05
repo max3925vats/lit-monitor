@@ -1,0 +1,85 @@
+# concepts.yaml — controlled vocabulary mapping Zotero keywords to themes.
+# Synthetic example for a downstream bioprocessing focus. Copy into
+# config/concepts.yaml and edit. See config/concepts.example.yaml for the
+# full schema. `lit-monitor build-vocabulary` can generate a draft for you.
+
+themes:
+  - name: Chromatography and Purification
+    keywords:
+      - affinity chromatography
+      - protein a
+      - protein a chromatography
+      - ion exchange chromatography
+      - anion exchange chromatography
+      - cation exchange chromatography
+      - mixed-mode chromatography
+      - multimodal chromatography
+      - hydrophobic interaction chromatography
+      - capture
+      - polishing
+      - antibody purification
+      - protein purification
+      - bioseparation
+      - resin
+      - binding capacity
+      - breakthrough curve
+
+  - name: Membrane Filtration
+    keywords:
+      - ultrafiltration
+      - diafiltration
+      - tangential flow filtration
+      - tff
+      - membrane fouling
+      - concentration polarization
+      - sterile filtration
+      - depth filtration
+      - flux decline
+      - transmembrane pressure
+      - buffer exchange
+
+  - name: Bioprocess Development
+    keywords:
+      - downstream processing
+      - downstream process development
+      - bioprocessing
+      - biomanufacturing
+      - process development
+      - process scale-up
+      - continuous bioprocessing
+      - continuous chromatography
+      - perfusion
+      - platform process
+      - high throughput process development
+      - process robustness
+
+  - name: Product Quality and Analytics
+    keywords:
+      - aggregate removal
+      - protein aggregation
+      - charge variants
+      - host cell protein
+      - viral clearance
+      - developability
+      - glycosylation
+      - size exclusion chromatography
+      - mass spectrometry
+      - analytical biochemistry
+      - product purity
+
+  - name: Formulation and Stability
+    keywords:
+      - formulation
+      - protein stability
+      - viscosity
+      - excipients
+      - buffer
+      - osmotic pressure
+      - protein-protein interactions
+      - colloidal stability
+      - high concentration
+
+unclustered:
+  - regulatory guidance
+  - cost of goods
+  - single-use systems

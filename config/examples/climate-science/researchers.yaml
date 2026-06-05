@@ -1,0 +1,20 @@
+# researchers.yaml — tracked authors (synthetic placeholders).
+#
+# Papers by these authors surface in the discovery digest with a
+# "⭐ Tracked Author" flag regardless of similarity score. The ORCIDs below
+# are placeholders — replace with the real IDs of the climate researchers
+# you follow. Either orcid or scopus_id must be set for tracking to work. See
+# config/researchers.example.yaml for the full schema.
+
+researchers:
+  - name: "Morgan Atmos"
+    affiliation: "Example Institute for Climate Research"
+    orcid: "0000-0002-1825-0097"
+    scopus_id: ""
+    notes: "Climate model projections and CMIP analysis"
+
+  - name: "Casey Tide"
+    affiliation: "Example University, Earth Sciences"
+    orcid: "0000-0001-5109-3700"
+    scopus_id: ""
+    notes: "Sea level rise and cryosphere change"

@@ -4,12 +4,20 @@
 > and on-disk state may still change without notice. No backwards-compat
 > guarantees pre-1.0. Issues + feedback welcome.
 
-A personal literature tracker for biopharmaceutical research. It searches
+A personal literature tracker for any research field. It searches
 PubMed, arXiv, and Scopus on a schedule, ranks new papers by **semantic
 similarity to your existing Zotero library**, extracts structured fields with
 an LLM, builds a knowledge graph of entities and relationships, and writes
 everything into your Obsidian vault. Ask natural-language questions of the
 corpus from the terminal, a browser, or any MCP-compatible AI client.
+
+Nothing in the pipeline is domain-specific: your Zotero library, search
+topics, and a free-text domain paragraph are the only signals it needs, so
+it adapts to whatever you read. It was built for — and is dogfooded daily on —
+downstream biopharmaceutical process development, which is why the defaults
+and some examples lean that way. Ready-made starting configs for other fields
+(ML research, climate science, bioprocessing) live in
+[`config/examples/`](config/examples/) — see [Install](#install).
 
 Drive it from a **localhost web UI** (`lit-monitor serve`) for setup and
 day-to-day operation, or from the **CLI** (`lit-monitor --help`) for scripted
@@ -208,6 +216,19 @@ cd lit-monitor
 The script installs [`uv`](https://docs.astral.sh/uv/) if needed, creates a
 project-local `.venv`, resolves all dependencies, and seeds personal configs
 from `config/*.example.yaml`.
+
+**Starting from a non-biopharma field?** `config/examples/` ships filled-in,
+synthetic config sets for `bioprocessing/`, `ml-research/`, and
+`climate-science/`. Pick the closest one and copy its `topics.yaml`,
+`domain_context.yaml`, `concepts.yaml`, and `researchers.yaml` into `config/`
+as a head start, then edit:
+
+```bash
+cp config/examples/ml-research/*.yaml config/   # or bioprocessing/ climate-science/
+```
+
+The non-domain configs (`paths.yaml`, `extraction.yaml`) still come from
+`config/*.example.yaml`. See [`config/examples/README.md`](config/examples/README.md).
 
 If you prefer to drive `uv` yourself:
 

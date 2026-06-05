@@ -1,0 +1,41 @@
+# topics.yaml — recurring search queries for a climate / atmospheric focus.
+#
+# Synthetic example. Copy into config/topics.yaml and edit for your own work.
+# See config/topics.example.yaml for the full field documentation.
+
+searches:
+  - name: Climate model projections
+    query: climate model AND CMIP6 AND projection AND temperature
+    databases:
+      - pubmed
+      - arxiv
+
+  - name: Extreme weather attribution
+    query: extreme weather AND attribution AND climate change AND heatwave
+    databases:
+      - pubmed
+      - arxiv
+
+  - name: Sea level rise
+    query: sea level rise AND ice sheet AND coastal AND projection
+    databases:
+      - pubmed
+      - arxiv
+
+  - name: Carbon cycle
+    query: carbon cycle AND terrestrial AND CO2 AND flux
+    databases:
+      - pubmed
+      - arxiv
+
+  - name: Atmospheric aerosols
+    query: atmospheric aerosol AND radiative forcing AND cloud AND climate
+    databases:
+      - pubmed
+      - arxiv
+
+  - name: Climate adaptation
+    query: climate adaptation AND vulnerability AND resilience AND coastal
+    databases:
+      - pubmed
+      - arxiv

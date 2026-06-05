@@ -1,0 +1,37 @@
+# topics.yaml — recurring search queries for an ML/DL research focus.
+#
+# Synthetic example. Copy into config/topics.yaml and edit for your own work.
+# arXiv is the primary source for ML preprints; PubMed is included where the
+# work overlaps with biomedical applications. See config/topics.example.yaml
+# for the full field documentation.
+
+searches:
+  - name: Efficient transformers
+    query: transformer AND attention AND efficient AND long context
+    databases:
+      - arxiv
+
+  - name: Parameter-efficient fine-tuning
+    query: parameter efficient fine-tuning AND large language model AND adapter
+    databases:
+      - arxiv
+
+  - name: Diffusion models
+    query: diffusion model AND generative AND sampling AND score matching
+    databases:
+      - arxiv
+
+  - name: Reinforcement learning from human feedback
+    query: reinforcement learning AND human feedback AND alignment AND preference
+    databases:
+      - arxiv
+
+  - name: Graph neural networks
+    query: graph neural network AND message passing AND representation learning
+    databases:
+      - arxiv
+
+  - name: Retrieval-augmented generation
+    query: retrieval augmented generation AND language model AND knowledge
+    databases:
+      - arxiv

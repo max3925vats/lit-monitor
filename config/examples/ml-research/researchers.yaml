@@ -1,0 +1,20 @@
+# researchers.yaml — tracked authors (synthetic placeholders).
+#
+# Papers by these authors surface in the discovery digest with a
+# "⭐ Tracked Author" flag regardless of similarity score. The ORCIDs below
+# are placeholders — replace with the real IDs of the ML researchers you
+# follow. Either orcid or scopus_id must be set for tracking to work. See
+# config/researchers.example.yaml for the full schema.
+
+researchers:
+  - name: "Alex Learner"
+    affiliation: "Example AI Lab"
+    orcid: "0000-0002-1825-0097"
+    scopus_id: ""
+    notes: "Transformer architectures and efficient attention"
+
+  - name: "Riley Netto"
+    affiliation: "Example University, CS Department"
+    orcid: "0000-0001-5109-3700"
+    scopus_id: ""
+    notes: "Generative models and diffusion methods"

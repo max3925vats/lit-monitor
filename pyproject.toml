@@ -1,7 +1,36 @@
 [project]
 name = "lit-monitor"
 version = "0.9.0"
+description = "A personal literature tracker that ranks new papers by semantic similarity to your Zotero library, extracts structured fields with an LLM, builds a knowledge graph, and writes to Obsidian."
+readme = "README.md"
 requires-python = ">=3.11"
+license = { file = "LICENSE" }
+keywords = [
+    "literature-review",
+    "research",
+    "zotero",
+    "obsidian",
+    "knowledge-graph",
+    "embeddings",
+    "rag",
+    "mcp",
+    "pubmed",
+    "arxiv",
+    "llm",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Text Processing :: Indexing",
+    "Topic :: Database :: Front-Ends",
+]
 dependencies = [
     # Search
     "findpapers",
@@ -71,6 +100,11 @@ dependencies = [
 
 [project.scripts]
 lit-monitor = "scripts.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/max3925vats/lit-monitor"
+Repository = "https://github.com/max3925vats/lit-monitor"
+Issues = "https://github.com/max3925vats/lit-monitor/issues"
 
 [project.optional-dependencies]
 # Contributor tooling — ruff, pytest, mypy.

@@ -1,0 +1,87 @@
+# concepts.yaml — controlled vocabulary mapping Zotero keywords to themes.
+# Synthetic example for an ML/DL research focus. Copy into
+# config/concepts.yaml and edit. See config/concepts.example.yaml for the
+# full schema. `lit-monitor build-vocabulary` can generate a draft for you.
+
+themes:
+  - name: Architectures and Attention
+    keywords:
+      - transformer
+      - attention
+      - self-attention
+      - attention mechanism
+      - convolutional neural network
+      - recurrent neural network
+      - encoder-decoder
+      - state space model
+      - mixture of experts
+      - positional encoding
+      - long context
+
+  - name: Large Language Models
+    keywords:
+      - large language model
+      - language model
+      - llm
+      - pretraining
+      - instruction tuning
+      - in-context learning
+      - prompting
+      - fine-tuning
+      - parameter efficient fine-tuning
+      - lora
+      - tokenization
+
+  - name: Generative Models
+    keywords:
+      - generative model
+      - diffusion model
+      - score-based model
+      - variational autoencoder
+      - generative adversarial network
+      - autoregressive model
+      - image generation
+      - text-to-image
+      - sampling
+
+  - name: Training and Optimization
+    keywords:
+      - optimization
+      - stochastic gradient descent
+      - adam
+      - learning rate schedule
+      - regularization
+      - batch normalization
+      - distributed training
+      - mixed precision
+      - scaling laws
+      - data efficiency
+
+  - name: Alignment and RLHF
+    keywords:
+      - reinforcement learning
+      - reinforcement learning from human feedback
+      - rlhf
+      - alignment
+      - preference optimization
+      - reward model
+      - direct preference optimization
+      - safety
+      - red teaming
+
+  - name: Representation and Graph Learning
+    keywords:
+      - representation learning
+      - self-supervised learning
+      - contrastive learning
+      - embedding
+      - graph neural network
+      - message passing
+      - node classification
+      - knowledge graph
+      - retrieval augmented generation
+
+unclustered:
+  - benchmark
+  - reproducibility
+  - dataset curation

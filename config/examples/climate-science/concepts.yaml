@@ -1,0 +1,84 @@
+# concepts.yaml — controlled vocabulary mapping Zotero keywords to themes.
+# Synthetic example for a climate / atmospheric science focus. Copy into
+# config/concepts.yaml and edit. See config/concepts.example.yaml for the
+# full schema. `lit-monitor build-vocabulary` can generate a draft for you.
+
+themes:
+  - name: Climate Modeling
+    keywords:
+      - climate model
+      - general circulation model
+      - earth system model
+      - cmip6
+      - regional climate model
+      - downscaling
+      - climate projection
+      - emission scenario
+      - representative concentration pathway
+      - shared socioeconomic pathway
+      - model ensemble
+
+  - name: Carbon and Greenhouse Gases
+    keywords:
+      - carbon cycle
+      - carbon dioxide
+      - co2
+      - methane
+      - greenhouse gas
+      - radiative forcing
+      - carbon flux
+      - terrestrial carbon
+      - ocean carbon uptake
+      - emissions
+
+  - name: Atmospheric Processes
+    keywords:
+      - atmospheric aerosol
+      - cloud
+      - cloud-radiation interaction
+      - aerosol-cloud interaction
+      - atmospheric circulation
+      - convection
+      - precipitation
+      - water vapor
+      - boundary layer
+
+  - name: Extreme Events and Attribution
+    keywords:
+      - extreme weather
+      - event attribution
+      - heatwave
+      - drought
+      - flood
+      - tropical cyclone
+      - detection and attribution
+      - climate variability
+      - el nino
+
+  - name: Cryosphere and Sea Level
+    keywords:
+      - sea level rise
+      - ice sheet
+      - glacier
+      - sea ice
+      - permafrost
+      - ice melt
+      - cryosphere
+      - coastal flooding
+      - ocean warming
+
+  - name: Impacts and Adaptation
+    keywords:
+      - climate adaptation
+      - vulnerability
+      - resilience
+      - climate impact
+      - food security
+      - ecosystem response
+      - mitigation
+      - coastal vulnerability
+
+unclustered:
+  - paleoclimate
+  - remote sensing
+  - data assimilation
