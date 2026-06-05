@@ -810,3 +810,197 @@ class TestUpsertPaperUnknownKeys:
         db = StateDB(tmp_path / "state.db")
         with pytest.raises(ValueError, match="set_graph_indexed"):
             db.upsert_paper({"doi": "10.1/y", "title": "T", "graph_indexed": 1})
+
+
+# ---------------------------------------------------------------------------
+# P1 / Item A: _init_schema silent-failure stragglers
+#
+# These blocks run during StateDB(...) construction. We inject a failure into
+# a specific in-schema statement and assert it is no longer swallowed silently:
+#  - default mode  -> a WARNING is logged (and startup still succeeds)
+#  - strict mode   -> the failure is re-raised (fatal)
+# Failure is injected by wrapping sqlite3.Connection.execute so it raises only
+# when the SQL contains a target fragment; every other statement (table_info,
+# CREATE/ALTER migrations) runs untouched so construction reaches the target.
+# ---------------------------------------------------------------------------
+
+import logging  # noqa: E402
+
+from scripts.core.strict_mode import set_strict  # noqa: E402
+
+
+def _fail_execute_on(monkeypatch, fragment: str, message: str):
+    """Make connections opened by StateDB raise on any execute() whose SQL
+    contains ``fragment`` (verbatim substring); everything else runs unchanged.
+
+    sqlite3.Connection is an immutable type, so we cannot patch its ``execute``
+    directly.  Instead we install a Connection subclass as the connection
+    ``factory`` via a patched ``sqlite3.connect`` inside the state_db module.
+    """
+    import scripts.core.state_db as _sdb
+
+    class _FailingConn(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):  # type: ignore[override]
+            if isinstance(sql, str) and fragment in sql:
+                raise sqlite3.OperationalError(message)
+            return super().execute(sql, *args, **kwargs)
+
+    real_connect = sqlite3.connect
+
+    def fake_connect(*args, **kwargs):
+        kwargs["factory"] = _FailingConn
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(_sdb.sqlite3, "connect", fake_connect)
+
+
+class TestInitSchemaSilentStragglers:
+    """P1 Item A: per-statement failures inside _init_schema must not pass
+    silently — they warn by default and escalate under strict mode."""
+
+    # -- M3 phase backfill (was: except Exception: pass — fully silent) --
+    def test_m3_backfill_failure_warns_in_default_mode(self, tmp_path, monkeypatch, caplog):
+        _fail_execute_on(
+            monkeypatch,
+            "simple_complete = CASE WHEN pass1_complete",
+            "boom-m3-backfill",
+        )
+        with caplog.at_level(logging.WARNING, logger="scripts.core.state_db"):
+            db = StateDB(tmp_path / "state.db")  # must NOT raise in default mode
+        assert db is not None
+        assert any(
+            "boom-m3-backfill" in r.message or "backfill" in r.message.lower()
+            for r in caplog.records
+        ), f"expected M3-backfill WARNING; got {[r.message for r in caplog.records]}"
+
+    def test_m3_backfill_failure_raises_in_strict_mode(self, tmp_path, monkeypatch):
+        set_strict(True)
+        _fail_execute_on(
+            monkeypatch,
+            "simple_complete = CASE WHEN pass1_complete",
+            "boom-m3-backfill",
+        )
+        with pytest.raises(Exception, match="boom-m3-backfill"):
+            StateDB(tmp_path / "state.db")
+
+    # -- N7 stale-row cleanup (was: warn-only, no strict escalation) --
+    def test_n7_cleanup_failure_warns_in_default_mode(self, tmp_path, monkeypatch, caplog):
+        _fail_execute_on(
+            monkeypatch,
+            "DELETE FROM papers ",
+            "boom-n7-cleanup",
+        )
+        with caplog.at_level(logging.WARNING, logger="scripts.core.state_db"):
+            db = StateDB(tmp_path / "state.db")
+        assert db is not None
+        assert any(
+            "N7" in r.message or "boom-n7-cleanup" in r.message
+            for r in caplog.records
+        ), f"expected N7 WARNING; got {[r.message for r in caplog.records]}"
+
+    def test_n7_cleanup_failure_raises_in_strict_mode(self, tmp_path, monkeypatch):
+        set_strict(True)
+        _fail_execute_on(
+            monkeypatch,
+            "DELETE FROM papers ",
+            "boom-n7-cleanup",
+        )
+        with pytest.raises(Exception, match="boom-n7-cleanup"):
+            StateDB(tmp_path / "state.db")
+
+    # -- weekly->discovery rename (was: warn-only, no strict escalation) --
+    def test_rename_failure_warns_in_default_mode(self, tmp_path, monkeypatch, caplog):
+        _fail_execute_on(
+            monkeypatch,
+            "UPDATE run_log SET run_type = 'discovery'",
+            "boom-rename",
+        )
+        with caplog.at_level(logging.WARNING, logger="scripts.core.state_db"):
+            db = StateDB(tmp_path / "state.db")
+        assert db is not None
+        assert any(
+            "discovery" in r.message.lower() or "boom-rename" in r.message
+            for r in caplog.records
+        ), f"expected rename WARNING; got {[r.message for r in caplog.records]}"
+
+    def test_rename_failure_raises_in_strict_mode(self, tmp_path, monkeypatch):
+        set_strict(True)
+        _fail_execute_on(
+            monkeypatch,
+            "UPDATE run_log SET run_type = 'discovery'",
+            "boom-rename",
+        )
+        with pytest.raises(Exception, match="boom-rename"):
+            StateDB(tmp_path / "state.db")
+
+
+# ---------------------------------------------------------------------------
+# P1 / Item B (B3-F8): upsert_paper column-list drift guard
+#
+# upsert_paper writes a hand-maintained `cols` list. This guard ensures that
+# list cannot silently desync from the live `papers` schema:
+#  (1) every column upsert_paper writes must exist in the table, and
+#  (2) every real `papers` column must be EITHER written by upsert_paper OR
+#      explicitly listed in the intentionally-not-upserted allowlist
+#      (_UPSERT_FLAG_COLUMNS + a small set of setter-managed timestamp/flag
+#      columns), so a NEW schema column trips a clear assertion.
+# ---------------------------------------------------------------------------
+
+from scripts.core.state_db import (  # noqa: E402
+    assert_upsert_columns_consistent,
+    upsert_writable_columns,
+)
+
+
+class TestUpsertColumnDriftGuard:
+    """B3-F8: drift guard between upsert_paper's column list and papers schema."""
+
+    def test_every_written_column_exists_in_schema(self, tmp_path):
+        """The guard passes on a freshly-built schema (no drift)."""
+        db = StateDB(tmp_path / "state.db")
+        with db._connect() as conn:
+            rows = conn.execute("PRAGMA table_info(papers)").fetchall()
+        schema_cols = {r[1] for r in rows}
+        for col in upsert_writable_columns():
+            assert col in schema_cols, (
+                f"upsert_paper writes {col!r} which is not a real papers column"
+            )
+
+    def test_assert_helper_passes_on_live_schema(self, tmp_path):
+        """assert_upsert_columns_consistent must not raise on the live schema."""
+        db = StateDB(tmp_path / "state.db")
+        with db._connect() as conn:
+            assert_upsert_columns_consistent(conn)  # should not raise
+
+    def test_guard_fails_when_written_column_missing_from_schema(self, tmp_path):
+        """If upsert's writable list contained a column the table lacks
+        (a renamed/removed column), the guard must raise."""
+        db = StateDB(tmp_path / "state.db")
+        with db._connect() as conn:
+            with pytest.raises(AssertionError, match="not_a_real_column"):
+                assert_upsert_columns_consistent(
+                    conn, written_cols=["doi", "title", "not_a_real_column"]
+                )
+
+    def test_guard_fails_when_schema_column_unaccounted(self, tmp_path):
+        """A NEW papers column that is neither written nor in the allowlist must
+        trip the guard, forcing the developer to decide where it is written."""
+        db = StateDB(tmp_path / "state.db")
+        with db._connect() as conn:
+            conn.execute("ALTER TABLE papers ADD COLUMN brand_new_col TEXT")
+            with pytest.raises(AssertionError, match="brand_new_col"):
+                assert_upsert_columns_consistent(conn)
+
+    def test_allowlisted_columns_do_not_trip_guard(self, tmp_path):
+        """Setter-managed columns (graph_indexed, etc.) exist in the schema but
+        are intentionally not upserted — they must NOT trip the guard."""
+        db = StateDB(tmp_path / "state.db")
+        with db._connect() as conn:
+            # All five dedicated-setter flag columns are present in the schema
+            rows = conn.execute("PRAGMA table_info(papers)").fetchall()
+            schema_cols = {r[1] for r in rows}
+            for flag in ("graph_indexed", "chunks_indexed", "notes_synced",
+                         "ner_processed_at", "rel_processed_at"):
+                assert flag in schema_cols
+            # Guard still passes despite those columns not being upserted.
+            assert_upsert_columns_consistent(conn)

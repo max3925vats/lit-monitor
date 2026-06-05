@@ -265,6 +265,74 @@ _UPSERT_FLAG_COLUMNS: dict[str, str] = {
     "rel_processed_at": "set_rel_processed_at()",
 }
 
+# B3-F8: the hand-maintained column list that upsert_paper() writes.  Lifted to
+# module scope so the drift guard (assert_upsert_columns_consistent) can compare
+# it against the live papers schema without re-running upsert_paper.
+_UPSERT_WRITABLE_COLUMNS: list[str] = [
+    "doi", "title", "authors", "year", "journal", "zotero_key",
+    "first_seen_date", "status", "source_type", "parent_id",
+    "note_title", "note_path", "embeddings_indexed", "extraction_json",
+    "extraction_provider", "extraction_model", "ocr_pages_json",
+    "ocr_heavy", "keywords_json", "isbn", "last_updated",
+]
+
+# B3-F8: real papers columns that upsert_paper() intentionally does NOT write.
+#   * The five _UPSERT_FLAG_COLUMNS are managed by dedicated setters whose R28
+#     dual-write invariants would be bypassed by a COALESCE upsert.
+#   * last_insight_run (G16) is a reserved column with no writer yet; it must
+#     not be silently writable through upsert_paper either.
+# The drift guard treats (written ∪ this set) as the full accounted-for column
+# universe, so a NEW papers column added later — neither written nor listed
+# here — trips a clear assertion telling the developer to decide where it lives.
+_UPSERT_INTENTIONALLY_EXCLUDED: frozenset[str] = frozenset(
+    set(_UPSERT_FLAG_COLUMNS) | {"last_insight_run"}
+)
+
+
+def upsert_writable_columns() -> list[str]:
+    """Return a copy of the columns upsert_paper() writes (B3-F8 introspection)."""
+    return list(_UPSERT_WRITABLE_COLUMNS)
+
+
+def assert_upsert_columns_consistent(
+    conn: sqlite3.Connection,
+    written_cols: list[str] | None = None,
+) -> None:
+    """B3-F8 drift guard: verify upsert_paper's column list matches the schema.
+
+    Two invariants, both AssertionErrors on violation:
+      (1) every column upsert_paper writes must be a real ``papers`` column
+          (catches a renamed/removed column), and
+      (2) every real ``papers`` column must be accounted for — either written
+          by upsert_paper or in ``_UPSERT_INTENTIONALLY_EXCLUDED`` — so a NEW
+          schema column added later fails loudly until a human decides where it
+          is written.
+
+    ``written_cols`` defaults to the live ``_UPSERT_WRITABLE_COLUMNS``; tests
+    pass a corrupted list to prove the guard bites.
+    """
+    written = list(_UPSERT_WRITABLE_COLUMNS if written_cols is None else written_cols)
+    rows = conn.execute("PRAGMA table_info(papers)").fetchall()
+    schema_cols = {r[1] for r in rows}
+
+    # (1) upsert must not write phantom columns.
+    phantom = sorted(c for c in written if c not in schema_cols)
+    assert not phantom, (
+        f"upsert_paper writes column(s) {phantom} that do not exist in the "
+        "papers table — the writable list has drifted from the schema "
+        "(renamed/removed column?)."
+    )
+
+    # (2) every schema column must be written or explicitly excluded.
+    accounted = set(written) | _UPSERT_INTENTIONALLY_EXCLUDED
+    unaccounted = sorted(c for c in schema_cols if c not in accounted)
+    assert not unaccounted, (
+        f"papers column(s) {unaccounted} are neither written by upsert_paper "
+        "nor in _UPSERT_INTENTIONALLY_EXCLUDED. Add each to "
+        "_UPSERT_WRITABLE_COLUMNS (if upsert_paper should write it) or to "
+        "_UPSERT_INTENTIONALLY_EXCLUDED (if a dedicated setter owns it)."
+    )
+
 
 class StateDB:
     """Thread-safe SQLite wrapper for lit-monitor state."""
@@ -380,8 +448,20 @@ class StateDB:
                     "UPDATE brain_build_progress SET fully_complete = 1 "
                     "WHERE simple_complete = 1 AND complex_complete = 1 AND fully_complete = 0"
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # P1: was a fully-silent `pass` — a failed M3 phase backfill
+                # left existing rows with inconsistent simple/complex/fully
+                # flags and logged NOTHING.  This is a data UPDATE (not DDL), so
+                # escalating under --strict cannot brick an existing DB's
+                # structure — route through strict_fallback (warn by default,
+                # fatal under --strict).
+                strict_fallback(
+                    logger,
+                    f"M3 phase-progress backfill failed: {exc}. Existing "
+                    "brain_build_progress rows may have inconsistent "
+                    "simple/complex/fully_complete flags.",
+                    exc,
+                )
             # N7: one-time cleanup of stale book/chapter rows left from the
             # pre-R-10 textbook-build era.  Gated by a kv_store flag so it
             # only runs once per database, even across restarts.
@@ -406,8 +486,12 @@ class StateDB:
                         "ON CONFLICT(key) DO UPDATE SET value = '1'"
                     )
             except Exception as exc:
-                logger.warning(
-                    "N7 stale-row cleanup failed (will retry on next startup): %s", exc
+                # P1: was warn-only — under --strict this must be fatal so CI
+                # surfaces a cleanup that silently never completes.
+                strict_fallback(
+                    logger,
+                    f"N7 stale-row cleanup failed (will retry on next startup): {exc}",
+                    exc,
                 )
             # 2026-05-26: rename run_type='weekly' → run_type='discovery' (the
             # pipeline no longer ships under a weekly-only brand). Gated by a kv_store
@@ -432,10 +516,23 @@ class StateDB:
                         "ON CONFLICT(key) DO UPDATE SET value = '1'"
                     )
             except Exception as exc:
-                logger.warning(
-                    "weekly→discovery run_type rename failed (will retry on next startup): %s",
+                # P1: was warn-only — under --strict this must be fatal so a
+                # rename that silently never completes is caught in CI.
+                strict_fallback(
+                    logger,
+                    "weekly→discovery run_type rename failed (will retry on "
+                    f"next startup): {exc}",
                     exc,
                 )
+            # B3-F8: the drift guard (assert_upsert_columns_consistent) is NOT
+            # called here on purpose.  Legacy DBs may have a minimal `papers`
+            # table (e.g. only `doi`): _SCHEMA_SQL's CREATE TABLE IF NOT EXISTS
+            # is a no-op on an existing table and the base columns are not part
+            # of the additive_migrations list, so PRAGMA table_info(papers) can
+            # legitimately lack base columns at init.  Asserting here would brick
+            # startup on such a DB.  The guard is a TEST-time contract instead
+            # (see TestUpsertColumnDriftGuard) — it catches developer-introduced
+            # drift in CI without risking end-user startup.
     # -- Paper / review CRUD --
     def upsert_paper(self, data: dict[str, Any]) -> None:
         """Insert or replace a paper or review record.
@@ -449,13 +546,9 @@ class StateDB:
         rel_processed_at) are real columns but managed by dedicated setters,
         so they are rejected with a redirect rather than written here.
         """
-        cols = [
-            "doi", "title", "authors", "year", "journal", "zotero_key",
-            "first_seen_date", "status", "source_type", "parent_id",
-            "note_title", "note_path", "embeddings_indexed", "extraction_json",
-            "extraction_provider", "extraction_model", "ocr_pages_json",
-            "ocr_heavy", "keywords_json", "isbn", "last_updated",
-        ]
+        # B3-F8: single source of truth — the module-level writable list, also
+        # checked against the live schema by assert_upsert_columns_consistent().
+        cols = list(_UPSERT_WRITABLE_COLUMNS)
 
         # B4: fail loud on unknown keys.  Separate flag columns (redirect to
         # their setter) from genuine typos / non-existent columns (clear error).
