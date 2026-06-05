@@ -1,0 +1,53 @@
+{# FE2-2: /corpus — a read lens over the processed-papers corpus (state DB). #}
+{% extends "base.html" %}
+{% block title %}Corpus — lit-monitor{% endblock %}
+{% block content %}
+<section class="dashboard">
+  <div class="page-header">
+    <h1>Corpus</h1>
+    <p class="field-note">
+      Every paper and review processed into the state DB. This is a read lens
+      over what brain-build has indexed &mdash; not your full Zotero library.
+    </p>
+  </div>
+
+  {# Filter form: hx-get refreshes only the #corpus-table region. New filters
+     reset to offset 0 (the hidden offset starts at 0; pagination links carry
+     the current filters forward). #}
+  <form class="corpus-filters button-row"
+        hx-get="/corpus"
+        hx-target="#corpus-table"
+        hx-swap="innerHTML"
+        hx-trigger="submit, change from:select">
+    <input type="search" name="search" value="{{ search }}"
+           placeholder="Search title or DOI…" aria-label="Search title or DOI" />
+
+    <select name="source_type" aria-label="Source type">
+      <option value="">All sources</option>
+      <option value="paper"{% if source_type == "paper" %} selected{% endif %}>paper</option>
+      <option value="review"{% if source_type == "review" %} selected{% endif %}>review</option>
+    </select>
+
+    <select name="status_gap" aria-label="Status gap">
+      {% for opt in status_gap_options %}
+      <option value="{{ opt }}"{% if status_gap == opt %} selected{% endif %}>
+        {{ opt if opt else "(any)" }}
+      </option>
+      {% endfor %}
+    </select>
+
+    {# theme is wired through as a param but has no UI select yet (see route). #}
+    <input type="hidden" name="theme" value="{{ theme }}" />
+    <input type="hidden" name="sort" value="{{ sort }}" />
+    <input type="hidden" name="order" value="{{ order }}" />
+    <input type="hidden" name="limit" value="{{ limit }}" />
+    <input type="hidden" name="offset" value="0" />
+
+    <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+  </form>
+
+  <div id="corpus-table">
+    {% include "corpus/_table.html" %}
+  </div>
+</section>
+{% endblock %}

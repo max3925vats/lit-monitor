@@ -215,6 +215,11 @@ def create_app() -> FastAPI:
 
     app.include_router(feedback_router)
 
+    # FE2-2: /corpus — list lens over the processed-papers corpus (state DB).
+    from scripts.server.routes.corpus import corpus_router  # noqa: PLC0415
+
+    app.include_router(corpus_router)
+
     # Bundle H (v0.9): /settings + /api/settings/{section} — Advanced Settings.
     from scripts.server.routes.settings import router as settings_router  # noqa: PLC0415
 

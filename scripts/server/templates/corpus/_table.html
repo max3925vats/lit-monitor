@@ -1,0 +1,85 @@
+{# FE2-2: corpus table fragment — returned standalone on HTMX requests and
+   included inside #corpus-table on the full page. #}
+{% if not rows %}
+<p class="field-note">
+  No papers match these filters. Run a brain-build (<code>lit-monitor
+  brain-build</code>) to populate the corpus.
+</p>
+{% else %}
+<table class="papers-table">
+  <thead>
+    <tr>
+      <th>Title</th>
+      <th>Year</th>
+      <th>Source</th>
+      <th>Confidence</th>
+      <th>Embedded</th>
+      <th>Graph</th>
+      <th>Notes</th>
+      <th>Updated</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td><a href="/corpus/{{ row.doi }}">{{ row.title or "(untitled)" }}</a></td>
+      <td>{% if row.year %}{{ row.year }}{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+      <td>{{ row.source_type or "—" }}</td>
+      <td>
+        {% if row.confidence is not none %}
+          {{ "%.2f" | format(row.confidence | float) }}
+        {% else %}
+          <span class="muted">&mdash;</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if row.embeddings_indexed == 1 %}
+          <span class="pill success">&check;</span>
+        {% else %}
+          <span class="pill danger">&cross;</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if row.graph_indexed == 1 %}
+          <span class="pill success">&check;</span>
+        {% else %}
+          <span class="pill danger">&cross;</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if row.notes_synced == 1 %}
+          <span class="pill success">&check;</span>
+        {% else %}
+          <span class="pill danger">&cross;</span>
+        {% endif %}
+      </td>
+      <td class="field-note">{{ (row.last_updated or "")[:10] or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="button-row" style="margin-top: 0.75rem;">
+  <span class="field-note">
+    {{ offset + 1 }}&ndash;{{ offset + rows|length }} of {{ total }}
+  </span>
+  {% if has_prev %}
+  <a class="btn btn-secondary btn-sm"
+     hx-get="/corpus?search={{ search }}&amp;source_type={{ source_type }}&amp;status_gap={{ status_gap }}&amp;theme={{ theme }}&amp;sort={{ sort }}&amp;order={{ order }}&amp;limit={{ limit }}&amp;offset={{ prev_offset }}"
+     hx-target="#corpus-table"
+     hx-swap="innerHTML"
+     href="/corpus?search={{ search }}&amp;source_type={{ source_type }}&amp;status_gap={{ status_gap }}&amp;theme={{ theme }}&amp;sort={{ sort }}&amp;order={{ order }}&amp;limit={{ limit }}&amp;offset={{ prev_offset }}">
+    &larr; Prev
+  </a>
+  {% endif %}
+  {% if has_next %}
+  <a class="btn btn-secondary btn-sm"
+     hx-get="/corpus?search={{ search }}&amp;source_type={{ source_type }}&amp;status_gap={{ status_gap }}&amp;theme={{ theme }}&amp;sort={{ sort }}&amp;order={{ order }}&amp;limit={{ limit }}&amp;offset={{ next_offset }}"
+     hx-target="#corpus-table"
+     hx-swap="innerHTML"
+     href="/corpus?search={{ search }}&amp;source_type={{ source_type }}&amp;status_gap={{ status_gap }}&amp;theme={{ theme }}&amp;sort={{ sort }}&amp;order={{ order }}&amp;limit={{ limit }}&amp;offset={{ next_offset }}">
+    Next &rarr;
+  </a>
+  {% endif %}
+</div>
+{% endif %}
