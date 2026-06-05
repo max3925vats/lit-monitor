@@ -1004,3 +1004,17 @@ class TestUpsertColumnDriftGuard:
                 assert flag in schema_cols
             # Guard still passes despite those columns not being upserted.
             assert_upsert_columns_consistent(conn)
+
+    def test_guard_fails_when_flag_column_in_writable_list(self, tmp_path):
+        """A setter-managed flag column wrongly added to the writable list must
+        trip the guard — writing it via the COALESCE upsert would clobber R28
+        state. This direction is invisible to the phantom/unaccounted checks (the
+        column is a real schema column AND allowlisted), so it needs its own
+        assertion (check 0)."""
+        db = StateDB(tmp_path / "state.db")
+        with db._connect() as conn:
+            with pytest.raises(AssertionError, match="graph_indexed"):
+                assert_upsert_columns_consistent(
+                    conn,
+                    written_cols=list(upsert_writable_columns()) + ["graph_indexed"],
+                )

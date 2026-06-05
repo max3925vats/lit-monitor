@@ -315,6 +315,17 @@ def assert_upsert_columns_consistent(
     rows = conn.execute("PRAGMA table_info(papers)").fetchall()
     schema_cols = {r[1] for r in rows}
 
+    # (0) a setter-managed flag column must never appear in the writable list.
+    #     This direction is invisible to checks (1)/(2): a flag column is a real
+    #     schema column AND is allowlisted, so it passes both — yet writing it via
+    #     the COALESCE upsert would clobber setter-owned state (R28 invariant).
+    leaked = sorted(set(written) & set(_UPSERT_FLAG_COLUMNS))
+    assert not leaked, (
+        f"setter-managed flag column(s) {leaked} appear in upsert_paper's "
+        "writable list — they must stay setter-only (_UPSERT_FLAG_COLUMNS) to "
+        "preserve the R28 dual-write invariant."
+    )
+
     # (1) upsert must not write phantom columns.
     phantom = sorted(c for c in written if c not in schema_cols)
     assert not phantom, (
