@@ -1060,3 +1060,85 @@ class TestUpsertColumnDriftGuard:
                     conn,
                     written_cols=list(upsert_writable_columns()) + ["graph_indexed"],
                 )
+
+
+# ---------------------------------------------------------------------------
+# Bundle J1 — interest_vectors table + store/get helpers
+# ---------------------------------------------------------------------------
+
+class TestInterestVectors:
+    """interest_vectors table migration + store_interest_vector/get_interest_vector."""
+
+    def test_table_created_on_init(self, tmp_path):
+        StateDB(tmp_path / "state.db")
+        cols = _column_info(str(tmp_path / "state.db"), "interest_vectors")
+        assert set(cols) == {"scope", "vector", "n_events", "computed_at"}
+        # scope is the PRIMARY KEY.
+        conn = sqlite3.connect(str(tmp_path / "state.db"))
+        try:
+            pk = [r for r in conn.execute(
+                "PRAGMA table_info(interest_vectors)").fetchall() if r[5]]
+        finally:
+            conn.close()
+        assert [r[1] for r in pk] == ["scope"]
+
+    def test_store_get_roundtrip_preserves_vector_and_n_events(self, tmp_path):
+        import numpy as np
+
+        db = StateDB(tmp_path / "state.db")
+        vec = np.array([0.1, -0.2, 0.3, 0.4], dtype=np.float32)
+        db.store_interest_vector("global", vec, 42)
+
+        got = db.get_interest_vector("global")
+        assert got is not None
+        out_vec, n = got
+        assert n == 42
+        assert out_vec.dtype == np.float32
+        assert out_vec.shape == vec.shape
+        assert np.allclose(out_vec, vec)
+
+    def test_store_casts_non_float32_to_float32(self, tmp_path):
+        import numpy as np
+
+        db = StateDB(tmp_path / "state.db")
+        vec64 = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+        db.store_interest_vector("global", vec64, 11)
+        out_vec, _ = db.get_interest_vector("global")
+        assert out_vec.dtype == np.float32
+        assert np.allclose(out_vec, vec64.astype(np.float32))
+
+    def test_get_absent_scope_returns_none(self, tmp_path):
+        db = StateDB(tmp_path / "state.db")
+        assert db.get_interest_vector("global") is None
+        assert db.get_interest_vector("nonexistent") is None
+
+    def test_store_is_upsert_on_scope(self, tmp_path):
+        import numpy as np
+
+        db = StateDB(tmp_path / "state.db")
+        db.store_interest_vector("global", np.array([1.0, 0.0], dtype=np.float32), 5)
+        db.store_interest_vector("global", np.array([0.0, 1.0], dtype=np.float32), 9)
+        out_vec, n = db.get_interest_vector("global")
+        assert n == 9
+        assert np.allclose(out_vec, np.array([0.0, 1.0], dtype=np.float32))
+        # Still exactly one row for 'global'.
+        conn = sqlite3.connect(str(tmp_path / "state.db"))
+        try:
+            cnt = conn.execute(
+                "SELECT COUNT(*) FROM interest_vectors WHERE scope='global'"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        assert cnt == 1
+
+    def test_migration_idempotent_on_reopen(self, tmp_path):
+        import numpy as np
+
+        path = tmp_path / "state.db"
+        db1 = StateDB(path)
+        db1.store_interest_vector("global", np.array([1.0, 2.0], dtype=np.float32), 7)
+        # Re-open: _init_schema runs again; must not drop data or raise.
+        db2 = StateDB(path)
+        out_vec, n = db2.get_interest_vector("global")
+        assert n == 7
+        assert np.allclose(out_vec, np.array([1.0, 2.0], dtype=np.float32))

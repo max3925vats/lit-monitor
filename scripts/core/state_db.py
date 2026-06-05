@@ -21,9 +21,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from scripts.core.strict_mode import strict_fallback
+
+if TYPE_CHECKING:
+    import numpy as np  # type-only: numpy is imported lazily inside helpers
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +250,20 @@ CREATE TABLE IF NOT EXISTS feedback_events (
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_doi     ON feedback_events(doi);
 CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback_events(created_at);
+
+-- Bundle J (v1.0 active-learning CORE, no version bump): computed Rocchio
+-- interest vectors keyed by scope ('global' or a per-cluster scope tag).
+-- vector is np.float32 bytes, shape (dim,) — SAME blob encoding as
+-- clusters.centroid_blob (np.ndarray.astype(float32).tobytes()).
+-- n_events records how many feedback events contributed to this vector, so
+-- the rank-time soft-gate (Bundle J2) can decide whether to apply it at all.
+-- INERT by construction: J1 only computes + stores; nothing reads this yet.
+CREATE TABLE IF NOT EXISTS interest_vectors (
+    scope        TEXT PRIMARY KEY,
+    vector       BLOB,
+    n_events     INTEGER NOT NULL DEFAULT 0,
+    computed_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 # ---------------------------------------------------------------------------
 # StateDB class
@@ -2130,3 +2147,70 @@ class StateDB:
                 (doi, self.IMPLICIT_SAVE_SOURCE),
             ).fetchone()
         return row is not None
+
+    # -- Bundle J (v1.0 active-learning CORE): interest vectors --
+
+    def store_interest_vector(
+        self,
+        scope: str,
+        vector: np.ndarray,
+        n_events: int,
+    ) -> None:
+        """Bundle J: atomically upsert one computed interest vector.
+
+        The vector is stored using the SAME blob encoding as
+        ``clusters.centroid_blob``: ``np.ndarray.astype(float32).tobytes()``.
+        ``computed_at`` is refreshed to ``now`` on every write so a stale
+        vector is never silently retained after a recompute.
+
+        Args:
+            scope:    Key for this vector — ``'global'`` for the library-wide
+                      interest vector, or a per-cluster scope tag (Bundle K).
+            vector:   1-D embedding-space direction. Cast to float32 on write.
+            n_events: Number of feedback events that contributed to ``vector``;
+                      read back by the rank-time soft-gate (Bundle J2).
+        """
+        import numpy as np
+
+        blob = np.asarray(vector, dtype=np.float32).tobytes()
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO interest_vectors (scope, vector, n_events, computed_at) "
+                "VALUES (?, ?, ?, datetime('now')) "
+                "ON CONFLICT(scope) DO UPDATE SET "
+                "  vector=excluded.vector, "
+                "  n_events=excluded.n_events, "
+                "  computed_at=excluded.computed_at",
+                (scope, blob, int(n_events)),
+            )
+
+    def get_interest_vector(
+        self,
+        scope: str = "global",
+    ) -> tuple[np.ndarray, int] | None:
+        """Bundle J: load a stored interest vector + its contributor count.
+
+        Decodes the blob with the same ``np.frombuffer(..., float32).copy()``
+        pattern used for cluster centroids (``.copy()`` so the array owns its
+        buffer and stays writable).
+
+        Args:
+            scope: Vector key to load. Defaults to ``'global'``.
+
+        Returns:
+            ``(vector, n_events)`` if a row exists for ``scope``, else ``None``.
+        """
+        import numpy as np
+
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT vector, n_events FROM interest_vectors WHERE scope = ?",
+                (scope,),
+            ).fetchone()
+        if row is None:
+            return None
+        blob = row["vector"]
+        if blob is None:
+            return None
+        vec = np.frombuffer(blob, dtype=np.float32).copy()
+        return vec, int(row["n_events"])
