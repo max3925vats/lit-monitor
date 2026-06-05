@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from datetime import datetime
 
 import numpy as np
 
@@ -248,15 +249,17 @@ def compute_interest_vector(
 # Orchestrator: raw feedback events -> Rocchio inputs
 # --------------------------------------------------------------------------- #
 
-def _event_age_days(created_at: str | None, now) -> float:
+def _event_age_days(created_at: str | None, now: datetime) -> float:
     """Age in days of ``created_at`` relative to ``now``; 0.0 if unparseable."""
     if not created_at:
         return 0.0
-    from datetime import datetime
 
     text = str(created_at).strip().replace("T", " ")
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
+            # ``+2`` slack on the slice tolerates a trailing fractional-seconds
+            # tail (e.g. ".12") so ``%Y-%m-%d %H:%M:%S`` still parses the
+            # leading whole-seconds portion instead of raising on the extra.
             ts = datetime.strptime(text[: len(fmt) + 2], fmt)
             return max(0.0, (now - ts).total_seconds() / 86400.0)
         except (ValueError, TypeError):
@@ -288,7 +291,7 @@ def _classify_signal(signal_type: str, rating: int | None) -> int:
 def build_interest_inputs(
     events: list[dict],
     embed_lookup: Callable[[str], np.ndarray | None],
-    now,
+    now: datetime,
     *,
     implicit_weight: float = IMPLICIT_SAVE_WEIGHT,
 ) -> tuple[list[tuple[np.ndarray, float]], list[tuple[np.ndarray, float]], int]:
@@ -304,8 +307,10 @@ def build_interest_inputs(
            where ``source_factor = implicit_weight`` for an
            ``implicit_zotero_save`` event, else ``1.0``.
 
-    The base signal magnitudes mirror ``StateDB._FEEDBACK_WEIGHT_MAP`` (and its
-    ``(rating-3)*0.5`` scaling for ``rated``) so the writer and this reader can't
+    The base magnitude is NOT recomputed from ``StateDB._FEEDBACK_WEIGHT_MAP``
+    here — it reuses the pre-computed ``weight`` already stored on the event row
+    by the writer (which has already folded in the per-signal magnitude and the
+    ``(rating-3)*0.5`` scaling for ``rated``), so the writer and this reader can't
     drift. Sign is carried by which list the event lands in, so weights stored in
     the tuples are non-negative magnitudes.
 

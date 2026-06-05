@@ -206,6 +206,12 @@ def run_discovery(
         _graph_signals, _graph_weights = _fetch_graph_signals_if_needed(
             new_papers, config, state_db
         )
+        # Bundle J2: load the global interest vector + feedback weight once.
+        # Non-fatal / inert when the weight is 0.0 or no vector is stored yet;
+        # the cold-start soft-gate is applied inside rank_papers via n_events.
+        _interest_vec, _interest_n_events, _interest_weight = (
+            _load_interest_signal_if_needed(config, state_db)
+        )
 
         # G9: rank by similarity — vector path is unchanged; graph/hybrid path uses
         # the branch helper to score candidates by knowledge-graph proximity.
@@ -217,6 +223,9 @@ def run_discovery(
                 top_k=len(new_papers) if screen_all else top_k,
                 graph_signals=_graph_signals,
                 graph_weights=_graph_weights,
+                interest_vec=_interest_vec,
+                interest_vec_n_events=_interest_n_events,
+                interest_weight=_interest_weight,
             )
         else:
             # graph or hybrid: score each new paper against the knowledge graph,
@@ -229,6 +238,9 @@ def run_discovery(
                 rag_mode=_rag_mode,
                 graph_signals=_graph_signals,
                 graph_weights=_graph_weights,
+                interest_vec=_interest_vec,
+                interest_vec_n_events=_interest_n_events,
+                interest_weight=_interest_weight,
             )
         # P1: record each ranked candidate in discovery_paper_results (non-dry only).
         if not dry_run and _disc_run_id is not None:
@@ -340,6 +352,9 @@ def _rank_papers_graph(
     rag_mode: str,
     graph_signals: dict[str, dict] | None = None,   # Bundle D
     graph_weights: dict[str, float] | None = None,  # Bundle D
+    interest_vec: np.ndarray | None = None,          # Bundle J2
+    interest_vec_n_events: int = 0,                  # Bundle J2
+    interest_weight: float = 0.0,                    # Bundle J2
 ) -> list[dict]:
     """G9: rank candidates using graph or hybrid retrieval for the discovery loop.
 
@@ -353,6 +368,12 @@ def _rank_papers_graph(
     Bundle D: graph_signals and graph_weights are forwarded to the underlying
     rank_papers() fallback path and also applied to the graph-scored papers
     via a synthetic rank_papers() call at the end.
+
+    Bundle J2: the interest-vector kwargs are forwarded to the rank_papers()
+    fallback path (graph_db unavailable). The graph-active path scores by graph
+    neighbour counts, not candidate embeddings, so the interest leg does not
+    apply there — consistent with the domain/cluster legs, which the graph path
+    also does not run.
     """
     from scripts.retrieval.branch import retrieve_doi_candidates
     graph_db = safe_graph_db()
@@ -365,6 +386,9 @@ def _rank_papers_graph(
             return rank_papers(
                 candidates, embeddings_db, llm, top_k=top_k,
                 graph_signals=graph_signals, graph_weights=graph_weights,
+                interest_vec=interest_vec,
+                interest_vec_n_events=interest_vec_n_events,
+                interest_weight=interest_weight,
             )
 
         scored: list[dict] = []
@@ -484,6 +508,41 @@ def _fetch_graph_signals_if_needed(
             graph_db.close()
         except Exception:  # noqa: BLE001
             pass
+
+
+def _load_interest_signal_if_needed(
+    config: Any,
+    state_db: Any,
+) -> tuple[np.ndarray | None, int, float]:
+    """Bundle J2: load the global Rocchio interest vector + its weight.
+
+    Returns ``(interest_vec, n_events, weight)`` to forward into ``rank_papers``.
+    The leg is INERT (returns ``(None, 0, 0.0)``) whenever:
+      - ``ranking.weights.feedback`` is 0.0 (default — opt-in only), OR
+      - no interest vector has been stored yet (table empty / never recomputed).
+    Loading is non-fatal: any error degrades to no-op so a missing/corrupt
+    interest row can never break a discovery run. The cold-start soft-gate is
+    applied later inside ``rank_papers`` via ``n_events``.
+    """
+    weights_ns = getattr(getattr(config, "ranking", None), "weights", None)
+    weight = float(getattr(weights_ns, "feedback", 0.0))
+    if weight <= 0.0:
+        # Opt-in only: skip the DB read entirely when the weight is off.
+        return None, 0, 0.0
+    try:
+        stored = state_db.get_interest_vector("global")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "_load_interest_signal_if_needed: failed to load interest vector "
+            "(non-fatal), skipping feedback signal: %s",
+            exc,
+        )
+        return None, 0, 0.0
+    if stored is None:
+        # No vector recomputed yet — leg stays off (weight has nothing to apply).
+        return None, 0, weight
+    vec, n_events = stored
+    return vec, int(n_events), weight
 
 
 def _apply_graph_signals_to_scored(

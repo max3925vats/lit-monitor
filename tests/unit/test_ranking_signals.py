@@ -539,6 +539,220 @@ class TestDomainContextSignal:
 
 
 # ===========================================================================
+# TestInterestVectorSignal (Bundle J2)
+# ===========================================================================
+
+class TestInterestVectorSignal:
+    """Rocchio interest-vector additive score contribution (Bundle J2).
+
+    Contract:
+      - inert when interest_weight == 0.0 (even with a vector + many events);
+      - inert when soft_gate(n_events) == 0.0 (cold-start, n_events < 10),
+        even with weight > 0 AND an aligned vector;
+      - when weight > 0 AND n_events >= 10 AND a candidate is aligned with the
+        interest_vec, that candidate's score rises by weight*soft_gate*cosine;
+      - degenerate interest_vec → whole leg skipped, scores unchanged, warned;
+      - NaN candidate embedding → skipped, score finite.
+    """
+
+    # 10 events is the COLD_START_FLOOR; gate is 0.0 below it, > 0.0 at/above.
+    _N_EVENTS_OPEN = 12
+    _N_EVENTS_COLD = 5
+
+    def _make_db(self, score: float = 0.5) -> MagicMock:
+        db = MagicMock()
+        db.find_similar_to_text.return_value = [
+            {"score": score, "id": "y", "document": "", "metadata": {}}
+        ]
+        return db
+
+    def _make_llm(self) -> MagicMock:
+        llm = MagicMock()
+        llm.complete.return_value = '{"10.1/a": "relevant"}'
+        return llm
+
+    def test_weight_zero_no_score_change(self):
+        """interest_weight = 0 → similarity_score unmodified (inert), even with a
+        vector and an open gate."""
+        from scripts.llm.ranker import rank_papers
+
+        interest_vec = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        candidates = [{
+            "doi": "10.1/a", "title": "A", "abstract": "",
+            "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),
+        }]
+        ranked = rank_papers(
+            candidates,
+            self._make_db(0.5),
+            self._make_llm(),
+            interest_vec=interest_vec,
+            interest_vec_n_events=self._N_EVENTS_OPEN,
+            interest_weight=0.0,
+        )
+        assert ranked[0]["similarity_score"] == pytest.approx(0.5)
+        assert "_interest_score" not in ranked[0]
+
+    def test_cold_start_gate_keeps_leg_inert(self):
+        """n_events < COLD_START_FLOOR → soft_gate==0 → NO change even with a
+        non-zero weight AND an aligned interest vector. This is the cold-start
+        inertness guarantee."""
+        from scripts.llm.ranker import rank_papers
+
+        interest_vec = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        candidates = [{
+            "doi": "10.1/a", "title": "A", "abstract": "",
+            "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),
+        }]
+        ranked = rank_papers(
+            candidates,
+            self._make_db(0.5),
+            self._make_llm(),
+            interest_vec=interest_vec,
+            interest_vec_n_events=self._N_EVENTS_COLD,  # below floor
+            interest_weight=0.9,                        # non-zero weight
+        )
+        # Gate is 0.0 → leg never runs → score unchanged, no metadata stored.
+        assert ranked[0]["similarity_score"] == pytest.approx(0.5)
+        assert "_interest_score" not in ranked[0]
+
+    def test_aligned_candidate_score_rises_by_weight_gate_cosine(self):
+        """weight>0 + n_events>=floor + candidate aligned with interest_vec →
+        score rises by exactly weight * soft_gate(n_events) * cosine."""
+        from scripts.learning.rocchio import soft_gate
+        from scripts.llm.ranker import rank_papers
+
+        interest_vec = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        candidates = [{
+            "doi": "10.1/a", "title": "A", "abstract": "",
+            "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),  # cosine == 1.0
+        }]
+        base = 0.4
+        weight = 0.5
+        n_events = self._N_EVENTS_OPEN
+        ranked = rank_papers(
+            candidates,
+            self._make_db(base),
+            self._make_llm(),
+            interest_vec=interest_vec,
+            interest_vec_n_events=n_events,
+            interest_weight=weight,
+        )
+        gate = soft_gate(n_events)
+        assert gate > 0.0
+        expected = base + weight * gate * 1.0
+        assert ranked[0]["similarity_score"] == pytest.approx(expected, abs=1e-5)
+        assert ranked[0]["_interest_score"] == pytest.approx(1.0, abs=1e-5)
+        # And the breakdown carries the gated contribution.
+        assert ranked[0]["score_breakdown"]["feedback"] == pytest.approx(
+            round(weight * gate * 1.0, 3), abs=1e-3
+        )
+
+    def test_degenerate_interest_vec_skips_whole_leg(self, caplog):
+        """A zero-norm interest_vec must skip the WHOLE leg (symmetric to the
+        domain-context whole-leg guard): scores unchanged, warned once."""
+        import logging
+        import math
+
+        from scripts.llm.ranker import rank_papers
+
+        bad_vec = np.zeros(3, dtype=np.float32)  # norm ≈ 0
+        candidates = [{
+            "doi": "10.1/a", "title": "A", "abstract": "",
+            "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),
+        }]
+        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+            ranked = rank_papers(
+                candidates,
+                self._make_db(0.5),
+                self._make_llm(),
+                interest_vec=bad_vec,
+                interest_vec_n_events=self._N_EVENTS_OPEN,
+                interest_weight=1.0,
+            )
+        assert math.isfinite(ranked[0]["similarity_score"])
+        assert ranked[0]["similarity_score"] == pytest.approx(0.5)
+        assert "_interest_score" not in ranked[0]
+        assert any(
+            "Interest vector is degenerate" in rec.message
+            for rec in caplog.records
+        ), f"expected a degenerate-interest warning, got: {[r.message for r in caplog.records]}"
+
+    def test_nan_interest_vec_skips_whole_leg(self, caplog):
+        """A NaN interest_vec has a non-finite norm that slips past a bare
+        zero-norm check; the whole leg must still be skipped, score finite."""
+        import logging
+        import math
+
+        from scripts.llm.ranker import rank_papers
+
+        nan_vec = np.full(3, np.nan, dtype=np.float32)
+        candidates = [{
+            "doi": "10.1/a", "title": "A", "abstract": "",
+            "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),
+        }]
+        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+            ranked = rank_papers(
+                candidates,
+                self._make_db(0.5),
+                self._make_llm(),
+                interest_vec=nan_vec,
+                interest_vec_n_events=self._N_EVENTS_OPEN,
+                interest_weight=1.0,
+            )
+        assert math.isfinite(ranked[0]["similarity_score"])
+        assert ranked[0]["similarity_score"] == pytest.approx(0.5)
+        assert any(
+            "Interest vector is degenerate" in rec.message
+            for rec in caplog.records
+        ), f"expected a degenerate-interest warning, got: {[r.message for r in caplog.records]}"
+
+    def test_nan_candidate_embedding_skipped_score_finite(self, caplog):
+        """A NaN candidate embedding is skipped (not multiplied in); a healthy
+        interest_vec leg must leave the NaN candidate's score finite + unchanged."""
+        import logging
+        import math
+
+        from scripts.llm.ranker import rank_papers
+
+        interest_vec = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        candidates = [{
+            "doi": "10.1/nan",
+            "title": "NaN",
+            "abstract": "",
+            "_embedding": np.full(3, np.nan, dtype=np.float32),
+        }]
+        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+            ranked = rank_papers(
+                candidates,
+                self._make_db(0.5),
+                self._make_llm(),
+                interest_vec=interest_vec,
+                interest_vec_n_events=self._N_EVENTS_OPEN,
+                interest_weight=1.0,
+            )
+        assert math.isfinite(ranked[0]["similarity_score"])
+        assert ranked[0]["similarity_score"] == pytest.approx(0.5)
+        assert any(
+            "degenerate embedding" in rec.message and "10.1/nan" in rec.message
+            for rec in caplog.records
+        ), f"expected a degenerate-embedding warning, got: {[r.message for r in caplog.records]}"
+
+    def test_default_off_regression(self):
+        """No interest kwargs at all → byte-for-byte v0.x behavior (leg never
+        runs, no _interest_score, breakdown feedback == 0.0)."""
+        from scripts.llm.ranker import rank_papers
+
+        candidates = [{
+            "doi": "10.1/a", "title": "A", "abstract": "",
+            "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),
+        }]
+        ranked = rank_papers(candidates, self._make_db(0.5), self._make_llm())
+        assert ranked[0]["similarity_score"] == pytest.approx(0.5)
+        assert "_interest_score" not in ranked[0]
+        assert ranked[0]["score_breakdown"]["feedback"] == 0.0
+
+
+# ===========================================================================
 # TestSoftFilter
 # ===========================================================================
 

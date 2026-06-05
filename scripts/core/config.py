@@ -255,6 +255,12 @@ class Config:
         self.ranking.weights.cluster_centroid = float(
             _raw_weights_c.get("cluster_centroid", 0.0)
         )
+        # --- Bundle J2 (v1.0): interest-vector (feedback) signal weight ---
+        # 0.0 (default) → the active-learning loop is fully off until the user
+        # opts in AND enough feedback has accumulated (rank-time soft-gate).
+        self.ranking.weights.feedback = float(
+            _raw_weights_c.get("feedback", 0.0)
+        )
         # --- Bundle D: extend ranking weights with graph signal weights ---
         # All default 0.0 → byte-for-byte v0.8/A/B/C regression preserved.
         self.ranking.weights.graph_entity_overlap = float(

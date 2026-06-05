@@ -4102,6 +4102,193 @@ def topics_expansions_suggest_cmd(topic_name: str, top_k: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Bundle J2 (v1.0 active-learning): interest-vector learning commands
+# ---------------------------------------------------------------------------
+
+@main.group("learning")
+def learning_group() -> None:
+    """Active-learning: build/inspect the Rocchio interest vector (Bundle J2).
+
+    The interest vector turns your saved/dismissed feedback into a single
+    "interest direction" that re-ranks discoveries toward what you like. It is
+    INERT until BOTH (a) you set ranking.weights.feedback > 0 in config AND
+    (b) you have accumulated at least 10 feedback events.
+    """
+
+
+# Cap on how many feedback events we pull for a recompute. The interest vector
+# is a coarse direction, so this is generous headroom rather than a true limit.
+_LEARNING_MAX_EVENTS = 100_000
+
+
+@learning_group.command("recompute")
+@click.pass_context
+def learning_recompute_cmd(ctx: click.Context) -> None:
+    """Rebuild the global interest vector from all feedback events.
+
+    Steps: load every feedback event → look up each DOI's stored paper
+    embedding → compute the library centroid (mean of all paper embeddings) →
+    run the Rocchio update → store the result under scope 'global'. Below 10
+    feedback events the stored vector stays inert (the rank-time soft-gate is
+    0.0), and the command says so.
+    """
+    _setup_logging("learning", verbose=ctx.obj.get("verbose", False))
+    from datetime import datetime
+
+    import numpy as np
+
+    from scripts.learning.rocchio import (
+        COLD_START_FLOOR,
+        build_interest_inputs,
+        compute_interest_vector,
+        soft_gate,
+    )
+
+    try:
+        config = _make_config()
+        state_db = _make_state_db(config)
+        embeddings_db = _make_embeddings_db(config)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    try:
+        events = state_db.list_feedback_events(limit=_LEARNING_MAX_EVENTS)
+        if not events:
+            click.echo(
+                "No feedback events recorded yet — nothing to learn from. "
+                f"Save or dismiss papers (need ≥{COLD_START_FLOOR}) and re-run."
+            )
+            return
+
+        # Fetch ALL stored paper embeddings once: serves both the per-event
+        # embed_lookup AND the library centroid (mean over all vectors).
+        all_embeddings = embeddings_db.get_paper_embeddings()
+        if not all_embeddings:
+            click.echo(
+                "No paper embeddings found in the library — run "
+                "`lit-monitor brain-build` first so feedback can be grounded."
+            )
+            return
+
+        def embed_lookup(doi: str) -> np.ndarray | None:
+            return all_embeddings.get(doi)
+
+        # Library centroid = mean of all stored paper vectors (the Rocchio prior).
+        library_centroid = np.mean(
+            np.stack(list(all_embeddings.values())), axis=0
+        ).astype(np.float32)
+
+        positive, negative, n_events = build_interest_inputs(
+            events, embed_lookup, now=datetime.now()
+        )
+        interest_vec = compute_interest_vector(library_centroid, positive, negative)
+
+        state_db.store_interest_vector("global", interest_vec, n_events)
+
+        gate = soft_gate(n_events)
+        click.echo(
+            f"Interest vector recomputed: {n_events} contributing event(s) "
+            f"(of {len(events)} total), dim={interest_vec.shape[0]}, "
+            f"soft_gate={gate:.3f}."
+        )
+        if gate <= 0.0:
+            click.echo(
+                f"INERT — need ≥{COLD_START_FLOOR} contributing feedback events "
+                "before the interest vector affects ranking (soft_gate is 0.0)."
+            )
+        else:
+            click.echo(
+                "Active once ranking.weights.feedback > 0 in config. "
+                "Run `lit-monitor learning view` to inspect what it learned."
+            )
+    finally:
+        # StateDB / EmbeddingsDB use per-call connections (no long-lived handle
+        # to close); kept as an explicit finally for symmetry with other groups.
+        pass
+
+
+@learning_group.command("view")
+@click.option("--top-k", default=10, show_default=True, type=int,
+              help="Show the K library papers most aligned with the interest vector.")
+@click.pass_context
+def learning_view_cmd(ctx: click.Context, top_k: int) -> None:
+    """Inspect the stored global interest vector and what it has learned."""
+    _setup_logging("learning", verbose=ctx.obj.get("verbose", False))
+    import numpy as np
+
+    from scripts.learning.rocchio import COLD_START_FLOOR, soft_gate
+
+    try:
+        config = _make_config()
+        state_db = _make_state_db(config)
+        embeddings_db = _make_embeddings_db(config)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    try:
+        stored = state_db.get_interest_vector("global")
+        if stored is None:
+            click.echo(
+                "No interest vector stored yet. Run "
+                "`lit-monitor learning recompute` to build one."
+            )
+            return
+        interest_vec, n_events = stored
+
+        # computed_at lives on the row; read it directly.
+        with state_db._connect() as conn:
+            row = conn.execute(
+                "SELECT computed_at FROM interest_vectors WHERE scope = ?",
+                ("global",),
+            ).fetchone()
+        computed_at = (row["computed_at"] if row else "") or "unknown"
+
+        gate = soft_gate(n_events)
+        click.echo("Global interest vector:")
+        click.echo(f"  events contributing : {n_events}")
+        click.echo(f"  soft_gate           : {gate:.3f}"
+                   + ("  (INERT — below cold-start floor)" if gate <= 0.0 else ""))
+        click.echo(f"  cold-start floor    : {COLD_START_FLOOR}")
+        click.echo(f"  computed_at         : {computed_at}")
+        click.echo(f"  dimensionality      : {interest_vec.shape[0]}")
+
+        # Nice-to-have: top-K library papers most aligned with the interest vec.
+        i_norm = float(np.linalg.norm(interest_vec))
+        if i_norm < 1e-9 or not np.isfinite(i_norm):
+            click.echo("\n(Interest vector is degenerate; no alignment ranking.)")
+            return
+        all_embeddings = embeddings_db.get_paper_embeddings()
+        if not all_embeddings:
+            click.echo("\n(No library embeddings to rank by alignment.)")
+            return
+        scores: list[tuple[str, float]] = []
+        for doi, emb in all_embeddings.items():
+            c_norm = float(np.linalg.norm(emb))
+            if c_norm < 1e-9 or not np.isfinite(c_norm):
+                continue
+            cos = float(np.dot(emb, interest_vec) / (c_norm * i_norm))
+            if np.isfinite(cos):
+                scores.append((doi, cos))
+        scores.sort(key=lambda t: t[1], reverse=True)
+
+        if scores:
+            click.echo(f"\nTop {min(top_k, len(scores))} library papers by interest alignment:")
+            for doi, cos in scores[:top_k]:
+                title = ""
+                try:
+                    rec = state_db.get_paper(doi)
+                    title = (rec.get("title") or "") if rec else ""
+                except Exception:  # noqa: BLE001 — title is cosmetic
+                    title = ""
+                label = f"{title[:60]}" if title else doi
+                click.echo(f"  {cos:+.3f}  {label}")
+    finally:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":

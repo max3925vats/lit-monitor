@@ -46,6 +46,14 @@ ranking:
     # 0.0 (default) = no cluster signal; today's behavior preserved on upgrade.
     # Recommended: 0.1–0.3 once clusters have been computed and validated.
     cluster_centroid: 0.0
+    # Bundle J2: additive weight for the Rocchio interest-vector signal — your
+    # personalized "interest direction" learned from saved/dismissed feedback.
+    # 0.0 (default) = OFF. The loop is doubly gated: it does nothing until you
+    # set this > 0 AND you have accumulated ≥10 feedback events (a rank-time
+    # soft-gate ramps the strength up from there). Build the vector with
+    # `lit-monitor learning recompute`, inspect it with `lit-monitor learning
+    # view`, then try 0.1–0.3 once it reflects your taste.
+    feedback: 0.0
     # Bundle D: graph-in-ranker signals (weighted sum, NOT RRF).
     # All default to 0.0 — no behavior change until you opt in.
     # entity_overlap: bonus for shared MENTIONS entities between candidate and library.

@@ -24,6 +24,7 @@ except ImportError:  # chromadb optional in some test envs
     ChromaError = ()  # type: ignore[assignment,misc]
 
 from scripts.core.strict_mode import strict_fallback
+from scripts.learning.rocchio import soft_gate
 from scripts.llm.prompt_registry import load_prompt
 from scripts.llm.prompt_safety import sanitize_for_prompt
 
@@ -51,6 +52,9 @@ def rank_papers(
     cluster_centroid_weight: float = 0.0,  # Bundle C
     graph_signals: dict[str, dict] | None = None,   # Bundle D: doi → signals dict
     graph_weights: dict[str, float] | None = None,  # Bundle D: entity_overlap/citation/shared_authors
+    interest_vec: np.ndarray | None = None,          # Bundle J2: Rocchio interest direction
+    interest_vec_n_events: int = 0,                  # Bundle J2: contributor count (soft-gate input)
+    interest_weight: float = 0.0,                    # Bundle J2: ranking.weights.feedback
 ) -> list[dict[str, Any]]:
     """
     Rank candidate papers by similarity to the existing knowledge base,
@@ -90,6 +94,17 @@ def rank_papers(
         Bundle D: dict with keys ``entity_overlap``, ``citation``,
         ``shared_authors``.  All default to 0.0 when absent.  Uses weighted
         sum (NOT RRF) per the v0.9 locked design decision.
+    interest_vec:
+        Bundle J2: the stored Rocchio interest direction (a unit-ish vector in
+        embedding space).  When None: no interest contribution → backward
+        compatible (byte-for-byte regression preserved, like the domain leg).
+    interest_vec_n_events:
+        Bundle J2: number of feedback events that produced ``interest_vec``.
+        Fed into ``soft_gate``: below the cold-start floor the gate returns 0.0
+        and the whole leg is inert even with a vector and a non-zero weight.
+    interest_weight:
+        Bundle J2: additive weight for the interest-vector cosine score, read
+        from ``ranking.weights.feedback``.  0.0 (default) = no contribution.
 
     Returns
     -------
@@ -224,6 +239,58 @@ def rank_papers(
                 # Annotate matched cluster name for Bundle B's web UI
                 paper["cluster_matched"] = cluster_centroids[best_idx].display_name or ""
 
+    # 2b-J. Bundle J2: optional interest-vector (Rocchio) additive score.
+    #     Runs only when an interest_vec is provided AND interest_weight > 0.0
+    #     AND the cold-start soft-gate is open (soft_gate(n_events) > 0.0). The
+    #     gate is 0.0 below COLD_START_FLOOR feedback events, so the loop stays
+    #     fully inert until enough data accumulates — even with a weight and a
+    #     vector. When any condition is unmet: no change to scores → byte-for-byte
+    #     v0.8/A/B/C/D behavior preserved.
+    _interest_gate = soft_gate(interest_vec_n_events)
+    if interest_vec is not None and interest_weight > 0.0 and _interest_gate > 0.0:
+        _interest_arr = np.asarray(interest_vec, dtype=np.float32).ravel()
+        _interest_norm = float(np.linalg.norm(_interest_arr))
+        if _interest_norm < 1e-9 or not np.isfinite(_interest_norm):
+            # Degenerate interest vector: all-zero (norm≈0) or non-finite
+            # (NaN/inf). Symmetric to the domain-context leg's whole-leg guard —
+            # a NaN norm slips past a bare `_interest_norm < 1e-9` check
+            # (`nan < 1e-9` is False) and would corrupt every finite candidate's
+            # score via np.dot(...) / (... * nan). Skip the WHOLE leg, surfaced
+            # once, rather than corrupt the ranking.
+            logger.warning(
+                "Interest vector is degenerate (norm≈0 or non-finite); "
+                "skipping interest-vector scoring for this run."
+            )
+        else:
+            for paper in scored:
+                cand_emb = paper.get("_embedding")
+                if cand_emb is None:
+                    # Candidate has no stored embedding — skip silently (no score change).
+                    continue
+                cand_arr = np.asarray(cand_emb, dtype=np.float32)
+                _cand_norm = float(np.linalg.norm(cand_arr))
+                if _cand_norm < 1e-9 or not np.isfinite(_cand_norm):
+                    # Degenerate candidate embedding: all-zero (norm≈0) or
+                    # non-finite (NaN/inf — a NaN norm slips past the zero-norm
+                    # check since `nan < 1e-9` is False and would corrupt the
+                    # score via np.dot). Numerically skipped, but log it so a bad
+                    # stored vector is observable, consistent with the domain leg.
+                    logger.warning(
+                        "Candidate %s has a degenerate embedding (norm≈0 or "
+                        "non-finite); skipping interest-vector score for it.",
+                        paper.get("doi", "?"),
+                    )
+                    continue
+                interest_score = float(
+                    np.dot(cand_arr, _interest_arr) / (_cand_norm * _interest_norm)
+                )
+                # Store raw interest cosine for Bundle B's score decomposition.
+                paper["_interest_score"] = interest_score
+                paper["similarity_score"] = (
+                    paper["similarity_score"]
+                    + interest_weight * _interest_gate * interest_score
+                )
+
     # 2c. Bundle D: optional graph-signal additive scores.
     #     Runs only when graph_signals dict AND graph_weights are provided AND
     #     at least one weight is non-zero.  Weighted sum (NOT RRF).
@@ -284,6 +351,13 @@ def rank_papers(
         # Bundle C: cluster_centroid contribution
         cluster_raw = paper.get("_cluster_score", 0.0)
         cluster_contribution = round(float(cluster_raw * cluster_centroid_weight), 3)
+        # Bundle J2: interest-vector (feedback) contribution. The gate is folded
+        # into the contribution exactly as it was added to similarity_score above,
+        # so vector_only stays the pure base score. 0.0 when the leg was inert.
+        interest_raw = paper.get("_interest_score", 0.0)
+        interest_contribution = round(
+            float(interest_raw * interest_weight * _interest_gate), 3
+        )
         # Bundle D: graph signal contributions
         graph_entity_contribution = round(
             float(paper.get("_graph_entity_norm", 0.0)) * _gw_entity, 3
@@ -299,6 +373,7 @@ def rank_papers(
             float(paper.get("similarity_score", 0.0))
             - domain_contribution
             - cluster_contribution
+            - interest_contribution
             - graph_entity_contribution
             - graph_citation_contribution
             - graph_authors_contribution,
@@ -308,6 +383,7 @@ def rank_papers(
             "vector": vector_only,
             "domain_context": domain_contribution,
             "cluster_centroid": cluster_contribution,
+            "feedback": interest_contribution,
             "graph_entity_overlap": graph_entity_contribution,
             "graph_citation": graph_citation_contribution,
             "graph_shared_authors": graph_authors_contribution,

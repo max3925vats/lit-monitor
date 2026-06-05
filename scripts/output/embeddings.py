@@ -400,6 +400,52 @@ class EmbeddingsDB:
             return _apply_reranker(rerank_with_query, candidates, top_k, reranker_config)
         return candidates[:top_k]
 
+    def get_paper_embeddings(
+        self, dois: list[str] | None = None
+    ) -> dict[str, np.ndarray]:
+        """Bundle J2: fetch stored paper embeddings keyed by DOI.
+
+        Returns a ``{doi: vector}`` mapping pulled directly from the paper-level
+        ChromaDB collection (no re-embedding — these are the vectors stored at
+        ``add_paper`` time). Used by the ``learning recompute`` CLI both to build
+        the per-feedback-event ``embed_lookup(doi)`` and to compute the library
+        centroid (mean over all stored vectors).
+
+        Mirrors the fetch pattern in ``scripts/clustering/recompute.py``
+        (``_collection.get(include=["embeddings"])``).
+
+        Parameters
+        ----------
+        dois:
+            Optional list of specific DOIs to fetch. When None, fetches ALL
+            stored paper embeddings (used for the library centroid). When a
+            DOI is absent from the collection it is simply omitted from the
+            result — the caller treats a missing DOI as "no embedding".
+
+        Returns
+        -------
+        dict[str, np.ndarray]
+            Mapping of DOI to its float32 embedding. Empty when the collection
+            is empty or none of the requested DOIs are present.
+        """
+        if dois is not None:
+            if not dois:
+                return {}
+            raw = self._collection.get(ids=list(dois), include=["embeddings"])
+        else:
+            n = self._collection.count()
+            if n == 0:
+                return {}
+            raw = self._collection.get(limit=n, include=["embeddings"])
+        ids: list[str] = raw.get("ids", []) or []
+        embs = raw.get("embeddings")
+        if embs is None or len(embs) == 0:
+            return {}
+        out: dict[str, np.ndarray] = {}
+        for doc_id, emb in zip(ids, embs):
+            out[doc_id] = np.asarray(emb, dtype=np.float32)
+        return out
+
     def get_collection_stats(self) -> dict:
         """Return basic collection stats dict."""
         return {"count": self.count(), "chunk_count": self._chunks_collection.count()}

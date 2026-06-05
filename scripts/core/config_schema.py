@@ -170,6 +170,7 @@ class _RankingWeights(BaseModel):
 
     domain_context: float = 0.0
     cluster_centroid: float = 0.0
+    feedback: float = 0.0
     graph_entity_overlap: float = 0.0
     graph_citation: float = 0.0
     graph_shared_authors: float = 0.0

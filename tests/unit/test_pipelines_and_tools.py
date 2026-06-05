@@ -116,6 +116,113 @@ def test_discovery_digest_written(tmp_path):
     digests = list(digest_dir.glob("Discovery_*.md"))
     assert len(digests) == 1
     assert summary.digest_path != ""
+
+
+# ===========================================================================
+# Bundle J2: discovery forwards the interest vector into rank_papers
+# ===========================================================================
+
+def _config_with_feedback_weight(tmp_path: Path, weight: float) -> SimpleNamespace:
+    """Base discovery config + a ranking.weights.feedback weight (J2 opt-in)."""
+    cfg = _make_config(tmp_path)
+    cfg.ranking = SimpleNamespace(weights=SimpleNamespace(feedback=weight))
+    return cfg
+
+
+@pytest.mark.unit
+def test_discovery_forwards_interest_vector_to_ranker(tmp_path):
+    """J2: when ranking.weights.feedback>0 and a global interest vector exists,
+    run_discovery loads it and forwards interest_vec / n_events / weight into
+    rank_papers."""
+    import numpy as np
+
+    config = _config_with_feedback_weight(tmp_path, weight=0.3)
+    state_db = _make_state_db(tmp_path)
+    embeddings_db = MagicMock()
+    embeddings_db.find_similar_to_text.return_value = []
+    llm = MagicMock()
+    llm.complete.return_value = "{}"
+    zotero_client = MagicMock()
+    papers = [_make_paper("10.1/new1")]
+
+    fake_vec = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    # Patch the StateDB method so no real interest_vectors row is needed.
+    state_db.get_interest_vector = MagicMock(return_value=(fake_vec, 17))
+
+    with patch("scripts.pipelines.discovery.run_searches", return_value=papers), \
+         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("scripts.pipelines.discovery.filter_known_dois", return_value=papers), \
+         patch("scripts.pipelines.discovery.rank_papers", return_value=papers) as mock_rank:
+        run_discovery(
+            config, state_db, zotero_client, embeddings_db, llm, dry_run=True
+        )
+
+    state_db.get_interest_vector.assert_called_once_with("global")
+    _, kwargs = mock_rank.call_args
+    assert kwargs["interest_vec"] is fake_vec
+    assert kwargs["interest_vec_n_events"] == 17
+    assert kwargs["interest_weight"] == 0.3
+
+
+@pytest.mark.unit
+def test_discovery_no_interest_vector_passes_none(tmp_path):
+    """J2: absent interest vector (weight on, but nothing stored) → rank_papers
+    receives interest_vec=None and the run does not crash."""
+    config = _config_with_feedback_weight(tmp_path, weight=0.3)
+    state_db = _make_state_db(tmp_path)
+    embeddings_db = MagicMock()
+    embeddings_db.find_similar_to_text.return_value = []
+    llm = MagicMock()
+    llm.complete.return_value = "{}"
+    zotero_client = MagicMock()
+    papers = [_make_paper("10.1/new1")]
+
+    # No row stored → get_interest_vector returns None (real DB, empty table).
+    with patch("scripts.pipelines.discovery.run_searches", return_value=papers), \
+         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("scripts.pipelines.discovery.filter_known_dois", return_value=papers), \
+         patch("scripts.pipelines.discovery.rank_papers", return_value=papers) as mock_rank:
+        run_discovery(
+            config, state_db, zotero_client, embeddings_db, llm, dry_run=True
+        )
+
+    _, kwargs = mock_rank.call_args
+    assert kwargs["interest_vec"] is None
+    assert kwargs["interest_vec_n_events"] == 0
+    # weight is still forwarded (harmless: rank_papers no-ops when vec is None).
+    assert kwargs["interest_weight"] == 0.3
+
+
+@pytest.mark.unit
+def test_discovery_feedback_weight_zero_skips_db_read(tmp_path):
+    """J2: ranking.weights.feedback == 0 (default) → no interest DB read, and
+    rank_papers receives interest_vec=None (fully inert)."""
+    config = _config_with_feedback_weight(tmp_path, weight=0.0)
+    state_db = _make_state_db(tmp_path)
+    embeddings_db = MagicMock()
+    embeddings_db.find_similar_to_text.return_value = []
+    llm = MagicMock()
+    llm.complete.return_value = "{}"
+    zotero_client = MagicMock()
+    papers = [_make_paper("10.1/new1")]
+
+    state_db.get_interest_vector = MagicMock(return_value=None)
+
+    with patch("scripts.pipelines.discovery.run_searches", return_value=papers), \
+         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("scripts.pipelines.discovery.filter_known_dois", return_value=papers), \
+         patch("scripts.pipelines.discovery.rank_papers", return_value=papers) as mock_rank:
+        run_discovery(
+            config, state_db, zotero_client, embeddings_db, llm, dry_run=True
+        )
+
+    # Weight off → we must NOT even read the interest vector from the DB.
+    state_db.get_interest_vector.assert_not_called()
+    _, kwargs = mock_rank.call_args
+    assert kwargs["interest_vec"] is None
+    assert kwargs["interest_weight"] == 0.0
+
+
 @pytest.mark.unit
 
 def test_duplicate_dois_not_reprocessed(tmp_path):
