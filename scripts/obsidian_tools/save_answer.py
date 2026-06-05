@@ -30,7 +30,10 @@ def _slugify(text: str) -> str:
     """
     slug = re.sub(r"[^\w\s-]", "", text)
     slug = re.sub(r"[\s_]+", "_", slug.strip())
-    return slug[:60]
+    slug = slug[:60].strip("_")
+    # A punctuation-only question slugifies to "" → fall back so distinct such
+    # questions don't all collide on a single "Ask_.md".
+    return slug or "untitled"
 
 
 def _extract_user_section(content: str) -> str:
