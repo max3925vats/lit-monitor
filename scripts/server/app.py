@@ -175,6 +175,11 @@ def create_app() -> FastAPI:
 
     app.include_router(query_router)
 
+    # FE-1: /ask page (browser surface over run_pipeline; JSON /api/ask unchanged).
+    from scripts.server.routes.ask import router as ask_router  # noqa: PLC0415
+
+    app.include_router(ask_router)
+
     # H10: POST /api/search — free-text paper retrieval (vector/graph/hybrid).
     from scripts.server.routes.search import router as search_router  # noqa: PLC0415
 

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Ask — lit-monitor{% endblock %}
+{% block content %}
+<section class="dashboard">
+  <h1>Ask</h1>
+
+  {% if not has_graph %}
+    <div class="card warning">
+      <p>
+        Your knowledge graph isn't available yet. Build it first, then come back:
+      </p>
+      <p><code>lit-monitor graph backfill --all</code></p>
+    </div>
+  {% else %}
+    <p class="field-note">
+      Ask a natural-language question of your corpus. The query is translated to
+      Cypher, run against your graph, and summarised.
+    </p>
+
+    <form hx-post="/ask/answer"
+          hx-target="#ask-result"
+          hx-swap="innerHTML"
+          hx-indicator="#ask-spin">
+      <div class="input-row">
+        <textarea name="question" rows="3"
+                  placeholder="e.g. Which papers cite Smith 2021?"></textarea>
+      </div>
+      <button type="submit" class="btn-primary">Ask</button>
+      <span id="ask-spin" class="htmx-indicator status-badge loading">thinking…</span>
+    </form>
+
+    {# WA1 placeholders; later bundles (history) fill #ask-history. #}
+    <div id="ask-result"></div>
+    <div id="ask-history"></div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,22 @@
+{# WA1: answer fragment — error | prose + results table + show-cypher. #}
+{% if error %}
+  <div class="card danger">
+    <p>{{ error }}</p>
+  </div>
+{% else %}
+  {% if result.prose %}
+    <div class="ask-prose">{{ result.prose }}</div>
+  {% else %}
+    <p class="muted">No summary was generated.</p>
+  {% endif %}
+
+  {% set rows = result.rows %}
+  {% include "ask/_table.html" %}
+
+  {% if result.cypher %}
+    <details class="ask-cypher">
+      <summary>Show Cypher</summary>
+      <pre><code>{{ result.cypher }}</code></pre>
+    </details>
+  {% endif %}
+{% endif %}

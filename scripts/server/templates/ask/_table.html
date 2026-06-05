@@ -1,0 +1,28 @@
+{# WA1: shared rows→table partial. Expects `rows` (list[dict]) in context. #}
+{% if not rows %}
+  <p class="muted">No matches.</p>
+{% else %}
+  {# Header = union of all row keys, stable first-seen order. #}
+  {% set ns = namespace(keys=[]) %}
+  {% for row in rows %}
+    {% for k in row.keys() %}
+      {% if k not in ns.keys %}{% set ns.keys = ns.keys + [k] %}{% endif %}
+    {% endfor %}
+  {% endfor %}
+  <table class="papers-table">
+    <thead>
+      <tr>
+        {% for k in ns.keys %}<th>{{ k }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>
+          {% for k in ns.keys %}
+            <td>{% if row.get(k) is not none %}{{ row.get(k) }}{% endif %}</td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
