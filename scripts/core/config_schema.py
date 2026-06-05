@@ -282,15 +282,17 @@ class FeedbackSettings(BaseModel):
     Bundle K-a: ``minimum_cluster_floor`` is the lower clamp on a cluster's
     atrophy ``feedback_weight`` — a cluster you stop dismissing never decays
     below this, so an un-engaged theme is preserved rather than silently lost.
-    ``exploration_budget_pct`` is reserved for Bundle K-b (exploration budget in
-    discovery search) and is accepted/validated here so the two bundles share
-    one config section; it is inert until K-b consumes it.
+    ``exploration_budget_pct`` (K-b) is the fraction of discovery search effort
+    reserved for probing under-engaged clusters; ``cluster_quiet_weeks`` (K-b)
+    is how many weeks a cluster may go without surfacing a paper before it is
+    considered under-engaged. All three live in one ``feedback`` section.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     minimum_cluster_floor: float = 0.1
     exploration_budget_pct: float = 0.20
+    cluster_quiet_weeks: int = 4
 
 
 class _EmbeddingOllama(BaseModel):

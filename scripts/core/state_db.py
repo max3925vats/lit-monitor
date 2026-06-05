@@ -1900,6 +1900,43 @@ class StateDB:
             ).fetchone()
         return dict(row) if row else None
 
+    def get_cluster_last_surfaced(self) -> dict[int, str | None]:
+        """Bundle K-b: ``{cluster_id: last_surfaced_iso | None}`` for active clusters.
+
+        "Last surfaced" = the most recent ``discovery_runs.started_at`` among
+        discovery runs that recorded *any* paper (``discovery_paper_results``)
+        whose DOI maps to that cluster via ``cluster_assignments``. There is no
+        per-result timestamp column, so the run's ``started_at`` is the surface
+        time — the natural granularity for the ``quiet_weeks`` window.
+
+        Every *active* cluster is represented: a cluster that has never surfaced
+        a paper in any discovery run maps to ``None`` (→ under-engaged by the
+        K-b rule). Read-only; safe to call when the tables are empty.
+        """
+        # Seed every active cluster at None so never-surfaced clusters appear.
+        result: dict[int, str | None] = {
+            int(c["id"]): None for c in self.list_active_clusters()
+        }
+        if not result:
+            return result
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT ca.cluster_id AS cluster_id, "
+                "       MAX(dr.started_at) AS last_surfaced "
+                "FROM discovery_paper_results dpr "
+                "JOIN discovery_runs dr ON dpr.run_id = dr.id "
+                "JOIN cluster_assignments ca ON ca.doi = dpr.doi "
+                "JOIN clusters c ON c.id = ca.cluster_id "
+                "WHERE dpr.doi IS NOT NULL AND dpr.doi <> '' "
+                "  AND c.archived = 0 "
+                "GROUP BY ca.cluster_id"
+            ).fetchall()
+        for r in rows:
+            cid = int(r["cluster_id"])
+            if cid in result:
+                result[cid] = r["last_surfaced"]
+        return result
+
     # ---------------------------------------------------------------------------
     # Bundle E (v0.9): trending-concept suggestion helpers
     # ---------------------------------------------------------------------------

@@ -15,7 +15,10 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from scripts.clustering.atrophy import compute_per_cluster_feedback_weights
+from scripts.clustering.atrophy import (
+    compute_per_cluster_feedback_weights,
+    find_under_engaged_clusters,
+)
 
 # Fixed reference "now" so age computations are deterministic.
 NOW = datetime(2026, 6, 5, 12, 0, 0)
@@ -157,3 +160,96 @@ def test_rating_classification_negative_decays() -> None:
     )
     assert weights[5] < 0.6
     assert weights[5] >= FLOOR
+
+
+# --------------------------------------------------------------------------- #
+# Bundle K-b: under-engaged cluster detection (pure, injected inputs).
+# --------------------------------------------------------------------------- #
+
+
+def _iso(days_ago: float) -> str:
+    """ISO timestamp ``days_ago`` days before NOW (SQLite datetime() shape)."""
+    return (NOW - timedelta(days=days_ago)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def test_never_surfaced_cluster_is_under_engaged() -> None:
+    """A cluster that never surfaced a paper (None) with healthy weight → explore."""
+    last = {1: None}
+    weights = {1: 1.0}
+    assert find_under_engaged_clusters(
+        last, weights, now=NOW, quiet_weeks=4, floor=FLOOR
+    ) == [1]
+
+
+def test_old_surface_is_under_engaged_recent_is_not() -> None:
+    """Quiet beyond the window → under-engaged; surfaced inside the window → not."""
+    # cluster 1 surfaced 10 weeks ago (quiet); cluster 2 surfaced 3 days ago.
+    last = {1: _iso(70.0), 2: _iso(3.0)}
+    weights = {1: 1.0, 2: 1.0}
+    result = find_under_engaged_clusters(
+        last, weights, now=NOW, quiet_weeks=4, floor=FLOOR
+    )
+    assert result == [1]
+
+
+def test_near_floor_weight_excluded_even_if_quiet() -> None:
+    """A quiet cluster the user is actively dismissing (weight near floor) is
+    EXCLUDED — exploration must not fight the user's own dismissal signal."""
+    last = {1: None, 2: None}
+    # cluster 1 at the floor (actively dismissed); cluster 2 healthy.
+    weights = {1: FLOOR, 2: 1.0}
+    result = find_under_engaged_clusters(
+        last, weights, now=NOW, quiet_weeks=4, floor=FLOOR
+    )
+    assert result == [2]
+
+
+def test_weight_just_above_threshold_included() -> None:
+    """Default exclusion threshold is floor + epsilon (0.05); a weight strictly
+    above it is eligible, a weight at/below it is excluded."""
+    last = {1: None, 2: None, 3: None}
+    weights = {
+        1: FLOOR + 0.05 + 1e-6,  # just above threshold → included
+        2: FLOOR + 0.05,          # exactly at threshold → excluded (strict >)
+        3: FLOOR + 0.04,          # below threshold → excluded
+    }
+    result = find_under_engaged_clusters(
+        last, weights, now=NOW, quiet_weeks=4, floor=FLOOR,
+    )
+    assert result == [1]
+
+
+def test_missing_weight_defaults_to_full_and_is_included() -> None:
+    """A quiet cluster with no weight entry defaults to 1.0 (never touched) and
+    is eligible for exploration."""
+    last = {7: None}
+    result = find_under_engaged_clusters(
+        {**last}, {}, now=NOW, quiet_weeks=4, floor=FLOOR
+    )
+    assert result == [7]
+
+
+def test_explicit_min_explore_weight_overrides_default() -> None:
+    """An explicit ``min_explore_weight`` overrides the floor+epsilon default."""
+    last = {1: None, 2: None}
+    weights = {1: 0.5, 2: 0.7}
+    # Only weights strictly above 0.6 qualify.
+    result = find_under_engaged_clusters(
+        last, weights, now=NOW, quiet_weeks=4, floor=FLOOR, min_explore_weight=0.6
+    )
+    assert result == [2]
+
+
+def test_unparseable_last_surfaced_counts_as_never() -> None:
+    """A malformed last-surfaced timestamp degrades to 'never surfaced' (quiet)
+    rather than crashing detection."""
+    last = {1: "not-a-date"}
+    result = find_under_engaged_clusters(
+        last, {1: 1.0}, now=NOW, quiet_weeks=4, floor=FLOOR
+    )
+    assert result == [1]
+
+
+def test_empty_inputs_return_empty() -> None:
+    """No clusters → no under-engaged clusters (drives the discovery no-op gate)."""
+    assert find_under_engaged_clusters({}, {}, now=NOW) == []

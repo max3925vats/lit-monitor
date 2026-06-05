@@ -63,7 +63,7 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from scripts.learning.rocchio import (
     HALF_LIFE_DAYS,
@@ -73,6 +73,22 @@ from scripts.learning.rocchio import (
 )
 
 logger = logging.getLogger(__name__)
+
+# --------------------------------------------------------------------------- #
+# Bundle K-b: under-engaged cluster detection.
+# --------------------------------------------------------------------------- #
+
+#: Default "quiet" window: a cluster that has surfaced no paper in a discovery
+#: run within this many weeks is a candidate for exploration. Mirrors the
+#: ``feedback.cluster_quiet_weeks`` config default.
+DEFAULT_QUIET_WEEKS: int = 4
+
+#: How far above the atrophy floor a cluster's K-a ``feedback_weight`` must sit
+#: before exploration will probe it. Clusters at/near the floor are ones the
+#: user is *actively dismissing*; spending exploration budget on them would
+#: fight the user's own signal, so they are excluded. A small epsilon above the
+#: floor is enough to separate "merely under-engaged" from "actively rejected".
+DEFAULT_EXPLORE_WEIGHT_EPSILON: float = 0.05
 
 # --------------------------------------------------------------------------- #
 # Tunable constants (empirical — appropriate for one user, ~10-50 events/week).
@@ -276,3 +292,96 @@ def compute_cluster_feedback_weights_from_db(
         floor=floor,
         half_life_days=half_life_days,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Bundle K-b: under-engaged cluster detection (pure, injectable)
+# --------------------------------------------------------------------------- #
+
+
+def _parse_iso_dt(value: str | None) -> datetime | None:
+    """Best-effort parse of an ISO-ish timestamp (``YYYY-MM-DD[ HH:MM:SS]``).
+
+    SQLite ``datetime('now')`` stores ``"YYYY-MM-DD HH:MM:SS"``; ``date.today()``
+    stores ``"YYYY-MM-DD"``. ``datetime.fromisoformat`` handles both once a space
+    is normalised to ``T``. Returns ``None`` on any parse failure so a malformed
+    timestamp degrades to "never surfaced" rather than crashing detection.
+    """
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).strip().replace(" ", "T"))
+    except (ValueError, TypeError):
+        return None
+
+
+def find_under_engaged_clusters(
+    last_surfaced: dict[int, str | None],
+    feedback_weights: dict[int, float],
+    *,
+    now: datetime,
+    quiet_weeks: int = DEFAULT_QUIET_WEEKS,
+    floor: float = DEFAULT_FLOOR,
+    min_explore_weight: float | None = None,
+    explore_weight_epsilon: float = DEFAULT_EXPLORE_WEIGHT_EPSILON,
+) -> list[int]:
+    """Pure: pick clusters worth probing with exploration queries.
+
+    A cluster is **under-engaged** (and thus a target for exploration) when BOTH:
+
+    1. It has not surfaced a paper in a discovery run within the last
+       ``quiet_weeks`` weeks. A cluster that has *never* surfaced a paper
+       (``last_surfaced`` value ``None`` or unparseable) always qualifies on
+       this leg.
+    2. Its K-a ``feedback_weight`` is above the exclusion threshold
+       ``min_explore_weight`` (defaults to ``floor + explore_weight_epsilon``).
+       Clusters at/near the atrophy floor are ones the user is *actively
+       dismissing* — exploring them would fight the user's own signal, so they
+       are excluded. A cluster with no weight entry defaults to ``1.0`` (a
+       never-touched, full-weight cluster is eligible).
+
+    Both inputs are injected (a ``{cluster_id: iso_date|None}`` map and a
+    ``{cluster_id: weight}`` map), so this is unit-testable without a DB. The
+    universe of clusters considered is the key set of ``last_surfaced``.
+
+    Args:
+        last_surfaced:   ``{cluster_id: last_surfaced_iso | None}`` for the
+                         clusters under consideration (typically every active
+                         cluster). ``None`` → never surfaced.
+        feedback_weights: ``{cluster_id: feedback_weight}`` from K-a. Missing
+                         entries default to ``1.0``.
+        now:             Reference time for the quiet-window cutoff.
+        quiet_weeks:     Weeks of silence before a cluster is under-engaged.
+        floor:           Atrophy floor (config ``minimum_cluster_floor``); only
+                         used to derive the default exclusion threshold.
+        min_explore_weight: Explicit exclusion threshold. When ``None``,
+                         ``floor + explore_weight_epsilon`` is used.
+        explore_weight_epsilon: Margin above the floor for the default
+                         threshold.
+
+    Returns:
+        Sorted list of under-engaged cluster ids (ascending), each of which is
+        BOTH quiet for ``quiet_weeks`` AND above the dismissal-exclusion
+        threshold.
+    """
+    threshold = (
+        float(min_explore_weight)
+        if min_explore_weight is not None
+        else float(floor) + float(explore_weight_epsilon)
+    )
+    cutoff = now - timedelta(weeks=max(0, int(quiet_weeks)))
+
+    under_engaged: list[int] = []
+    for cid, last_iso in last_surfaced.items():
+        # Leg 1: quiet for the window (never surfaced always counts).
+        last_dt = _parse_iso_dt(last_iso)
+        is_quiet = last_dt is None or last_dt < cutoff
+        if not is_quiet:
+            continue
+        # Leg 2: not actively dismissed — weight strictly above the threshold.
+        weight = float(feedback_weights.get(cid, 1.0))
+        if weight <= threshold:
+            continue
+        under_engaged.append(int(cid))
+
+    return sorted(under_engaged)

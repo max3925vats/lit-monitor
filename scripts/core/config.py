@@ -299,6 +299,9 @@ class Config:
         self.feedback = _Namespace({
             "minimum_cluster_floor": float(_raw_fb.get("minimum_cluster_floor", 0.1)),
             "exploration_budget_pct": float(_raw_fb.get("exploration_budget_pct", 0.20)),
+            # K-b: a cluster is "under-engaged" once it has surfaced no paper in a
+            # discovery run within the last cluster_quiet_weeks weeks.
+            "cluster_quiet_weeks": int(_raw_fb.get("cluster_quiet_weeks", 4)),
         })
         # --- Optional configs (loaded lazily if files exist) ---
         self._topics: list[dict] | None = None

@@ -100,10 +100,18 @@ feedback:
   # 0.1 (default) = a maximally-dismissed cluster retains 10% weight. Raise to
   # be more conservative (slower atrophy); lower to let themes fade further.
   minimum_cluster_floor: 0.1
-  # K-b (NOT YET ACTIVE): fraction of discovery search slots reserved for
-  # under-engaged clusters' expanded queries. Read here so K-a and K-b share one
-  # config section; inert until the Bundle K-b exploration budget ships.
+  # K-b: fraction of discovery search effort reserved for under-engaged
+  # clusters' graph-expanded queries. Exploration SUPPLEMENTS your topic
+  # searches (never replaces them): exploration-sourced candidates are capped at
+  # this fraction of the topic-search result count before ranking. 0 disables
+  # exploration entirely (zero extra API calls). Only active once clusters
+  # exist AND at least one is under-engaged AND the graph has entities.
   exploration_budget_pct: 0.20
+  # K-b: a cluster counts as "under-engaged" once it has surfaced no paper in a
+  # discovery run within this many weeks. Lower = explore sooner. Clusters you
+  # actively DISMISS (K-a feedback_weight near minimum_cluster_floor) are
+  # excluded so exploration is never spent on themes you're rejecting.
+  cluster_quiet_weeks: 4
 
 # ---------------------------------------------------------------------------
 # G1 — Graph RAG retrieval settings (Phase 1)

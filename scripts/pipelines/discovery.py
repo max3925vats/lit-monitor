@@ -31,6 +31,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -189,6 +190,17 @@ def run_discovery(
         try:
             raw_papers, search_errors = _run_discovery(config, since_days=since_days)
             summary.errors.extend(search_errors)
+            # Bundle K-b: SUPPLEMENT topic results with graph-expanded exploration
+            # searches for under-engaged clusters. Fully gated + non-fatal: with no
+            # clusters / no graph / budget 0 this is a no-op (zero extra searches),
+            # so a fresh user sees no behaviour change. Exploration candidates are
+            # appended (never replace topic results) and capped to ~budget_pct of
+            # the topic pool; they de-dup + rank through the same downstream path.
+            _explore_papers = _run_exploration_searches(
+                config, state_db, raw_papers, since_days=since_days
+            )
+            if _explore_papers:
+                raw_papers = raw_papers + _explore_papers
             # A4: advance date after successful discovery so subsequent runs compute
             # the correct search window.
             # H1: dry_run is supposed to be DB-read-only (per module docstring) — gate
@@ -780,6 +792,174 @@ def _run_discovery(
         elif not doi:
             deduped.append(p)  # keep no-DOI results (filtered later)
     return deduped, errors
+
+
+# ---------------------------------------------------------------------------
+# Bundle K-b: exploration budget — probe under-engaged clusters
+# ---------------------------------------------------------------------------
+#
+# WHAT A "SLOT" IS HERE (DOCUMENTED — see the pooled question in the bundle
+# report). The discovery search step has no fixed per-topic "slot" array: each
+# topic search streams results into one DOI-keyed pool that is then ranked and
+# truncated to ``top_k`` for the digest. So "reserve 20% of slots" is mapped
+# onto the *candidate pool*: exploration-sourced candidates are capped at
+# ``ceil(exploration_budget_pct * len(topic_results))`` and APPENDED to the
+# topic pool (they never displace a topic result). They then flow through the
+# same dedup → filter_known_dois → rank → top_k path as everything else, so the
+# 20% is a soft reservation of pool share, realised downstream by ranking.
+# ---------------------------------------------------------------------------
+
+
+def _resolve_exploration_budget_pct(config: Any) -> float:
+    """K-b: read ``feedback.exploration_budget_pct`` (default 0.20), clamped to
+    ``[0, 1]``. Returns 0.0 (exploration OFF) on any read failure so a malformed
+    config can never silently widen the budget."""
+    try:
+        fb = getattr(config, "feedback", None)
+        val = float(getattr(fb, "exploration_budget_pct", 0.20)) if fb else 0.20
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(val):
+        return 0.0
+    return max(0.0, min(1.0, val))
+
+
+def _run_exploration_searches(
+    config: Any,
+    state_db: Any,
+    topic_results: list[dict[str, Any]],
+    *,
+    since_days: int,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """K-b: build + run graph-expanded exploration searches for under-engaged
+    clusters, returning a capped, supplementary list of candidate paper dicts.
+
+    GATING (all must hold, else returns ``[]`` with ZERO extra searches — a
+    fresh user with no clusters/graph sees no behaviour change):
+      * ``exploration_budget_pct > 0``;
+      * at least one active cluster exists;
+      * the KuzuDB graph is available (``safe_graph_db()`` is not None);
+      * ``find_under_engaged_clusters`` returns at least one cluster;
+      * those clusters yield at least one exploration query from the graph.
+
+    Cap: exploration candidates are truncated to
+    ``ceil(pct * len(topic_results))`` (at least 1 when any exploration query
+    runs and the topic pool is non-empty). NO fake-fill: if the searches return
+    nothing relevant, we return ``[]`` and discovery proceeds normally.
+
+    Wholly non-fatal: any failure logs at WARNING and returns ``[]`` so a
+    discovery run is never broken by exploration.
+    """
+    try:
+        pct = _resolve_exploration_budget_pct(config)
+        if pct <= 0.0:
+            return []
+
+        clusters = state_db.list_active_clusters()
+        if not clusters:
+            # Fresh user / no clustering yet → no exploration, no extra searches.
+            return []
+
+        graph_db = safe_graph_db()
+        if graph_db is None:
+            logger.debug("K-b: graph unavailable — skipping exploration.")
+            return []
+
+        try:
+            from scripts.clustering.atrophy import (
+                compute_cluster_feedback_weights_from_db,
+                find_under_engaged_clusters,
+            )
+            from scripts.clustering.exploration import build_exploration_queries
+
+            ref_now = now or datetime.now()
+            floor = float(
+                getattr(getattr(config, "feedback", None), "minimum_cluster_floor", 0.1)
+            )
+            quiet_weeks = int(
+                getattr(getattr(config, "feedback", None), "cluster_quiet_weeks", 4)
+            )
+
+            last_surfaced = state_db.get_cluster_last_surfaced()
+            feedback_weights = compute_cluster_feedback_weights_from_db(
+                state_db, now=ref_now, floor=floor
+            )
+            under_engaged = find_under_engaged_clusters(
+                last_surfaced,
+                feedback_weights,
+                now=ref_now,
+                quiet_weeks=quiet_weeks,
+                floor=floor,
+            )
+            if not under_engaged:
+                logger.info("K-b: no under-engaged clusters — skipping exploration.")
+                return []
+
+            # Member DOIs per under-engaged cluster (for central-entity lookup).
+            cluster_member_dois: dict[int, list[str]] = {}
+            for cid in under_engaged:
+                rows = state_db.get_cluster_assignments(cid)
+                cluster_member_dois[cid] = [
+                    r.get("doi") for r in rows if r.get("doi")
+                ]
+
+            queries = build_exploration_queries(cluster_member_dois, graph_db)
+            if not queries:
+                logger.info(
+                    "K-b: %d under-engaged cluster(s) but no graph-expanded "
+                    "queries — skipping exploration.",
+                    len(under_engaged),
+                )
+                return []
+        finally:
+            try:
+                graph_db.close()
+            except Exception:  # noqa: BLE001 — defensive close
+                pass
+
+        # Run the exploration queries through the SAME search path as topics by
+        # handing run_searches a config shim whose .topics is the query list.
+        # run_searches reads only `.topics` off config (API keys come from
+        # config.toml), so the shim is sufficient and reuses findpapers + S2.
+        explore_cfg = SimpleNamespace(topics=list(queries))
+        explore_results = run_searches(explore_cfg, since_days=since_days)
+        # Drop exploration candidates already present in the topic pool so they
+        # don't double-count against the budget or the ranked digest.
+        _topic_dois = {
+            (p.get("doi") or "").strip().lower()
+            for p in topic_results
+            if (p.get("doi") or "").strip()
+        }
+        explore_results = [
+            p for p in explore_results
+            if (p.get("doi") or "").strip().lower() not in _topic_dois
+        ]
+        if not explore_results:
+            # NO fake-fill: exploration found nothing new → proceed normally.
+            logger.info("K-b: exploration searches returned 0 new candidates.")
+            return []
+
+        # Cap exploration candidates to ~pct of the topic-search effort.
+        cap = max(1, math.ceil(pct * len(topic_results))) if topic_results else 0
+        if cap <= 0:
+            return []
+        capped = explore_results[:cap]
+        for paper in capped:
+            paper["_exploration"] = True  # provenance tag (non-load-bearing)
+        logger.warning(
+            "K-b: exploration reserved %d/%d slot(s) (budget %.0f%%) from %d "
+            "under-engaged cluster(s); %d exploration candidate(s) supplement "
+            "%d topic candidate(s).",
+            cap, len(topic_results), pct * 100, len(under_engaged),
+            len(capped), len(topic_results),
+        )
+        return capped
+    except Exception as exc:  # noqa: BLE001 — exploration must never break discovery
+        logger.warning("K-b: exploration step failed (non-fatal): %s", exc)
+        return []
+
+
 def _resolve_digest_auto_write(cfg: Any) -> bool:
     """P10b: read discovery.digest.auto_write from config; default True.
 
