@@ -4211,9 +4211,18 @@ def learning_recompute_cmd(ctx: click.Context) -> None:
 @learning_group.command("view")
 @click.option("--top-k", default=10, show_default=True, type=int,
               help="Show the K library papers most aligned with the interest vector.")
+@click.option("--per-cluster", "per_cluster", is_flag=True, default=False,
+              help="Show each active cluster's atrophy feedback_weight (Bundle K-a) "
+                   "instead of the global interest vector.")
 @click.pass_context
-def learning_view_cmd(ctx: click.Context, top_k: int) -> None:
-    """Inspect the stored global interest vector and what it has learned."""
+def learning_view_cmd(ctx: click.Context, top_k: int, per_cluster: bool) -> None:
+    """Inspect the stored global interest vector and what it has learned.
+
+    With ``--per-cluster``, instead shows each active cluster's atrophy
+    ``feedback_weight`` (Bundle K-a): a value in ``[floor, 1.0]`` that decays
+    only on active dismissal within that cluster and floors at
+    ``feedback.minimum_cluster_floor`` so an un-engaged theme never vanishes.
+    """
     _setup_logging("learning", verbose=ctx.obj.get("verbose", False))
     import numpy as np
 
@@ -4226,6 +4235,11 @@ def learning_view_cmd(ctx: click.Context, top_k: int) -> None:
     except Exception as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
+
+    # Bundle K-a: per-cluster atrophy feedback weights view.
+    if per_cluster:
+        _learning_view_per_cluster(config, state_db)
+        return
 
     try:
         stored = state_db.get_interest_vector("global")
@@ -4286,6 +4300,54 @@ def learning_view_cmd(ctx: click.Context, top_k: int) -> None:
                 click.echo(f"  {cos:+.3f}  {label}")
     finally:
         pass
+
+
+def _learning_view_per_cluster(config, state_db) -> None:  # noqa: ANN001 — duck-typed
+    """Print each active cluster's atrophy feedback_weight (Bundle K-a).
+
+    Reads the floor from ``config.feedback.minimum_cluster_floor`` and computes
+    weights via the pure atrophy core over all feedback events + active cluster
+    assignments. Clusters are listed sorted by weight ascending (most-atrophied
+    first) so an un-engaged theme is easy to spot.
+    """
+    from scripts.clustering.atrophy import (
+        compute_cluster_feedback_weights_from_db,
+    )
+
+    floor = float(
+        getattr(getattr(config, "feedback", None), "minimum_cluster_floor", 0.1)
+    )
+
+    clusters = state_db.list_active_clusters()
+    if not clusters:
+        click.echo(
+            "No active clusters yet. Run `lit-monitor cluster recompute` first."
+        )
+        return
+
+    try:
+        weights = compute_cluster_feedback_weights_from_db(state_db, floor=floor)
+    except Exception as exc:  # noqa: BLE001 — view must never crash the CLI
+        click.echo(f"Error computing per-cluster weights: {exc}", err=True)
+        return
+
+    click.echo("Per-cluster atrophy feedback weights (Bundle K-a):")
+    click.echo(f"  floor: {floor:.2f}  (a weight never decays below this)")
+    click.echo("  weight decays only on active dismissal within a cluster.\n")
+
+    # Sort by weight ascending (most atrophied first), then by id for stability.
+    rows = []
+    for cluster in clusters:
+        cid = int(cluster["id"])
+        name = cluster.get("display_name") or f"Cluster {cid}"
+        # A cluster with no assignments has no entry in `weights` → full weight.
+        weight = weights.get(cid, 1.0)
+        rows.append((weight, cid, name))
+    rows.sort(key=lambda r: (r[0], r[1]))
+
+    for weight, cid, name in rows:
+        at_floor = "  (at floor)" if abs(weight - floor) < 1e-6 else ""
+        click.echo(f"  {weight:.3f}  [{cid}] {name}{at_floor}")
 
 
 # ---------------------------------------------------------------------------

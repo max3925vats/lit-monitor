@@ -207,3 +207,89 @@ class TestLearningViewCmd:
 
         assert result.exit_code == 0, result.output
         assert "No interest vector stored" in result.output
+
+
+# ---------------------------------------------------------------------------
+# learning view --per-cluster (Bundle K-a)
+# ---------------------------------------------------------------------------
+
+
+def _mock_config_with_floor(floor: float = 0.1):
+    """Config mock whose feedback.minimum_cluster_floor is a real float."""
+    cfg = MagicMock()
+    cfg.state_db.path = "/tmp/test_state.db"
+    cfg.feedback.minimum_cluster_floor = floor
+    return cfg
+
+
+class TestLearningViewPerCluster:
+    def test_per_cluster_prints_weights(self):
+        """--per-cluster prints each active cluster's name + feedback_weight.
+
+        Cluster 1 (Chromatography) has only saves → full weight ~1.0.
+        Cluster 2 (Filtration) has many recent dismissals → decays toward floor.
+        """
+        from datetime import datetime, timedelta
+
+        from scripts.cli import main
+
+        recent = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
+
+        state_db = MagicMock()
+        state_db.list_active_clusters.return_value = [
+            {"id": 1, "display_name": "Chromatography"},
+            {"id": 2, "display_name": "Filtration"},
+        ]
+
+        # cluster 1: saves on c1-* ; cluster 2: dismissals on c2-*
+        def _assignments(cid):
+            if cid == 1:
+                return [{"doi": f"10.1/c1-{i}", "distance_to_centroid": 0.1}
+                        for i in range(5)]
+            return [{"doi": f"10.1/c2-{i}", "distance_to_centroid": 0.1}
+                    for i in range(20)]
+
+        state_db.get_cluster_assignments.side_effect = _assignments
+
+        events = [
+            {"doi": f"10.1/c1-{i}", "signal_type": "saved", "weight": 1.0,
+             "rating": None, "source": None, "created_at": recent}
+            for i in range(5)
+        ] + [
+            {"doi": f"10.1/c2-{i}", "signal_type": "dismissed", "weight": 1.0,
+             "rating": None, "source": None, "created_at": recent}
+            for i in range(20)
+        ]
+        state_db.list_feedback_events.return_value = events
+
+        embeddings_db = MagicMock()
+
+        with patch("scripts.cli._make_config",
+                   return_value=_mock_config_with_floor(0.1)), \
+                patch("scripts.cli._make_state_db", return_value=state_db), \
+                patch("scripts.cli._make_embeddings_db", return_value=embeddings_db):
+            result = CliRunner().invoke(main, ["learning", "view", "--per-cluster"])
+
+        assert result.exit_code == 0, result.output
+        assert "Chromatography" in result.output
+        assert "Filtration" in result.output
+        assert "floor: 0.10" in result.output
+        # The interest-vector header must NOT appear in per-cluster mode.
+        assert "Global interest vector" not in result.output
+
+    def test_per_cluster_no_clusters(self):
+        """--per-cluster with no active clusters → friendly message, exit 0."""
+        from scripts.cli import main
+
+        state_db = MagicMock()
+        state_db.list_active_clusters.return_value = []
+        embeddings_db = MagicMock()
+
+        with patch("scripts.cli._make_config",
+                   return_value=_mock_config_with_floor(0.1)), \
+                patch("scripts.cli._make_state_db", return_value=state_db), \
+                patch("scripts.cli._make_embeddings_db", return_value=embeddings_db):
+            result = CliRunner().invoke(main, ["learning", "view", "--per-cluster"])
+
+        assert result.exit_code == 0, result.output
+        assert "No active clusters" in result.output

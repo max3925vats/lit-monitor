@@ -342,6 +342,7 @@ def _validate_settings_section(section: str, data: dict[str, Any]) -> None:
         ClusteringSettings,
         DiscoverySettings,
         EmbeddingSettings,
+        FeedbackSettings,
         QueryExpansionSettings,
         RankingSettings,
         ResearcherGatingSettings,
@@ -358,6 +359,7 @@ def _validate_settings_section(section: str, data: dict[str, Any]) -> None:
         "web_ui": WebUiSettings,
         "embedding": EmbeddingSettings,
         "discovery": DiscoverySettings,
+        "feedback": FeedbackSettings,
     }
     model = section_models[section]
     try:
@@ -409,6 +411,7 @@ def safe_save_settings_section(
             "web_ui",
             "embedding",
             "discovery",
+            "feedback",
         }
     )
     if section not in _ALLOWED_SECTIONS:

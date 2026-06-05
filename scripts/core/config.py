@@ -291,6 +291,15 @@ class Config:
             "enabled": bool(_raw_rg.get("enabled", False)),
             "min_graph_overlap": int(_raw_rg.get("min_graph_overlap", 1)),
         })
+        # --- Bundle K (v1.0): atrophy / feedback floor + exploration budget ---
+        # minimum_cluster_floor (K-a) is the lower clamp on a cluster's atrophy
+        # feedback_weight; exploration_budget_pct (K-b) is read here so both
+        # sub-bundles share one config section (K-b is inert until it lands).
+        _raw_fb = (raw_extraction.get("feedback") or {}) if isinstance(raw_extraction, dict) else {}
+        self.feedback = _Namespace({
+            "minimum_cluster_floor": float(_raw_fb.get("minimum_cluster_floor", 0.1)),
+            "exploration_budget_pct": float(_raw_fb.get("exploration_budget_pct", 0.20)),
+        })
         # --- Optional configs (loaded lazily if files exist) ---
         self._topics: list[dict] | None = None
         self._discovery_top_k: int = 20

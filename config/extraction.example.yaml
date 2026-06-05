@@ -88,6 +88,24 @@ ranking:
     min_relevance: 0.4
 
 # ---------------------------------------------------------------------------
+# Bundle K — Atrophy prevention (active-learning feedback floor).
+# A research theme you STOP dismissing should not silently vanish. Each cluster
+# gets an atrophy `feedback_weight` in [minimum_cluster_floor, 1.0] that decays
+# ONLY on active dismissal within that cluster and recovers as old dismissals
+# age out. Inspect with `lit-monitor learning view --per-cluster`.
+# ---------------------------------------------------------------------------
+feedback:
+  # K-a: lower clamp on a cluster's atrophy feedback_weight. A cluster you stop
+  # engaging with never decays below this, so an un-engaged theme is preserved.
+  # 0.1 (default) = a maximally-dismissed cluster retains 10% weight. Raise to
+  # be more conservative (slower atrophy); lower to let themes fade further.
+  minimum_cluster_floor: 0.1
+  # K-b (NOT YET ACTIVE): fraction of discovery search slots reserved for
+  # under-engaged clusters' expanded queries. Read here so K-a and K-b share one
+  # config section; inert until the Bundle K-b exploration budget ships.
+  exploration_budget_pct: 0.20
+
+# ---------------------------------------------------------------------------
 # G1 — Graph RAG retrieval settings (Phase 1)
 # Install the [graph] extra first: uv sync --extra graph
 # ---------------------------------------------------------------------------

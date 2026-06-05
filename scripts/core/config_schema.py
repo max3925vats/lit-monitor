@@ -276,6 +276,23 @@ class ResearcherGatingSettings(BaseModel):
     min_graph_overlap: int = 1
 
 
+class FeedbackSettings(BaseModel):
+    """settings → feedback section (config.py Bundle K reads).
+
+    Bundle K-a: ``minimum_cluster_floor`` is the lower clamp on a cluster's
+    atrophy ``feedback_weight`` — a cluster you stop dismissing never decays
+    below this, so an un-engaged theme is preserved rather than silently lost.
+    ``exploration_budget_pct`` is reserved for Bundle K-b (exploration budget in
+    discovery search) and is accepted/validated here so the two bundles share
+    one config section; it is inert until K-b consumes it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    minimum_cluster_floor: float = 0.1
+    exploration_budget_pct: float = 0.20
+
+
 class _EmbeddingOllama(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
