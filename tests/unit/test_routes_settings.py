@@ -173,16 +173,24 @@ class TestSettingsPost:
         r, _ = _post_to_real_file(tmp_path, "ranking", {"randomgarbage": True})
         assert r.status_code == 422
 
-    def test_feedback_section_returns_400(self, tmp_path):
-        """E8: POST /api/settings/feedback → 400 (the dead section was removed).
-
-        ``feedback`` is no longer in the allowed set, so the writer raises a
-        plain ValueError ("unknown section") which the route maps to 400 — the
-        same path as any other unknown section name (distinct from the 422 used
-        for a malformed payload in a known section).
+    def test_feedback_section_saves_and_rejects_unknown_key(self, tmp_path):
+        """P5/K-a revived ``feedback`` as a REAL, editable settings section
+        (atrophy ``minimum_cluster_floor`` + ``exploration_budget_pct``), so the
+        E8 "dead section → 400" contract no longer holds. A valid payload now
+        saves (200, round-trips); an unknown key in this KNOWN section → 422
+        (malformed payload), distinct from the 400 used for a genuinely unknown
+        section name.
         """
-        r, _ = _post_to_real_file(tmp_path, "feedback", {"anything": "value"})
-        assert r.status_code == 400
+        r, loaded = _post_to_real_file(
+            tmp_path, "feedback", {"minimum_cluster_floor": 0.2}
+        )
+        assert r.status_code == 200, r.text
+        assert loaded["feedback"]["minimum_cluster_floor"] == 0.2
+
+        # Unknown key in a KNOWN section → 422 (not the 400 reserved for an
+        # unknown section name). FeedbackSettings is extra="forbid".
+        r2, _ = _post_to_real_file(tmp_path, "feedback", {"anything": "value"})
+        assert r2.status_code == 422
 
     def test_oserror_returns_generic_500_no_leak(self, caplog):
         """A3-5: an OSError from the writer → 500 whose body does NOT contain
@@ -468,22 +476,32 @@ class TestSafeSaveSettingsSection:
         result = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         assert section in result
 
-    def test_feedback_section_now_unknown(self, tmp_path):
-        """E8: the dead ``feedback`` settings section was removed.
-
-        ``feedback`` was vestigial — no ``feedback:`` block in
-        extraction.example.yaml, no ``config.feedback.*`` read in config.py, and
-        no feedback form on the settings page (the real feedback feature uses
-        ``web_ui.show_feedback_buttons`` + the ``feedback_events`` table + the
-        read-only ``/feedback`` page). It must now be rejected like any other
-        unknown section name.
+    def test_feedback_section_is_known_and_validates(self, tmp_path):
+        """P5/K-a revived ``feedback`` as a real config section (atrophy
+        ``minimum_cluster_floor`` + ``exploration_budget_pct`` are read by
+        config.py). It is therefore NO LONGER an 'unknown section':
+        safe_save_settings_section accepts valid keys and raises
+        SettingsValidationError (NOT a plain 'unknown section' ValueError) on an
+        unknown key, since FeedbackSettings is extra="forbid".
         """
-        from scripts.server.config_io import safe_save_settings_section
+        from scripts.server.config_io import (
+            SettingsValidationError,
+            safe_save_settings_section,
+        )
 
         config_path = tmp_path / "extraction.yaml"
         config_path.write_text("{}\n", encoding="utf-8")
 
-        with pytest.raises(ValueError, match="unknown section"):
+        # Valid key saves without error and round-trips to disk.
+        safe_save_settings_section(
+            "feedback", {"exploration_budget_pct": 0.25}, config_path=config_path
+        )
+        saved = yaml.safe_load(config_path.read_text())
+        assert saved["feedback"]["exploration_budget_pct"] == 0.25
+
+        # Unknown key → SettingsValidationError (known section, malformed body),
+        # NOT the plain "unknown section" ValueError reserved for bad section names.
+        with pytest.raises(SettingsValidationError):
             safe_save_settings_section(
                 "feedback", {"anything": "value"}, config_path=config_path
             )
