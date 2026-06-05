@@ -62,6 +62,14 @@ def test_cosine_degenerate_vector_returns_zero():
     assert cosine([0.0, 0.0], [1.0, 0.0]) == 0.0
 
 
+def test_cosine_nonfinite_returns_zero():
+    # NaN/inf components must be guarded → finite 0.0, never NaN (the exact bug
+    # class fixed in ranker.py; pin it here so it can't regress).
+    assert cosine([math.nan, 0.0], [1.0, 0.0]) == 0.0
+    assert cosine([math.inf, 0.0], [1.0, 0.0]) == 0.0
+    assert math.isfinite(cosine([math.nan, math.nan], [math.nan, 0.0]))
+
+
 # ---------------------------------------------------------------------------
 # score_field
 # ---------------------------------------------------------------------------

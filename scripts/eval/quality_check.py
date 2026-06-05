@@ -273,23 +273,22 @@ def _load_actual(doi: str, db_path: str) -> dict | None:
     return json.loads(row[0])
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Print the advisory quality table for every reference paper.
+def _emit_report(ref_yaml: str) -> None:
+    """Render the advisory PASS/WARN/FAIL table to stdout.
 
     Reuses the Tier-4 data-loading shape (reference_papers.yaml + state.db
-    ``extraction_json``), then augments each field row with a PASS/WARN/FAIL
-    status from the pure scorers above. ALWAYS returns 0 — advisory only.
+    ``extraction_json``), then augments each field row with a status from the
+    pure scorers above. May raise on unrecoverable I/O (Ollama down, missing
+    state.db, malformed YAML); ``main`` catches and swallows so the gate is
+    never failed by the advisory check.
     """
-    logging.basicConfig(level=logging.WARNING)
-    ref_yaml = argv[0] if argv else "docs/internal/reference_papers.yaml"
-
     from scripts.core.config import get_config
 
     db_path = str(get_config().state_db.path)
     papers = _load_references(ref_yaml)
     if not papers:
         print(f"_no reference DOIs configured in {ref_yaml} — add some_")
-        return 0
+        return
 
     embed_fn = _real_embed_fn()
     below_threshold = 0
@@ -320,7 +319,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"⚠ {below_threshold} field(s) below threshold — review")
     else:
         print("✔ all reference fields within threshold")
-    # ADVISORY: never propagate a regression into the exit code.
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Advisory entrypoint for Tier-4. ALWAYS returns 0 — a regression OR a
+    crash in the quality check must never fail the release gate (the shell side
+    also guards with ``|| true``; this is the belt to that suspender)."""
+    logging.basicConfig(level=logging.WARNING)
+    ref_yaml = argv[0] if argv else "docs/internal/reference_papers.yaml"
+    try:
+        _emit_report(ref_yaml)
+    except Exception:  # noqa: BLE001 — advisory: never propagate a failure to the gate
+        logger.warning(
+            "reference-paper quality check crashed; skipping advisory report.",
+            exc_info=True,
+        )
     return 0
 
 
