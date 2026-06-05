@@ -1,0 +1,97 @@
+{# FE2-4: knowledge-graph fragment — lazy-loaded into #corpus-graph.
+
+   Context:
+     doi       — the seed paper's DOI.
+     snapshot  — get_paper_snapshot() shape, or None when the graph isn't built:
+                   {metadata, entities_by_type, relationships_in,
+                    relationships_out}.
+                 entities_by_type   : {type: [{canonical_id, type, surface, ...}]}
+                 relationships_out  : [{predicate, target_kind, target_id,
+                                        evidence, ...}]
+                 relationships_in   : [{predicate, source_doi, evidence, ...}]
+     error     — True when the snapshot raised (generic notice, no detail leaked).
+
+   All content is rendered through Jinja autoescape ONLY — never |safe, never
+   striptags (scientific text legitimately contains < and >).
+#}
+<div class="card" id="corpus-graph-card">
+  <h2>Knowledge graph</h2>
+
+  {% if error %}
+  <p class="field-note">Could not load the knowledge graph — check the server logs.</p>
+  {% elif snapshot is none %}
+  <p class="field-note">
+    No knowledge graph is built yet. Run
+    <code>lit-monitor graph backfill --all</code> to build the graph for this
+    paper.
+  </p>
+  {% else %}
+
+  {# --- Entities grouped by type ------------------------------------------- #}
+  <h3>Entities</h3>
+  {% set _entities = snapshot.entities_by_type or {} %}
+  {% if _entities %}
+  {% for type_, items in _entities.items() %}
+  <p class="paper-meta">
+    <span class="badge">{{ type_ }}</span>
+    {% for e in items %}
+    {# Show the surface form (human-readable) plus the canonical_id so the
+       normalized identity is visible too; fall back to either if one is blank. #}
+    <span class="pill" title="{{ e.canonical_id }}">{{ e.surface or e.canonical_id }}
+      {% if e.surface and e.canonical_id and e.surface != e.canonical_id %}
+      <span class="muted">({{ e.canonical_id }})</span>
+      {% endif %}
+    </span>
+    {% endfor %}
+  </p>
+  {% endfor %}
+  {% else %}
+  <p class="field-note">No entities linked to this paper in the graph.</p>
+  {% endif %}
+
+  {# --- Relationships (outgoing + incoming) -------------------------------- #}
+  <h3>Relationships</h3>
+  {% set _out = snapshot.relationships_out or [] %}
+  {% set _in = snapshot.relationships_in or [] %}
+  {% if _out or _in %}
+  <table class="papers-table">
+    <thead>
+      <tr><th>Direction</th><th>Predicate</th><th>Other paper / entity</th><th>Evidence</th></tr>
+    </thead>
+    <tbody>
+      {% for r in _out %}
+      <tr>
+        <td><span class="badge">out</span></td>
+        <td>{{ r.predicate }}</td>
+        <td>
+          {% if r.target_kind == "Paper" and r.target_id %}
+          <a href="/corpus/{{ r.target_id }}">{{ r.target_id }}</a>
+          {% else %}
+          {{ r.target_id }}
+          {% endif %}
+        </td>
+        <td class="field-note">{{ r.evidence or "" }}</td>
+      </tr>
+      {% endfor %}
+      {% for r in _in %}
+      <tr>
+        <td><span class="badge">in</span></td>
+        <td>{{ r.predicate }}</td>
+        <td>
+          {% if r.source_doi %}
+          <a href="/corpus/{{ r.source_doi }}">{{ r.source_doi }}</a>
+          {% else %}
+          <span class="muted">&mdash;</span>
+          {% endif %}
+        </td>
+        <td class="field-note">{{ r.evidence or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="field-note">No relationships recorded for this paper in the graph.</p>
+  {% endif %}
+
+  {% endif %}
+</div>

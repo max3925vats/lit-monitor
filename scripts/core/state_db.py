@@ -306,6 +306,30 @@ _UPSERT_INTENTIONALLY_EXCLUDED: frozenset[str] = frozenset(
 )
 
 
+# FE2-1: SQL-safety whitelists for StateDB.list_papers().
+# `sort` and `order` come from HTTP query params, so they MUST NOT be
+# interpolated into SQL unchecked.  list_papers() maps a requested sort key to a
+# trusted column name via this dict (default last_updated) and the order to a
+# trusted keyword via _LIST_PAPERS_ORDER (default desc).  Only these constants —
+# never the caller's raw string — ever reach the ORDER BY clause.
+_LIST_PAPERS_SORT_COLUMNS: dict[str, str] = {
+    "last_updated": "last_updated",
+    "year": "year",
+    "title": "title",
+    "status": "status",
+}
+_LIST_PAPERS_ORDER: dict[str, str] = {"asc": "ASC", "desc": "DESC"}
+
+# FE2-1: status_gap value → the column-based WHERE fragment that selects the
+# gap.  low_confidence is deliberately absent here — it needs per-row
+# extraction_json parsing and is applied in Python after the fetch.
+_LIST_PAPERS_STATUS_GAP: dict[str, str] = {
+    "missing_graph": "graph_indexed = 0",
+    "missing_notes": "notes_synced = 0",
+    "missing_embeddings": "embeddings_indexed = 0",
+}
+
+
 def upsert_writable_columns() -> list[str]:
     """Return a copy of the columns upsert_paper() writes (B3-F8 introspection)."""
     return list(_UPSERT_WRITABLE_COLUMNS)
@@ -639,6 +663,183 @@ class StateDB:
                 "SELECT * FROM papers WHERE source_type = ?", (source_type,)
             ).fetchall()
         return [dict(r) for r in rows]
+
+    @staticmethod
+    def _row_confidence(extraction_json: str | None) -> float | None:
+        """Parse ``extraction_json`` → ``_overall_confidence`` (None on absent/bad).
+
+        Never raises: a malformed blob, a missing key, or a non-numeric value
+        all yield None so a single corrupt row cannot break the whole listing.
+        """
+        if not extraction_json:
+            return None
+        try:
+            data = json.loads(extraction_json)
+            conf = data.get("_overall_confidence")
+            return float(conf) if conf is not None else None
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _row_authors(authors_json: str | None) -> list[str]:
+        """Parse the JSON ``authors`` column → list[str] ([] on absent/bad)."""
+        if not authors_json:
+            return []
+        try:
+            parsed = json.loads(authors_json)
+            return parsed if isinstance(parsed, list) else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    def list_papers(
+        self,
+        *,
+        search: str | None = None,
+        source_type: str | None = None,
+        status_gap: str | None = None,
+        theme: str | None = None,
+        sort: str = "last_updated",
+        order: str = "desc",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """FE2-1: search / filter / sort / paginate the processed papers corpus.
+
+        A read-only lens over the ``papers`` table for the Corpus Explorer web
+        surface. Returns ``(rows, total)`` where ``total`` is the count of rows
+        matching the same filters (ignoring limit/offset) so the caller can
+        paginate.
+
+        SQL safety
+        ----------
+        Every user-supplied VALUE is passed as a ``?`` placeholder — search
+        terms, source_type, theme, limit, offset never touch the SQL string.
+        ``sort`` and ``order`` are SQL identifiers/keywords (cannot be
+        parameterised), so they are mapped through the trusted
+        ``_LIST_PAPERS_SORT_COLUMNS`` / ``_LIST_PAPERS_ORDER`` whitelists —
+        anything unrecognised falls back to ``last_updated`` / ``desc``. No raw
+        caller string ever reaches the ORDER BY clause.
+
+        Filters
+        -------
+        - ``search``: case-insensitive substring on title OR doi.
+        - ``source_type``: exact match (e.g. ``paper`` / ``review``).
+        - ``status_gap``: ``missing_graph`` / ``missing_notes`` /
+          ``missing_embeddings`` map to a column predicate in SQL;
+          ``low_confidence`` is applied in Python after the fetch (see below).
+        - ``theme``: active-cluster ``display_name`` match via an EXISTS
+          subquery over ``cluster_assignments`` + ``clusters`` (no row
+          multiplication, so ``total`` stays correct).
+
+        Confidence and low_confidence
+        ------------------------------
+        ``confidence`` is parsed per-row from ``extraction_json`` →
+        ``_overall_confidence`` (None when absent/bad). Because that lives
+        inside a JSON blob, the ``low_confidence`` gap (confidence < 0.5) cannot
+        be expressed as a column predicate. It is therefore applied as a
+        post-fetch Python filter, and to keep pagination correct the full
+        filtered set is materialised first: ``total`` is the post-filter count
+        and ``limit``/``offset`` are sliced in Python. For all column-based
+        filters ``total`` comes from a ``COUNT(*)`` with the same WHERE.
+        """
+        # --- Whitelist sort/order (NEVER interpolate the caller's raw value) ---
+        sort_col = _LIST_PAPERS_SORT_COLUMNS.get(sort, "last_updated")
+        order_kw = _LIST_PAPERS_ORDER.get((order or "").lower(), "DESC")
+
+        # --- Build the shared WHERE clause from column-based filters ---
+        where: list[str] = []
+        params: list[Any] = []
+
+        if search:
+            term = f"%{search.lower()}%"
+            where.append("(LOWER(title) LIKE ? OR LOWER(doi) LIKE ?)")
+            params.extend([term, term])
+
+        if source_type:
+            where.append("source_type = ?")
+            params.append(source_type)
+
+        # Column-based status gaps map to a trusted predicate; low_confidence is
+        # handled in Python below (its predicate lives inside extraction_json).
+        if status_gap in _LIST_PAPERS_STATUS_GAP:
+            where.append(_LIST_PAPERS_STATUS_GAP[status_gap])
+
+        if theme:
+            # EXISTS keeps one row per paper (a paper may have >1 assignment),
+            # so COUNT(*) over the same WHERE stays exact.
+            where.append(
+                "EXISTS (SELECT 1 FROM cluster_assignments ca "
+                "JOIN clusters c ON c.id = ca.cluster_id "
+                "WHERE ca.doi = papers.doi AND c.archived = 0 "
+                "AND c.display_name = ?)"
+            )
+            params.append(theme)
+
+        where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+
+        # sort_col/order_kw are whitelist outputs — safe to concatenate.
+        # A stable secondary key on doi keeps pagination deterministic when the
+        # primary sort column ties.
+        order_sql = f" ORDER BY {sort_col} {order_kw}, doi {order_kw}"
+
+        low_conf = status_gap == "low_confidence"
+
+        with self._connect() as conn:
+            if low_conf:
+                # low_confidence needs per-row JSON parsing → fetch everything
+                # matching the other filters, filter + paginate in Python.
+                rows = conn.execute(
+                    "SELECT * FROM papers" + where_sql + order_sql, params
+                ).fetchall()
+                dicts = [self._build_paper_row(r) for r in rows]
+                filtered = [
+                    d for d in dicts
+                    if d["confidence"] is not None and d["confidence"] < 0.5
+                ]
+                total = len(filtered)
+                page = filtered[offset:offset + limit] if limit else filtered[offset:]
+                return page, total
+
+            total_row = conn.execute(
+                "SELECT COUNT(*) FROM papers" + where_sql, params
+            ).fetchone()
+            total = total_row[0] if total_row else 0
+
+            rows = conn.execute(
+                "SELECT * FROM papers" + where_sql + order_sql + " LIMIT ? OFFSET ?",
+                [*params, limit, offset],
+            ).fetchall()
+
+        return [self._build_paper_row(r) for r in rows], total
+
+    def _build_paper_row(self, row: sqlite3.Row) -> dict:
+        """FE2-1: shape one ``papers`` row into the Corpus list-view dict.
+
+        Parses authors + confidence defensively and surfaces the active-cluster
+        display_name as ``cluster``/``theme`` (None when unassigned).
+        """
+        data = dict(row)
+        cluster = self.get_paper_cluster(data["doi"])
+        theme_name = cluster["display_name"] if cluster else None
+        return {
+            "doi": data["doi"],
+            "title": data.get("title"),
+            "year": data.get("year"),
+            "journal": data.get("journal"),
+            "source_type": data.get("source_type"),
+            "status": data.get("status"),
+            "authors": self._row_authors(data.get("authors")),
+            "confidence": self._row_confidence(data.get("extraction_json")),
+            "embeddings_indexed": data.get("embeddings_indexed"),
+            "graph_indexed": data.get("graph_indexed"),
+            "chunks_indexed": data.get("chunks_indexed"),
+            "notes_synced": data.get("notes_synced"),
+            "note_path": data.get("note_path"),
+            "zotero_key": data.get("zotero_key"),
+            "last_updated": data.get("last_updated"),
+            "cluster": theme_name,
+            "theme": theme_name,
+        }
     def mark_status(self, doi: str, status: str) -> None:
         with self._connect() as conn:
             conn.execute(

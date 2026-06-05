@@ -1,0 +1,58 @@
+{# FE2-4: related-work fragment — lazy-loaded into #corpus-related.
+
+   Context:
+     doi      — the seed paper's DOI (embedded literally in hx-get URLs; the
+                {doi:path} route accepts "10.x/y" verbatim, so NO urlencode on
+                the path. Query VALUES (mode) are urlencode'd — the FE2-2 lesson).
+     mode     — active retrieval mode ("vector" | "graph" | "hybrid").
+     related  — list of {doi, score[, title]} dicts, or None when the graph
+                isn't built (graph-not-built notice path).
+     error    — True when the retrieval raised (generic notice, no detail leaked).
+
+   All content is rendered through Jinja autoescape ONLY — never |safe.
+#}
+<div class="card" id="corpus-related-card">
+  <h2>Related work</h2>
+
+  {# Mode toggle: each link re-requests this fragment for a different retrieval
+     mode and swaps itself back into #corpus-related. The DOI path is literal;
+     the mode query value is urlencode'd. #}
+  <p class="button-row" role="group" aria-label="Retrieval mode">
+    {% for m in ["vector", "graph", "hybrid"] %}
+    <a class="btn btn-secondary btn-sm{% if m == mode %} active{% endif %}"
+       hx-get="/corpus/{{ doi }}/related?mode={{ m | urlencode }}"
+       hx-target="#corpus-related"
+       hx-swap="innerHTML"
+       href="/corpus/{{ doi }}/related?mode={{ m | urlencode }}">{{ m }}</a>
+    {% endfor %}
+  </p>
+
+  {% if error %}
+  <p class="field-note">Could not load related work — check the server logs.</p>
+  {% elif related is none %}
+  <p class="field-note">
+    No knowledge graph is built yet, so related work cannot be computed. Run
+    <code>lit-monitor graph backfill --all</code> to build the graph.
+  </p>
+  {% elif related %}
+  <table class="papers-table">
+    <thead>
+      <tr><th>Paper</th><th>Score</th></tr>
+    </thead>
+    <tbody>
+      {% for item in related %}
+      <tr>
+        <td>
+          {# DOI embedded literally in the detail-page link so the {doi:path}
+             detail route matches. #}
+          <a href="/corpus/{{ item.doi }}">{{ item.title or item.doi }}</a>
+        </td>
+        <td><span class="score">{{ "%.3f" | format(item.score or 0 | float) }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="field-note">No related papers found for this mode.</p>
+  {% endif %}
+</div>

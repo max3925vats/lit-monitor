@@ -263,6 +263,7 @@ After setup, the dashboards take over:
 |---|---|
 | `/brain-build` | Extract your existing Zotero library into the index. Progress bar, per-paper table, recent runs. Start / Stop / Resume. Live JSONL log stream. |
 | `/discovery` | Latest discovery run summary, run history, per-paper cards with one-click relink / re-extract actions. Run-now / Dry-run / Stop buttons. |
+| `/corpus` | A read lens on every processed paper in the state DB: searchable / filterable list, plus a per-paper detail view (extraction, score, knowledge-graph, related work, Zotero / Obsidian links, relink / re-extract). Not a Zotero replacement — it reads what the pipeline already processed. |
 | `/ask` | Ask natural-language questions of your corpus (the `lit-monitor ask` pipeline in the browser): prose answer + results table, with show/edit Cypher, recent-questions history, and save-to-vault. Requires the knowledge graph (`lit-monitor graph backfill --all`). |
 | `/schedule` | Install or remove a recurring schedule (launchd / systemd). |
 
