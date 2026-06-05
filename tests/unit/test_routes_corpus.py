@@ -71,3 +71,70 @@ def test_corpus_empty_state(client, monkeypatch):
 def test_nav_explore_has_corpus(client):
     r = client.get("/")
     assert 'href="/corpus"' in r.text
+
+
+# --- FE2-3: GET /corpus/{doi} detail page -------------------------------------
+
+
+def test_get_corpus_detail_renders_extraction(client, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.server.routes.corpus._get_paper_row",
+        lambda doi: {
+            "doi": doi,
+            "title": "Carta 2009",
+            "authors": ["A. Carta"],
+            "year": 2009,
+            "journal": "J Chrom",
+            "source_type": "paper",
+            "zotero_key": "ABCD1234",
+            "note_path": "Literature/Papers/Carta 2009.md",
+            "extraction": {
+                "core_finding": "membrane chromatography scales",
+                "_overall_confidence": 0.7,
+            },
+        },
+    )
+    monkeypatch.setattr(
+        "scripts.server.routes.corpus._get_score_breakdown", lambda doi: None
+    )
+    r = client.get("/corpus/10.1/carta")
+    assert r.status_code == 200
+    assert "Carta 2009" in r.text and "membrane chromatography scales" in r.text
+    assert "zotero://select" in r.text and "ABCD1234" in r.text
+    assert "Carta 2009.md" in r.text
+    assert (
+        'hx-post="/api/papers/10.1/carta/relink"' in r.text or "relink" in r.text
+    )
+
+
+def test_corpus_detail_404_when_absent(client, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.server.routes.corpus._get_paper_row", lambda doi: None
+    )
+    r = client.get("/corpus/10.1/missing")
+    assert r.status_code == 404
+
+
+def test_corpus_detail_xss_escaped(client, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.server.routes.corpus._get_paper_row",
+        lambda doi: {
+            "doi": doi,
+            "title": "<script>alert(1)</script>",
+            "authors": [],
+            "year": None,
+            "journal": None,
+            "source_type": "paper",
+            "zotero_key": None,
+            "note_path": None,
+            "extraction": {"core_finding": "<img src=x onerror=alert(2)>"},
+        },
+    )
+    monkeypatch.setattr(
+        "scripts.server.routes.corpus._get_score_breakdown", lambda doi: None
+    )
+    r = client.get("/corpus/10.1/x")
+    assert (
+        "<script>alert(1)</script>" not in r.text
+        and "onerror=alert(2)" not in r.text
+    )

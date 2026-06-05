@@ -12,10 +12,11 @@ returned so HTMX can swap it into ``#corpus-table`` in place; otherwise the full
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from scripts.server.runtime import get_runtime
@@ -107,6 +108,101 @@ def corpus_index(
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(request, "corpus/_table.html", ctx)
     return templates.TemplateResponse(request, "corpus/index.html", ctx)
+
+
+# ---------------------------------------------------------------------------
+# FE2-3: GET /corpus/{doi:path} — per-paper detail page.
+# Registered AFTER GET /corpus so the bare list route is not swallowed by the
+# {doi:path} param (FastAPI matches in declaration order).
+# ---------------------------------------------------------------------------
+
+
+def _get_paper_row(doi: str) -> dict | None:
+    """Fetch one paper's display record from state.db, or ``None`` if absent.
+
+    Module-level seam the detail route tests monkeypatch (no live SQLite). The
+    raw ``extraction_json`` column is parsed into an ``extraction`` dict; the
+    ``authors`` column (a JSON array string) is parsed into a list. Both parses
+    are defensive: a bad/empty blob yields ``{}`` / ``[]`` rather than raising.
+    """
+    record = get_runtime().state_db.get_paper(doi)
+    if record is None:
+        return None
+
+    raw = record.get("extraction_json")
+    try:
+        extraction = json.loads(raw) if raw else {}
+    except (ValueError, TypeError):
+        extraction = {}
+    if not isinstance(extraction, dict):
+        extraction = {}
+
+    raw_authors = record.get("authors")
+    try:
+        authors = json.loads(raw_authors) if raw_authors else []
+    except (ValueError, TypeError):
+        authors = []
+    if not isinstance(authors, list):
+        authors = []
+
+    return {
+        "doi": record.get("doi"),
+        "title": record.get("title"),
+        "authors": authors,
+        "year": record.get("year"),
+        "journal": record.get("journal"),
+        "source_type": record.get("source_type"),
+        "zotero_key": record.get("zotero_key"),
+        "note_path": record.get("note_path"),
+        "extraction": extraction,
+    }
+
+
+def _get_score_breakdown(doi: str) -> dict | None:
+    """Return the most recent per-signal score decomposition for *doi*, or None.
+
+    Reuses the Bundle B query from ``scripts/server/routes/papers.py`` — the
+    latest non-null ``score_breakdown_json`` row in ``discovery_paper_results``.
+    Returns ``{"doi", "run_id", "breakdown": {...}}`` or ``None`` when the paper
+    has no stored breakdown (e.g. never surfaced by discovery). Module-level so
+    the detail route tests can patch it.
+    """
+    state_db = get_runtime().state_db
+    with state_db._connect() as conn:
+        row = conn.execute(
+            "SELECT score_breakdown_json, run_id, doi "
+            "FROM discovery_paper_results "
+            "WHERE doi = ? AND score_breakdown_json IS NOT NULL "
+            "ORDER BY id DESC LIMIT 1",
+            (doi,),
+        ).fetchone()
+    if row is None:
+        return None
+    try:
+        breakdown = json.loads(row[0])
+    except (ValueError, TypeError):
+        return None
+    return {"doi": row[2], "run_id": row[1], "breakdown": breakdown}
+
+
+@corpus_router.get("/corpus/{doi:path}", response_class=HTMLResponse)
+def corpus_detail(request: Request, doi: str) -> HTMLResponse:
+    """Render the per-paper detail page: extraction, score, links, actions."""
+    try:
+        row = _get_paper_row(doi)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"paper {doi!r} not found")
+        breakdown = _get_score_breakdown(doi)
+    except HTTPException:
+        # 404 (and any other intentional HTTP status) must propagate intact —
+        # only unexpected errors are masked by the generic 500 guard below.
+        raise
+    except Exception:  # noqa: BLE001 — 500-leak guard, never expose internals
+        logger.error("corpus detail failed doi=%s", doi, exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal error") from None
+
+    ctx = {"paper": row, "breakdown": breakdown}
+    return _get_templates().TemplateResponse(request, "corpus/detail.html", ctx)
 
 
 __all__ = ["corpus_router"]
