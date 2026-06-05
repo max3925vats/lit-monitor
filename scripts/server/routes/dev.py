@@ -1147,8 +1147,7 @@ async def dev_graph_backfill_stop() -> str:
     slot = runtime.processes["dev_graph_backfill"]
     if not slot.is_running():
         return (
-            '<div class="dev-result"><span class="pill" '
-            'style="background:#eee;color:#555;">'
+            '<div class="dev-result"><span class="pill">'
             "nothing to stop — no graph backfill is currently running</span></div>"
         )
     await slot.stop(timeout=30.0)
@@ -1213,7 +1212,7 @@ async def dev_graph_backfill_status() -> str:
     proc = slot.process
     if proc is None:
         return (
-            '<span class="pill" style="background:#eee;color:#555;border:1px solid #ccc;">'
+            '<span class="pill">'
             'idle — pick flags and click "Start backfill"</span>'
         )
     if slot.is_running():

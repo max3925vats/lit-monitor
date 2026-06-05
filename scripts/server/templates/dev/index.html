@@ -258,6 +258,10 @@
       <label class="inline-check"><input type="checkbox" name="relationships" value="on"> relationships</label>
       <label class="inline-check"><input type="checkbox" name="with_llm" value="on"> with LLM (cloud-Ollama)</label>
     </div>
+    <p class="field-note">
+      Note: if both NER and Relationships are selected, the backfill runs the
+      NER pass only — re-run with just Relationships for the relationship pass.
+    </p>
     <div class="button-row">
       <button class="button" type="submit">Start backfill</button>
       <button class="button danger"
