@@ -6,6 +6,8 @@ network. Mirrors the ``client`` fixture from tests/unit/test_routes_ask.py.
 """
 from __future__ import annotations
 
+import logging
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -139,3 +141,79 @@ def test_corpus_detail_xss_escaped(client, monkeypatch):
     assert "<img src=x onerror=alert(2)>" not in r.text
     # Positively confirm the payload was HTML-escaped (rendered inert as text):
     assert "&lt;img src=x onerror=alert(2)&gt;" in r.text
+
+
+# --- FE2-4: lazy HTMX fragments — related work + knowledge graph --------------
+
+
+def test_corpus_related_fragment_renders(client, monkeypatch):
+    # _get_related returns the H1 shape: list of {doi, score} (no title field).
+    monkeypatch.setattr(
+        "scripts.server.routes.corpus._get_related",
+        lambda doi, mode, k: [{"doi": "10.2/b", "title": "Related paper", "score": 0.9}],
+    )
+    r = client.get("/corpus/10.1/a/related")
+    assert r.status_code == 200
+    assert "Related paper" in r.text
+    assert 'href="/corpus/10.2/b"' in r.text
+    # A vector/graph/hybrid mode toggle must be present.
+    assert "mode=vector" in r.text
+    assert "mode=graph" in r.text
+    assert "mode=hybrid" in r.text
+
+
+def test_corpus_graph_fragment_renders(client, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.server.routes.corpus._get_paper_snapshot",
+        lambda doi: {
+            "metadata": {"doi": doi, "title": "Seed", "year": 2009, "journal": "J"},
+            "entities_by_type": {
+                "method": [
+                    {"canonical_id": "ion-exchange", "type": "method", "surface": "IEX"}
+                ]
+            },
+            "relationships_out": [
+                {
+                    "predicate": "CITES",
+                    "target_kind": "Paper",
+                    "target_id": "10.3/c",
+                    "evidence": "builds on prior work",
+                }
+            ],
+            "relationships_in": [],
+        },
+    )
+    r = client.get("/corpus/10.1/a/graph")
+    assert r.status_code == 200
+    assert "ion-exchange" in r.text  # entity name
+    assert "CITES" in r.text  # relationship predicate
+    assert "10.3/c" in r.text  # relationship target
+
+
+def test_corpus_fragments_graceful_when_graph_absent(client, monkeypatch):
+    # safe_graph_db returning None simulates the graph not being built. Both
+    # seams resolve the graph via safe_graph_db, so they return None → notice.
+    monkeypatch.setattr(
+        "scripts.server.routes.corpus.safe_graph_db", lambda: None
+    )
+    r_rel = client.get("/corpus/10.1/a/related")
+    r_graph = client.get("/corpus/10.1/a/graph")
+    assert r_rel.status_code == 200 and r_graph.status_code == 200
+    # The "graph not built" notice mentions building the graph via backfill —
+    # a stable substring that the empty-result / mode-toggle paths do NOT emit.
+    assert "graph backfill" in r_rel.text.lower()
+    assert "graph backfill" in r_graph.text.lower()
+
+
+def test_corpus_related_error_is_generic_no_leak(client, monkeypatch, caplog):
+    secret = "kuzu://secret/path/db"
+
+    def _boom(doi, mode, k):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr("scripts.server.routes.corpus._get_related", _boom)
+    with caplog.at_level(logging.ERROR, logger="scripts.server.routes.corpus"):
+        r = client.get("/corpus/10.1/a/related")
+    assert r.status_code == 200  # fragment, not a 500 page
+    assert secret not in r.text  # no leak to the browser
+    assert any(secret in rec.getMessage() for rec in caplog.records)  # but logged

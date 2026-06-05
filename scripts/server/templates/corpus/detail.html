@@ -94,11 +94,30 @@
   </div>
   {% endif %}
 
-  {# --- Related / graph placeholders (FE2-4 fills these) ------------------ #}
-  {# FE2-4: hx-get the related-papers list into #corpus-related. Left empty now. #}
+  {# --- Related work + knowledge graph (FE2-4: lazy HTMX fragments) -------- #}
+  {# Both load AFTER the page paints (hx-trigger="load") so the detail view
+     renders instantly; the graph-backed fragments stream in once ready. The DOI
+     is embedded literally in the path so the {doi:path} fragment routes match
+     (no urlencode on the path — double-encoding "/" → "%2F" breaks the route). #}
+  {% if paper.doi %}
+  <div id="corpus-related"
+       hx-get="/corpus/{{ paper.doi }}/related"
+       hx-trigger="load"
+       hx-target="this"
+       hx-swap="innerHTML">
+    <p class="field-note">Loading related work&hellip;</p>
+  </div>
+  <div id="corpus-graph"
+       hx-get="/corpus/{{ paper.doi }}/graph"
+       hx-trigger="load"
+       hx-target="this"
+       hx-swap="innerHTML">
+    <p class="field-note">Loading knowledge graph&hellip;</p>
+  </div>
+  {% else %}
   <div id="corpus-related"></div>
-  {# FE2-4: render the local graph view into #corpus-graph. Left empty now. #}
   <div id="corpus-graph"></div>
+  {% endif %}
 
   {# --- Actions (mirror _partials/paper_card.html P8 idiom) --------------- #}
   {% if paper.doi %}

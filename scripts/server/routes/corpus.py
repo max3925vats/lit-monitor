@@ -12,6 +12,7 @@ returned so HTMX can swap it into ``#corpus-table`` in place; otherwise the full
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -19,6 +20,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
+from scripts.graph.import_citations import safe_graph_db  # patched in tests
 from scripts.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
@@ -183,6 +185,137 @@ def _get_score_breakdown(doi: str) -> dict | None:
     except (ValueError, TypeError):
         return None
     return {"doi": row[2], "run_id": row[1], "breakdown": breakdown}
+
+
+# ---------------------------------------------------------------------------
+# FE2-4: lazy HTMX fragments — related work + local knowledge graph.
+#
+# These two suffix routes (/related, /graph) MUST be registered BEFORE the bare
+# GET /corpus/{doi:path} detail route. {doi:path} is greedy, but FastAPI matches
+# routes in declaration order and prefers the more specific literal-suffix path,
+# so declaring them first guarantees "/corpus/10.x/y/related" resolves here and
+# not into the detail route with doi="10.x/y/related".
+#
+# Both seams resolve the graph via ``safe_graph_db`` and return ``None`` when the
+# graph isn't built (extra not installed / DB absent) so the routes can render a
+# "graph not built" notice instead of 500-ing. The route tests monkeypatch
+# ``_get_related`` / ``_get_paper_snapshot`` for the happy paths, and
+# ``safe_graph_db`` (imported above) for the no-graph branch.
+# ---------------------------------------------------------------------------
+
+# Related-work fragment fetches a small fixed number of neighbours; the mode
+# toggle (vector/graph/hybrid) re-requests with the same cap.
+_RELATED_K = 10
+
+
+def _get_related(doi: str, mode: str, k: int) -> list[dict] | None:
+    """Return related papers for *doi* under *mode*, or ``None`` if no graph.
+
+    Wraps ``safe_graph_db`` + ``queries.get_related_papers``. Returns ``None``
+    (the graph-not-built sentinel) when ``safe_graph_db`` hands back no handle —
+    the related-work view here is graph-backed for every mode, so without a graph
+    there is nothing to show. The GraphDB handle we acquire is always closed.
+
+    Module-level so the route tests can patch this single seam without a live
+    KuzuDB. Mirrors the lazy-acquire / always-close idiom from ask.py.
+    """
+    from scripts.api.queries import get_related_papers  # noqa: PLC0415
+
+    db = safe_graph_db()
+    if db is None:
+        return None
+    try:
+        return get_related_papers(doi, mode=mode, k=k, graph_db=db)
+    finally:
+        try:
+            db.close()
+        except Exception:  # noqa: BLE001 — defensive close, never fatal
+            pass
+
+
+def _get_paper_snapshot(doi: str) -> dict | None:
+    """Return the graph snapshot for *doi*, or ``None`` if the graph isn't built.
+
+    Wraps ``safe_graph_db`` + ``queries.get_paper_snapshot``. Returns ``None``
+    when no graph handle is available so the route renders a notice rather than
+    500-ing. The acquired GraphDB handle is always closed.
+
+    Module-level patch point for the graph-fragment route tests.
+    """
+    from scripts.api.queries import get_paper_snapshot  # noqa: PLC0415
+
+    db = safe_graph_db()
+    if db is None:
+        return None
+    try:
+        return get_paper_snapshot(doi, db)
+    finally:
+        try:
+            db.close()
+        except Exception:  # noqa: BLE001 — defensive close, never fatal
+            pass
+
+
+@corpus_router.get("/corpus/{doi:path}/related", response_class=HTMLResponse)
+async def corpus_related(
+    request: Request,
+    doi: str,
+    mode: str = Query("vector"),
+) -> HTMLResponse:
+    """Lazy fragment: papers related to *doi* (vector/graph/hybrid mode toggle).
+
+    Off-thread (the retrieval touches the graph/vector store). No graph → a
+    "graph not built" notice (200). Any failure → a generic notice fragment with
+    a full server-side log — the exception text never reaches the browser.
+    """
+    # Defensive: an unknown mode value from a hand-crafted URL falls back to the
+    # default rather than raising, so the fragment always renders.
+    if mode not in ("vector", "graph", "hybrid"):
+        mode = "vector"
+    try:
+        related = await asyncio.to_thread(_get_related, doi, mode, _RELATED_K)
+    except Exception as exc:  # noqa: BLE001 — advisory fragment, never 500-leak
+        # exc is in the message (not just the traceback) so a log scrape catches
+        # the failure cause; the browser only ever sees the generic notice below.
+        logger.error(
+            "corpus related fragment failed doi=%s: %s", doi, exc, exc_info=True
+        )
+        return _get_templates().TemplateResponse(
+            request,
+            "corpus/_related.html",
+            {"doi": doi, "mode": mode, "related": None, "error": True},
+        )
+    return _get_templates().TemplateResponse(
+        request,
+        "corpus/_related.html",
+        {"doi": doi, "mode": mode, "related": related, "error": False},
+    )
+
+
+@corpus_router.get("/corpus/{doi:path}/graph", response_class=HTMLResponse)
+async def corpus_graph(request: Request, doi: str) -> HTMLResponse:
+    """Lazy fragment: the local knowledge-graph view for *doi*.
+
+    Renders entities grouped by type + incoming/outgoing relationships. Off-thread
+    (snapshot runs several Cypher queries). No graph → a "graph not built" notice
+    (200). Any failure → a generic notice fragment + full server-side log.
+    """
+    try:
+        snapshot = await asyncio.to_thread(_get_paper_snapshot, doi)
+    except Exception as exc:  # noqa: BLE001 — advisory fragment, never 500-leak
+        logger.error(
+            "corpus graph fragment failed doi=%s: %s", doi, exc, exc_info=True
+        )
+        return _get_templates().TemplateResponse(
+            request,
+            "corpus/_graph.html",
+            {"doi": doi, "snapshot": None, "error": True},
+        )
+    return _get_templates().TemplateResponse(
+        request,
+        "corpus/_graph.html",
+        {"doi": doi, "snapshot": snapshot, "error": False},
+    )
 
 
 @corpus_router.get("/corpus/{doi:path}", response_class=HTMLResponse)
