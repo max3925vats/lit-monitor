@@ -428,6 +428,20 @@ else:
 " 2>&1
         } >> "$REPORT_PATH"
         pass "quality table written to $REPORT_PATH"
+
+        # Idea 4 — auto-flag extraction regressions (ADVISORY ONLY).
+        # Embeds actual vs expected field text, cosine-compares, labels each
+        # field PASS/WARN/FAIL via scripts/eval/quality_check.py. This MUST NOT
+        # change the script's exit code: the module always returns 0, and the
+        # `|| true` guard keeps a crash here from failing the soft gate.
+        info "auto-flag extraction quality regressions (Idea 4, advisory)"
+        {
+            echo
+            echo "## Reference-paper auto-regression (advisory)"
+            echo
+            uv run python -m scripts.eval.quality_check "$ref_yaml" 2>&1 || true
+        } >> "$REPORT_PATH"
+        pass "auto-regression table written (advisory — exit code unaffected)"
     fi
 
     banner "Report written to $REPORT_PATH"
