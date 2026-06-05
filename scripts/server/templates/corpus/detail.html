@@ -64,13 +64,12 @@
     {% if _visible %}
     <dl class="extraction-list">
       {% for key, value in _visible %}
-      {# striptags removes any stray tag-like sequence BEFORE autoescape — LLM
-         extraction prose is never HTML, so this is lossless for real content
-         while neutralising an injected <img onerror=...> tag wholesale (not
-         just escaping its angle brackets). Autoescape still runs on what
-         remains. No |safe anywhere. #}
-      <dt>{{ key | striptags }}</dt>
-      <dd>{{ value | striptags }}</dd>
+      {# Plain Jinja autoescape renders any injected markup inert as text
+         (e.g. <img onerror=...> becomes &lt;img onerror=...&gt;). Do NOT strip
+         tags here: that would delete legitimate scientific text containing
+         angle brackets (p<0.05, n>3, IC50 < 5 uM). No |safe anywhere. #}
+      <dt>{{ key }}</dt>
+      <dd>{{ value }}</dd>
       {% endfor %}
     </dl>
     {% else %}

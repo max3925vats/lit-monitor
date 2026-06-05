@@ -134,7 +134,8 @@ def test_corpus_detail_xss_escaped(client, monkeypatch):
         "scripts.server.routes.corpus._get_score_breakdown", lambda doi: None
     )
     r = client.get("/corpus/10.1/x")
-    assert (
-        "<script>alert(1)</script>" not in r.text
-        and "onerror=alert(2)" not in r.text
-    )
+    # Executable forms must NOT appear (real angle brackets = would execute):
+    assert "<script>alert(1)</script>" not in r.text
+    assert "<img src=x onerror=alert(2)>" not in r.text
+    # Positively confirm the payload was HTML-escaped (rendered inert as text):
+    assert "&lt;img src=x onerror=alert(2)&gt;" in r.text
