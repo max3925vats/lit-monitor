@@ -309,3 +309,16 @@ def test_config_load_yaml_strict_mode_raises_on_parse_fail(tmp_path, monkeypatch
     import yaml as _yaml
     with pytest.raises(_yaml.YAMLError):
         _load_yaml(bad)
+
+
+@pytest.mark.unit
+def test_web_ui_show_feedback_buttons_default_true():
+    """P4 Part A: feedback buttons are ON by default.
+
+    The v0.9 engine captures feedback but it was under-collected because the
+    buttons defaulted off. P4 flips ``WebUiSettings.show_feedback_buttons`` to
+    True so a fresh install collects feedback without manual config.
+    """
+    from scripts.core.config_schema import WebUiSettings
+
+    assert WebUiSettings().show_feedback_buttons is True

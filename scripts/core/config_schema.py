@@ -362,4 +362,9 @@ class WebUiSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    show_feedback_buttons: bool = False
+    # P4: default flipped False -> True. The v0.9 engine already captures
+    # feedback (feedback_events table + /api/feedback), but it was under-
+    # collected while the web buttons defaulted off. Turning them on by
+    # default lets a fresh install collect Save/Dismiss/thumbs/rating signals
+    # that P5 (Rocchio active learning) will consume — no manual config needed.
+    show_feedback_buttons: bool = True

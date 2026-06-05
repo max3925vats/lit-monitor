@@ -695,6 +695,10 @@ def _process_paper(
         graph_entities=_graph_entities,
         graph_relationships=_graph_relationships,
         graph_paper_metadata=_graph_paper_meta,
+        # P4 Part C: this is the Zotero-library ingest path. If the user saved a
+        # previously-recommended paper to Zotero, record an implicit positive
+        # 'saved' signal (idempotent, only for discovery-surfaced DOIs).
+        record_implicit_save=True,
     )
     if not embed_ok:
         # Propagate embed failure to caller so the paper isn't marked complete.

@@ -457,6 +457,23 @@ class TestDiscoveryRunDetailPage:
         assert r.status_code == 200
         assert "/discovery" in r.text
 
+    def test_feedback_buttons_render_without_explicit_config(
+        self, client_with_seeded_run
+    ):
+        """P4 Part A: feedback buttons appear by default (no web_ui config set).
+
+        The run-detail page passes show_feedback_buttons into paper_card.html,
+        and the route now defaults that flag True. With no explicit
+        web_ui.show_feedback_buttons in config, the Save/Dismiss/thumbs row
+        (an hx-post to /api/feedback) must render.
+        """
+        client, run_id = client_with_seeded_run
+        r = client.get(f"/discovery/{run_id}")
+        assert r.status_code == 200
+        # The feedback row only renders when show_feedback_buttons is truthy.
+        assert "/api/feedback" in r.text
+        assert '"signal_type": "saved"' in r.text
+
 
 # ---------------------------------------------------------------------------
 # P8: route-ordering safety

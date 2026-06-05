@@ -169,6 +169,49 @@ def build_ner_mention_edges(
         return []
 
 
+def _maybe_record_implicit_save(
+    *,
+    doi: str,
+    state_db: Any,
+    logger: logging.Logger,
+) -> None:
+    """P4 Part C: record an implicit positive 'saved' feedback event.
+
+    Fired from the ingestion path when the caller opts in (brain-build, i.e.
+    the user's Zotero library ingest).  The rule, idempotent and no-flood:
+
+      (1) the DOI must have appeared in a PRIOR discovery run — i.e. it was a
+          recommendation the user then saved to Zotero.  A paper never surfaced
+          by discovery is library baseline, NOT feedback, and is skipped; and
+      (2) no implicit-saved event may already exist for the DOI — re-running
+          brain-build must NOT re-log.
+
+    Non-fatal by contract: a feedback-logging failure must NEVER break ingestion
+    or the R28 dual-write invariant.  Any exception is routed through
+    ``strict_fallback`` (escalates only under ``--strict``; WARN + continue
+    otherwise), matching the surrounding non-fatal-enrichment pattern.
+    """
+    try:
+        if not state_db.was_surfaced_in_discovery(doi):
+            return  # library baseline — never surfaced, so not feedback.
+        if state_db.has_implicit_save_feedback(doi):
+            return  # idempotency: already logged on a prior ingest.
+        state_db.record_feedback_event(
+            doi,
+            "saved",
+            source=state_db.IMPLICIT_SAVE_SOURCE,
+        )
+        logger.debug("P4: implicit_zotero_save recorded for %s", doi)
+    except Exception as exc:
+        # Enrichment, not a gate — escalate in --strict, WARN otherwise.
+        strict_fallback(
+            logger,
+            f"P4: implicit-save feedback failed for {doi} "
+            f"(non-fatal, ingestion unaffected): {exc}",
+            exc,
+        )
+
+
 def index_embeddings_and_mark_phases(
     *,
     doi: str,
@@ -185,6 +228,7 @@ def index_embeddings_and_mark_phases(
     graph_relationships: list[Any] | None = None,             # G6 — RelationshipTuple list
     graph_paper_metadata: dict[str, Any] | None = None,       # G6 — Paper node fields
     prompt_version: str = "phase1.0",                         # G6
+    record_implicit_save: bool = False,                       # P4 Part C
 ) -> tuple[bool, str | None]:
     """Index a paper, then mark phase progress IFF embed_add_paper succeeded.
 
@@ -213,6 +257,13 @@ def index_embeddings_and_mark_phases(
     prompt_version:
         Provenance tag written onto every graph edge; G14 column default
         matches this value.
+    record_implicit_save:
+        P4 Part C — when True, after phases are marked, record an implicit
+        positive 'saved' feedback event IFF the DOI was surfaced in a prior
+        discovery run and no implicit-save event exists yet (idempotent).
+        Brain-build (the user's Zotero library ingest) sets this True;
+        discovery's own auto-ingest leaves it False to avoid flooding
+        feedback.  The hook is strictly non-fatal.
     """
     try:
         embeddings_db.add_paper(doi, fulltext, paper_metadata)
@@ -271,6 +322,14 @@ def index_embeddings_and_mark_phases(
 
     for phase in phases_to_mark:
         state_db.mark_brain_build_phase(zotero_key, phase)
+
+    # P4 Part C: implicit positive feedback for a saved-then-ingested
+    # recommendation.  Opt-in (brain-build only) so discovery's own
+    # auto-ingest doesn't flood feedback.  Runs AFTER phases are marked and is
+    # strictly non-fatal — the (True, None) success contract is unaffected.
+    if record_implicit_save:
+        _maybe_record_implicit_save(doi=doi, state_db=state_db, logger=logger)
+
     return True, None
 
 

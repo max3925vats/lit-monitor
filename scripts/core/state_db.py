@@ -2083,3 +2083,50 @@ class StateDB:
         for row in rows:
             result[row[0]] = row[1]
         return result
+
+    # -- P4 Part C: implicit Zotero-save support --
+
+    #: ``source`` tag stamped on implicit-save feedback events so they are
+    #: distinguishable from explicit web/CLI 'saved' signals.  Shared with
+    #: ``scripts.pipelines._ingest`` so the writer and the idempotency reader
+    #: can't drift.
+    IMPLICIT_SAVE_SOURCE: str = "implicit_zotero_save"
+
+    def was_surfaced_in_discovery(self, doi: str) -> bool:
+        """P4 Part C: True iff DOI appeared in any prior discovery run.
+
+        Read-only membership check against ``discovery_paper_results`` (keyed
+        by ``doi``).  Used to distinguish a paper the user saved *after* it was
+        recommended (→ implicit positive feedback) from pre-existing library
+        baseline papers that were never surfaced (→ no feedback).
+
+        An empty/blank DOI never matches: discovery may record candidates with
+        an empty DOI string, but those can't be the paper being ingested.
+        """
+        if not doi or not doi.strip():
+            return False
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM discovery_paper_results WHERE doi = ? LIMIT 1",
+                (doi,),
+            ).fetchone()
+        return row is not None
+
+    def has_implicit_save_feedback(self, doi: str) -> bool:
+        """P4 Part C: True iff an implicit-save event already exists for DOI.
+
+        Idempotency guard: re-running brain-build over the same paper must NOT
+        re-log the implicit 'saved' signal.  Matches only rows with
+        ``signal_type='saved'`` AND ``source=IMPLICIT_SAVE_SOURCE`` so an
+        explicit web/CLI 'saved' does not suppress (or count as) an implicit one.
+        """
+        if not doi:
+            return False
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM feedback_events "
+                "WHERE doi = ? AND signal_type = 'saved' AND source = ? "
+                "LIMIT 1",
+                (doi, self.IMPLICIT_SAVE_SOURCE),
+            ).fetchone()
+        return row is not None

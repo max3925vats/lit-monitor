@@ -695,6 +695,48 @@ class TestFeedbackEvents:
         with pytest.raises(ValueError):
             db.record_feedback_event("10.1/test", "rated")
 
+
+# ---------------------------------------------------------------------------
+# P4 Part C: implicit-save support helpers
+# ---------------------------------------------------------------------------
+
+class TestImplicitSaveHelpers:
+    """P4 Part C: was_surfaced_in_discovery + has_implicit_save_feedback."""
+
+    @pytest.fixture()
+    def db(self, tmp_path):
+        return StateDB(tmp_path / "state.db")
+
+    def test_was_surfaced_true_when_in_discovery_run(self, db):
+        run_id = db.start_discovery_run({})
+        db.add_discovery_paper(
+            run_id, "10.1/surfaced", "A surfaced paper", 0.9, "", ingested=False
+        )
+        assert db.was_surfaced_in_discovery("10.1/surfaced") is True
+
+    def test_was_surfaced_false_when_never_in_discovery(self, db):
+        assert db.was_surfaced_in_discovery("10.1/never") is False
+
+    def test_was_surfaced_false_for_empty_doi(self, db):
+        run_id = db.start_discovery_run({})
+        # A candidate with an empty DOI is recorded but must never match.
+        db.add_discovery_paper(run_id, "", "No DOI", 0.5, "", ingested=False)
+        assert db.was_surfaced_in_discovery("") is False
+
+    def test_has_implicit_save_false_initially(self, db):
+        assert db.has_implicit_save_feedback("10.1/x") is False
+
+    def test_has_implicit_save_true_after_recording(self, db):
+        db.record_feedback_event(
+            "10.1/x", "saved", source="implicit_zotero_save"
+        )
+        assert db.has_implicit_save_feedback("10.1/x") is True
+
+    def test_has_implicit_save_ignores_explicit_saved(self, db):
+        """An explicit web/CLI 'saved' must NOT count as an implicit save."""
+        db.record_feedback_event("10.1/x", "saved", source="discovery")
+        assert db.has_implicit_save_feedback("10.1/x") is False
+
     def test_rating_without_rated_raises(self, db):
         with pytest.raises(ValueError):
             db.record_feedback_event("10.1/test", "saved", rating=4)

@@ -617,3 +617,117 @@ class TestMaybeExtractLlmRelationships:
             cfg=cfg,
         )
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# P4 Part C: implicit "saved" feedback from a Zotero save
+# ---------------------------------------------------------------------------
+
+class TestImplicitZoteroSave:
+    """P4 Part C: index_embeddings_and_mark_phases records an implicit 'saved'
+    feedback event for a DOI that was surfaced in a prior discovery run — but
+    only when the caller opts in (record_implicit_save=True), only once
+    (idempotent), and never for library-baseline papers (no flood)."""
+
+    def _ingest(self, db, doi, *, record_implicit_save):
+        import logging as _logging
+
+        from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+        embeddings_db = MagicMock()
+        return index_embeddings_and_mark_phases(
+            doi=doi,
+            zotero_key="ZKEY",
+            fulltext="body",
+            paper_metadata={"title": "T", "year": 2020, "source_type": "paper"},
+            chunks=[],
+            state_db=db,
+            embeddings_db=embeddings_db,
+            phases_to_mark=("simple",),
+            logger=_logging.getLogger("test"),
+            record_implicit_save=record_implicit_save,
+        )
+
+    def test_surfaced_paper_records_one_implicit_save(self, tmp_path):
+        from scripts.core.state_db import StateDB
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({})
+        db.add_discovery_paper(run_id, "10.1/rec", "Recommended", 0.9, "", ingested=False)
+
+        ok, err = self._ingest(db, "10.1/rec", record_implicit_save=True)
+        assert ok and err is None
+
+        events = db.list_feedback_events()
+        implicit = [e for e in events if e["source"] == "implicit_zotero_save"]
+        assert len(implicit) == 1
+        assert implicit[0]["doi"] == "10.1/rec"
+        assert implicit[0]["signal_type"] == "saved"
+
+    def test_never_surfaced_paper_records_nothing(self, tmp_path):
+        """A library-baseline paper (never in any discovery run) → no event."""
+        from scripts.core.state_db import StateDB
+        db = StateDB(tmp_path / "state.db")
+
+        ok, err = self._ingest(db, "10.1/library", record_implicit_save=True)
+        assert ok and err is None
+        assert db.list_feedback_events() == []
+
+    def test_idempotent_reingest_keeps_one_event(self, tmp_path):
+        from scripts.core.state_db import StateDB
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({})
+        db.add_discovery_paper(run_id, "10.1/rec", "Recommended", 0.9, "", ingested=False)
+
+        self._ingest(db, "10.1/rec", record_implicit_save=True)
+        self._ingest(db, "10.1/rec", record_implicit_save=True)  # re-build
+
+        implicit = [
+            e for e in db.list_feedback_events()
+            if e["source"] == "implicit_zotero_save"
+        ]
+        assert len(implicit) == 1
+
+    def test_opt_out_records_nothing_even_when_surfaced(self, tmp_path):
+        """Discovery's own auto-ingest path does NOT opt in → no implicit save."""
+        from scripts.core.state_db import StateDB
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({})
+        db.add_discovery_paper(run_id, "10.1/rec", "Recommended", 0.9, "", ingested=True)
+
+        ok, err = self._ingest(db, "10.1/rec", record_implicit_save=False)
+        assert ok and err is None
+        assert db.list_feedback_events() == []
+
+    def test_feedback_failure_is_non_fatal(self, tmp_path):
+        """A failure inside the feedback hook must NOT break ingestion."""
+        import logging as _logging
+
+        # Real DB so was_surfaced returns True, then force record_feedback_event
+        # to raise — ingestion must still complete (phases marked).
+        from scripts.core.state_db import StateDB
+        from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({})
+        db.add_discovery_paper(run_id, "10.1/rec", "Recommended", 0.9, "", ingested=False)
+
+        original = db.record_feedback_event
+
+        def _boom(*args, **kwargs):  # noqa: ANN002, ANN003
+            raise RuntimeError("feedback table locked")
+
+        db.record_feedback_event = _boom  # type: ignore[method-assign]
+        embeddings_db = MagicMock()
+        ok, err = index_embeddings_and_mark_phases(
+            doi="10.1/rec",
+            zotero_key="ZKEY",
+            fulltext="body",
+            paper_metadata={"title": "T", "year": 2020, "source_type": "paper"},
+            chunks=[],
+            state_db=db,
+            embeddings_db=embeddings_db,
+            phases_to_mark=("simple",),
+            logger=_logging.getLogger("test"),
+            record_implicit_save=True,
+        )
+        # Ingestion completed despite the feedback failure (R28 invariant).
+        assert ok and err is None
+        db.record_feedback_event = original  # type: ignore[method-assign]

@@ -10,7 +10,7 @@
 
   Optional context flags (all default off/on as noted):
     show_feedback_buttons  bool — controlled by web_ui.show_feedback_buttons config
-                                  (default False). Gates the Save/Dismiss/👍/👎/Rate row.
+                                  (P4: default True). Gates the Save/Dismiss/👍/👎/Rate row.
     show_score_decomp      bool — show "Why this paper?" panel (default True).
     show_action_buttons    bool — show Relink/Re-extract buttons from P8 (default False,
                                   enabled on /discovery/{id} only).
@@ -55,7 +55,7 @@
   {% include "_partials/score_decomposition.html" %}
   {% endif %}
 
-  {# Bundle H: feedback buttons — opt-in via web_ui.show_feedback_buttons (default false). #}
+  {# Bundle H: feedback buttons — gated by web_ui.show_feedback_buttons (P4: default true). #}
   {% if show_feedback_buttons %}
   <div class="feedback-row">
     <button type="button" class="btn btn-sm btn-action"

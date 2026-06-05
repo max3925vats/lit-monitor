@@ -701,6 +701,115 @@ def status(ctx: click.Context) -> None:
 
 
 # ---------------------------------------------------------------------------
+# feedback (P4 Part B) — record one feedback event from the terminal
+# ---------------------------------------------------------------------------
+@main.command("feedback")
+@click.argument("doi")
+@click.option("--saved", is_flag=True, default=False,
+              help="Mark the paper as saved (positive signal).")
+@click.option("--dismissed", is_flag=True, default=False,
+              help="Mark the paper as dismissed (negative signal).")
+@click.option("--opened", is_flag=True, default=False,
+              help="Mark the paper as opened (weak engagement signal).")
+@click.option("--thumbs-up", "thumbs_up", is_flag=True, default=False,
+              help="Thumbs-up the paper (positive signal).")
+@click.option("--thumbs-down", "thumbs_down", is_flag=True, default=False,
+              help="Thumbs-down the paper (negative signal).")
+@click.option("--rating", type=int, default=None,
+              help="Star rating 1-5 (records a 'rated' signal).")
+@click.pass_context
+def feedback_cmd(
+    ctx: click.Context,
+    doi: str,
+    saved: bool,
+    dismissed: bool,
+    opened: bool,
+    thumbs_up: bool,
+    thumbs_down: bool,
+    rating: int | None,
+) -> None:
+    """Record one feedback event for DOI.
+
+    The .md-digest reader (Obsidian) can't click the web buttons, so this CLI
+    is the keyboard path to the SAME feedback_events store the web UI writes to
+    (P5 Rocchio active learning consumes it).
+
+    Pass exactly one signal: --saved / --dismissed / --opened / --thumbs-up /
+    --thumbs-down, OR --rating N (1-5). Validation mirrors POST /api/feedback:
+    a 'rated' signal requires a rating in [1, 5], and a rating is rejected for
+    any other signal — both enforced by StateDB.record_feedback_event (the
+    single source of truth shared with the HTTP route).
+    """
+    _setup_logging("feedback", verbose=ctx.obj.get("verbose", False))
+
+    # --- input shaping: resolve exactly one signal source ---
+    # Map each chosen flag to its closed-vocabulary signal_type.
+    chosen = [
+        name for flag, name in (
+            (saved, "saved"),
+            (dismissed, "dismissed"),
+            (opened, "opened"),
+            (thumbs_up, "thumbs_up"),
+            (thumbs_down, "thumbs_down"),
+        ) if flag
+    ]
+    if rating is not None:
+        chosen.append("rated")
+    if not chosen:
+        raise click.UsageError(
+            "choose one signal: --saved/--dismissed/--opened/--thumbs-up/"
+            "--thumbs-down or --rating N."
+        )
+    if len(chosen) > 1:
+        raise click.UsageError(
+            "exactly one signal may be given "
+            f"(got {len(chosen)}: {', '.join(chosen)})."
+        )
+    signal = chosen[0]
+
+    # --- rating range guard (mirrors the route's cross-field check, which runs
+    #     BEFORE the DB call so a bad rating fails fast with a friendly message
+    #     even though record_feedback_event would also reject it). ---
+    if signal == "rated" and not (1 <= int(rating) <= 5):
+        click.echo("Error: --rating must be an integer in 1-5.", err=True)
+        sys.exit(1)
+
+    # --- friendly DOI guard (the route relies on pydantic typing; the CLI
+    #     adds an emptiness check so a stray whitespace arg fails loudly). ---
+    doi_clean = doi.strip()
+    if not doi_clean:
+        click.echo("Error: DOI must not be empty.", err=True)
+        sys.exit(1)
+
+    # --- config / state-db load guard (canonical sibling-command pattern) ---
+    try:
+        config = _make_config()
+        state_db = _make_state_db(config)
+    except Exception as exc:
+        click.echo(f"Error loading config/state DB: {exc}", err=True)
+        sys.exit(1)
+
+    # --- record: cross-field rating validation lives in record_feedback_event,
+    #     the same ValueError the HTTP route surfaces as a 422. Surface it here
+    #     as a friendly error + nonzero exit rather than a raw traceback. ---
+    try:
+        state_db.record_feedback_event(
+            doi_clean,
+            signal,
+            rating=rating,
+            source="cli",
+        )
+    except ValueError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    if signal == "rated":
+        click.echo(f"Recorded feedback: {doi_clean} rated {rating}/5.")
+    else:
+        click.echo(f"Recorded feedback: {doi_clean} → {signal}.")
+
+
+# ---------------------------------------------------------------------------
 # _suggest_topics — helper shared by build-vocabulary
 # ---------------------------------------------------------------------------
 def _suggest_topics(clusters: dict, suggested_path: Path) -> None:  # noqa: F821
