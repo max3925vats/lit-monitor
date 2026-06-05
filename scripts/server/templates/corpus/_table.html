@@ -24,7 +24,7 @@
     <tr>
       <td><a href="/corpus/{{ row.doi }}">{{ row.title or "(untitled)" }}</a></td>
       <td>{% if row.year %}{{ row.year }}{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
-      <td>{{ row.source_type or "—" }}</td>
+      <td>{% if row.source_type %}{{ row.source_type }}{% else %}&mdash;{% endif %}</td>
       <td>
         {% if row.confidence is not none %}
           {{ "%.2f" | format(row.confidence | float) }}
@@ -33,31 +33,36 @@
         {% endif %}
       </td>
       <td>
-        {% if row.embeddings_indexed == 1 %}
+        {% if row.embeddings_indexed %}
           <span class="pill success">&check;</span>
         {% else %}
           <span class="pill danger">&cross;</span>
         {% endif %}
       </td>
       <td>
-        {% if row.graph_indexed == 1 %}
+        {% if row.graph_indexed %}
           <span class="pill success">&check;</span>
         {% else %}
           <span class="pill danger">&cross;</span>
         {% endif %}
       </td>
       <td>
-        {% if row.notes_synced == 1 %}
+        {% if row.notes_synced %}
           <span class="pill success">&check;</span>
         {% else %}
           <span class="pill danger">&cross;</span>
         {% endif %}
       </td>
-      <td class="field-note">{{ (row.last_updated or "")[:10] or "—" }}</td>
+      <td class="field-note">{% if (row.last_updated or "")[:10] %}{{ (row.last_updated or "")[:10] }}{% else %}&mdash;{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+
+{# Shared filter query string, captured once so prev/next stay in sync.
+   Values are urlencoded (Jinja autoescape HTML-escapes but does not
+   percent-encode); single line so no stray newlines land in the URL. #}
+{%- set filter_qs %}search={{ search | urlencode }}&amp;source_type={{ source_type | urlencode }}&amp;status_gap={{ status_gap | urlencode }}&amp;theme={{ theme | urlencode }}&amp;sort={{ sort | urlencode }}&amp;order={{ order | urlencode }}&amp;limit={{ limit }}{% endset -%}
 
 <div class="button-row" style="margin-top: 0.75rem;">
   <span class="field-note">
@@ -65,19 +70,19 @@
   </span>
   {% if has_prev %}
   <a class="btn btn-secondary btn-sm"
-     hx-get="/corpus?search={{ search }}&amp;source_type={{ source_type }}&amp;status_gap={{ status_gap }}&amp;theme={{ theme }}&amp;sort={{ sort }}&amp;order={{ order }}&amp;limit={{ limit }}&amp;offset={{ prev_offset }}"
+     hx-get="/corpus?{{ filter_qs }}&amp;offset={{ prev_offset }}"
      hx-target="#corpus-table"
      hx-swap="innerHTML"
-     href="/corpus?search={{ search }}&amp;source_type={{ source_type }}&amp;status_gap={{ status_gap }}&amp;theme={{ theme }}&amp;sort={{ sort }}&amp;order={{ order }}&amp;limit={{ limit }}&amp;offset={{ prev_offset }}">
+     href="/corpus?{{ filter_qs }}&amp;offset={{ prev_offset }}">
     &larr; Prev
   </a>
   {% endif %}
   {% if has_next %}
   <a class="btn btn-secondary btn-sm"
-     hx-get="/corpus?search={{ search }}&amp;source_type={{ source_type }}&amp;status_gap={{ status_gap }}&amp;theme={{ theme }}&amp;sort={{ sort }}&amp;order={{ order }}&amp;limit={{ limit }}&amp;offset={{ next_offset }}"
+     hx-get="/corpus?{{ filter_qs }}&amp;offset={{ next_offset }}"
      hx-target="#corpus-table"
      hx-swap="innerHTML"
-     href="/corpus?search={{ search }}&amp;source_type={{ source_type }}&amp;status_gap={{ status_gap }}&amp;theme={{ theme }}&amp;sort={{ sort }}&amp;order={{ order }}&amp;limit={{ limit }}&amp;offset={{ next_offset }}">
+     href="/corpus?{{ filter_qs }}&amp;offset={{ next_offset }}">
     Next &rarr;
   </a>
   {% endif %}
