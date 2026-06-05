@@ -42,9 +42,10 @@ def run_health_check() -> dict[str, dict[str, Sequence[Any]]]:
     """Run every health probe and return structured results.
 
     Returns:
-        ``{"config": {...}, "ollama": {...}, "zotero": {...}, "vault": {...}}``
+        ``{"config": {...}, "ollama": {...}, "zotero": {...}, "vault": {...},
+        "graph": {"graph_indexed": CheckResult}}``
 
-    The ``config`` sub-dict's values are :class:`CheckResult` NamedTuples
+    The ``config`` and ``graph`` sub-dicts' values are :class:`CheckResult` NamedTuples
     (3-tuples of ok/message/severity). The ``ollama``/``zotero``/``vault``
     sub-dicts return plain ``(ok, msg)`` 2-tuples. Consumers must use
     indexed access (``value[0]``/``value[1]``) to handle both shapes —
