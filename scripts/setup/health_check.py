@@ -14,9 +14,11 @@ from typing import Any
 # module path — e.g. ``patch("scripts.setup.check_configured.check_configured")``
 # in the existing CLI test suite — continues to work transparently.
 from scripts.setup import check_configured as _check_configured_mod
+from scripts.setup import check_graph as _check_graph_mod
 from scripts.setup import check_ollama as _check_ollama_mod
 from scripts.setup import check_vault as _check_vault_mod
 from scripts.setup import check_zotero as _check_zotero_mod
+from scripts.setup.check_configured import CheckResult
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +60,28 @@ def run_health_check() -> dict[str, dict[str, Sequence[Any]]]:
         "ollama": _check_ollama_mod.check_ollama(model=model),
         "zotero": _check_zotero_mod.check_zotero(),
         "vault": _check_vault_mod.check_vault(),
+        "graph": _check_graph_section(),
     }
+
+
+def _check_graph_section() -> dict[str, CheckResult]:
+    """Wrap the single-row graph probe in a section dict.
+
+    ``check_graph()`` returns one :class:`CheckResult`; the aggregator's
+    contract is ``{section: {check_name: result}}`` (mirrors the ``config``
+    section), so we key it under ``"graph_indexed"``. Guarded so a raising
+    ``check_graph()`` (or a broken ``[graph]`` import) cannot kill the
+    aggregator — the row degrades to a warn instead.
+    """
+    try:
+        return {"graph_indexed": _check_graph_mod.check_graph()}
+    except Exception as exc:  # noqa: BLE001 — aggregator must never crash
+        logger.debug("check_graph() raised; degrading to warn: %s", exc)
+        return {
+            "graph_indexed": CheckResult(
+                False, f"Graph check failed: {exc}", severity="warn"
+            )
+        }
 
 
 __all__ = ["run_health_check"]
