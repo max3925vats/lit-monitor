@@ -817,7 +817,7 @@ def _resolve_exploration_budget_pct(config: Any) -> float:
     try:
         fb = getattr(config, "feedback", None)
         val = float(getattr(fb, "exploration_budget_pct", 0.20)) if fb else 0.20
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, AttributeError):
         return 0.0
     if not math.isfinite(val):
         return 0.0
@@ -854,6 +854,13 @@ def _run_exploration_searches(
     try:
         pct = _resolve_exploration_budget_pct(config)
         if pct <= 0.0:
+            return []
+
+        # K-b review #1: the exploration budget is sized as a fraction of the
+        # topic pool — an empty pool means cap=0, so short-circuit BEFORE issuing
+        # any cluster/graph/search work to avoid issuing-then-discarding external
+        # exploration searches.
+        if not topic_results:
             return []
 
         clusters = state_db.list_active_clusters()

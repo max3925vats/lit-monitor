@@ -162,6 +162,23 @@ def test_budget_zero_disables_exploration(db, monkeypatch):
     assert out == []
 
 
+def test_empty_topic_pool_skips_exploration_no_searches(db, monkeypatch):
+    """K-b review #1: when the topic pool is empty the budget caps to 0, so
+    exploration must short-circuit BEFORE opening the graph or issuing any
+    external search — even with budget>0 and clusters present."""
+    _seed_two_clusters(db)
+    monkeypatch.setattr(
+        discovery, "safe_graph_db",
+        lambda: pytest.fail("graph must not be opened on an empty topic pool"),
+    )
+    monkeypatch.setattr(
+        discovery, "run_searches",
+        lambda *a, **k: pytest.fail("no exploration searches on an empty topic pool"),
+    )
+    out = discovery._run_exploration_searches(_cfg(pct=0.20), db, [], since_days=14)
+    assert out == []
+
+
 def test_no_clusters_no_exploration(db, monkeypatch):
     # Fresh user: no clusters at all → zero behaviour change, no graph, no search.
     monkeypatch.setattr(
