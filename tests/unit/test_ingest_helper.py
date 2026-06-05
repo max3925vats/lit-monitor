@@ -647,6 +647,41 @@ class TestImplicitZoteroSave:
             record_implicit_save=record_implicit_save,
         )
 
+    def test_feedback_failure_is_non_fatal_even_under_strict(self, tmp_path):
+        """I1 decision: the implicit-save hook is a SIDE-SIGNAL, so a failure
+        must NOT fail a correct ingest even under --strict (unlike the embed/
+        graph/S2 enrichment gates, which DO escalate). Pins that the hook does
+        not route through strict_fallback."""
+        import logging as _logging
+
+        import scripts.core.strict_mode as _sm
+        from scripts.core.state_db import StateDB
+        from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({})
+        db.add_discovery_paper(run_id, "10.1/rec", "Recommended", 0.9, "", ingested=False)
+        db.record_feedback_event = lambda *a, **k: (_ for _ in ()).throw(  # type: ignore[method-assign]
+            RuntimeError("feedback table locked")
+        )
+
+        _sm.set_strict(True)  # autouse conftest fixture resets strict after the test
+        ok, err = index_embeddings_and_mark_phases(
+            doi="10.1/rec",
+            zotero_key="ZKEY",
+            fulltext="body",
+            paper_metadata={"title": "T", "year": 2020, "source_type": "paper"},
+            chunks=[],
+            state_db=db,
+            embeddings_db=MagicMock(),
+            phases_to_mark=("simple",),
+            logger=_logging.getLogger("test"),
+            record_implicit_save=True,
+        )
+        # Even under --strict, the side-signal failure did NOT escalate:
+        # ingestion completed cleanly.
+        assert ok and err is None
+
     def test_surfaced_paper_records_one_implicit_save(self, tmp_path):
         from scripts.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")

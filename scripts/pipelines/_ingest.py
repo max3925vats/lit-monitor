@@ -186,10 +186,15 @@ def _maybe_record_implicit_save(
       (2) no implicit-saved event may already exist for the DOI — re-running
           brain-build must NOT re-log.
 
-    Non-fatal by contract: a feedback-logging failure must NEVER break ingestion
-    or the R28 dual-write invariant.  Any exception is routed through
-    ``strict_fallback`` (escalates only under ``--strict``; WARN + continue
-    otherwise), matching the surrounding non-fatal-enrichment pattern.
+    ALWAYS non-fatal: a feedback-logging failure must NEVER break ingestion or
+    the R28 dual-write invariant — and unlike the embed/graph/S2 enrichment
+    gates (which escalate under ``--strict``), this hook does NOT escalate even
+    under ``--strict``.  Implicit feedback is a best-effort SIDE-SIGNAL, not part
+    of the ingestion correctness contract: a failure here means only that one
+    feedback row wasn't written, while the paper's extraction / embedding /
+    graph are all fine.  Failing a correct ingest over a side-signal would
+    conflate a behavioural channel with the correctness gate, so we WARN +
+    continue, always.
     """
     try:
         if not state_db.was_surfaced_in_discovery(doi):
@@ -202,13 +207,13 @@ def _maybe_record_implicit_save(
             source=state_db.IMPLICIT_SAVE_SOURCE,
         )
         logger.debug("P4: implicit_zotero_save recorded for %s", doi)
-    except Exception as exc:
-        # Enrichment, not a gate — escalate in --strict, WARN otherwise.
-        strict_fallback(
-            logger,
-            f"P4: implicit-save feedback failed for {doi} "
-            f"(non-fatal, ingestion unaffected): {exc}",
-            exc,
+    except Exception as exc:  # noqa: BLE001 — side-signal must never fail ingestion
+        # Deliberately NOT strict_fallback: a side-signal failure must not fail a
+        # correct ingest, even under --strict (see docstring).
+        logger.warning(
+            "P4: implicit-save feedback failed for %s "
+            "(non-fatal side-signal, ingestion unaffected): %s",
+            doi, exc, exc_info=True,
         )
 
 

@@ -474,6 +474,20 @@ class TestDiscoveryRunDetailPage:
         assert "/api/feedback" in r.text
         assert '"signal_type": "saved"' in r.text
 
+    def test_feedback_buttons_suppressed_when_explicitly_disabled(
+        self, client_with_seeded_run, monkeypatch
+    ):
+        """P4 Part A (M2): an explicit web_ui.show_feedback_buttons = false must
+        still suppress the feedback row, even though the default is now True."""
+        client, run_id = client_with_seeded_run
+        monkeypatch.setattr(
+            "scripts.server.config_io.load_config",
+            lambda which: {"web_ui": {"show_feedback_buttons": False}},
+        )
+        r = client.get(f"/discovery/{run_id}")
+        assert r.status_code == 200
+        assert "/api/feedback" not in r.text
+
 
 # ---------------------------------------------------------------------------
 # P8: route-ordering safety
