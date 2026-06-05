@@ -9,7 +9,8 @@ BiobertNER   : BioBERT NER wrapper (N1, Phase 2). Import is always safe;
                ``.extract()`` raises ImportError if [nlp] not installed
                (``uv sync --extra nlp``).
 NerSpan      : Frozen dataclass for a single NER-extracted span.
-safe_graph_db: Context-manager helper around GraphDB.
+safe_graph_db: Factory helper returning a GraphDB instance, or None when the
+               graph/extra is unavailable.
 """
 from __future__ import annotations
 
