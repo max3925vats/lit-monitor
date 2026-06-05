@@ -1,0 +1,8 @@
+{# WA3: save confirmation fragment — error | "Saved to <path>" pill. #}
+{% if error %}
+  <div class="card danger">
+    <p>{{ error }}</p>
+  </div>
+{% else %}
+  <span class="pill success">Saved to {{ path }}</span>
+{% endif %}

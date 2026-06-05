@@ -11,14 +11,17 @@ can patch ``scripts.server.routes.ask.run_pipeline`` / ``.safe_graph_db``.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
+from scripts.core.config import get_config  # patched in tests
 from scripts.graph.ask import run_pipeline  # patched in tests
 from scripts.graph.import_citations import safe_graph_db  # patched in tests
 from scripts.mcp.cypher_guard import CypherSafetyError, guard
+from scripts.obsidian_tools.save_answer import save_ask_answer
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +154,42 @@ async def ask_cypher(request: Request, cypher: str = Form("")) -> HTMLResponse:
         request,
         "ask/_cypher_result.html",
         {"rows": rows, "error": None},
+    )
+
+
+@router.post("/ask/save", response_class=HTMLResponse)
+async def ask_save(request: Request, payload: str = Form("")) -> HTMLResponse:
+    """Save the answer (passed verbatim in the hidden ``payload`` field).
+
+    The fragment embeds ``{question, prose, rows, cypher}`` as one JSON string so
+    the save does NOT re-run the pipeline (re-running would burn another LLM call
+    and could return a different answer). Any failure — malformed JSON, missing
+    config, I/O — yields a generic error fragment with a full server-side log;
+    the exception text / vault path never reaches the browser (500-leak
+    discipline).
+    """
+    try:
+        data = json.loads(payload or "")
+        config = get_config()
+        note_path = await asyncio.to_thread(
+            save_ask_answer,
+            data.get("question", ""),
+            data.get("prose"),
+            data.get("rows") or [],
+            data.get("cypher"),
+            config,
+        )
+    except Exception:  # noqa: BLE001 — advisory page surface, never 500-leak
+        logger.error("ask/save failed", exc_info=True)
+        return _get_templates().TemplateResponse(
+            request,
+            "ask/_saved.html",
+            {"error": "Could not save the answer — check the server logs.", "path": None},
+        )
+    return _get_templates().TemplateResponse(
+        request,
+        "ask/_saved.html",
+        {"path": note_path, "error": None},
     )
 
 

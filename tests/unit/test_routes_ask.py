@@ -129,3 +129,57 @@ class TestAskCypher:
         # guard runs BEFORE execution; a mutation must be rejected pre-exec.
         assert "read-only" in r.text.lower()
         assert called["n"] == 0
+
+
+class TestAskSave:
+    """WA3: POST /ask/save — parse the hidden payload, write the note.
+
+    Config is monkeypatched to a tmp-vault SimpleNamespace so no real vault is
+    touched. Bad JSON → a generic error fragment (no traceback in the body).
+    """
+
+    def _cfg(self, tmp_path):
+        from types import SimpleNamespace  # noqa: PLC0415
+
+        return SimpleNamespace(
+            obsidian=SimpleNamespace(
+                vault_path=str(tmp_path / "vault"),
+                connections_folder="Literature/Connections",
+            )
+        )
+
+    def test_ask_save_writes_note(self, client, tmp_path, monkeypatch):
+        import json  # noqa: PLC0415
+        from pathlib import Path  # noqa: PLC0415
+
+        monkeypatch.setattr(
+            "scripts.server.routes.ask.get_config",
+            lambda: self._cfg(tmp_path),
+        )
+        payload = json.dumps(
+            {
+                "question": "Which papers cite Smith 2021?",
+                "prose": "Three papers cite it.",
+                "rows": [{"title": "Jones 2022"}],
+                "cypher": "MATCH (p)-[:CITES]->(q) RETURN p",
+            }
+        )
+        r = client.post("/ask/save", data={"payload": payload})
+        assert r.status_code == 200
+        assert "Saved" in r.text
+        connections = tmp_path / "vault" / "Literature" / "Connections"
+        written = list(connections.glob("Ask_*.md"))
+        assert written, "expected an Ask_*.md note under the tmp vault"
+        text = Path(written[0]).read_text(encoding="utf-8")
+        assert "Jones 2022" in text
+
+    def test_ask_save_bad_payload_is_generic_error(self, client, monkeypatch):
+        # Even with a valid config, a malformed payload must not 500-leak.
+        monkeypatch.setattr(
+            "scripts.server.routes.ask.get_config",
+            lambda: None,
+        )
+        r = client.post("/ask/save", data={"payload": "{not json"})
+        assert r.status_code == 200  # generic fragment, not a 500 page
+        assert "traceback" not in r.text.lower()
+        assert "{not json" not in r.text

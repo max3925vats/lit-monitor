@@ -31,4 +31,14 @@
     </form>
     <div id="cypher-result"></div>
   {% endif %}
+
+  {# WA3: save the Q&A to the Obsidian Connections folder. The full answer is
+     embedded as one JSON string so /ask/save never re-runs the pipeline.
+     Single-quoted value attr because tojson emits double-quotes. #}
+  <form hx-post="/ask/save" hx-target="#save-status" hx-swap="innerHTML">
+    <input type="hidden" name="payload"
+           value='{{ {"question": question, "prose": result.prose, "rows": result.rows, "cypher": result.cypher} | tojson }}'>
+    <button type="submit" class="btn-secondary">Save to vault</button>
+  </form>
+  <span id="save-status"></span>
 {% endif %}
