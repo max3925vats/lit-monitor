@@ -220,6 +220,11 @@ def create_app() -> FastAPI:
 
     app.include_router(corpus_router)
 
+    # FG-4: /graph — read-only corpus-wide Knowledge Graph overview page.
+    from scripts.server.routes.graph import graph_router  # noqa: PLC0415
+
+    app.include_router(graph_router)
+
     # Bundle H (v0.9): /settings + /api/settings/{section} — Advanced Settings.
     from scripts.server.routes.settings import router as settings_router  # noqa: PLC0415
 
