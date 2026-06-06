@@ -4269,6 +4269,11 @@ def learning_view_cmd(ctx: click.Context, top_k: int, per_cluster: bool) -> None
         click.echo(f"  dimensionality      : {interest_vec.shape[0]}")
 
         # Nice-to-have: top-K library papers most aligned with the interest vec.
+        # CU-1: ranking computation is shared with the /insights page via
+        # rank_papers_by_interest; the CLI keeps its own cosmetic rendering
+        # (signed +.3f cosine, 60-char title truncation) at the render site.
+        from scripts.learning.ranking import rank_papers_by_interest
+
         i_norm = float(np.linalg.norm(interest_vec))
         if i_norm < 1e-9 or not np.isfinite(i_norm):
             click.echo("\n(Interest vector is degenerate; no alignment ranking.)")
@@ -4277,26 +4282,18 @@ def learning_view_cmd(ctx: click.Context, top_k: int, per_cluster: bool) -> None
         if not all_embeddings:
             click.echo("\n(No library embeddings to rank by alignment.)")
             return
-        scores: list[tuple[str, float]] = []
-        for doi, emb in all_embeddings.items():
-            c_norm = float(np.linalg.norm(emb))
-            if c_norm < 1e-9 or not np.isfinite(c_norm):
-                continue
-            cos = float(np.dot(emb, interest_vec) / (c_norm * i_norm))
-            if np.isfinite(cos):
-                scores.append((doi, cos))
-        scores.sort(key=lambda t: t[1], reverse=True)
 
-        if scores:
-            click.echo(f"\nTop {min(top_k, len(scores))} library papers by interest alignment:")
-            for doi, cos in scores[:top_k]:
-                title = ""
-                try:
-                    rec = state_db.get_paper(doi)
-                    title = (rec.get("title") or "") if rec else ""
-                except Exception:  # noqa: BLE001 — title is cosmetic
-                    title = ""
-                label = f"{title[:60]}" if title else doi
+        ranked = rank_papers_by_interest(
+            interest_vec, embeddings_db, state_db, top_k=top_k
+        )
+        if ranked:
+            click.echo(f"\nTop {len(ranked)} library papers by interest alignment:")
+            for row in ranked:
+                doi, title, cos = row["doi"], row["title"], row["cosine"]
+                # title is "title or doi" from the ranker; when it equals the
+                # bare DOI (no resolvable title), show the full DOI untruncated,
+                # else truncate the real title to 60 chars (unchanged behaviour).
+                label = doi if title == doi else f"{title[:60]}"
                 click.echo(f"  {cos:+.3f}  {label}")
     finally:
         pass
