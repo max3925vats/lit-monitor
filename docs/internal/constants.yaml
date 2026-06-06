@@ -174,6 +174,25 @@ clustering:
     meaning: "DEFAULT_QUIET_WEEKS — quiet-period window used in the atrophy/exploration logic."
     kind: named_constant
 
+insights:
+  # FE-4 Insights page (/insights). Read-only window over the active-learning
+  # engine; these are the page-surface display/lookback tunables.
+  timeline_default_weeks:
+    value: 12
+    location: scripts/server/routes/feedback.py:30
+    meaning: "_TIMELINE_DEFAULT_WEEKS — lookback window (weeks) for the feedback-timeline chart; bounds feedback_timeline(weeks=…) so the SVG stays readable instead of scanning all history."
+    kind: named_constant
+  learning_state_top_k:
+    value: 10
+    location: scripts/api/insights.py:108
+    meaning: "get_learning_state(top_k=10) default — max number of top interest-aligned library papers surfaced in the learning-state panel."
+    kind: named_constant
+  feedback_timeline_default_granularity:
+    value: "week"
+    location: scripts/core/state_db.py:2352
+    meaning: "feedback_timeline(granularity='week') default — time-period bucket for the feedback timeline; only 'day'/'week' accepted, any other value falls back to 'week'."
+    kind: bare_literal
+
 ranker:
   # All blend weights in scripts/llm/ranker.py are function-parameter defaults of
   # 0.0, meaning each extra signal leg (domain_context, cluster_centroid, graph,
