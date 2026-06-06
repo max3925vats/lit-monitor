@@ -10,12 +10,26 @@
     <p class="field-note">Sends SIGTERM; SIGKILL fallback after 30 seconds.</p>
   </form>
   {% else %}
+  {# FG-3: rag_mode select macro — included in each form so the chosen mode is
+     submitted regardless of which button is pressed. Default comes from
+     retrieval.default_mode (default_rag_mode in context). #}
+  {% macro rag_mode_select() %}
+  <label class="field-note" style="display:block; margin-bottom:0.25rem;">
+    Retrieval mode
+    <select name="rag_mode">
+      {% for m in (rag_modes or ("vector", "graph", "hybrid")) %}
+      <option value="{{ m }}"{% if m == default_rag_mode %} selected{% endif %}>{{ m }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endmacro %}
   <div class="discovery-buttons">
     <form hx-post="/api/discovery/start"
           hx-target="#discovery-result" hx-swap="innerHTML"
           hx-encoding="multipart/form-data"
           style="display:inline-block; margin-right:0.5rem;">
       <input type="hidden" name="dry_run" value="false">
+      {{ rag_mode_select() }}
       <button type="submit" class="button">Run now</button>
     </form>
     <form hx-post="/api/discovery/start"
@@ -23,12 +37,14 @@
           hx-encoding="multipart/form-data"
           style="display:inline-block;">
       <input type="hidden" name="dry_run" value="true">
+      {{ rag_mode_select() }}
       <button type="submit" class="button">Dry-run (preview only)</button>
     </form>
   </div>
   <p class="field-note">
     "Run now" ingests + writes to vault + state DB.
     "Dry-run" only previews — no writes.
+    Graph/hybrid modes require the <code>[graph]</code> extra.
   </p>
   {% endif %}
   <div id="discovery-result"></div>

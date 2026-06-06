@@ -122,6 +122,7 @@ class ServerRuntime:
             "discovery": ProcessSlot(),
             "vocabulary": ProcessSlot(),
             "dev_dryrun": ProcessSlot(),
+            "dev_graph_backfill": ProcessSlot(),
         }
     )
 

@@ -1,0 +1,91 @@
+{# FG-4: corpus-wide graph overview fragment — lazy-loaded into #graph-overview.
+
+   Context:
+     available    — False when the knowledge graph isn't built (no [graph] data
+                    yet) OR when assembly raised; renders a notice, never counts.
+     error        — True when _get_graph_overview() raised (generic notice, no
+                    detail leaked — the cause stays in the server log only).
+     paper_count  — Paper nodes in the graph.
+     entity_count — Entity nodes in the graph.
+     indexed/total— papers.graph_indexed=1 over all papers (FG-2 count idiom).
+     by_type      — {entity_type: count}.
+     by_predicate — {predicate: edge_count}.
+     by_source    — {mention_source: count} (schema / biobert / llm_cloud).
+     last_indexed — best-effort MAX(last_updated) over indexed papers, or None.
+
+   All content is rendered through Jinja autoescape ONLY — never |safe, never
+   striptags (scientific entity text legitimately contains < and >).
+#}
+{% if not available %}
+<div class="card" id="graph-overview-notice">
+  {% if error %}
+  <p class="field-note">
+    Could not load the knowledge graph overview &mdash; check the server logs.
+  </p>
+  {% else %}
+  <p class="field-note">
+    No knowledge graph yet &mdash; run a brain-build or
+    <code>lit-monitor graph backfill --all</code> to populate the graph, then
+    this overview will fill in.
+  </p>
+  {% endif %}
+</div>
+{% else %}
+<div class="card" id="graph-overview-card">
+  <h2>Graph health</h2>
+  {% set _pct = ((indexed / total * 100) | round(0, "floor") | int) if total else 0 %}
+  <p class="paper-meta">
+    <span class="pill">{{ indexed }}/{{ total }} papers indexed ({{ _pct }}%)</span>
+    <span class="pill">{{ paper_count }} paper nodes</span>
+    <span class="pill">{{ entity_count }} entity nodes</span>
+    {% if last_indexed %}
+    <span class="pill muted">last indexed {{ last_indexed[:10] }}</span>
+    {% endif %}
+  </p>
+
+  {# --- Entities by type --------------------------------------------------- #}
+  <h3>Entities by type</h3>
+  {% if by_type %}
+  <table class="papers-table">
+    <thead><tr><th>Type</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for type_, count in by_type.items() %}
+      <tr><td><span class="badge">{{ type_ }}</span></td><td>{{ count }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="field-note">No entities in the graph yet.</p>
+  {% endif %}
+
+  {# --- Edges by predicate ------------------------------------------------- #}
+  <h3>Edges by predicate</h3>
+  {% if by_predicate %}
+  <table class="papers-table">
+    <thead><tr><th>Predicate</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for pred, count in by_predicate.items() %}
+      <tr><td>{{ pred }}</td><td>{{ count }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="field-note">No edges in the graph yet.</p>
+  {% endif %}
+
+  {# --- Entities (mentions) by extraction source --------------------------- #}
+  <h3>Mentions by source</h3>
+  {% if by_source %}
+  <table class="papers-table">
+    <thead><tr><th>Source</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for src, count in by_source.items() %}
+      <tr><td>{{ src }}</td><td>{{ count }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="field-note">No mention edges in the graph yet.</p>
+  {% endif %}
+</div>
+{% endif %}

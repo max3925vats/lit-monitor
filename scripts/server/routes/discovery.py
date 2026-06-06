@@ -15,6 +15,7 @@ Routes:
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import logging
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -37,6 +38,34 @@ router = APIRouter(tags=["discovery"])
 
 # Repo root: scripts/server/routes/discovery.py → 3 parents up.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# FG-3: valid retrieval modes for the discovery start form's rag_mode select.
+_VALID_RAG_MODES = ("vector", "graph", "hybrid")
+
+
+def _graph_extra_available() -> bool:
+    """True when the optional [graph] extra (kuzu) is importable.
+
+    A lightweight availability probe — does NOT open the production graph DB
+    (which would run migrations + take the write lock and mask a 'DB busy'
+    error as 'extra missing').
+    """
+    return importlib.util.find_spec("kuzu") is not None
+
+
+def _default_rag_mode() -> str:
+    """Resolve the default retrieval mode from ``retrieval.default_mode`` config.
+
+    Mirrors the CLI's resolution (``cli.py`` G9): the config accessor already
+    validates the value to one of {vector,graph,hybrid} and falls back to
+    'vector' when unset/invalid. Best-effort — any failure yields 'vector' so
+    the form still renders (500-leak-safe).
+    """
+    try:
+        mode = get_runtime().config.retrieval.default_mode
+    except Exception:
+        return "vector"
+    return mode if mode in _VALID_RAG_MODES else "vector"
 
 
 def _safe_runtime():
@@ -212,11 +241,15 @@ def discovery_run_detail(request: Request, run_id: int) -> HTMLResponse:
 # ---------------------------------------------------------------------------
 
 
-async def _spawn_discovery(*, dry_run: bool) -> asyncio.subprocess.Process:
-    """Build the argv and spawn ``lit-monitor run [--dry-run]``."""
+async def _spawn_discovery(
+    *, dry_run: bool, rag_mode: str
+) -> asyncio.subprocess.Process:
+    """Build the argv and spawn ``lit-monitor run [--dry-run] --rag-mode <mode>``."""
     argv = ["uv", "run", "lit-monitor", "run"]
     if dry_run:
         argv.append("--dry-run")
+    # FG-3: thread the chosen retrieval mode through to the CLI.
+    argv += ["--rag-mode", rag_mode]
     logger.info("Spawning discovery: %s", " ".join(argv))
     return await asyncio.create_subprocess_exec(*argv, cwd=str(_REPO_ROOT))
 
@@ -225,10 +258,37 @@ async def _spawn_discovery(*, dry_run: bool) -> asyncio.subprocess.Process:
 async def discovery_start(
     request: Request,
     dry_run: bool = Form(False),
+    rag_mode: str = Form(""),
 ) -> JSONResponse:
-    """Spawn a discovery run subprocess. Refuses if a run is already in flight."""
+    """Spawn a discovery run subprocess. Refuses if a run is already in flight.
+
+    FG-3: reads the ``rag_mode`` form field. Invalid/missing values fall back to
+    the config default (``retrieval.default_mode``). Selecting ``graph``/``hybrid``
+    without the ``[graph]`` extra installed is refused up-front with a visible
+    warning (mirrors the CLI W4 hard error) rather than spawning a run that would
+    crash mid-flight.
+    """
     runtime = get_runtime()
     slot = runtime.processes["discovery"]
+    # FG-3: validate the requested mode; fall back to config default otherwise.
+    mode = rag_mode if rag_mode in _VALID_RAG_MODES else _default_rag_mode()
+    # FG-3 / W4-mirror: graph|hybrid require the [graph] extra. Probe via a
+    # lightweight import check (does NOT open the production graph DB) and
+    # refuse to start before any search begins, so the user gets a clear
+    # warning instead of a subprocess that dies partway through. We do not
+    # pre-check whether the graph is *built* here — only whether the extra is
+    # *installed* — matching the CLI's W4 guard.
+    if mode in ("graph", "hybrid") and not _graph_extra_available():
+        return JSONResponse(
+            {
+                "started": False,
+                "reason": (
+                    f"--rag-mode {mode} requires the [graph] extra. "
+                    "Install with: uv sync --extra graph"
+                ),
+            },
+            status_code=400,
+        )
     async with slot.lock:
         if slot.is_running():
             return JSONResponse(
@@ -240,7 +300,7 @@ async def discovery_start(
                 status_code=409,
             )
         try:
-            slot.process = await _spawn_discovery(dry_run=dry_run)
+            slot.process = await _spawn_discovery(dry_run=dry_run, rag_mode=mode)
             slot.started_at = datetime.now(UTC).isoformat(timespec="seconds")
             slot.dry_run = dry_run
         except Exception:  # noqa: BLE001 — surface any spawn failure
@@ -300,6 +360,9 @@ async def discovery_controls(request: Request) -> HTMLResponse:
             "pid": slot.process.pid if running and slot.process else None,
             "started_at": slot.started_at if running else None,
             "dry_run": slot.dry_run if running else False,
+            # FG-3: default retrieval mode for the rag_mode select (config-driven).
+            "default_rag_mode": _default_rag_mode(),
+            "rag_modes": _VALID_RAG_MODES,
         },
     )
 

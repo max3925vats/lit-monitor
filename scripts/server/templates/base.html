@@ -17,7 +17,7 @@
     {# Current path drives server-side active-state (no JS). #}
     {% set _path = request.url.path %}
     {% set _run = ["/discovery", "/brain-build", "/schedule"] %}
-    {% set _explore = ["/corpus", "/themes", "/trending"] %}
+    {% set _explore = ["/corpus", "/graph", "/themes", "/trending"] %}
     {% set _tune = ["/domain", "/feedback", "/settings"] %}
     <header class="topnav">
       <a class="brand" href="/">lit-monitor</a>
@@ -35,6 +35,7 @@
           <button type="button" class="navgroup-label{% if _path in _explore %} active{% endif %}" aria-haspopup="true" aria-expanded="false">Explore ▾</button>
           <div class="navmenu" role="menu">
             <a href="/corpus" role="menuitem"{% if _path == "/corpus" %} class="active"{% endif %}>Corpus</a>
+            <a href="/graph" role="menuitem"{% if _path == "/graph" %} class="active"{% endif %}>Knowledge Graph</a>
             <a href="/themes" role="menuitem"{% if _path == "/themes" %} class="active"{% endif %}>Themes</a>
             <a href="/trending" role="menuitem"{% if _path == "/trending" %} class="active"{% endif %}>Trending</a>
           </div>

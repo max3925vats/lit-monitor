@@ -19,12 +19,17 @@ class TestRunHealthCheck:
             patch("scripts.setup.check_zotero.check_zotero", return_value=ok),
             patch("scripts.setup.check_vault.check_vault", return_value=ok),
             patch(
+                "scripts.setup.check_graph.safe_graph_db",
+                return_value=None,
+            ),
+            patch(
                 "scripts.setup.health_check._get_configured_ollama_model",
                 return_value=None,
             ),
         ):
             result = run_health_check()
-        assert set(result.keys()) == {"config", "ollama", "zotero", "vault"}
+        # FG-2 added the graph section as the 5th probe.
+        assert set(result.keys()) == {"config", "ollama", "zotero", "vault", "graph"}
 
     def test_run_health_check_preserves_check_tuples(self) -> None:
         """Probe results must pass through unchanged — same shape, same message."""
@@ -37,6 +42,10 @@ class TestRunHealthCheck:
             patch("scripts.setup.check_ollama.check_ollama", return_value=ok),
             patch("scripts.setup.check_zotero.check_zotero", return_value=ok),
             patch("scripts.setup.check_vault.check_vault", return_value=ok),
+            patch(
+                "scripts.setup.check_graph.safe_graph_db",
+                return_value=None,
+            ),
             patch(
                 "scripts.setup.health_check._get_configured_ollama_model",
                 return_value=None,

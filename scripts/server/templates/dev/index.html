@@ -234,5 +234,76 @@
     <button class="button danger" type="submit">Clear sandbox</button>
   </form>
   <div id="panel-7-clear-result"></div>
+
+  <h2>Panel 8 — Knowledge Graph backfill</h2>
+  <p class="field-note">
+    Spawns <code>lit-monitor graph backfill</code> against the live
+    <code>state.db</code> + KuzuDB graph. Pick the scope and extraction layers,
+    then Start. Streams the subprocess output below (this command writes no JSONL
+    log, so its stdout is piped directly).
+  </p>
+  <div class="card warning">
+    Graph/LLM backfill can take several minutes and spends LLM tokens when
+    <code>--with-llm</code> is set (cloud-Ollama NER + relationship extraction).
+    Don't start it casually.
+  </div>
+
+  <form hx-post="/api/dev/graph/backfill/start"
+        hx-target="#panel-8-status"
+        hx-swap="innerHTML"
+        class="setup-form">
+    <div class="button-row">
+      <label class="inline-check"><input type="checkbox" name="all" value="on" checked> --all (full corpus)</label>
+      <label class="inline-check"><input type="checkbox" name="ner" value="on"> NER (entities)</label>
+      <label class="inline-check"><input type="checkbox" name="relationships" value="on"> relationships</label>
+      <label class="inline-check"><input type="checkbox" name="with_llm" value="on"> with LLM (cloud-Ollama)</label>
+    </div>
+    <p class="field-note">
+      Note: if both NER and Relationships are selected, the backfill runs the
+      NER pass only — re-run with just Relationships for the relationship pass.
+    </p>
+    <div class="button-row">
+      <button class="button" type="submit">Start backfill</button>
+      <button class="button danger"
+              type="button"
+              hx-post="/api/dev/graph/backfill/stop"
+              hx-target="#panel-8-status"
+              hx-swap="innerHTML"
+              hx-confirm="Stop the running graph backfill? It will receive SIGTERM (graceful) then SIGKILL after 30s.">Stop</button>
+      <button class="button"
+              type="button"
+              hx-get="/api/dev/graph/backfill/stats"
+              hx-target="#panel-8-stats"
+              hx-swap="innerHTML">Refresh stats</button>
+    </div>
+  </form>
+
+  <div id="panel-8-status"
+       hx-get="/api/dev/graph/backfill/status"
+       hx-trigger="load, every 2s"
+       hx-swap="innerHTML">
+    <span class="pill">checking…</span>
+  </div>
+  <div hx-ext="sse" sse-connect="/api/dev/graph/backfill/stream" class="live-progress">
+    <div id="panel-8-stream"
+         sse-swap="progress"
+         hx-swap="beforeend scroll:bottom"
+         class="live-progress-pane">
+      <div class="field-note live-progress-hint">
+        Streaming <code>graph backfill</code> stdout. New lines appear here as the run progresses.
+      </div>
+    </div>
+  </div>
+
+  <p class="field-note">
+    Corpus stats (papers / entities / edges) — reuses
+    <code>get_corpus_stats</code>. Full graph view at <a href="/graph">/graph</a>.
+  </p>
+  <div id="panel-8-stats"
+       hx-get="/api/dev/graph/backfill/stats"
+       hx-trigger="load"
+       hx-swap="innerHTML">
+    <span class="pill">loading…</span>
+  </div>
 </section>
 {% endblock %}

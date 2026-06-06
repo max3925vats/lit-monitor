@@ -455,6 +455,76 @@ def get_corpus_stats(graph_db: Any) -> dict[str, Any]:
     return _coerce_jsonable(stats)
 
 
+def get_entity_counts_by_type(graph_db: Any) -> dict[str, int]:
+    """Count Entity nodes grouped by their ``type`` property.
+
+    Corpus-wide breakdown of how many entities exist per entity type
+    (topic / method / material / author / journal / keyword).  Mirrors
+    ``get_corpus_stats`` defensive style: a single grouped Cypher query
+    wrapped in try/except so a query failure yields ``{}`` rather than
+    propagating to the caller.
+
+    Args:
+        graph_db: GraphDB instance exposing ``._conn.execute(cypher)``.
+
+    Returns:
+        Mapping of entity-type string → count (int).  Empty dict on any
+        query failure.  All keys are str and all values are int, so the
+        result survives ``json.dumps``.
+    """
+    counts: dict[str, int] = {}
+    try:
+        res = graph_db._conn.execute(
+            "MATCH (e:Entity) RETURN e.type, count(e)"
+        )
+        while res.has_next():
+            row = res.get_next()
+            # row[0] may be None for entities with no type set; skip those.
+            if row[0] is None:
+                continue
+            counts[str(row[0])] = int(row[1])
+    except Exception as exc:
+        logger.warning("get_entity_counts_by_type: query failed: %s", exc)
+        return {}
+
+    return _coerce_jsonable(counts)
+
+
+def get_entity_counts_by_source(graph_db: Any) -> dict[str, int]:
+    """Count MENTIONS edges grouped by their ``source`` property.
+
+    Corpus-wide breakdown of how many mention edges each extraction source
+    contributed (``schema`` / ``biobert`` / ``llm_cloud``).  Mirrors
+    ``get_corpus_stats`` defensive style: a single grouped Cypher query
+    wrapped in try/except so a query failure yields ``{}`` rather than
+    propagating to the caller.
+
+    Args:
+        graph_db: GraphDB instance exposing ``._conn.execute(cypher)``.
+
+    Returns:
+        Mapping of source string → count (int).  Empty dict on any query
+        failure.  All keys are str and all values are int, so the result
+        survives ``json.dumps``.
+    """
+    counts: dict[str, int] = {}
+    try:
+        res = graph_db._conn.execute(
+            "MATCH ()-[r:MENTIONS]->() RETURN r.source, count(r)"
+        )
+        while res.has_next():
+            row = res.get_next()
+            # row[0] may be None for edges with no source set; skip those.
+            if row[0] is None:
+                continue
+            counts[str(row[0])] = int(row[1])
+    except Exception as exc:
+        logger.warning("get_entity_counts_by_source: query failed: %s", exc)
+        return {}
+
+    return _coerce_jsonable(counts)
+
+
 # ---------------------------------------------------------------------------
 # P5: discovery run read helpers (shared by HTTP routes + future MCP P9 + CLI
 # P6 + export-md P7)

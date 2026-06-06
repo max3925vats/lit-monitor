@@ -1,0 +1,25 @@
+{# FG-4: /graph — read-only Knowledge Graph overview. The corpus-wide counts
+   are deferred to /graph/overview and lazy-loaded via HTMX so this shell paints
+   instantly and degrades gracefully when the graph is absent. #}
+{% extends "base.html" %}
+{% block title %}Knowledge Graph — lit-monitor{% endblock %}
+{% block content %}
+<section class="dashboard">
+  <div class="page-header">
+    <h1>Knowledge Graph</h1>
+    <p class="field-note">
+      A read-only lens over the corpus-wide knowledge graph &mdash; indexing
+      coverage, entity and edge counts. Building and backfilling the graph live
+      under <a href="/dev">/dev</a>.
+    </p>
+  </div>
+
+  {# Heavy Cypher counts load lazily so the page renders immediately. #}
+  <div id="graph-overview"
+       hx-get="/graph/overview"
+       hx-trigger="load"
+       hx-swap="innerHTML">
+    <p class="field-note">Loading graph overview&hellip;</p>
+  </div>
+</section>
+{% endblock %}
