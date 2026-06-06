@@ -56,8 +56,9 @@
   {# Aggregate the flat (period, <category>, count) rows into per-period totals
      for the chart, and collect the distinct categories for the table columns.
      The category value is row.signal_type when dimension="signal" else
-     row.source (FI-6) — handled via .get so a missing key never raises.
-     Jinja namespaces are used so the loop-local mutations persist. #}
+     row.source (FI-6) — read via the dimension-matched key the backend emits;
+     the table cells below use .get on (period, category) so a missing pair
+     never raises. Jinja namespaces are used so loop-local mutations persist. #}
   {% set _periods = [] %}
   {% set _totals = {} %}
   {% set _by_cell = {} %}
