@@ -1,0 +1,42 @@
+{#
+  FI-2: server-rendered inline-SVG horizontal bar chart macro.
+
+  No JavaScript, no CDN, no color literals — fills use the site.css --accent
+  token so the chart inherits the theme. Server-rendered replacement for the
+  old client-side bar chart.
+
+  Usage:
+      {% from "insights/_bars.html" import bars %}
+      {{ bars(items, "name", "weight", max_value) }}
+
+  Args:
+      items:     iterable of mappings (e.g. cluster dicts or (label, count) rows).
+      label_key: key for each row's label text.
+      value_key: key for each row's numeric value.
+      max_value: the value mapped to a full-width bar. When 0 (first run / all
+                 zero), every bar collapses to zero width — no div-by-zero.
+#}
+{% macro bars(items, label_key, value_key, max_value) %}
+{% set _max = max_value | float %}
+{% set _rows = items | list %}
+{% set _h = 22 %}
+{% set _gap = 8 %}
+{% set _height = (_rows | length) * (_h + _gap) %}
+<svg class="signal-bars" width="100%" height="{{ _height }}"
+     viewBox="0 0 100 {{ _height }}" preserveAspectRatio="none"
+     role="img" aria-label="Bar chart">
+  {% for row in _rows %}
+  {% set _label = row[label_key] %}
+  {% set _value = row[value_key] | float %}
+  {% set _pct = (_value / _max * 100.0) if _max > 0 else 0.0 %}
+  {% set _y = loop.index0 * (_h + _gap) %}
+  <g>
+    <title>{{ _label }}: {{ _value }}</title>
+    <rect x="0" y="{{ _y }}" width="{{ "%.2f" | format(_pct) }}" height="{{ _h }}"
+          rx="2" fill="var(--accent)"></rect>
+    <text x="0.5" y="{{ _y + _h - 6 }}" font-size="11" fill="var(--accent-fg)"
+          style="font-size:11px;">{{ _label }} ({{ _value | int }})</text>
+  </g>
+  {% endfor %}
+</svg>
+{% endmacro %}

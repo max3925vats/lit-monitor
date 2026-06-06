@@ -18,7 +18,7 @@
     {% set _path = request.url.path %}
     {% set _run = ["/discovery", "/brain-build", "/schedule"] %}
     {% set _explore = ["/corpus", "/graph", "/themes", "/trending"] %}
-    {% set _tune = ["/domain", "/feedback", "/settings"] %}
+    {% set _tune = ["/domain", "/insights", "/settings"] %}
     <header class="topnav">
       <a class="brand" href="/">lit-monitor</a>
       <nav>
@@ -44,7 +44,7 @@
           <button type="button" class="navgroup-label{% if _path in _tune %} active{% endif %}" aria-haspopup="true" aria-expanded="false">Tune ▾</button>
           <div class="navmenu" role="menu">
             <a href="/domain" role="menuitem"{% if _path == "/domain" %} class="active"{% endif %}>Domain</a>
-            <a href="/feedback" role="menuitem"{% if _path == "/feedback" %} class="active"{% endif %}>Feedback</a>
+            <a href="/insights" role="menuitem"{% if _path == "/insights" %} class="active"{% endif %}>Insights</a>
             <a href="/settings" role="menuitem"{% if _path == "/settings" %} class="active"{% endif %}>Settings</a>
           </div>
         </div>

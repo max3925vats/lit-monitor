@@ -197,13 +197,13 @@ class TestFeedbackSummary:
 
 
 # ---------------------------------------------------------------------------
-# GET /feedback HTML page
+# GET /feedback — redirects to the renamed /insights page (FI-2)
 # ---------------------------------------------------------------------------
 
 class TestFeedbackPage:
-    def test_renders_200(self, client):
-        c, db = client
-        db.record_feedback_event("10.1/x", "saved")
-        r = c.get("/feedback")
-        assert r.status_code == 200
-        assert "Feedback Events" in r.text
+    def test_redirects_to_insights(self, client):
+        # FI-2 renamed the /feedback page to /insights; /feedback now 307s.
+        c, _ = client
+        r = c.get("/feedback", follow_redirects=False)
+        assert r.status_code in (302, 307)
+        assert r.headers["location"].endswith("/insights")

@@ -1,6 +1,6 @@
 """Nav/IA redesign: grouped dropdown topnav reachability + structure tests.
 
-The flat nav previously orphaned 5 pages (Themes, Trending, Feedback, Domain,
+The flat nav previously orphaned 5 pages (Themes, Trending, Insights, Domain,
 Settings). The redesign surfaces every page through grouped CSS-only dropdowns
 (Run / Explore / Tune) plus top-level Ask + Setup links. These tests pin the
 reachability guarantee, the group labels, the preserved health-badge, and the
@@ -33,7 +33,7 @@ ALL_NAV_HREFS = [
     "/themes",
     "/trending",
     "/domain",
-    "/feedback",
+    "/insights",
     "/settings",
     "/setup",
 ]
