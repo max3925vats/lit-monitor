@@ -19,7 +19,7 @@ import logging
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -2338,6 +2338,76 @@ class StateDB:
         for row in rows:
             result[row[0]] = row[1]
         return result
+
+    #: Whitelist of allowed time-grouping SQL expressions for feedback_timeline.
+    #: The granularity argument selects a fixed literal here — the user string is
+    #: NEVER interpolated into SQL, only used as a dict key (unknown ⇒ "week").
+    _FEEDBACK_PERIOD_EXPR: dict[str, str] = {
+        "day": "DATE(created_at)",
+        "week": "strftime('%Y-W%W', created_at)",
+    }
+
+    def feedback_timeline(
+        self,
+        granularity: str = "week",
+        *,
+        weeks: int | None = None,
+    ) -> list[dict]:
+        """FI-1: feedback event counts grouped by time-period and signal_type.
+
+        Read-only time-series for the Insights page. Defensive: any read failure
+        degrades to an empty list rather than raising to the caller.
+
+        Args:
+            granularity: ``"day"`` or ``"week"`` (any other value falls back to
+                         ``"week"``). Selected via a fixed whitelist map — the
+                         raw string is never interpolated into SQL.
+            weeks:       Optional lookback window. When set, only events with
+                         ``created_at >= now - weeks*7 days`` are counted. The
+                         cutoff is computed in Python and passed as a bound
+                         parameter (never interpolated).
+
+        Returns:
+            List of ``{"period": str, "signal_type": str, "count": int}`` dicts
+            ordered by (period, signal_type). Empty list on no data or error.
+        """
+        # Whitelist: the value chosen is a fixed literal, not the user string.
+        period_expr = self._FEEDBACK_PERIOD_EXPR.get(
+            granularity, self._FEEDBACK_PERIOD_EXPR["week"]
+        )
+
+        params: list[object] = []
+        where_clause = ""
+        if weeks is not None:
+            try:
+                cutoff = datetime.now() - timedelta(weeks=int(weeks))
+                where_clause = " WHERE created_at >= ?"
+                params.append(cutoff.strftime("%Y-%m-%d %H:%M:%S"))
+            except (ValueError, TypeError):
+                # A bad ``weeks`` value degrades to "no lookback filter".
+                where_clause = ""
+                params = []
+
+        sql = (
+            f"SELECT {period_expr} AS period, signal_type, COUNT(*) AS count "
+            f"FROM feedback_events{where_clause} "
+            "GROUP BY period, signal_type "
+            "ORDER BY period, signal_type"
+        )
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(sql, tuple(params)).fetchall()
+            return [
+                {
+                    "period": r["period"],
+                    "signal_type": r["signal_type"],
+                    "count": int(r["count"]),
+                }
+                for r in rows
+            ]
+        except sqlite3.Error as exc:
+            logger.warning("feedback_timeline read failed: %s", exc)
+            return []
 
     # -- P4 Part C: implicit Zotero-save support --
 
