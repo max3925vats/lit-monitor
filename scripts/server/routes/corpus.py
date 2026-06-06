@@ -21,6 +21,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from scripts.graph.import_citations import safe_graph_db  # patched in tests
+from scripts.obsidian_tools.relink import _focused_embed_query  # graph-free query
 from scripts.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
@@ -208,16 +209,93 @@ def _get_score_breakdown(doi: str) -> dict | None:
 _RELATED_K = 10
 
 
-def _get_related(doi: str, mode: str, k: int) -> list[dict] | None:
-    """Return related papers for *doi* under *mode*, or ``None`` if no graph.
+def _get_state_db():
+    """Resolve the real StateDB. Module-level seam so tests can patch it."""
+    return get_runtime().state_db
 
-    Wraps ``safe_graph_db`` + ``queries.get_related_papers``. Returns ``None``
-    (the graph-not-built sentinel) when ``safe_graph_db`` hands back no handle —
-    the related-work view here is graph-backed for every mode, so without a graph
-    there is nothing to show. The GraphDB handle we acquire is always closed.
+
+def _get_embeddings_db():
+    """Resolve the real EmbeddingsDB, or ``None`` if it can't be constructed.
+
+    Module-level seam so the vector-path tests can inject a fake without a live
+    ChromaDB. Defensive: any construction failure (extra absent, persist dir
+    missing) yields ``None`` so the route falls back to the no-neighbours notice
+    rather than 500-ing.
+    """
+    try:
+        return get_runtime().embeddings_db
+    except Exception:  # noqa: BLE001 — embeddings absent → graceful no-data
+        logger.error("embeddings_db unavailable for related-work", exc_info=True)
+        return None
+
+
+def _get_related(doi: str, mode: str, k: int) -> list[dict] | None:
+    """Return related papers for *doi* under *mode*, or ``None`` for no-data.
+
+    Provenance is truthful per the PF-1 "no lies" requirement: every returned
+    row carries an explicit ``source`` field matching how it was actually found.
+
+    * ``mode == "vector"``: graph-free. Builds a focused embed query from the
+      paper's title/abstract/core-finding (reusing relink's ``_focused_embed_query``)
+      and asks ChromaDB for nearest neighbours via ``find_similar_to_text``. Each
+      hit is tagged ``source="vector"``. The knowledge graph is NEVER opened in
+      this branch. Returns ``None`` when no embeddings store is available.
+    * ``mode in ("graph", "hybrid")``: graph-backed. Acquires a GraphDB handle
+      via ``safe_graph_db`` (always closed in ``finally``), runs
+      ``queries.get_related_papers``, and tags each row ``source=mode``. Returns
+      ``None`` (the graph-not-built sentinel) when no handle is available.
 
     Module-level so the route tests can patch this single seam without a live
-    KuzuDB. Mirrors the lazy-acquire / always-close idiom from ask.py.
+    KuzuDB / ChromaDB. Mirrors the lazy-acquire / always-close idiom from ask.py.
+    """
+    if mode == "vector":
+        return _get_related_vector(doi, k)
+    return _get_related_graph(doi, mode, k)
+
+
+def _get_related_vector(doi: str, k: int) -> list[dict] | None:
+    """Graph-free vector neighbours for *doi*, each tagged ``source="vector"``.
+
+    Returns ``None`` when no embeddings store is available (no-data notice) or
+    when the embedding lookup fails defensively (logged, never 500).
+    """
+    embeddings_db = _get_embeddings_db()
+    if embeddings_db is None:
+        return None
+    try:
+        state_db = _get_state_db()
+        # Reuse relink's proven graph-free "similar papers by DOI" query: a
+        # focused title+abstract+core_finding embed query matched against the
+        # same corpus-shape paper vectors. Fallback text is the DOI itself —
+        # _focused_embed_query only uses it when the DB lookup yields nothing.
+        query = _focused_embed_query(state_db, doi, doi or "")
+        hits = embeddings_db.find_similar_to_text(query, top_k=k, exclude_id=doi)
+    except Exception:  # noqa: BLE001 — embeddings failure → graceful no-data
+        logger.error("vector related-work failed doi=%s", doi, exc_info=True)
+        return None
+    rows: list[dict] = []
+    for hit in hits or []:
+        meta = hit.get("metadata") or {}
+        rows.append(
+            {
+                # find_similar_to_text keys the result by ChromaDB "id" (the DOI
+                # used at add_paper time); title isn't stored on the vector, so
+                # surface it from metadata when present, else None (template
+                # falls back to the DOI).
+                "doi": hit.get("id"),
+                "title": meta.get("title"),
+                "score": hit.get("score"),
+                "source": "vector",
+            }
+        )
+    return rows
+
+
+def _get_related_graph(doi: str, mode: str, k: int) -> list[dict] | None:
+    """Graph-backed neighbours for graph/hybrid mode, each tagged ``source=mode``.
+
+    Returns ``None`` (the graph-not-built sentinel) when ``safe_graph_db`` hands
+    back no handle. The GraphDB handle we acquire is always closed.
     """
     from scripts.api.queries import get_related_papers  # noqa: PLC0415
 
@@ -225,7 +303,10 @@ def _get_related(doi: str, mode: str, k: int) -> list[dict] | None:
     if db is None:
         return None
     try:
-        return get_related_papers(doi, mode=mode, k=k, graph_db=db)
+        rows = get_related_papers(doi, mode=mode, k=k, graph_db=db)
+        for row in rows or []:
+            row["source"] = mode
+        return rows
     finally:
         try:
             db.close()
