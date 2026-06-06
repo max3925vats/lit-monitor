@@ -96,6 +96,22 @@ def test_capture_post_api_feedback_still_works(client):
     assert r.json() == {"ok": True}
 
 
+def test_recent_event_empty_rating_renders_em_dash(client):
+    # FI-2 double-escape guard: a recent event with no rating/source must render
+    # an em-dash placeholder (&mdash; -> "—"), NOT the double-escaped literal
+    # "&amp;mdash;" that Jinja autoescape produces for {{ ... or "&mdash;" }}.
+    r = client.post(
+        "/api/feedback",
+        json={"doi": "10.2/no-rating", "signal_type": "saved"},
+    )
+    assert r.status_code in (200, 204)
+
+    page = client.get("/insights")
+    assert page.status_code == 200
+    assert "&amp;mdash;" not in page.text  # no double-escaped literal
+    assert "—" in page.text           # em-dash actually rendered
+
+
 # ---------------------------------------------------------------------------
 # Learning-state card
 # ---------------------------------------------------------------------------

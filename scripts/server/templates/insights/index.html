@@ -144,9 +144,9 @@
         </td>
         <td>{{ ev.signal_type }}</td>
         <td>{{ "%.2f" | format(ev.weight | float) }}</td>
-        <td>{{ ev.rating or "&mdash;" }}</td>
-        <td>{{ ev.source or "&mdash;" }}</td>
-        <td class="field-note">{{ ev.created_at or "&mdash;" }}</td>
+        <td>{% if ev.rating %}{{ ev.rating }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if ev.source %}{{ ev.source }}{% else %}&mdash;{% endif %}</td>
+        <td class="field-note">{% if ev.created_at %}{{ ev.created_at }}{% else %}&mdash;{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>
