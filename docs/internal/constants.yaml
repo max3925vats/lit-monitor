@@ -1,0 +1,206 @@
+# lit-monitor — internal reference of notable hardcoded tunables
+#
+# Hand-maintained REFERENCE catalogue. This file is NOT loaded by any code —
+# the real values live at the cited `file:line` locations and stay hardcoded
+# there. Purpose: make the scattered magic numbers from recent work
+# discoverable in one place, and give us somewhere to reason about tuning
+# before any future externalization into config.
+#
+# Date: 2026-06-06
+# Scope: recent FE-2 / FE-3 / PF-* front-end work + the P5 discovery engine.
+# `kind:` distinguishes `named_constant` (already factored, just catalogued)
+# from `bare_literal` (inline magic number, candidate for future extraction).
+# Line numbers verified against source on 2026-06-06 (branch fix/frontend-followups).
+
+corpus:
+  low_confidence_threshold:
+    value: 0.5
+    location: scripts/core/state_db.py:797
+    meaning: "Papers whose parsed _overall_confidence < 0.5 are flagged low-confidence in the corpus status_gap filter (filtered in Python, not SQL)."
+    kind: bare_literal
+  list_limit_default:
+    value: 50
+    location: scripts/server/routes/corpus.py:94
+    meaning: "Default page size for the corpus list API (Query(50, ge=1, le=200))."
+    kind: bare_literal
+  list_limit_max:
+    value: 200
+    location: scripts/server/routes/corpus.py:94
+    meaning: "Upper bound on corpus list page size (the le= on the same Query)."
+    kind: bare_literal
+  related_k:
+    value: 10
+    location: scripts/server/routes/corpus.py:312
+    meaning: "_RELATED_K — number of related-work neighbours fetched for a paper's related panel."
+    kind: named_constant
+
+discovery:
+  runs_list_limit_default:
+    value: 20
+    location: scripts/server/routes/discovery.py:383
+    meaning: "Default page size for the discovery runs-list API (Query(20, ge=1, le=100))."
+    kind: bare_literal
+  runs_list_limit_max:
+    value: 100
+    location: scripts/server/routes/discovery.py:383
+    meaning: "Upper bound on the discovery runs-list page size (the le= on the same Query)."
+    kind: bare_literal
+  run_papers_top_k_default:
+    value: 20
+    location: scripts/server/routes/discovery.py:413
+    meaning: "Default number of papers returned for a single discovery run (Query(20, ge=1, le=100))."
+    kind: bare_literal
+
+graph_health:
+  severity_policy:
+    value: "warn-or-ok, never fail"
+    location: scripts/setup/check_graph.py:69-92
+    meaning: "Graph-health check thresholds: graph absent / no papers / 0 indexed -> 'warn' (ok=False); >=1 paper indexed -> 'ok' (partial indexing counts as healthy). No branch ever returns 'fail'."
+    kind: bare_literal
+
+relink_embeddings:
+  citation_score_cutoff:
+    value: 75
+    location: scripts/obsidian_tools/relink.py:30
+    meaning: "_CITATION_SCORE_CUTOFF — rapidfuzz token_sort_ratio threshold for matching a citation string to a known paper."
+    kind: named_constant
+  focused_embed_query_max_chars:
+    value: 1300
+    location: scripts/obsidian_tools/relink.py:289
+    meaning: "_FOCUSED_EMBED_QUERY_MAX_CHARS — note text is truncated to this many chars before embedding for related-work lookup."
+    kind: named_constant
+  related_work_top_k_default:
+    value: 10
+    location: scripts/obsidian_tools/relink.py:158
+    meaning: "Default top_k for the relink related-work neighbour query."
+    kind: bare_literal
+
+learning_feedback:
+  rocchio_beta:
+    value: 0.75
+    location: scripts/learning/rocchio.py:44
+    meaning: "BETA — Rocchio positive-feedback weight (pull toward liked papers)."
+    kind: named_constant
+  rocchio_gamma:
+    value: 0.15
+    location: scripts/learning/rocchio.py:47
+    meaning: "GAMMA — Rocchio negative-feedback weight (push away from disliked papers)."
+    kind: named_constant
+  rocchio_half_life_days:
+    value: 90.0
+    location: scripts/learning/rocchio.py:50
+    meaning: "HALF_LIFE_DAYS — time-decay half-life applied to feedback event weights."
+    kind: named_constant
+  rocchio_cold_start_floor:
+    value: 10
+    location: scripts/learning/rocchio.py:54
+    meaning: "COLD_START_FLOOR — minimum feedback events before the interest soft-gate opens at all."
+    kind: named_constant
+  rocchio_soft_gate_k:
+    value: 30
+    location: scripts/learning/rocchio.py:57
+    meaning: "SOFT_GATE_K — saturation point of the cold-start soft-gate ramp (full strength near this many events)."
+    kind: named_constant
+  rocchio_implicit_save_weight:
+    value: 0.5
+    location: scripts/learning/rocchio.py:61
+    meaning: "IMPLICIT_SAVE_WEIGHT — source factor for an implicit Zotero save vs an explicit feedback signal."
+    kind: named_constant
+  feedback_weight_opened:
+    value: 0.3
+    location: scripts/core/state_db.py:2234
+    meaning: "_FEEDBACK_WEIGHT_MAP['opened'] — base weight for an 'opened' feedback signal."
+    kind: named_constant
+  feedback_weight_saved:
+    value: 1.0
+    location: scripts/core/state_db.py:2235
+    meaning: "_FEEDBACK_WEIGHT_MAP['saved'] — base weight for a 'saved' feedback signal."
+    kind: named_constant
+  feedback_weight_dismissed:
+    value: -0.5
+    location: scripts/core/state_db.py:2236
+    meaning: "_FEEDBACK_WEIGHT_MAP['dismissed'] — base (negative) weight for a 'dismissed' feedback signal."
+    kind: named_constant
+  feedback_weight_rated_base:
+    value: 0.5
+    location: scripts/core/state_db.py:2237
+    meaning: "_FEEDBACK_WEIGHT_MAP['rated'] — base weight for a 'rated' signal, before the rating multiplier."
+    kind: named_constant
+  feedback_weight_thumbs_up:
+    value: 0.8
+    location: scripts/core/state_db.py:2238
+    meaning: "_FEEDBACK_WEIGHT_MAP['thumbs_up'] — base weight for a 'thumbs_up' signal."
+    kind: named_constant
+  feedback_weight_thumbs_down:
+    value: -0.8
+    location: scripts/core/state_db.py:2239
+    meaning: "_FEEDBACK_WEIGHT_MAP['thumbs_down'] — base (negative) weight for a 'thumbs_down' signal."
+    kind: named_constant
+  feedback_rating_multiplier:
+    value: 0.5
+    location: scripts/core/state_db.py:2280
+    meaning: "Rating scaling factor: stored weight = base_weight * (rating - 3) * 0.5, recentring a 1-5 rating about the neutral midpoint 3."
+    kind: bare_literal
+
+clustering:
+  atrophy_default_floor:
+    value: 0.1
+    location: scripts/clustering/atrophy.py:100
+    meaning: "DEFAULT_FLOOR — a cluster's feedback_weight never decays below this (config-driven at CLI via feedback.minimum_cluster_floor)."
+    kind: named_constant
+  atrophy_decay_strength:
+    value: 0.9
+    location: scripts/clustering/atrophy.py:106
+    meaning: "DECAY_STRENGTH = 1.0 - DEFAULT_FLOOR — how hard a fully-dismissed cluster is pulled down toward the floor."
+    kind: named_constant
+  atrophy_engagement_prior:
+    value: 3.0
+    location: scripts/clustering/atrophy.py:115
+    meaning: "ENGAGEMENT_PRIOR — constant added to the dismissal-fraction denominator; keeps a few dismissals from tanking a cluster and lets old dismissals recover."
+    kind: named_constant
+  atrophy_half_life_days:
+    value: 90.0
+    location: scripts/learning/rocchio.py:50
+    meaning: "Half-life used for atrophy time-decay; imported from rocchio.HALF_LIFE_DAYS (see scripts/clustering/atrophy.py:69 import)."
+    kind: named_constant
+  atrophy_explore_weight_epsilon:
+    value: 0.05
+    location: scripts/clustering/atrophy.py:91
+    meaning: "DEFAULT_EXPLORE_WEIGHT_EPSILON — how far above the floor a cluster's weight must sit before exploration will probe it."
+    kind: named_constant
+  atrophy_default_quiet_weeks:
+    value: 4
+    location: scripts/clustering/atrophy.py:84
+    meaning: "DEFAULT_QUIET_WEEKS — quiet-period window used in the atrophy/exploration logic."
+    kind: named_constant
+
+ranker:
+  # All blend weights in scripts/llm/ranker.py are function-parameter defaults of
+  # 0.0, meaning each extra signal leg (domain_context, cluster_centroid, graph,
+  # feedback/interest) is inert unless a non-zero weight is passed in from config
+  # (ranking.weights.*). These are NOT bare magic numbers to externalize — they
+  # are already config-driven; the 0.0 defaults exist only to preserve byte-for-byte
+  # backward-compatible behavior when a leg is unconfigured.
+  blend_weight_defaults:
+    value: 0.0
+    location: scripts/llm/ranker.py:50-57
+    meaning: "domain_context_weight / cluster_centroid_weight / graph_weights / interest_weight all default to 0.0 (or None) and are sourced from ranking.weights.* — config-driven, not hardcoded tunables."
+    kind: named_constant
+
+# --- Closing note: externalization candidates -------------------------------
+#
+# Already well-factored (named module constants — leave as-is unless a real
+# tuning need arises):
+#   * scripts/learning/rocchio.py    — BETA/GAMMA/HALF_LIFE_DAYS/COLD_START_FLOOR/
+#                                       SOFT_GATE_K/IMPLICIT_SAVE_WEIGHT
+#   * scripts/clustering/atrophy.py  — DEFAULT_FLOOR/DECAY_STRENGTH/ENGAGEMENT_PRIOR/
+#                                       explore epsilon/quiet weeks
+#   * scripts/llm/ranker.py          — blend weights are config-driven (ranking.weights.*)
+#   * scripts/core/state_db.py       — _FEEDBACK_WEIGHT_MAP is a named map
+#
+# Bare literals (best candidates if/when we externalize to config):
+#   * corpus + discovery page bounds  — corpus.py:94 (50/200), discovery.py:383
+#     (20/100), discovery.py:413 (20/100); inline in the FastAPI Query(...) defaults.
+#   * corpus low_confidence threshold 0.5 — state_db.py:797.
+#   * feedback rating multiplier 0.5 — state_db.py:2280 (sits outside the named map).
+#   * relink related-work top_k default 10 — relink.py:158.
