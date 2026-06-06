@@ -7,7 +7,8 @@ Covers:
 - learning-state card rendering (available / first-run)
 - cluster-weights table rendering (populated / empty)
 - nav exposes /insights in the Tune group
-- no Chart.js / CDN / <canvas> leaks into the rendered page
+- Chart.js IS loaded on /insights (CU-2 reversal of the old FI-2 no-CDN contract);
+  charts render alongside the retained data tables (graceful-degradation fallback)
 
 Mirrors the fixture pattern in ``test_routes_feedback.py`` but yields the bare
 TestClient. The route-module seams ``_learning_state`` / ``_cluster_weights`` are
@@ -182,13 +183,46 @@ def test_nav_tune_has_insights(client):
     assert 'href="/insights"' in r.text and "Insights" in r.text
 
 
-def test_no_chartjs_or_cdn(client):
-    r = client.get("/insights")
-    assert (
-        "chart.js" not in r.text.lower()
-        and "cdn.jsdelivr" not in r.text.lower()
-        and "<canvas" not in r.text.lower()
+def test_insights_loads_chartjs(client, monkeypatch):
+    # CU-2 contract REVERSAL: this assertion was previously test_no_chartjs_or_cdn,
+    # which asserted Chart.js was ABSENT (FI-2 was offline-only / inline-SVG).
+    # CU-2 deliberately re-introduces Chart.js (a CDN dep) for richer charts —
+    # notably a stacked timeline — so the contract is now that Chart.js IS present
+    # on /insights. The data tables remain as the graceful-degradation fallback.
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._learning_state", lambda: {"available": False}
     )
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._cluster_weights",
+        lambda: {"floor": 0.1, "clusters": []},
+    )
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._summary_by_source", lambda: {}
+    )
+    r = client.get("/insights")
+    assert ("chart.js" in r.text.lower()) or ("chart.umd" in r.text.lower())  # CDN script
+
+
+def test_insights_signal_mix_canvas_and_data(client, monkeypatch):
+    # A canvas + a JSON data island carrying the counts are present alongside the
+    # by-source table (the seam we control via _summary_by_source — feedback_summary
+    # for signal-mix would need the real db). KEEP the table: graceful degradation.
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._summary_by_source",
+        lambda: {"discovery": 7, "themes": 3},
+    )
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._learning_state", lambda: {"available": False}
+    )
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._cluster_weights",
+        lambda: {"floor": 0.1, "clusters": []},
+    )
+    r = client.get("/insights")
+    assert "<canvas" in r.text and "data-chart" in r.text
+    # the data island carries the by-source counts as JSON (autoescaped via |tojson)
+    assert 'data-chart="by-source-data"' in r.text
+    assert "discovery" in r.text and "By source" in r.text  # table retained
 
 
 # ---------------------------------------------------------------------------

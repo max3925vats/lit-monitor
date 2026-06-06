@@ -12,10 +12,10 @@ read/compute failure degrades to an empty/absent result rather than raising to
 the caller, so the Insights page can never be taken down by a degenerate vector,
 a missing embeddings store, or a transient DB error.
 
-The cosine-ranking helper here is a clean standalone port of the ranking logic
-in ``scripts/cli.py`` (the ``learning view`` command). It is NOT a refactor of
-the CLI — the CLI still owns its own copy. If this ranking is ever generalised,
-both call sites should be unified to avoid silent divergence.
+The cosine-ranking helper here (``_rank_top_papers``) is a thin wrapper over the
+shared ranker in ``scripts/learning/ranking`` (CU-1). The CLI ``learning view``
+command calls the same shared function, so the two call sites can no longer
+silently diverge.
 """
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ from typing import Any
 import numpy as np
 
 from scripts.clustering.atrophy import compute_cluster_feedback_weights_from_db
+from scripts.learning.ranking import rank_papers_by_interest
 from scripts.learning.rocchio import soft_gate
 
 logger = logging.getLogger(__name__)
@@ -58,47 +59,17 @@ def _rank_top_papers(
 ) -> list[dict]:
     """Rank library papers by cosine alignment with the interest vector.
 
-    Standalone port of the ``learning view`` ranking in ``cli.py``. Finite- and
-    zero-norm-guards both the interest vector and each library embedding; titles
-    are resolved via ``state_db.get_paper(doi)`` and fall back to the bare DOI.
+    Thin wrapper over the shared ranker in ``scripts/learning/ranking`` (CU-1):
+    the ranking logic is identical to the CLI ``learning view`` command and now
+    lives in one place. Kept as a named seam so ``get_learning_state`` and any
+    tests that patch this function keep working.
 
     Returns the top-``top_k`` ``{"doi", "title", "cosine"}`` dicts, or ``[]`` on
     any failure (degenerate vector, no embeddings store, cosine error).
     """
-    try:
-        i_norm = float(np.linalg.norm(interest_vec))
-        if i_norm < 1e-9 or not np.isfinite(i_norm):
-            return []  # degenerate interest vector ⇒ no ranking
-
-        all_embeddings = embeddings_db.get_paper_embeddings() if embeddings_db else None
-        if not all_embeddings:
-            return []
-
-        scores: list[tuple[str, float]] = []
-        for doi, emb in all_embeddings.items():
-            emb_arr = np.asarray(emb, dtype=np.float32)
-            c_norm = float(np.linalg.norm(emb_arr))
-            if c_norm < 1e-9 or not np.isfinite(c_norm):
-                continue
-            cos = float(np.dot(emb_arr, interest_vec) / (c_norm * i_norm))
-            if np.isfinite(cos):
-                scores.append((doi, cos))
-
-        scores.sort(key=lambda t: t[1], reverse=True)
-
-        top: list[dict] = []
-        for doi, cos in scores[:top_k]:
-            title = ""
-            try:
-                rec = state_db.get_paper(doi)
-                title = (rec.get("title") or "") if rec else ""
-            except Exception:  # noqa: BLE001 — title is cosmetic
-                title = ""
-            top.append({"doi": doi, "title": title or doi, "cosine": round(cos, 4)})
-        return top
-    except Exception as exc:  # noqa: BLE001 — ranking is a nice-to-have, never fatal
-        logger.warning("interest-alignment ranking failed: %s", exc)
-        return []
+    return rank_papers_by_interest(
+        interest_vec, embeddings_db, state_db, top_k=top_k
+    )
 
 
 def get_learning_state(

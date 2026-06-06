@@ -1,8 +1,11 @@
 {# FI-2: read-only /insights page — learning state, cluster weights,
    server-SVG signal mix, recent events. Supersedes the old /feedback page. #}
 {% extends "base.html" %}
-{% from "insights/_bars.html" import bars %}
 {% block title %}Insights — lit-monitor{% endblock %}
+{# CU-2: Chart.js via CDN, loaded on this page only. Charts degrade gracefully
+   to the data tables below if the CDN is blocked (site.js no-ops without
+   window.Chart). #}
+{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>{% endblock %}
 {% block content %}
 <section class="dashboard">
   <div class="page-header">
@@ -68,18 +71,26 @@
     your dismissals). Weights never decay below the floor of
     {{ "%.2f" | format(clusters.floor | float) }}.
   </p>
+  {# CU-2: Chart.js bar chart of per-theme weights. JSON island carries the
+     labels + values; site.js builds the chart, reading colors from the palette
+     tokens. The table below remains the exact-values + degradation fallback. #}
+  {% set _cw_labels = [] %}
+  {% set _cw_data = [] %}
+  {% for c in clusters.clusters %}
+  {% set _ = _cw_labels.append(c.name) %}
+  {% set _ = _cw_data.append(c.weight | float) %}
+  {% endfor %}
+  <div class="chart-box"><canvas data-chart="cluster-weights"></canvas></div>
+  <script type="application/json" data-chart="cluster-weights-data">{{ {"labels": _cw_labels, "data": _cw_data, "max": 1.0} | tojson }}</script>
   <table class="papers-table">
     <thead>
-      <tr><th>Theme</th><th>Weight</th><th></th><th>At floor?</th></tr>
+      <tr><th>Theme</th><th>Weight</th><th>At floor?</th></tr>
     </thead>
     <tbody>
       {% for c in clusters.clusters %}
       <tr>
         <td>{{ c.name }}</td>
         <td>{{ "%.2f" | format(c.weight | float) }}</td>
-        <td style="width: 40%;">
-          {{ bars([c], "name", "weight", 1.0) }}
-        </td>
         <td>
           {% if c.at_floor %}<span class="pill warning">at floor</span>
           {% else %}&mdash;{% endif %}
@@ -105,9 +116,17 @@
   {% if (count | int) > _sig_max.v %}{% set _sig_max.v = count | int %}{% endif %}
   {% endfor %}
   {% if _sig_rows and _sig_max.v > 0 %}
+  {# CU-2: Chart.js bar chart + JSON data island; table kept beside it. #}
+  {% set _sig_labels = [] %}
+  {% set _sig_data = [] %}
+  {% for row in _sig_rows %}
+  {% set _ = _sig_labels.append(row.label) %}
+  {% set _ = _sig_data.append(row.count | int) %}
+  {% endfor %}
   <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start;">
     <div style="flex: 1; min-width: 280px; max-width: 480px;">
-      {{ bars(_sig_rows, "label", "count", _sig_max.v) }}
+      <div class="chart-box"><canvas data-chart="signal-mix"></canvas></div>
+      <script type="application/json" data-chart="signal-mix-data">{{ {"labels": _sig_labels, "data": _sig_data} | tojson }}</script>
     </div>
     <table class="papers-table" style="flex: 0 0 auto;">
       <thead><tr><th>Signal</th><th>Count</th></tr></thead>
@@ -139,9 +158,17 @@
     or an implicit Zotero save). Open-ended; <code>unknown</code> groups events
     recorded without a source tag.
   </p>
+  {# CU-2: Chart.js bar chart + JSON data island; table kept beside it. #}
+  {% set _src_labels = [] %}
+  {% set _src_data = [] %}
+  {% for row in _src_rows %}
+  {% set _ = _src_labels.append(row.label) %}
+  {% set _ = _src_data.append(row.count | int) %}
+  {% endfor %}
   <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start;">
     <div style="flex: 1; min-width: 280px; max-width: 480px;">
-      {{ bars(_src_rows, "label", "count", _src_max.v) }}
+      <div class="chart-box"><canvas data-chart="by-source"></canvas></div>
+      <script type="application/json" data-chart="by-source-data">{{ {"labels": _src_labels, "data": _src_data} | tojson }}</script>
     </div>
     <table class="papers-table" style="flex: 0 0 auto;">
       <caption class="field-note" style="text-align: left;">By source, all-time totals.</caption>

@@ -10,6 +10,15 @@
   --border: #e3e3df;
   --danger-bg: #fde2e2;
   --danger-fg: #8a1a1a;
+  /* CU-2: categorical chart palette (distinct, accessible hues). JS reads these
+     via getComputedStyle; never duplicate these literals into templates/JS. */
+  --chart-1: #2a6df4;
+  --chart-2: #e8710a;
+  --chart-3: #1a9e5c;
+  --chart-4: #b5179e;
+  --chart-5: #f2c200;
+  --chart-6: #6a4cff;
+  --chart-grid: #e3e3df;
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
   --radius: 8px;
@@ -727,4 +736,14 @@ a:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.5rem;
+}
+
+/* --- CU-2: Chart.js canvas wrapper --- */
+/* A positioned, fixed-height box so a responsive Chart.js canvas sizes against
+ * the box rather than collapsing to zero height. */
+.chart-box {
+  position: relative;
+  height: 220px;
+  max-width: 520px;
+  margin: 0.5rem 0 1rem;
 }

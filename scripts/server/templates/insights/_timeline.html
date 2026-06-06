@@ -10,17 +10,19 @@
      weeks       — the bounded lookback window (int) surfaced in a .field-note.
      error       — True when the read raised (generic notice, no detail leaked).
 
-   Presentation: one inline-SVG bar per period showing the PER-PERIOD TOTAL
-   (events summed across categories), so the chart reads as "how much feedback
-   happened, when". The per-category breakdown is preserved in the companion
-   table beneath the chart. Tokens-only fills (reuses _bars.html → var(--accent));
-   no JavaScript, no CDN. All content via Jinja autoescape only — never |safe.
+   Presentation (CU-2): a STACKED Chart.js bar — labels are the sorted distinct
+   periods, one dataset per category (signal_type or source) carrying per-period
+   counts, stacked so each bar shows the per-period total broken down by category.
+   The chart is built client-side by site.js from the JSON data island below
+   (palette colors from site.css tokens). The per-(period, category) breakdown
+   table beneath the chart is the exact-values + graceful-degradation fallback
+   (kept when the Chart.js CDN is blocked). All content via Jinja autoescape and
+   |tojson only — never |safe.
 
    Both toggles preserve each other's state: every granularity link carries the
    current dimension and every dimension link carries the current granularity, so
    switching one axis never silently resets the other.
 #}
-{% from "insights/_bars.html" import bars %}
 {% set _cat_header = "Source" if dimension == "source" else "Signal" %}
 <div class="card" id="insights-timeline-card">
   <h2>Feedback timeline</h2>
@@ -63,7 +65,6 @@
   {% set _totals = {} %}
   {% set _by_cell = {} %}
   {% set _cats = [] %}
-  {% set _max = namespace(v=0) %}
   {% for r in rows %}
     {% set _cat = r.signal_type if dimension == "signal" else r.source %}
     {% if r.period not in _periods %}{% set _ = _periods.append(r.period) %}{% endif %}
@@ -71,22 +72,31 @@
     {% set _prev = _totals.get(r.period, 0) + (r.count | int) %}
     {% set _ = _totals.update({r.period: _prev}) %}
     {% set _ = _by_cell.update({(r.period, _cat): (r.count | int)}) %}
-    {% if _prev > _max.v %}{% set _max.v = _prev %}{% endif %}
   {% endfor %}
-  {% set _chart_rows = [] %}
+  {# CU-2: build a STACKED-bar payload — one dataset per category, each carrying
+     per-period counts (0 where a (period, category) pair is absent). The JSON
+     island feeds site.js, which builds a stacked Chart.js bar; the per-(period,
+     category) breakdown table below remains the exact-values + degradation
+     fallback. #}
+  {% set _datasets = [] %}
+  {% for c in _cats %}
+  {% set _series = [] %}
   {% for p in _periods %}
-  {% set _ = _chart_rows.append({"label": p, "count": _totals.get(p, 0)}) %}
+  {% set _ = _series.append(_by_cell.get((p, c), 0)) %}
+  {% endfor %}
+  {% set _ = _datasets.append({"label": c, "data": _series}) %}
   {% endfor %}
 
   <p class="field-note">
     Feedback events per {{ granularity }} over the last {{ weeks }} weeks
-    (bars show the per-{{ granularity }} total across all
-    {{ "sources" if dimension == "source" else "signal types" }}).
+    (bars are stacked by
+    {{ "source" if dimension == "source" else "signal type" }}; each segment is
+    one {{ "source" if dimension == "source" else "signal type" }}'s share of
+    that {{ granularity }}'s total).
   </p>
 
-  <div style="max-width: 560px;">
-    {{ bars(_chart_rows, "label", "count", _max.v) }}
-  </div>
+  <div class="chart-box"><canvas data-chart="timeline"></canvas></div>
+  <script type="application/json" data-chart="timeline-data">{{ {"labels": _periods, "datasets": _datasets, "stacked": True} | tojson }}</script>
 
   <table class="papers-table">
     <caption class="field-note" style="text-align: left;">
