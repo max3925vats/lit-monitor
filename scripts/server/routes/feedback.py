@@ -279,7 +279,7 @@ async def insights_timeline(
         # exc is in the message (not just the traceback) so a log scrape catches
         # the cause; the browser only ever sees the generic notice in-template.
         logger.error("insights timeline fragment failed: %s", exc, exc_info=True)
-        rows, weeks = [], weeks
+        rows = []
         error = True
     else:
         error = False

@@ -286,3 +286,14 @@ def test_insights_top_papers_no_vector_notice(client, monkeypatch):
     assert r.status_code == 200 and (
         "feedback" in r.text.lower() or "hasn't learned" in r.text.lower()
     )
+
+
+def test_insights_top_papers_no_leak(client, monkeypatch, caplog):
+    import logging
+    def _boom():
+        raise RuntimeError("vec://secret/path")
+    monkeypatch.setattr("scripts.server.routes.feedback._learning_state", _boom)
+    with caplog.at_level(logging.ERROR, logger="scripts.server.routes.feedback"):
+        r = client.get("/insights/top-papers")
+    assert r.status_code == 200 and "vec://secret" not in r.text
+    assert any("vec://secret" in rec.getMessage() for rec in caplog.records)
