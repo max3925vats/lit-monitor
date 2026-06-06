@@ -106,21 +106,18 @@
 (function () {
   "use strict";
 
-  // Pull the six categorical palette tokens once per init; falls back to a
-  // single token if a slot is undefined (cycled by index for multi-series).
-  function paletteColor(idx) {
-    var root = document.documentElement;
-    var name = "--chart-" + ((idx % 6) + 1);
-    var v = getComputedStyle(root).getPropertyValue(name).trim();
-    return v || getComputedStyle(root).getPropertyValue("--chart-1").trim();
-  }
-
-  function gridColor() {
-    return (
-      getComputedStyle(document.documentElement)
-        .getPropertyValue("--chart-grid")
-        .trim() || getComputedStyle(document.documentElement).getPropertyValue("--border").trim()
-    );
+  // Read the six categorical palette tokens + the grid color ONCE per init.
+  // getComputedStyle is a forced style read, so we resolve the CSS :root tokens
+  // a single time and index into the result (cycled by slot for multi-series).
+  function readPalette() {
+    var cs = getComputedStyle(document.documentElement);
+    var get = function (name) {
+      return cs.getPropertyValue(name).trim();
+    };
+    var fallback = get("--chart-1") || get("--accent");
+    var colors = [];
+    for (var i = 1; i <= 6; i++) colors.push(get("--chart-" + i) || fallback);
+    return { colors: colors, grid: get("--chart-grid") || get("--border") };
   }
 
   // Read the JSON island for a given canvas. Islands live in the same document
@@ -137,20 +134,24 @@
     }
   }
 
-  // Build the Chart.js config for a single canvas given its parsed data island.
-  function buildConfig(name, data) {
+  // Build the Chart.js config for a single canvas given its parsed data island
+  // and the once-per-init palette ({colors, grid}).
+  function buildConfig(name, data, palette) {
     if (!data) return null;
+    var color = function (i) {
+      return palette.colors[i % palette.colors.length];
+    };
     var stacked = !!data.stacked;
     var datasets;
     if (data.datasets) {
       // Multi-series (stacked timeline): one dataset per category, palette-cycled.
       datasets = data.datasets.map(function (ds, i) {
-        return { label: ds.label, data: ds.data, backgroundColor: paletteColor(i) };
+        return { label: ds.label, data: ds.data, backgroundColor: color(i) };
       });
     } else {
       // Single-series bar: one color per bar so categories read distinctly.
       var colors = (data.data || []).map(function (_, i) {
-        return paletteColor(i);
+        return color(i);
       });
       datasets = [{ label: name, data: data.data || [], backgroundColor: colors }];
     }
@@ -163,12 +164,12 @@
         maintainAspectRatio: false,
         plugins: { legend: { display: !!data.datasets } },
         scales: {
-          x: { stacked: stacked, grid: { color: gridColor() } },
+          x: { stacked: stacked, grid: { color: palette.grid } },
           y: {
             stacked: stacked,
             beginAtZero: true,
             max: yMax,
-            grid: { color: gridColor() },
+            grid: { color: palette.grid },
           },
         },
       },
@@ -180,10 +181,11 @@
     var scope = root && root.querySelectorAll ? root : document;
     var canvases = scope.querySelectorAll("canvas[data-chart]");
     if (!canvases.length) return; // not an insights page / nothing swapped in.
+    var palette = readPalette(); // resolve CSS tokens once per init.
     canvases.forEach(function (canvas) {
       var name = canvas.getAttribute("data-chart");
       var data = readData(name, scope);
-      var cfg = buildConfig(name, data);
+      var cfg = buildConfig(name, data, palette);
       if (!cfg) return;
       if (canvas._chart) canvas._chart.destroy(); // re-swap safety: no leak/dupe.
       canvas._chart = new window.Chart(canvas, cfg);
