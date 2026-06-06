@@ -1,0 +1,54 @@
+{# FI-3: top-aligned-papers fragment — lazy-loaded into #insights-top-papers.
+
+   Context:
+     learning — the _learning_state() dict. Relevant keys:
+                available  — bool; False on first run / a bad interest vector.
+                top_papers — list of {doi, title, cosine} dicts (may be empty).
+
+   Three states:
+     1. available + papers  → a small table (title → /corpus/{doi}, cosine).
+     2. available + empty   → "no aligned papers" notice (vector needs embeddings).
+     3. not available       → "engine hasn't learned" notice.
+
+   DOI embedded literally in the /corpus/{doi:path} link (verbatim, no urlencode
+   — matches the corpus detail route). All content via Jinja autoescape only —
+   never |safe. Em-dash placeholders use the block form only.
+#}
+<div class="card" id="insights-top-papers-card">
+  <h2>Top aligned papers</h2>
+  {% if learning.available %}
+    {% if learning.top_papers %}
+  <p class="field-note">
+    Library papers most aligned with your interest vector (cosine similarity).
+  </p>
+  <table class="papers-table">
+    <thead>
+      <tr><th>Paper</th><th>Cosine</th></tr>
+    </thead>
+    <tbody>
+      {% for p in learning.top_papers %}
+      <tr>
+        <td>
+          {% if p.doi %}
+          <a href="/corpus/{{ p.doi }}">{% if p.title %}{{ p.title }}{% else %}{{ p.doi }}{% endif %}</a>
+          {% elif p.title %}{{ p.title }}
+          {% else %}&mdash;{% endif %}
+        </td>
+        <td><span class="score">{{ "%.2f" | format(p.cosine | float) }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+    {% else %}
+  <p class="field-note">
+    No aligned papers yet — the interest vector needs library embeddings. Run
+    <code>lit-monitor brain-build</code> to embed the corpus.
+  </p>
+    {% endif %}
+  {% else %}
+  <p class="field-note">
+    The engine hasn't learned anything yet — give feedback on discoveries to
+    build an interest vector.
+  </p>
+  {% endif %}
+</div>

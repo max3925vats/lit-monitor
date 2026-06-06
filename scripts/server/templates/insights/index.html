@@ -49,8 +49,14 @@
     discoveries to build an interest vector.
   </p>
   {% endif %}
-  {# FI-3 placeholder: top library papers aligned with the interest vector. #}
-  <div id="insights-top-papers"></div>
+  {# FI-3: top library papers aligned with the interest vector. Lazy HTMX
+     load — the fragment replaces this container's own contents on page load so
+     the page renders instantly. #}
+  <div id="insights-top-papers"
+       hx-get="/insights/top-papers"
+       hx-trigger="load"
+       hx-target="this"
+       hx-swap="innerHTML"></div>
 
   {# ----------------------------------------------------------------- #}
   {# 2. Cluster weights                                                #}
@@ -155,7 +161,12 @@
   <p class="field-note">No recent events.</p>
   {% endif %}
 
-  {# FI-3 placeholder: feedback timeline chart. #}
-  <div id="insights-timeline"></div>
+  {# FI-3: feedback timeline chart. Lazy HTMX load — the fragment replaces this
+     container's own contents on page load so the page renders instantly. #}
+  <div id="insights-timeline"
+       hx-get="/insights/timeline"
+       hx-trigger="load"
+       hx-target="this"
+       hx-swap="innerHTML"></div>
 </section>
 {% endblock %}

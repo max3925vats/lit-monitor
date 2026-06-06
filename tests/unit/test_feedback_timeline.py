@@ -50,3 +50,16 @@ def test_feedback_timeline_invalid_granularity_falls_back(db: StateDB) -> None:
 
 def test_feedback_timeline_empty_db_returns_list(empty_db: StateDB) -> None:
     assert empty_db.feedback_timeline() == []
+
+
+def test_feedback_timeline_weeks_lookback(db: StateDB) -> None:
+    # FI-3: exercise FI-1's `weeks` lookback branch. Seeded events are stamped
+    # "now", so a 1-week cutoff (in the past) still includes them...
+    rows = db.feedback_timeline(weeks=1)
+    by_sig = {r["signal_type"]: r["count"] for r in rows}
+    assert by_sig.get("saved") == 3 and by_sig.get("dismissed") == 2
+
+    # ...and a non-integer `weeks` degrades to "no lookback filter" — it must
+    # NOT raise and must still return the full set of rows.
+    bad = db.feedback_timeline(weeks="bad")  # type: ignore[arg-type]
+    assert bad == db.feedback_timeline()

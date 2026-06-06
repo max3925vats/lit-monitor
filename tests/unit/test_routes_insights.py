@@ -189,3 +189,100 @@ def test_no_chartjs_or_cdn(client):
         and "cdn.jsdelivr" not in r.text.lower()
         and "<canvas" not in r.text.lower()
     )
+
+
+# ---------------------------------------------------------------------------
+# FI-3: lazy feedback-timeline fragment
+# ---------------------------------------------------------------------------
+
+def test_insights_timeline_fragment(client, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._timeline",
+        lambda granularity, weeks: [
+            {"period": "2026-W22", "signal_type": "saved", "count": 5},
+            {"period": "2026-W22", "signal_type": "dismissed", "count": 2},
+        ],
+    )
+    r = client.get("/insights/timeline?granularity=week")
+    assert r.status_code == 200 and "2026-W22" in r.text and "saved" in r.text
+
+
+def test_insights_timeline_empty_notice(client, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._timeline",
+        lambda granularity, weeks: [],
+    )
+    r = client.get("/insights/timeline")
+    assert r.status_code == 200 and "no feedback" in r.text.lower()
+
+
+def test_insights_timeline_granularity_toggle(client, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._timeline",
+        lambda granularity, weeks: seen.update(g=granularity, w=weeks) or [],
+    )
+    client.get("/insights/timeline?granularity=day")
+    assert seen["g"] == "day" and seen["w"] is not None  # a default lookback is passed
+
+
+def test_insights_timeline_no_leak(client, monkeypatch, caplog):
+    import logging
+
+    def _boom(granularity, weeks):
+        raise RuntimeError("db://secret/path")
+
+    monkeypatch.setattr("scripts.server.routes.feedback._timeline", _boom)
+    with caplog.at_level(logging.ERROR, logger="scripts.server.routes.feedback"):
+        r = client.get("/insights/timeline")
+    assert r.status_code == 200 and "db://secret" not in r.text
+    assert any("db://secret" in rec.getMessage() for rec in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# FI-3: lazy top-aligned-papers fragment
+# ---------------------------------------------------------------------------
+
+def test_insights_top_papers_fragment(client, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._learning_state",
+        lambda: {
+            "available": True,
+            "n_events": 12,
+            "soft_gate": 0.3,
+            "inert": False,
+            "computed_at": "x",
+            "dim": 384,
+            "top_papers": [{"doi": "10.1/a", "title": "Carta 2009", "cosine": 0.77}],
+        },
+    )
+    r = client.get("/insights/top-papers")
+    assert "Carta 2009" in r.text and "0.77" in r.text and 'href="/corpus/10.1/a"' in r.text
+
+
+def test_insights_top_papers_empty_notice(client, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._learning_state",
+        lambda: {
+            "available": True,
+            "n_events": 12,
+            "soft_gate": 0.3,
+            "inert": False,
+            "computed_at": "x",
+            "dim": 384,
+            "top_papers": [],
+        },
+    )
+    r = client.get("/insights/top-papers")
+    assert r.status_code == 200 and ("no " in r.text.lower())  # graceful empty
+
+
+def test_insights_top_papers_no_vector_notice(client, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._learning_state",
+        lambda: {"available": False},
+    )
+    r = client.get("/insights/top-papers")
+    assert r.status_code == 200 and (
+        "feedback" in r.text.lower() or "hasn't learned" in r.text.lower()
+    )

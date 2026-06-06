@@ -1,0 +1,92 @@
+{# FI-3: feedback-timeline fragment — lazy-loaded into #insights-timeline.
+
+   Context:
+     rows        — list of {period, signal_type, count} dicts (FI-1's
+                   StateDB.feedback_timeline output), or [] for the empty path.
+     granularity — active bucket size ("week" | "day"); drives the toggle.
+     weeks       — the bounded lookback window (int) surfaced in a .field-note.
+     error       — True when the read raised (generic notice, no detail leaked).
+
+   Presentation: one inline-SVG bar per period showing the PER-PERIOD TOTAL
+   (events summed across signal types), so the chart reads as "how much feedback
+   happened, when". The per-signal breakdown is preserved in the companion table
+   beneath the chart. Tokens-only fills (reuses _bars.html → var(--accent)); no
+   JavaScript, no CDN. All content via Jinja autoescape only — never |safe.
+#}
+{% from "insights/_bars.html" import bars %}
+<div class="card" id="insights-timeline-card">
+  <h2>Feedback timeline</h2>
+
+  {# Granularity toggle: each link re-requests this fragment at a different
+     bucket size and swaps itself back into #insights-timeline. #}
+  <p class="button-row" role="group" aria-label="Timeline granularity">
+    {% for g in ["week", "day"] %}
+    <a class="btn btn-secondary btn-sm{% if g == granularity %} active{% endif %}"
+       hx-get="/insights/timeline?granularity={{ g | urlencode }}"
+       hx-target="#insights-timeline"
+       hx-swap="innerHTML"
+       href="/insights/timeline?granularity={{ g | urlencode }}">{{ g }}</a>
+    {% endfor %}
+  </p>
+
+  {% if error %}
+  <p class="field-note">Could not load the feedback timeline — check the server logs.</p>
+  {% elif rows %}
+  {# Aggregate the flat (period, signal_type, count) rows into per-period totals
+     for the chart, and collect the distinct signal types for the table header.
+     Jinja namespaces are used so the loop-local mutations persist. #}
+  {% set _periods = [] %}
+  {% set _totals = {} %}
+  {% set _by_cell = {} %}
+  {% set _signals = [] %}
+  {% set _max = namespace(v=0) %}
+  {% for r in rows %}
+    {% if r.period not in _periods %}{% set _ = _periods.append(r.period) %}{% endif %}
+    {% if r.signal_type not in _signals %}{% set _ = _signals.append(r.signal_type) %}{% endif %}
+    {% set _prev = _totals.get(r.period, 0) + (r.count | int) %}
+    {% set _ = _totals.update({r.period: _prev}) %}
+    {% set _ = _by_cell.update({(r.period, r.signal_type): (r.count | int)}) %}
+    {% if _prev > _max.v %}{% set _max.v = _prev %}{% endif %}
+  {% endfor %}
+  {% set _chart_rows = [] %}
+  {% for p in _periods %}
+  {% set _ = _chart_rows.append({"label": p, "count": _totals.get(p, 0)}) %}
+  {% endfor %}
+
+  <p class="field-note">
+    Feedback events per {{ granularity }} over the last {{ weeks }} weeks
+    (bars show the per-{{ granularity }} total across all signal types).
+  </p>
+
+  <div style="max-width: 560px;">
+    {{ bars(_chart_rows, "label", "count", _max.v) }}
+  </div>
+
+  <table class="papers-table">
+    <thead>
+      <tr>
+        <th>Period</th>
+        {% for s in _signals %}<th>{{ s }}</th>{% endfor %}
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in _periods %}
+      <tr>
+        <td>{{ p }}</td>
+        {% for s in _signals %}
+        {% set _c = _by_cell.get((p, s)) %}
+        <td>{% if _c %}{{ _c }}{% else %}&mdash;{% endif %}</td>
+        {% endfor %}
+        <td>{{ _totals.get(p, 0) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="field-note">
+    No feedback events yet — give feedback (save / dismiss / rate) on
+    discoveries to populate the timeline. Showing the last {{ weeks }} weeks.
+  </p>
+  {% endif %}
+</div>

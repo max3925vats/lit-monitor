@@ -9,6 +9,7 @@ Routes:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Literal
 
@@ -22,6 +23,14 @@ from scripts.server.runtime import get_runtime
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["feedback"])
+
+#: FI-3: default lookback window (in weeks) for the feedback timeline. Bounds the
+#: SVG so the chart stays readable and uses FI-1's ``feedback_timeline(weeks=…)``
+#: branch rather than scanning all history.
+_TIMELINE_DEFAULT_WEEKS: int = 12
+
+#: FI-3: accepted timeline granularities. Any other value falls back to "week".
+_TIMELINE_GRANULARITIES: frozenset[str] = frozenset({"week", "day"})
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +200,18 @@ def _cluster_weights() -> dict:
         return {"floor": floor, "clusters": []}
 
 
+def _timeline(granularity: str, weeks: int | None) -> list[dict]:
+    """FI-3: feedback-timeline rows for *granularity* over the last *weeks*.
+
+    Thin module-level seam wrapping ``StateDB.feedback_timeline`` so the
+    timeline fragment can be tested without a live state DB (route tests patch
+    this single function). Unlike the other seams here, this one does NOT swallow
+    exceptions — the fragment route owns the 500-leak guard so a failed read is
+    logged once at the route boundary with a generic notice returned.
+    """
+    return get_runtime().state_db.feedback_timeline(granularity, weeks=weeks)
+
+
 # ---------------------------------------------------------------------------
 # GET /insights — read-only insights HTML page (FI-2)
 # ---------------------------------------------------------------------------
@@ -227,6 +248,77 @@ def insights_page(request: Request) -> HTMLResponse:
             "learning": learning,
             "clusters": clusters,
         },
+    )
+
+
+# ---------------------------------------------------------------------------
+# FI-3: GET /insights/timeline — lazy inline-SVG feedback timeline fragment
+# ---------------------------------------------------------------------------
+
+@router.get("/insights/timeline", response_class=HTMLResponse)
+async def insights_timeline(
+    request: Request,
+    granularity: str = Query("week"),
+) -> HTMLResponse:
+    """Lazy fragment: feedback-event counts over the last lookback window.
+
+    HTMX-loaded into ``#insights-timeline`` on the Insights page. The bounded
+    lookback (``_TIMELINE_DEFAULT_WEEKS``) both keeps the SVG readable and
+    exercises FI-1's ``feedback_timeline(weeks=…)`` branch. Off-thread (the read
+    touches SQLite). Any failure → a generic notice fragment with a full
+    server-side log — the exception text never reaches the browser.
+    """
+    # Defensive: an unknown granularity from a hand-crafted URL falls back to the
+    # default rather than raising, so the fragment always renders.
+    if granularity not in _TIMELINE_GRANULARITIES:
+        granularity = "week"
+    weeks = _TIMELINE_DEFAULT_WEEKS
+    try:
+        rows = await asyncio.to_thread(_timeline, granularity, weeks)
+    except Exception as exc:  # noqa: BLE001 — advisory fragment, never 500-leak
+        # exc is in the message (not just the traceback) so a log scrape catches
+        # the cause; the browser only ever sees the generic notice in-template.
+        logger.error("insights timeline fragment failed: %s", exc, exc_info=True)
+        rows, weeks = [], weeks
+        error = True
+    else:
+        error = False
+
+    return _get_templates().TemplateResponse(
+        request,
+        "insights/_timeline.html",
+        {
+            "rows": rows,
+            "granularity": granularity,
+            "weeks": weeks,
+            "error": error,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# FI-3: GET /insights/top-papers — lazy top-aligned-papers fragment
+# ---------------------------------------------------------------------------
+
+@router.get("/insights/top-papers", response_class=HTMLResponse)
+async def insights_top_papers(request: Request) -> HTMLResponse:
+    """Lazy fragment: library papers most aligned with the interest vector.
+
+    HTMX-loaded into ``#insights-top-papers`` on the Insights page. Reuses
+    ``_learning_state`` (which already degrades to ``{"available": False}`` on a
+    bad vector) so this route is itself 500-leak-safe: the only extra guard is a
+    generic notice if the seam unexpectedly raises.
+    """
+    try:
+        learning = await asyncio.to_thread(_learning_state)
+    except Exception as exc:  # noqa: BLE001 — advisory fragment, never 500-leak
+        logger.error("insights top-papers fragment failed: %s", exc, exc_info=True)
+        learning = {"available": False}
+
+    return _get_templates().TemplateResponse(
+        request,
+        "insights/_top_papers.html",
+        {"learning": learning},
     )
 
 
