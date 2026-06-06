@@ -1,6 +1,6 @@
 [project]
 name = "lit-monitor"
-version = "0.9.0"
+version = "0.10.0"
 description = "A personal literature tracker that ranks new papers by semantic similarity to your Zotero library, extracts structured fields with an LLM, builds a knowledge graph, and writes to Obsidian."
 readme = "README.md"
 requires-python = ">=3.11"
