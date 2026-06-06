@@ -1045,37 +1045,55 @@ async def dev_dryrun_result() -> str:
 # therefore stream the subprocess's piped stdout directly — the same idiom the
 # build-vocabulary panel already uses (setup.py ``/api/build-vocabulary/stream``).
 #
-# Checkbox → real CLI flag mapping (confirmed against cli.py:2604-2647):
-#   all                       → --all
-#   ner + with_llm            → --ner-with-llm
-#   ner (alone)               → --ner
-#   relationships + with_llm  → --relationships-with-llm
-#   relationships (alone)     → --relationships
-# Default scope: if no scope/relationship/ner flag is chosen, fall back to
-# --all so the spawned CLI invocation is always valid (it errors otherwise).
+# Radio + modifier → real CLI flag mapping (confirmed against cli.py:2604-2647).
+#
+# PF-4 replaced the independent NER + Relationships checkboxes with a single
+# mutually-exclusive ``backfill_kind`` radio so the UI can't request the
+# impossible "both at once" combo (the CLI runs them mutually-exclusively:
+# ``if ner: … elif do_relationships:``, so ticking both silently ran NER only).
+#
+#   backfill_kind=ner           + with_llm → --ner-with-llm
+#   backfill_kind=ner                      → --ner
+#   backfill_kind=relationships + with_llm → --relationships-with-llm
+#   backfill_kind=relationships            → --relationships
+#   backfill_kind=schema (or unknown)      → (no kind flag)
+#
+# ``all`` is an independent SCOPE flag (``papers WHERE graph_indexed=0``) that
+# legitimately combines with --ner / --relationships, so it prepends ``--all``
+# to ANY kind. Default scope: the CLI raises UsageError when no scope at all is
+# present (schema-only with no --all/--doi/--since), so a bare schema backfill
+# falls back to --all to keep the spawned invocation valid.
 # ---------------------------------------------------------------------------
+
+_BACKFILL_KINDS = frozenset({"schema", "ner", "relationships"})
 
 
 def _map_backfill_flags(
-    *, want_all: bool, ner: bool, relationships: bool, with_llm: bool
+    *, backfill_kind: str, with_llm: bool, all_scope: bool
 ) -> list[str]:
-    """Translate the Panel-8 checkboxes into real ``graph backfill`` CLI flags.
+    """Translate the Panel-8 radio + modifiers into real ``graph backfill`` flags.
 
-    See the module comment above for the confirmed mapping. ``with_llm`` only
-    upgrades ner/relationships to their ``--*-with-llm`` variants — it is not a
-    standalone flag. When nothing meaningful is selected, default to ``--all``
-    so the resulting argv is a valid backfill invocation.
+    ``backfill_kind`` is the mutually-exclusive radio value; unknown values fall
+    back to ``"schema"``. ``with_llm`` only upgrades ner/relationships to their
+    ``--*-with-llm`` variants — it is not a standalone flag. ``all_scope``
+    prepends ``--all`` (a scope flag that combines with any kind). A schema-only
+    backfill with no scope defaults to ``--all`` so the argv stays valid.
     """
+    if backfill_kind not in _BACKFILL_KINDS:
+        backfill_kind = "schema"
+
     flags: list[str] = []
-    if want_all:
+    if all_scope:
         flags.append("--all")
-    if ner:
+
+    if backfill_kind == "ner":
         flags.append("--ner-with-llm" if with_llm else "--ner")
-    if relationships:
+    elif backfill_kind == "relationships":
         flags.append("--relationships-with-llm" if with_llm else "--relationships")
+
     if not flags:
-        # Dev convenience: an empty selection would make the CLI raise
-        # UsageError. Default to the full-corpus schema backfill.
+        # schema-only with no scope → the CLI would raise UsageError. Default to
+        # the full-corpus schema backfill so the spawned argv is always valid.
         flags.append("--all")
     return flags
 
@@ -1084,9 +1102,10 @@ def _map_backfill_flags(
 async def dev_graph_backfill_start(request: Request) -> str:
     """Spawn ``lit-monitor graph backfill <flags>`` and stream its stdout.
 
-    Refuses if the ``dev_graph_backfill`` slot is already busy. The checkbox
-    form fields (``all`` / ``ner`` / ``relationships`` / ``with_llm``) map to
-    the real CLI flags via :func:`_map_backfill_flags`.
+    Refuses if the ``dev_graph_backfill`` slot is already busy. The form sends a
+    mutually-exclusive ``backfill_kind`` radio (``schema`` | ``ner`` |
+    ``relationships``) plus optional ``all`` / ``with_llm`` modifiers, mapped to
+    real CLI flags via :func:`_map_backfill_flags`.
     """
     from scripts.server.runtime import get_runtime
 
@@ -1096,11 +1115,14 @@ async def dev_graph_backfill_start(request: Request) -> str:
         # HTMX sends checkboxes as ``name=on`` only when ticked; absent = False.
         return bool(form.get(name))
 
+    # The radio always submits exactly one value; default to schema-only if the
+    # field is somehow absent (matches the ``checked`` default in the template).
+    backfill_kind = str(form.get("backfill_kind") or "schema")
+
     flags = _map_backfill_flags(
-        want_all=_checked("all"),
-        ner=_checked("ner"),
-        relationships=_checked("relationships"),
+        backfill_kind=backfill_kind,
         with_llm=_checked("with_llm"),
+        all_scope=_checked("all"),
     )
 
     runtime = get_runtime()
