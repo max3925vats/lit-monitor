@@ -363,7 +363,7 @@ def test_timeline_dimension_defaults_to_signal(client, monkeypatch):
         lambda granularity, weeks, dimension: seen.update(d=dimension)
         or [{"period": "2026-W22", "signal_type": "saved", "count": 4}],
     )
-    r = client.get("/insights/timeline?granularity=week")
+    client.get("/insights/timeline?granularity=week")
     assert seen["d"] == "signal"  # default
 
 
