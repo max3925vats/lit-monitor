@@ -2339,6 +2339,32 @@ class StateDB:
             result[row[0]] = row[1]
         return result
 
+    def feedback_summary_by_source(self) -> dict[str, int]:
+        """FI-5: count feedback events per ``source`` over all time.
+
+        Mirrors :meth:`feedback_summary` but groups by the free-text ``source``
+        column instead of ``signal_type``. NULL sources are coalesced to the
+        label ``"unknown"`` so they are counted rather than dropped.
+
+        Sources are open-ended strings (e.g. ``"discovery"``, ``"themes"``),
+        so — unlike :meth:`feedback_summary` — no keys are pre-seeded to 0;
+        only sources actually present in the table appear in the result.
+
+        Returns:
+            Dict mapping source (or ``"unknown"`` for NULL) → count. Empty dict
+            on any read failure (defensive, read-only).
+        """
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT COALESCE(source, 'unknown') AS src, COUNT(*) AS n "
+                    "FROM feedback_events GROUP BY src"
+                ).fetchall()
+            return {row[0]: int(row[1]) for row in rows}
+        except sqlite3.Error as exc:
+            logger.warning("feedback_summary_by_source read failed: %s", exc)
+            return {}
+
     #: Whitelist of allowed time-grouping SQL expressions for feedback_timeline.
     #: The granularity argument selects a fixed literal here — the user string is
     #: NEVER interpolated into SQL, only used as a dict key (unknown ⇒ "week").
@@ -2347,13 +2373,25 @@ class StateDB:
         "week": "strftime('%Y-W%W', created_at)",
     }
 
+    #: Whitelist of allowed second group-by dimensions for feedback_timeline.
+    #: Maps a dimension token → ``(column_expr, output_alias)``. The dimension
+    #: argument is used ONLY as a dict key — the user string is NEVER
+    #: interpolated into SQL (unknown ⇒ "signal"). The alias becomes the row
+    #: dict key, so ``"signal"`` keeps the backward-compatible ``signal_type``
+    #: key while ``"source"`` exposes a ``source`` key (NULL → 'unknown').
+    _FEEDBACK_DIMENSION_COL: dict[str, tuple[str, str]] = {
+        "signal": ("signal_type", "signal_type"),
+        "source": ("COALESCE(source, 'unknown')", "source"),
+    }
+
     def feedback_timeline(
         self,
         granularity: str = "week",
         *,
         weeks: int | None = None,
+        dimension: str = "signal",
     ) -> list[dict]:
-        """FI-1: feedback event counts grouped by time-period and signal_type.
+        """FI-1/FI-5: feedback event counts grouped by time-period and a dimension.
 
         Read-only time-series for the Insights page. Defensive: any read failure
         degrades to an empty list rather than raising to the caller.
@@ -2366,14 +2404,24 @@ class StateDB:
                          ``created_at >= now - weeks*7 days`` are counted. The
                          cutoff is computed in Python and passed as a bound
                          parameter (never interpolated).
+            dimension:   ``"signal"`` (default) or ``"source"`` — selects the
+                         second group-by column. Any other value falls back to
+                         ``"signal"``. Selected via a fixed whitelist map — the
+                         raw string is never interpolated into SQL.
 
         Returns:
-            List of ``{"period": str, "signal_type": str, "count": int}`` dicts
-            ordered by (period, signal_type). Empty list on no data or error.
+            List of ``{"period": str, <dim>: str, "count": int}`` dicts ordered
+            by (period, dimension). The ``<dim>`` key is ``"signal_type"`` when
+            ``dimension="signal"`` (backward-compatible) or ``"source"`` when
+            ``dimension="source"``. Empty list on no data or error.
         """
         # Whitelist: the value chosen is a fixed literal, not the user string.
         period_expr = self._FEEDBACK_PERIOD_EXPR.get(
             granularity, self._FEEDBACK_PERIOD_EXPR["week"]
+        )
+        # Whitelist: dimension is a dict key only; unknown ⇒ "signal" (compat).
+        dim_col, dim_alias = self._FEEDBACK_DIMENSION_COL.get(
+            dimension, self._FEEDBACK_DIMENSION_COL["signal"]
         )
 
         params: list[object] = []
@@ -2389,10 +2437,11 @@ class StateDB:
                 params = []
 
         sql = (
-            f"SELECT {period_expr} AS period, signal_type, COUNT(*) AS count "
+            f"SELECT {period_expr} AS period, {dim_col} AS {dim_alias}, "
+            f"COUNT(*) AS count "
             f"FROM feedback_events{where_clause} "
-            "GROUP BY period, signal_type "
-            "ORDER BY period, signal_type"
+            f"GROUP BY period, {dim_col} "
+            f"ORDER BY period, {dim_alias}"
         )
         try:
             with self._connect() as conn:
@@ -2400,7 +2449,7 @@ class StateDB:
             return [
                 {
                     "period": r["period"],
-                    "signal_type": r["signal_type"],
+                    dim_alias: r[dim_alias],
                     "count": int(r["count"]),
                 }
                 for r in rows
