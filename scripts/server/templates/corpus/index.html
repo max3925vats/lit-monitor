@@ -36,8 +36,20 @@
       {% endfor %}
     </select>
 
-    {# theme is wired through as a param but has no UI select yet (see route). #}
+    {# PF-3: theme/cluster filter. On a fresh install there are no clusters yet,
+       so render a "no themes" note instead of an empty/broken <select>. The
+       select sits inside this same hx-get form, so changing it filters. #}
+    {% if themes %}
+    <select name="theme" aria-label="Theme">
+      <option value="">(any theme)</option>
+      {% for t in themes %}
+      <option value="{{ t.display_name }}"{% if theme == t.display_name %} selected{% endif %}>{{ t.display_name }}</option>
+      {% endfor %}
+    </select>
+    {% else %}
     <input type="hidden" name="theme" value="{{ theme }}" />
+    <span class="field-note">No themes yet &mdash; run a brain-build to cluster papers.</span>
+    {% endif %}
     <input type="hidden" name="sort" value="{{ sort }}" />
     <input type="hidden" name="order" value="{{ order }}" />
     <input type="hidden" name="limit" value="{{ limit }}" />

@@ -75,6 +75,42 @@ def test_nav_explore_has_corpus(client):
     assert 'href="/corpus"' in r.text
 
 
+# --- PF-3: theme/cluster filter dropdown on the corpus list page -------------
+
+
+def test_corpus_list_theme_dropdown_populated(client, monkeypatch):
+    monkeypatch.setattr("scripts.server.routes.corpus._list_themes",
+        lambda: [{"id": 1, "display_name": "Chromatography"},
+                 {"id": 2, "display_name": "Filtration"}])
+    monkeypatch.setattr("scripts.server.routes.corpus._list_papers", lambda **k: ([], 0))
+    r = client.get("/corpus")
+    assert r.status_code == 200
+    assert 'name="theme"' in r.text and "Chromatography" in r.text and "Filtration" in r.text
+
+
+def test_corpus_list_no_themes_first_run_message_not_broken(client, monkeypatch):
+    # FIRST RUN: no clusters → friendly message, NOT an empty <select>, page still renders fully
+    monkeypatch.setattr("scripts.server.routes.corpus._list_themes", lambda: [])
+    monkeypatch.setattr("scripts.server.routes.corpus._list_papers", lambda **k: ([], 0))
+    r = client.get("/corpus")
+    assert r.status_code == 200
+    # the rest of the filter UI still works (search box present):
+    assert 'name="search"' in r.text
+    # a no-themes note is shown, and NO populated theme <select> with cluster options:
+    assert ("no themes" in r.text.lower()) or ("brain-build" in r.text.lower())
+
+
+def test_corpus_list_themes_failure_is_graceful(client, monkeypatch):
+    # _list_themes raising must not 500 the page
+    def _boom():
+        raise RuntimeError("db gone")
+
+    monkeypatch.setattr("scripts.server.routes.corpus._list_themes", _boom)
+    monkeypatch.setattr("scripts.server.routes.corpus._list_papers", lambda **k: ([], 0))
+    r = client.get("/corpus")
+    assert r.status_code == 200  # graceful — page renders without the theme filter
+
+
 # --- FE2-3: GET /corpus/{doi} detail page -------------------------------------
 
 

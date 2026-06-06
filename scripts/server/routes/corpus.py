@@ -64,6 +64,24 @@ def _list_papers(**kwargs: Any) -> tuple[list[dict], int]:
     return get_runtime().state_db.list_papers(**kwargs)
 
 
+def _list_themes() -> list[dict]:
+    """Return active (non-archived) clusters for the theme filter dropdown.
+
+    Wraps ``themes.list_themes`` (which already opens its own state DB and
+    returns ``[]`` on any failure). The extra try/except here is first-run
+    safety: on a fresh install the ``clusters`` table may not exist yet, so any
+    exception is swallowed → ``[]`` so the corpus page never 500s before the
+    first brain-build clustering pass. Single patch point for the route tests.
+    """
+    try:
+        from scripts.server.routes.themes import list_themes  # noqa: PLC0415
+
+        return list_themes()
+    except Exception:  # noqa: BLE001 — missing clusters table / db error → no filter
+        logger.warning("PF-3: _list_themes failed; theme filter omitted", exc_info=True)
+        return []
+
+
 @corpus_router.get("/corpus", response_class=HTMLResponse)
 def corpus_index(
     request: Request,
@@ -94,6 +112,16 @@ def corpus_index(
         logger.error("corpus listing failed", exc_info=True)
         rows, total = [], 0
 
+    # PF-3: theme filter options. First-run-safe — any failure (no clusters
+    # table before the first brain-build) yields an empty list so the template
+    # shows a "no themes yet" note instead of a broken/empty <select>, and the
+    # rest of the page still renders.
+    try:
+        themes = _list_themes()
+    except Exception:  # noqa: BLE001 — never 500 the corpus page over the filter
+        logger.error("corpus theme filter failed", exc_info=True)
+        themes = []
+
     ctx = {
         "rows": rows,
         "total": total,
@@ -101,6 +129,7 @@ def corpus_index(
         "source_type": source_type,
         "status_gap": status_gap,
         "theme": theme,
+        "themes": themes,
         "sort": sort,
         "order": order,
         "limit": limit,
