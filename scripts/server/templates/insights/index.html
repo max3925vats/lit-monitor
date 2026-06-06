@@ -1,0 +1,161 @@
+{# FI-2: read-only /insights page — learning state, cluster weights,
+   server-SVG signal mix, recent events. Supersedes the old /feedback page. #}
+{% extends "base.html" %}
+{% from "insights/_bars.html" import bars %}
+{% block title %}Insights — lit-monitor{% endblock %}
+{% block content %}
+<section class="dashboard">
+  <div class="page-header">
+    <h1>Insights</h1>
+    <p class="field-note">
+      Read-only view of what the active-learning engine has learned from your
+      engagement signals (save / dismiss / rate on discoveries). Nothing here
+      writes or recomputes. Capture buttons on paper cards require
+      <code>web_ui.show_feedback_buttons: true</code> in
+      <a href="/settings">Advanced Settings</a>.
+    </p>
+  </div>
+
+  {# ----------------------------------------------------------------- #}
+  {# 1. Learning state                                                 #}
+  {# ----------------------------------------------------------------- #}
+  <h2>Learning state</h2>
+  {% if learning.available %}
+  <table class="papers-table" style="max-width: 540px;">
+    <tbody>
+      <tr><th>Feedback events</th><td>{{ learning.n_events }}</td></tr>
+      <tr>
+        <th>Soft-gate</th>
+        <td>
+          {{ "%.2f" | format(learning.soft_gate | float) }}
+          {% if learning.inert %}
+          <span class="pill warning">INERT — below cold-start floor (10)</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr><th>Interest-vector dim</th><td>{{ learning.dim }}</td></tr>
+      <tr><th>Computed at</th><td class="field-note">{{ learning.computed_at }}</td></tr>
+    </tbody>
+  </table>
+  {% if learning.inert %}
+  <p class="field-note">
+    The interest vector exists but is gated to zero influence until at least
+    10 feedback events accumulate (cold-start protection).
+  </p>
+  {% endif %}
+  {% else %}
+  <p class="field-note">
+    The engine hasn't learned anything yet — give feedback (save / dismiss) on
+    discoveries to build an interest vector.
+  </p>
+  {% endif %}
+  {# FI-3 placeholder: top library papers aligned with the interest vector. #}
+  <div id="insights-top-papers"></div>
+
+  {# ----------------------------------------------------------------- #}
+  {# 2. Cluster weights                                                #}
+  {# ----------------------------------------------------------------- #}
+  <h2>Cluster weights</h2>
+  {% if clusters.clusters %}
+  <p class="field-note">
+    Per-theme atrophy weight (1.0 = full attention; lower = de-emphasised by
+    your dismissals). Weights never decay below the floor of
+    {{ "%.2f" | format(clusters.floor | float) }}.
+  </p>
+  <table class="papers-table">
+    <thead>
+      <tr><th>Theme</th><th>Weight</th><th></th><th>At floor?</th></tr>
+    </thead>
+    <tbody>
+      {% for c in clusters.clusters %}
+      <tr>
+        <td>{{ c.name }}</td>
+        <td>{{ "%.2f" | format(c.weight | float) }}</td>
+        <td style="width: 40%;">
+          {{ bars([c], "name", "weight", 1.0) }}
+        </td>
+        <td>
+          {% if c.at_floor %}<span class="pill warning">at floor</span>
+          {% else %}&mdash;{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="field-note">
+    No themes yet — run a brain-build to cluster papers.
+  </p>
+  {% endif %}
+
+  {# ----------------------------------------------------------------- #}
+  {# 3. Signal mix (server-rendered inline SVG; no client-side chart lib) #}
+  {# ----------------------------------------------------------------- #}
+  <h2>Signal mix</h2>
+  {% set _sig_rows = [] %}
+  {% set _sig_max = namespace(v=0) %}
+  {% for signal, count in summary.items() | sort %}
+  {% set _ = _sig_rows.append({"label": signal, "count": count}) %}
+  {% if (count | int) > _sig_max.v %}{% set _sig_max.v = count | int %}{% endif %}
+  {% endfor %}
+  {% if _sig_rows and _sig_max.v > 0 %}
+  <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start;">
+    <div style="flex: 1; min-width: 280px; max-width: 480px;">
+      {{ bars(_sig_rows, "label", "count", _sig_max.v) }}
+    </div>
+    <table class="papers-table" style="flex: 0 0 auto;">
+      <thead><tr><th>Signal</th><th>Count</th></tr></thead>
+      <tbody>
+        {% for row in _sig_rows %}
+        <tr><td>{{ row.label }}</td><td>{{ row.count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="field-note">No feedback events recorded yet.</p>
+  {% endif %}
+
+  {# ----------------------------------------------------------------- #}
+  {# 4. Recent events                                                  #}
+  {# ----------------------------------------------------------------- #}
+  <h2>Recent events</h2>
+  {% if recent %}
+  <table class="papers-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>DOI</th>
+        <th>Signal</th>
+        <th>Weight</th>
+        <th>Rating</th>
+        <th>Source</th>
+        <th>Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ev in recent %}
+      <tr>
+        <td>{{ ev.id }}</td>
+        <td>
+          {% if ev.doi %}
+          <a href="https://doi.org/{{ ev.doi }}" target="_blank" rel="noopener" class="doi">{{ ev.doi }}</a>
+          {% else %}&mdash;{% endif %}
+        </td>
+        <td>{{ ev.signal_type }}</td>
+        <td>{{ "%.2f" | format(ev.weight | float) }}</td>
+        <td>{{ ev.rating or "&mdash;" }}</td>
+        <td>{{ ev.source or "&mdash;" }}</td>
+        <td class="field-note">{{ ev.created_at or "&mdash;" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="field-note">No recent events.</p>
+  {% endif %}
+
+  {# FI-3 placeholder: feedback timeline chart. #}
+  <div id="insights-timeline"></div>
+</section>
+{% endblock %}

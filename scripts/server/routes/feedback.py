@@ -4,7 +4,8 @@ Routes:
     POST /api/feedback                       — record a feedback event
     GET  /api/feedback/recent                — recent events (paginated)
     GET  /api/feedback/summary               — counts per signal_type
-    GET  /feedback                           — admin/debug HTML page
+    GET  /insights                           — read-only insights HTML page
+    GET  /feedback                           — redirect → /insights (FI-2 rename)
 """
 from __future__ import annotations
 
@@ -12,9 +13,10 @@ import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
+from scripts.api import insights as insights_api
 from scripts.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
@@ -146,12 +148,62 @@ def get_feedback_summary() -> dict[str, int]:
 
 
 # ---------------------------------------------------------------------------
-# GET /feedback — HTML admin/debug page
+# FI-2: read-only Insights page seams
 # ---------------------------------------------------------------------------
 
-@router.get("/feedback", response_class=HTMLResponse)
-def feedback_page(request: Request) -> HTMLResponse:
-    """Render the feedback admin page — recent events + Chart.js summary."""
+def _cluster_floor() -> float:
+    """Resolve the atrophy floor (``feedback.minimum_cluster_floor``).
+
+    Module-level seam; defensive → defaults to 0.1 when config is unreadable.
+    """
+    try:
+        return float(get_runtime().config.feedback.minimum_cluster_floor)
+    except Exception:  # noqa: BLE001 — config absent ⇒ documented default
+        return 0.1
+
+
+def _learning_state() -> dict:
+    """Assemble the global learning-state summary (read-only).
+
+    Wraps ``insights.get_learning_state`` over the runtime's state + embeddings
+    DBs. Module-level seam so the page can be tested without a live engine.
+    Defensive: any failure degrades to ``{"available": False}``.
+    """
+    try:
+        rt = get_runtime()
+        return insights_api.get_learning_state(rt.state_db, rt.embeddings_db)
+    except Exception as exc:  # noqa: BLE001 — page must never 500 on a bad vector
+        logger.warning("insights learning-state read failed: %s", exc)
+        return {"available": False}
+
+
+def _cluster_weights() -> dict:
+    """Assemble per-cluster atrophy weights (read-only).
+
+    Wraps ``insights.get_cluster_weights`` with the configured floor. Module-level
+    seam. Defensive: degrades to ``{"floor": …, "clusters": []}`` on any failure.
+    """
+    floor = _cluster_floor()
+    try:
+        return insights_api.get_cluster_weights(get_runtime().state_db, floor=floor)
+    except Exception as exc:  # noqa: BLE001 — page must never 500 on a cluster read
+        logger.warning("insights cluster-weights read failed: %s", exc)
+        return {"floor": floor, "clusters": []}
+
+
+# ---------------------------------------------------------------------------
+# GET /insights — read-only insights HTML page (FI-2)
+# ---------------------------------------------------------------------------
+
+@router.get("/insights", response_class=HTMLResponse)
+def insights_page(request: Request) -> HTMLResponse:
+    """Render the read-only Insights page.
+
+    Sections: learning-state card, cluster-weights table, server-rendered
+    inline-SVG signal-mix chart, and the recent-events table. All reads are
+    defensive — a degenerate engine state degrades to graceful empties rather
+    than 500-ing.
+    """
     db = _safe_db()
     recent: list[dict] = []
     summary: dict[str, int] = {}
@@ -159,12 +211,30 @@ def feedback_page(request: Request) -> HTMLResponse:
         try:
             recent = db.list_feedback_events(limit=100)
             summary = db.feedback_summary()
-        except Exception as exc:
-            logger.warning("feedback page: DB read failed: %s", exc)
+        except Exception as exc:  # noqa: BLE001 — DB read is non-fatal for the page
+            logger.warning("insights page: DB read failed: %s", exc)
+
+    learning = _learning_state()
+    clusters = _cluster_weights()
 
     templates = _get_templates()
     return templates.TemplateResponse(
         request,
-        "feedback/index.html",
-        {"recent": recent, "summary": summary},
+        "insights/index.html",
+        {
+            "recent": recent,
+            "summary": summary,
+            "learning": learning,
+            "clusters": clusters,
+        },
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /feedback — redirect to /insights (page renamed in FI-2)
+# ---------------------------------------------------------------------------
+
+@router.get("/feedback")
+def feedback_page() -> RedirectResponse:
+    """Permanent in-app redirect: the old /feedback page is now /insights."""
+    return RedirectResponse("/insights", status_code=307)
