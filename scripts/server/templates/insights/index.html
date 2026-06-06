@@ -123,6 +123,41 @@
   {% endif %}
 
   {# ----------------------------------------------------------------- #}
+  {# 3b. Feedback by source (FI-6; server-rendered inline SVG)          #}
+  {# ----------------------------------------------------------------- #}
+  <h2>Feedback by source</h2>
+  {% set _src_rows = [] %}
+  {% set _src_max = namespace(v=0) %}
+  {# Sort descending by count so the heaviest source leads the chart. #}
+  {% for source, count in summary_by_source.items() | sort(attribute='1', reverse=true) %}
+  {% set _ = _src_rows.append({"label": source, "count": count}) %}
+  {% if (count | int) > _src_max.v %}{% set _src_max.v = count | int %}{% endif %}
+  {% endfor %}
+  {% if _src_rows and _src_max.v > 0 %}
+  <p class="field-note">
+    Where each feedback signal came from (e.g. discovery cards, the themes page,
+    or an implicit Zotero save). Open-ended; <code>unknown</code> groups events
+    recorded without a source tag.
+  </p>
+  <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start;">
+    <div style="flex: 1; min-width: 280px; max-width: 480px;">
+      {{ bars(_src_rows, "label", "count", _src_max.v) }}
+    </div>
+    <table class="papers-table" style="flex: 0 0 auto;">
+      <caption class="field-note" style="text-align: left;">By source, all-time totals.</caption>
+      <thead><tr><th>Source</th><th>Count</th></tr></thead>
+      <tbody>
+        {% for row in _src_rows %}
+        <tr><td>{{ row.label }}</td><td>{{ row.count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="field-note">No feedback events yet — no source breakdown to show.</p>
+  {% endif %}
+
+  {# ----------------------------------------------------------------- #}
   {# 4. Recent events                                                  #}
   {# ----------------------------------------------------------------- #}
   <h2>Recent events</h2>
@@ -164,7 +199,7 @@
   {# FI-3: feedback timeline chart. Lazy HTMX load — the fragment replaces this
      container's own contents on page load so the page renders instantly. #}
   <div id="insights-timeline"
-       hx-get="/insights/timeline"
+       hx-get="/insights/timeline?granularity=week&amp;dimension=signal"
        hx-trigger="load"
        hx-target="this"
        hx-swap="innerHTML"></div>

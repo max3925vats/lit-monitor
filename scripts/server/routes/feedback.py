@@ -32,6 +32,11 @@ _TIMELINE_DEFAULT_WEEKS: int = 12
 #: FI-3: accepted timeline granularities. Any other value falls back to "week".
 _TIMELINE_GRANULARITIES: frozenset[str] = frozenset({"week", "day"})
 
+#: FI-6: accepted timeline group-by dimensions. Any other value falls back to
+#: "signal". Whitelisted at the route as defense-in-depth (the backend also
+#: whitelists) so a hand-crafted ?dimension= never reaches SQL un-validated.
+_TIMELINE_DIMENSIONS: frozenset[str] = frozenset({"signal", "source"})
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -200,16 +205,34 @@ def _cluster_weights() -> dict:
         return {"floor": floor, "clusters": []}
 
 
-def _timeline(granularity: str, weeks: int | None) -> list[dict]:
-    """FI-3: feedback-timeline rows for *granularity* over the last *weeks*.
+def _summary_by_source() -> dict[str, int]:
+    """FI-6: total feedback-event counts per ``source`` over all time.
+
+    Module-level seam wrapping ``StateDB.feedback_summary_by_source`` so the
+    by-source page section can be tested without a live state DB. Defensive: any
+    failure degrades to ``{}`` (the template renders the first-run empty notice).
+    """
+    try:
+        return get_runtime().state_db.feedback_summary_by_source()
+    except Exception as exc:  # noqa: BLE001 — page must never 500 on a bad read
+        logger.warning("insights summary-by-source read failed: %s", exc)
+        return {}
+
+
+def _timeline(granularity: str, weeks: int | None, dimension: str) -> list[dict]:
+    """FI-3/FI-6: feedback-timeline rows for *granularity* over the last *weeks*.
 
     Thin module-level seam wrapping ``StateDB.feedback_timeline`` so the
     timeline fragment can be tested without a live state DB (route tests patch
-    this single function). Unlike the other seams here, this one does NOT swallow
-    exceptions — the fragment route owns the 500-leak guard so a failed read is
-    logged once at the route boundary with a generic notice returned.
+    this single function). *dimension* (``"signal"`` | ``"source"``) selects the
+    second group-by column; the backend whitelists it too. Unlike the other
+    seams here, this one does NOT swallow exceptions — the fragment route owns
+    the 500-leak guard so a failed read is logged once at the route boundary with
+    a generic notice returned.
     """
-    return get_runtime().state_db.feedback_timeline(granularity, weeks=weeks)
+    return get_runtime().state_db.feedback_timeline(
+        granularity, weeks=weeks, dimension=dimension
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +260,7 @@ def insights_page(request: Request) -> HTMLResponse:
 
     learning = _learning_state()
     clusters = _cluster_weights()
+    summary_by_source = _summary_by_source()
 
     templates = _get_templates()
     return templates.TemplateResponse(
@@ -245,6 +269,7 @@ def insights_page(request: Request) -> HTMLResponse:
         {
             "recent": recent,
             "summary": summary,
+            "summary_by_source": summary_by_source,
             "learning": learning,
             "clusters": clusters,
         },
@@ -259,22 +284,29 @@ def insights_page(request: Request) -> HTMLResponse:
 async def insights_timeline(
     request: Request,
     granularity: str = Query("week"),
+    dimension: str = Query("signal"),
 ) -> HTMLResponse:
     """Lazy fragment: feedback-event counts over the last lookback window.
 
     HTMX-loaded into ``#insights-timeline`` on the Insights page. The bounded
     lookback (``_TIMELINE_DEFAULT_WEEKS``) both keeps the SVG readable and
-    exercises FI-1's ``feedback_timeline(weeks=…)`` branch. Off-thread (the read
-    touches SQLite). Any failure → a generic notice fragment with a full
-    server-side log — the exception text never reaches the browser.
+    exercises FI-1's ``feedback_timeline(weeks=…)`` branch. *dimension* groups
+    the per-period breakdown by ``"signal"`` (default) or ``"source"``
+    (FI-6). Off-thread (the read touches SQLite). Any failure → a generic notice
+    fragment with a full server-side log — the exception text never reaches the
+    browser.
     """
-    # Defensive: an unknown granularity from a hand-crafted URL falls back to the
-    # default rather than raising, so the fragment always renders.
+    # Defensive: an unknown granularity / dimension from a hand-crafted URL falls
+    # back to the default rather than raising, so the fragment always renders.
+    # The dimension whitelist here is defense-in-depth — the backend whitelists
+    # too — so a bad ?dimension= never reaches the (literal-mapped) SQL.
     if granularity not in _TIMELINE_GRANULARITIES:
         granularity = "week"
+    if dimension not in _TIMELINE_DIMENSIONS:
+        dimension = "signal"
     weeks = _TIMELINE_DEFAULT_WEEKS
     try:
-        rows = await asyncio.to_thread(_timeline, granularity, weeks)
+        rows = await asyncio.to_thread(_timeline, granularity, weeks, dimension)
     except Exception as exc:  # noqa: BLE001 — advisory fragment, never 500-leak
         # exc is in the message (not just the traceback) so a log scrape catches
         # the cause; the browser only ever sees the generic notice in-template.
@@ -290,6 +322,7 @@ async def insights_timeline(
         {
             "rows": rows,
             "granularity": granularity,
+            "dimension": dimension,
             "weeks": weeks,
             "error": error,
         },

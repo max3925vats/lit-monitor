@@ -1,51 +1,75 @@
-{# FI-3: feedback-timeline fragment — lazy-loaded into #insights-timeline.
+{# FI-3 / FI-6: feedback-timeline fragment — lazy-loaded into #insights-timeline.
 
    Context:
-     rows        — list of {period, signal_type, count} dicts (FI-1's
+     rows        — list of {period, <cat>, count} dicts (FI-1/FI-5's
                    StateDB.feedback_timeline output), or [] for the empty path.
+                   <cat> is "signal_type" when dimension="signal" else "source".
      granularity — active bucket size ("week" | "day"); drives the toggle.
+     dimension   — active group-by ("signal" | "source"); drives the second
+                   toggle and the category column header/value (FI-6).
      weeks       — the bounded lookback window (int) surfaced in a .field-note.
      error       — True when the read raised (generic notice, no detail leaked).
 
    Presentation: one inline-SVG bar per period showing the PER-PERIOD TOTAL
-   (events summed across signal types), so the chart reads as "how much feedback
-   happened, when". The per-signal breakdown is preserved in the companion table
-   beneath the chart. Tokens-only fills (reuses _bars.html → var(--accent)); no
-   JavaScript, no CDN. All content via Jinja autoescape only — never |safe.
+   (events summed across categories), so the chart reads as "how much feedback
+   happened, when". The per-category breakdown is preserved in the companion
+   table beneath the chart. Tokens-only fills (reuses _bars.html → var(--accent));
+   no JavaScript, no CDN. All content via Jinja autoescape only — never |safe.
+
+   Both toggles preserve each other's state: every granularity link carries the
+   current dimension and every dimension link carries the current granularity, so
+   switching one axis never silently resets the other.
 #}
 {% from "insights/_bars.html" import bars %}
+{% set _cat_header = "Source" if dimension == "source" else "Signal" %}
 <div class="card" id="insights-timeline-card">
   <h2>Feedback timeline</h2>
 
   {# Granularity toggle: each link re-requests this fragment at a different
-     bucket size and swaps itself back into #insights-timeline. #}
+     bucket size, preserving the current dimension, and swaps itself back into
+     #insights-timeline. #}
   <p class="button-row" role="group" aria-label="Timeline granularity">
     {% for g in ["week", "day"] %}
     <a class="btn btn-secondary btn-sm{% if g == granularity %} active{% endif %}"
-       hx-get="/insights/timeline?granularity={{ g | urlencode }}"
+       hx-get="/insights/timeline?granularity={{ g | urlencode }}&dimension={{ dimension | urlencode }}"
        hx-target="#insights-timeline"
        hx-swap="innerHTML"
-       href="/insights/timeline?granularity={{ g | urlencode }}">{{ g }}</a>
+       href="/insights/timeline?granularity={{ g | urlencode }}&amp;dimension={{ dimension | urlencode }}">{{ g }}</a>
+    {% endfor %}
+  </p>
+
+  {# Dimension toggle (FI-6): group the per-period breakdown by signal or source,
+     preserving the current granularity. #}
+  <p class="button-row" role="group" aria-label="Timeline dimension">
+    {% for d in ["signal", "source"] %}
+    <a class="btn btn-secondary btn-sm{% if d == dimension %} active{% endif %}"
+       hx-get="/insights/timeline?granularity={{ granularity | urlencode }}&dimension={{ d | urlencode }}"
+       hx-target="#insights-timeline"
+       hx-swap="innerHTML"
+       href="/insights/timeline?granularity={{ granularity | urlencode }}&amp;dimension={{ d | urlencode }}">by {{ d }}</a>
     {% endfor %}
   </p>
 
   {% if error %}
   <p class="field-note">Could not load the feedback timeline — check the server logs.</p>
   {% elif rows %}
-  {# Aggregate the flat (period, signal_type, count) rows into per-period totals
-     for the chart, and collect the distinct signal types for the table header.
+  {# Aggregate the flat (period, <category>, count) rows into per-period totals
+     for the chart, and collect the distinct categories for the table columns.
+     The category value is row.signal_type when dimension="signal" else
+     row.source (FI-6) — handled via .get so a missing key never raises.
      Jinja namespaces are used so the loop-local mutations persist. #}
   {% set _periods = [] %}
   {% set _totals = {} %}
   {% set _by_cell = {} %}
-  {% set _signals = [] %}
+  {% set _cats = [] %}
   {% set _max = namespace(v=0) %}
   {% for r in rows %}
+    {% set _cat = r.signal_type if dimension == "signal" else r.source %}
     {% if r.period not in _periods %}{% set _ = _periods.append(r.period) %}{% endif %}
-    {% if r.signal_type not in _signals %}{% set _ = _signals.append(r.signal_type) %}{% endif %}
+    {% if _cat not in _cats %}{% set _ = _cats.append(_cat) %}{% endif %}
     {% set _prev = _totals.get(r.period, 0) + (r.count | int) %}
     {% set _ = _totals.update({r.period: _prev}) %}
-    {% set _ = _by_cell.update({(r.period, r.signal_type): (r.count | int)}) %}
+    {% set _ = _by_cell.update({(r.period, _cat): (r.count | int)}) %}
     {% if _prev > _max.v %}{% set _max.v = _prev %}{% endif %}
   {% endfor %}
   {% set _chart_rows = [] %}
@@ -55,7 +79,8 @@
 
   <p class="field-note">
     Feedback events per {{ granularity }} over the last {{ weeks }} weeks
-    (bars show the per-{{ granularity }} total across all signal types).
+    (bars show the per-{{ granularity }} total across all
+    {{ "sources" if dimension == "source" else "signal types" }}).
   </p>
 
   <div style="max-width: 560px;">
@@ -63,10 +88,13 @@
   </div>
 
   <table class="papers-table">
+    <caption class="field-note" style="text-align: left;">
+      Counts by {{ _cat_header | lower }} per {{ granularity }}.
+    </caption>
     <thead>
       <tr>
         <th>Period</th>
-        {% for s in _signals %}<th>{{ s }}</th>{% endfor %}
+        {% for c in _cats %}<th>{{ c }}</th>{% endfor %}
         <th>Total</th>
       </tr>
     </thead>
@@ -74,9 +102,9 @@
       {% for p in _periods %}
       <tr>
         <td>{{ p }}</td>
-        {% for s in _signals %}
-        {% set _c = _by_cell.get((p, s)) %}
-        <td>{% if _c %}{{ _c }}{% else %}&mdash;{% endif %}</td>
+        {% for c in _cats %}
+        {% set _cell = _by_cell.get((p, c)) %}
+        <td>{% if _cell %}{{ _cell }}{% else %}&mdash;{% endif %}</td>
         {% endfor %}
         <td>{{ _totals.get(p, 0) }}</td>
       </tr>

@@ -198,7 +198,7 @@ def test_no_chartjs_or_cdn(client):
 def test_insights_timeline_fragment(client, monkeypatch):
     monkeypatch.setattr(
         "scripts.server.routes.feedback._timeline",
-        lambda granularity, weeks: [
+        lambda granularity, weeks, dimension: [
             {"period": "2026-W22", "signal_type": "saved", "count": 5},
             {"period": "2026-W22", "signal_type": "dismissed", "count": 2},
         ],
@@ -210,7 +210,7 @@ def test_insights_timeline_fragment(client, monkeypatch):
 def test_insights_timeline_empty_notice(client, monkeypatch):
     monkeypatch.setattr(
         "scripts.server.routes.feedback._timeline",
-        lambda granularity, weeks: [],
+        lambda granularity, weeks, dimension: [],
     )
     r = client.get("/insights/timeline")
     assert r.status_code == 200 and "no feedback" in r.text.lower()
@@ -220,7 +220,7 @@ def test_insights_timeline_granularity_toggle(client, monkeypatch):
     seen = {}
     monkeypatch.setattr(
         "scripts.server.routes.feedback._timeline",
-        lambda granularity, weeks: seen.update(g=granularity, w=weeks) or [],
+        lambda granularity, weeks, dimension: seen.update(g=granularity, w=weeks) or [],
     )
     client.get("/insights/timeline?granularity=day")
     assert seen["g"] == "day" and seen["w"] is not None  # a default lookback is passed
@@ -229,7 +229,7 @@ def test_insights_timeline_granularity_toggle(client, monkeypatch):
 def test_insights_timeline_no_leak(client, monkeypatch, caplog):
     import logging
 
-    def _boom(granularity, weeks):
+    def _boom(granularity, weeks, dimension):
         raise RuntimeError("db://secret/path")
 
     monkeypatch.setattr("scripts.server.routes.feedback._timeline", _boom)
@@ -297,3 +297,81 @@ def test_insights_top_papers_no_leak(client, monkeypatch, caplog):
         r = client.get("/insights/top-papers")
     assert r.status_code == 200 and "vec://secret" not in r.text
     assert any("vec://secret" in rec.getMessage() for rec in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# FI-6: feedback-by-source aggregate section on the page
+# ---------------------------------------------------------------------------
+
+def test_insights_by_source_section(client, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._summary_by_source",
+        lambda: {"discovery": 7, "themes": 3, "implicit_zotero_save": 2},
+    )
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._learning_state", lambda: {"available": False}
+    )
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._cluster_weights",
+        lambda: {"floor": 0.1, "clusters": []},
+    )
+    r = client.get("/insights")
+    assert (
+        r.status_code == 200
+        and "discovery" in r.text
+        and "implicit_zotero_save" in r.text
+        and "By source" in r.text
+    )
+
+
+def test_insights_by_source_empty_first_run(client, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._summary_by_source", lambda: {}
+    )
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._learning_state", lambda: {"available": False}
+    )
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._cluster_weights",
+        lambda: {"floor": 0.1, "clusters": []},
+    )
+    r = client.get("/insights")
+    assert r.status_code == 200 and (
+        "no feedback" in r.text.lower() or "no source" in r.text.lower()
+    )
+
+
+# ---------------------------------------------------------------------------
+# FI-6: timeline dimension (by signal / by source) toggle passthrough
+# ---------------------------------------------------------------------------
+
+def test_timeline_dimension_source_passthrough(client, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._timeline",
+        lambda granularity, weeks, dimension: seen.update(g=granularity, d=dimension)
+        or [{"period": "2026-W22", "source": "discovery", "count": 4}],
+    )
+    r = client.get("/insights/timeline?granularity=week&dimension=source")
+    assert seen["d"] == "source" and "discovery" in r.text
+
+
+def test_timeline_dimension_defaults_to_signal(client, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._timeline",
+        lambda granularity, weeks, dimension: seen.update(d=dimension)
+        or [{"period": "2026-W22", "signal_type": "saved", "count": 4}],
+    )
+    r = client.get("/insights/timeline?granularity=week")
+    assert seen["d"] == "signal"  # default
+
+
+def test_timeline_invalid_dimension_falls_back(client, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._timeline",
+        lambda granularity, weeks, dimension: seen.update(d=dimension) or [],
+    )
+    client.get("/insights/timeline?dimension=bogus")
+    assert seen["d"] == "signal"  # route whitelists before passing to backend
