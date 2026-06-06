@@ -5,8 +5,13 @@
                 {doi:path} route accepts "10.x/y" verbatim, so NO urlencode on
                 the path. Query VALUES (mode) are urlencode'd — the FE2-2 lesson).
      mode     — active retrieval mode ("vector" | "graph" | "hybrid").
-     related  — list of {doi, score[, title]} dicts, or None when the graph
-                isn't built (graph-not-built notice path).
+     related  — list of {doi, score[, title], source} dicts, or None for the
+                no-data path. Each row carries an explicit `source`
+                ("vector"|"graph"|"hybrid") set by how it was actually found;
+                the per-row provenance pill below renders that truthfully so a
+                vector neighbour is NEVER presented as a graph relationship.
+                None means: graph/hybrid → graph-not-built notice; vector →
+                no-embedded-neighbours notice.
      error    — True when the retrieval raised (generic notice, no detail leaked).
 
    All content is rendered through Jinja autoescape ONLY — never |safe.
@@ -30,14 +35,24 @@
   {% if error %}
   <p class="field-note">Could not load related work — check the server logs.</p>
   {% elif related is none %}
+    {# No-data path is mode-specific so we never lie about why it's empty:
+       graph/hybrid need the graph built; vector needs embeddings. #}
+    {% if mode == "vector" %}
+  <p class="field-note">
+    No embedded neighbours found — this paper has no vector embeddings yet, so
+    similar papers can't be computed. Run <code>lit-monitor brain-build</code>
+    to embed the corpus.
+  </p>
+    {% else %}
   <p class="field-note">
     No knowledge graph is built yet, so related work cannot be computed. Run
     <code>lit-monitor graph backfill --all</code> to build the graph.
   </p>
+    {% endif %}
   {% elif related %}
   <table class="papers-table">
     <thead>
-      <tr><th>Paper</th><th>Score</th></tr>
+      <tr><th>Paper</th><th>Via</th><th>Score</th></tr>
     </thead>
     <tbody>
       {% for item in related %}
@@ -46,6 +61,21 @@
           {# DOI embedded literally in the detail-page link so the {doi:path}
              detail route matches. #}
           <a href="/corpus/{{ item.doi }}">{{ item.title or item.doi }}</a>
+        </td>
+        <td>
+          {# Truthful per-result provenance: derived from each row's own
+             `source` field (how it was actually retrieved), NOT from the active
+             mode toggle. A vector neighbour is labelled as such even if the
+             toggle were somehow inconsistent. #}
+          {% if item.source == "vector" %}
+          <span class="pill" title="found by embedding cosine similarity">via vector similarity</span>
+          {% elif item.source == "graph" %}
+          <span class="pill" title="found via the knowledge graph">via knowledge graph</span>
+          {% elif item.source == "hybrid" %}
+          <span class="pill" title="found by fusing vector + graph">via hybrid (vector + graph)</span>
+          {% else %}
+          <span class="muted">&mdash;</span>
+          {% endif %}
         </td>
         <td><span class="score">{{ "%.3f" | format(item.score or 0 | float) }}</span></td>
       </tr>

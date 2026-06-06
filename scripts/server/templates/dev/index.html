@@ -252,16 +252,16 @@
         hx-target="#panel-8-status"
         hx-swap="innerHTML"
         class="setup-form">
+    <fieldset>
+      <legend>Backfill type</legend>
+      <label class="inline-check"><input type="radio" name="backfill_kind" value="schema" checked> Schema only</label>
+      <label class="inline-check"><input type="radio" name="backfill_kind" value="ner"> + NER (entities)</label>
+      <label class="inline-check"><input type="radio" name="backfill_kind" value="relationships"> + Relationships</label>
+    </fieldset>
     <div class="button-row">
       <label class="inline-check"><input type="checkbox" name="all" value="on" checked> --all (full corpus)</label>
-      <label class="inline-check"><input type="checkbox" name="ner" value="on"> NER (entities)</label>
-      <label class="inline-check"><input type="checkbox" name="relationships" value="on"> relationships</label>
       <label class="inline-check"><input type="checkbox" name="with_llm" value="on"> with LLM (cloud-Ollama)</label>
     </div>
-    <p class="field-note">
-      Note: if both NER and Relationships are selected, the backfill runs the
-      NER pass only — re-run with just Relationships for the relationship pass.
-    </p>
     <div class="button-row">
       <button class="button" type="submit">Start backfill</button>
       <button class="button danger"

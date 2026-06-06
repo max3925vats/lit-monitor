@@ -27,6 +27,7 @@ docs/internal/*
 # ...but ship the reference-paper schema example so model_compare's
 # null-honesty fallback works on a fresh clone (real .yaml stays local).
 !docs/internal/reference_papers.example.yaml
+!docs/internal/constants.yaml
 docs/superpowers/
 IMPLEMENTATION_PLAN*.md
 ANALYSIS_*.md
