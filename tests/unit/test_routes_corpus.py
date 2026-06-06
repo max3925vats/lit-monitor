@@ -143,6 +143,44 @@ def test_corpus_detail_xss_escaped(client, monkeypatch):
     assert "&lt;img src=x onerror=alert(2)&gt;" in r.text
 
 
+# --- PF-2: clickable Obsidian deep-link on the corpus detail page ------------
+
+
+def test_corpus_detail_obsidian_deeplink(client, monkeypatch):
+    monkeypatch.setattr("scripts.server.routes.corpus._get_paper_row",
+        lambda doi: {"doi":doi,"title":"X","authors":[],"year":None,"journal":None,
+                     "source_type":"paper","zotero_key":None,
+                     "note_path":"Literature/Papers/X.md","extraction":{}})
+    monkeypatch.setattr("scripts.server.routes.corpus._get_score_breakdown", lambda d: None)
+    monkeypatch.setattr("scripts.server.routes.corpus._vault_name", lambda: "MyVault")
+    r = client.get("/corpus/10.1/x")
+    assert r.status_code == 200
+    assert "obsidian://open?vault=MyVault" in r.text
+    assert "Literature/Papers/X.md" in r.text or "X.md" in r.text  # file in the URI/label
+
+
+def test_corpus_detail_no_obsidian_link_when_no_note(client, monkeypatch):
+    monkeypatch.setattr("scripts.server.routes.corpus._get_paper_row",
+        lambda doi: {"doi":doi,"title":"X","authors":[],"year":None,"journal":None,
+                     "source_type":"paper","zotero_key":None,"note_path":None,"extraction":{}})
+    monkeypatch.setattr("scripts.server.routes.corpus._get_score_breakdown", lambda d: None)
+    r = client.get("/corpus/10.1/x")
+    assert r.status_code == 200 and "obsidian://open" not in r.text  # no note → no link, no crash
+
+
+def test_corpus_detail_absolute_note_path_made_relative(client, monkeypatch):
+    monkeypatch.setattr("scripts.server.routes.corpus._get_paper_row",
+        lambda doi: {"doi":doi,"title":"X","authors":[],"year":None,"journal":None,
+                     "source_type":"paper","zotero_key":None,
+                     "note_path":"/Users/me/MyVault/Literature/Papers/X.md","extraction":{}})
+    monkeypatch.setattr("scripts.server.routes.corpus._get_score_breakdown", lambda d: None)
+    monkeypatch.setattr("scripts.server.routes.corpus._vault_path", lambda: "/Users/me/MyVault")
+    monkeypatch.setattr("scripts.server.routes.corpus._vault_name", lambda: "MyVault")
+    r = client.get("/corpus/10.1/x")
+    # absolute path under the vault → file param is vault-relative, not the absolute path
+    assert "file=Literature%2FPapers%2FX.md" in r.text or "file=Literature/Papers/X.md" in r.text
+
+
 # --- FE2-4: lazy HTMX fragments — related work + knowledge graph --------------
 
 

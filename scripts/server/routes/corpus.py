@@ -15,7 +15,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
@@ -23,6 +25,10 @@ from fastapi.responses import HTMLResponse
 from scripts.graph.import_citations import safe_graph_db  # patched in tests
 from scripts.obsidian_tools.relink import _focused_embed_query  # graph-free query
 from scripts.server.runtime import get_runtime
+
+if TYPE_CHECKING:  # import-cost-free: only seen by the type checker
+    from scripts.core.state_db import StateDB
+    from scripts.output.embeddings import EmbeddingsDB
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +126,74 @@ def corpus_index(
 # ---------------------------------------------------------------------------
 
 
+def _vault_path() -> str | None:
+    """Return the configured Obsidian vault path, or ``None`` on any failure.
+
+    Module-level seam the detail-page tests monkeypatch. Mirrors the config
+    access used by ``discovery_notify._get_vault_name``.
+    """
+    try:
+        from scripts.core.config import get_config  # noqa: PLC0415
+
+        cfg = get_config()
+        vault_path = getattr(getattr(cfg, "obsidian", None), "vault_path", None)
+        if vault_path:
+            return str(vault_path)
+    except Exception as exc:  # noqa: BLE001 — no vault configured → no deep link
+        logger.warning("PF-2: _vault_path failed: %s", exc)
+    return None
+
+
+def _vault_name() -> str | None:
+    """Return the vault NAME (last path segment), or ``None`` if unavailable.
+
+    Mirrors ``discovery_notify._get_vault_name`` — ``Path(vault_path).name`` —
+    but returns ``None`` rather than the "vault" fallback so the caller can omit
+    the deep link entirely when no vault is configured.
+    """
+    vault_path = _vault_path()
+    if not vault_path:
+        return None
+    return Path(vault_path).name or None
+
+
+def _obsidian_uri(note_path: str) -> str | None:
+    """Build an ``obsidian://open?vault=<name>&file=<relpath>`` URI for *note_path*.
+
+    Returns ``None`` (caller omits the link) when no vault is configured or any
+    step fails — never raises, so it can never 500 the detail page. ``note_path``
+    may be stored ABSOLUTE (``/…/MyVault/Literature/Papers/X.md`` — the
+    obsidian_writer default) or already VAULT-RELATIVE (``Literature/Papers/X.md``);
+    both are handled.
+    """
+    try:
+        vault_name = _vault_name()
+        if not vault_name:
+            return None
+
+        relpath = note_path
+        path = Path(note_path)
+        if path.is_absolute():
+            vault_path = _vault_path()
+            if vault_path:
+                try:
+                    relpath = str(path.relative_to(vault_path))
+                except ValueError:
+                    # Absolute but NOT under the vault — fall back to the bare
+                    # filename rather than leaking the full absolute path.
+                    relpath = path.name
+            else:
+                relpath = path.name
+        else:
+            # Already vault-relative — strip any leading slash defensively.
+            relpath = note_path.lstrip("/")
+
+        return f"obsidian://open?vault={quote(vault_name)}&file={quote(relpath)}"
+    except Exception as exc:  # noqa: BLE001 — never crash the detail page
+        logger.warning("PF-2: _obsidian_uri failed: %s", exc)
+        return None
+
+
 def _get_paper_row(doi: str) -> dict | None:
     """Fetch one paper's display record from state.db, or ``None`` if absent.
 
@@ -209,12 +283,12 @@ def _get_score_breakdown(doi: str) -> dict | None:
 _RELATED_K = 10
 
 
-def _get_state_db():
+def _get_state_db() -> StateDB:
     """Resolve the real StateDB. Module-level seam so tests can patch it."""
     return get_runtime().state_db
 
 
-def _get_embeddings_db():
+def _get_embeddings_db() -> EmbeddingsDB | None:
     """Resolve the real EmbeddingsDB, or ``None`` if it can't be constructed.
 
     Module-level seam so the vector-path tests can inject a fake without a live
@@ -415,7 +489,12 @@ def corpus_detail(request: Request, doi: str) -> HTMLResponse:
         logger.error("corpus detail failed doi=%s", doi, exc_info=True)
         raise HTTPException(status_code=500, detail="Internal error") from None
 
-    ctx = {"paper": row, "breakdown": breakdown}
+    # PF-2: build a clickable obsidian:// deep link when a note path is present
+    # and a vault is configured; None → template falls back to plain-text path.
+    note_path = row.get("note_path")
+    obsidian_uri = _obsidian_uri(note_path) if note_path else None
+
+    ctx = {"paper": row, "breakdown": breakdown, "obsidian_uri": obsidian_uri}
     return _get_templates().TemplateResponse(request, "corpus/detail.html", ctx)
 
 

@@ -38,12 +38,17 @@
          href="zotero://select/library/items/{{ paper.zotero_key }}">Open in Zotero</a>
       {% endif %}
       {% if paper.note_path %}
-      {# Obsidian: the note_path is vault-relative (e.g.
-         "Literature/Papers/Carta 2009.md"). The vault NAME needed for an
-         obsidian://open?vault=... URI is not reliably derivable from config
-         (only the vault path is stored), so the path is DISPLAYED plainly
-         rather than risk a broken deep link. #}
+      {# PF-2: when a vault is configured, obsidian_uri is an
+         obsidian://open?vault=…&file=… deep link (built server-side in
+         _obsidian_uri); the readable note path is the link label. When no vault
+         is configured obsidian_uri is None and we fall back to the plain path.
+         The obsidian:// href passes through Jinja autoescape safely — no |safe. #}
+      {% if obsidian_uri %}
+      <span class="field-note note-path">Obsidian note:
+        <a href="{{ obsidian_uri }}"><code>{{ paper.note_path }}</code></a></span>
+      {% else %}
       <span class="field-note note-path">Obsidian note: <code>{{ paper.note_path }}</code></span>
+      {% endif %}
       {% endif %}
     </p>
   </div>
