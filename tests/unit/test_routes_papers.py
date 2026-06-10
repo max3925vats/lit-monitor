@@ -272,6 +272,64 @@ class TestRelatedPapers:
 
         assert r.status_code == 404
 
+    def test_related_endpoint_closes_handle(self, client, monkeypatch):
+        """AR-2: the /related route must close its GraphDB handle on the happy path.
+
+        The leak fix wraps get_related_papers in try/finally: graph_db.close().
+        We hand the route a fake handle that counts close() calls and assert it
+        was closed exactly once.
+        """
+        closed = {"n": 0}
+
+        class _FakeDB:
+            def close(self):
+                closed["n"] += 1
+
+        monkeypatch.setattr(
+            "scripts.server.routes.papers.safe_graph_db",
+            lambda *a, **k: _FakeDB(),
+        )
+        monkeypatch.setattr(
+            "scripts.server.routes.papers.get_related_papers",
+            lambda *a, **k: [{"doi": "10.1/x", "score": 1.0}],
+        )
+        r = client.get("/api/papers/10.1234/abc/related")
+        assert r.status_code == 200
+        assert closed["n"] == 1
+
+    def test_related_endpoint_closes_handle_on_error(self, monkeypatch):
+        """AR-2: the handle is closed even when get_related_papers raises.
+
+        The real route has no 500-guard, so the exception propagates to FastAPI
+        and surfaces as a 500.  We use raise_server_exceptions=False so the
+        TestClient turns the propagated error into a response we can inspect,
+        and assert the finally-clause still closed the handle.
+        """
+        closed = {"n": 0}
+
+        class _FakeDB:
+            def close(self):
+                closed["n"] += 1
+
+        monkeypatch.setattr(
+            "scripts.server.routes.papers.safe_graph_db",
+            lambda *a, **k: _FakeDB(),
+        )
+
+        def _boom(*a, **k):
+            raise RuntimeError("kuzu boom")
+
+        monkeypatch.setattr(
+            "scripts.server.routes.papers.get_related_papers", _boom
+        )
+        # The route does not wrap the error in a 500-guard; the exception
+        # propagates.  raise_server_exceptions=False lets us observe the 500
+        # response instead of the exception bubbling out of the test client.
+        local_client = TestClient(create_app(), raise_server_exceptions=False)
+        r = local_client.get("/api/papers/10.1234/abc/related")
+        assert closed["n"] == 1  # handle closed even on error
+        assert r.status_code == 500
+
 
 # ---------------------------------------------------------------------------
 # H7: POST /api/papers/{doi}/relink
