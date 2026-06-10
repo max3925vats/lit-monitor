@@ -115,3 +115,25 @@ def test_testserver_host_allowed(client, monkeypatch):
     # No Host override → TestClient sends Host: testserver, Origin absent.
     r = client.post("/api/discovery/start", data={"dry_run": "true"})
     assert r.status_code != 403
+
+
+def test_wildcard_bind_host_not_allowlisted(tmp_path, monkeypatch):
+    """A configured bind host of ``0.0.0.0`` must NOT make ``Host: 0.0.0.0`` pass.
+
+    ``0.0.0.0`` is a wildcard *bind* address, never a value a client sends as
+    Host, so ``_resolve_allowed_hosts()`` must skip it. A non-safe request whose
+    Host is ``0.0.0.0`` is therefore still a non-local Host → 403.
+    """
+    monkeypatch.setenv("LIT_MONITOR_STATE_DB", str(tmp_path / "state.db"))
+    # Simulate a persisted ``[server].host = "0.0.0.0"`` in the secrets TOML.
+    monkeypatch.setattr(
+        "scripts.server.config_io.load_server_config",
+        lambda: {"host": "0.0.0.0"},
+    )
+    client = TestClient(create_app())
+    r = client.post(
+        "/api/discovery/start",
+        data={},
+        headers={"Host": "0.0.0.0"},
+    )
+    assert r.status_code == 403

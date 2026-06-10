@@ -29,11 +29,13 @@ For any non-safe method (anything but GET/HEAD/OPTIONS):
   * Then, *only if* an ``Origin`` header is present, reject when its host is
     not a known-local host (CSRF defense).
 
-Requests with NO ``Origin`` header are ALLOWED. This is deliberate: curl, the
-CLI tools, and some same-origin browser POSTs omit Origin, and we must not
-break them. Browsers ALWAYS attach Origin on the cross-origin POSTs that are
-the actual attack vector, so allowing the absent-Origin case loses no
-protection. Safe methods (GET/HEAD/OPTIONS) are never blocked.
+Requests with NO ``Origin`` header are ALLOWED. This is deliberate: the
+no-Origin allowance is required for curl/CLI clients and same-origin posts,
+which omit Origin, and we must not break them. ``fetch``/XHR always attach
+Origin on cross-origin requests, and modern browsers also send ``Origin`` on
+cross-origin *form* POSTs (since ~2020); the only residual is a pre-2020,
+non-JS cross-origin form auto-submit, accepted as a negligible risk for a
+single-user localhost tool. Safe methods (GET/HEAD/OPTIONS) are never blocked.
 
 This is intentionally simpler than per-form CSRF tokens: a token scheme would
 need plumbing through 50+ forms for no extra security on a single-user

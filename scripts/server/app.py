@@ -83,6 +83,10 @@ def _resolve_allowed_hosts() -> frozenset[str]:
     so the DNS-rebinding Host check doesn't 403 legitimate requests. Reading the
     config is best-effort: any failure degrades to the loopback-only defaults
     rather than breaking app creation.
+
+    A wildcard bind address (``0.0.0.0`` / ``::``) is a *bind* address, not a
+    reachable ``Host`` value, so it is never added to the allow-list — doing so
+    would be inert at best and is sloppy. Real hostnames are still added.
     """
     try:
         from scripts.server.config_io import load_server_config
@@ -92,7 +96,9 @@ def _resolve_allowed_hosts() -> frozenset[str]:
         logger.debug("Could not read [server].host for CSRF allow-list: %s", exc)
         host = ""
 
-    if host and host not in _ALLOWED_HOSTS:
+    # Skip wildcard bind addresses: they bind every interface but are not a
+    # value any client sends as Host, so allow-listing them protects nothing.
+    if host and host not in ("0.0.0.0", "::") and host not in _ALLOWED_HOSTS:
         return frozenset(_ALLOWED_HOSTS | {host})
     return _ALLOWED_HOSTS
 
