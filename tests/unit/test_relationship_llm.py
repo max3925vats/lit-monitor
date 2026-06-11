@@ -18,6 +18,7 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from lit_monitor.core.path_utils import resolve_path
 from lit_monitor.graph.relationship_extractor import RelationshipTuple
 from lit_monitor.graph.relationship_llm import extract_llm_relationships
 
@@ -461,9 +462,9 @@ class TestMalformedJsonReturnsEmpty:
 class TestPromptRoundTrip:
     def test_prompt_yaml_carries_required_placeholders(self) -> None:
         """R2: the YAML must declare all 3 required placeholders."""
-        yaml_path = Path(
+        yaml_path = resolve_path(Path(
             "config/prompts/relationship_extraction.example.yaml"
-        )
+        ))
         assert yaml_path.exists()
         raw = yaml_path.read_text()
         assert "{fulltext}" in raw
@@ -520,7 +521,7 @@ class TestPromptVocabulary:
         (citation edges). R2 covers the 6 schema-source-augmenting +
         2 LLM-only (EXTENDS, CONTRADICTS) predicates.
         """
-        yaml_path = Path("config/prompts/relationship_extraction.example.yaml")
+        yaml_path = resolve_path(Path("config/prompts/relationship_extraction.example.yaml"))
         raw = yaml_path.read_text()
         expected = {
             "EXTENDS",
@@ -541,7 +542,7 @@ class TestPromptVocabulary:
         """
         import re
 
-        yaml_path = Path("config/prompts/relationship_extraction.example.yaml")
+        yaml_path = resolve_path(Path("config/prompts/relationship_extraction.example.yaml"))
         raw = yaml_path.read_text()
 
         # MENTIONS is the safest pattern (word-boundary match for the

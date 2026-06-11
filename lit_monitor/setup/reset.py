@@ -170,9 +170,19 @@ def _chroma_persist_dir(config: Any) -> Path:
 
 
 def _project_config_dir() -> Path:
-    """Resolve the in-repo ``config/`` directory (auto-generated files live here)."""
-    # Module is at scripts/setup/reset.py; project root is two parents up.
-    return Path(__file__).resolve().parent.parent.parent / "config"
+    """Resolve the active config dir where auto-generated files live.
+
+    These generated files (concepts_draft.yaml, topics_suggested.yaml, the
+    refinement-raw txt) are WRITTEN by build-vocabulary into ``config_dir()``,
+    so ``reset state`` must enumerate them from the SAME location for parity —
+    a wheel run writes them under the user config dir, not a repo ``config/``
+    that doesn't exist in an installed wheel. config_dir() honours
+    LIT_MONITOR_ROOT and the dev ./config fallback, so the editable case still
+    resolves the in-repo config dir.
+    """
+    from lit_monitor.core.config import config_dir
+
+    return config_dir()
 
 
 def _graph_persist_dir(config: Any) -> str:

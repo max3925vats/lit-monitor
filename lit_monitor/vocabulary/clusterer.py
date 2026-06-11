@@ -523,7 +523,7 @@ def _refine_clustering(
 def build_vocabulary(
     keywords: dict[str, list[str]],
     llm: LLMClient,
-    output_path: Path = CONCEPTS_DRAFT_PATH,
+    output_path: Path | None = None,
     max_tokens: int = 16384,
     chunk_size: int = 0,
     remediate: bool = True,
@@ -590,6 +590,18 @@ def build_vocabulary(
         Parsed structure: {"themes": [...], "unclustered": [...]}.
         Also written to output_path as YAML.
     """
+    # Resolve the None default at call time to the active config dir's
+    # concepts_draft.yaml — a generated WRITE output, so it must anchor on the
+    # write location (config_dir), not a CWD-relative ``config/`` path that a
+    # wheel run would create in the wrong place. config_dir() honours
+    # LIT_MONITOR_ROOT / the dev ./config fallback, so test monkeypatching and
+    # the editable case both keep working. CONCEPTS_DRAFT_PATH stays a logical
+    # path (public import + documented constant).
+    if output_path is None:
+        from lit_monitor.core.config import config_dir
+
+        output_path = config_dir() / CONCEPTS_DRAFT_PATH.name
+
     canonical_list = sorted(keywords.keys())
 
     if not canonical_list:

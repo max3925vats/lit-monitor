@@ -138,8 +138,9 @@ class TestPyprojectToml:
 class TestExtractionYamlBlock:
     def test_notify_block_present(self):
         """P2: extraction.example.yaml has a discovery.notify subsection."""
-        from pathlib import Path
-        raw = Path("config/extraction.example.yaml").read_text()
+        from importlib.resources import files
+        example = files("lit_monitor._data.config_examples") / "extraction.example.yaml"
+        raw = example.read_text()
         assert "notify:" in raw
         assert "enabled" in raw
         assert "on_zero_results" in raw

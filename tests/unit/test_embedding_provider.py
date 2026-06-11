@@ -332,8 +332,9 @@ class TestBundleAEmbedTextRegression:
 class TestExtractionExampleYaml:
     def test_embedding_block_present(self):
         """config/extraction.example.yaml must contain the full embedding: block."""
-        from pathlib import Path
-        raw = (Path(__file__).parents[2] / "config" / "extraction.example.yaml").read_text()
+        from importlib.resources import files
+        example = files("lit_monitor._data.config_examples") / "extraction.example.yaml"
+        raw = example.read_text()
         assert "embedding:" in raw, "embedding: top-level key missing"
         assert "provider:" in raw, "embedding.provider key missing"
         assert "ollama:" in raw, "embedding.ollama sub-block missing"

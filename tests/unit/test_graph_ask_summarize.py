@@ -20,6 +20,7 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from lit_monitor.core.path_utils import resolve_path
 from lit_monitor.graph.ask import summarize_results
 
 
@@ -186,15 +187,15 @@ class TestErrorHandling:
 # ---------------------------------------------------------------------------
 class TestPromptRoundTrip:
     def test_yaml_exists(self) -> None:
-        assert Path("config/prompts/ask_summarize.example.yaml").exists()
+        assert resolve_path(Path("config/prompts/ask_summarize.example.yaml")).exists()
 
     def test_yaml_has_required_placeholders(self) -> None:
-        raw = Path("config/prompts/ask_summarize.example.yaml").read_text()
+        raw = resolve_path(Path("config/prompts/ask_summarize.example.yaml")).read_text()
         for placeholder in ("{question}", "{cypher}", "{rows}"):
             assert placeholder in raw, f"missing placeholder {placeholder}"
 
     def test_yaml_frames_as_analyst_not_cypher_tutor(self) -> None:
-        raw = Path("config/prompts/ask_summarize.example.yaml").read_text().lower()
+        raw = resolve_path(Path("config/prompts/ask_summarize.example.yaml")).read_text().lower()
         # Must frame the role as analyst / answering, NOT teaching Cypher.
         assert "analyst" in raw or "answer the question" in raw
         # Must explicitly forbid explaining the query.
@@ -205,7 +206,7 @@ class TestPromptRoundTrip:
         )
 
     def test_yaml_forbids_invention(self) -> None:
-        raw = Path("config/prompts/ask_summarize.example.yaml").read_text().lower()
+        raw = resolve_path(Path("config/prompts/ask_summarize.example.yaml")).read_text().lower()
         # Must forbid inventing facts not in the rows.
         assert (
             "never invent" in raw
@@ -215,11 +216,11 @@ class TestPromptRoundTrip:
 
     def test_yaml_has_cluster_context_placeholder(self) -> None:
         """Bundle I: {cluster_context} must be present in the YAML user_template."""
-        raw = Path("config/prompts/ask_summarize.example.yaml").read_text()
+        raw = resolve_path(Path("config/prompts/ask_summarize.example.yaml")).read_text()
         assert "{cluster_context}" in raw
 
     def test_yaml_required_placeholders_include_cluster_context(self) -> None:
-        raw = Path("config/prompts/ask_summarize.example.yaml").read_text()
+        raw = resolve_path(Path("config/prompts/ask_summarize.example.yaml")).read_text()
         assert "cluster_context" in raw
 
     def test_prompt_loads_via_registry(self) -> None:

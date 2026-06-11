@@ -297,7 +297,6 @@ def _run_sandbox_ingest(*, doi: str, fulltext: str) -> str:
         vault_dir = sandbox_vault_subfolder()
         slug = doi.replace("/", "_").replace(":", "_")
         note_path = vault_dir / f"sandbox_{slug}.md"
-        template_dir = Path(__file__).resolve().parents[3] / "config" / "templates"
         write_paper_note(
             paper={
                 "doi": doi,
@@ -307,7 +306,8 @@ def _run_sandbox_ingest(*, doi: str, fulltext: str) -> str:
             },
             extraction=extraction,
             config=cfg,
-            template_dir=template_dir,
+            # Resolve note templates via obsidian_writer's wheel-safe default
+            # (packaged note_templates, or a user override under config_dir()).
             note_path_override=note_path,
         )
         try:

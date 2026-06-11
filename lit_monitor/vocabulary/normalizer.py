@@ -15,11 +15,15 @@ from pathlib import Path
 
 from rapidfuzz import fuzz
 
+from lit_monitor.core.path_utils import resolve_path as _resolve_path
 from lit_monitor.core.strict_mode import strict_fallback
 
 logger = logging.getLogger(__name__)
 
-# Candidate vocabulary files in preference order (user-reviewed copy first)
+# Candidate vocabulary files in preference order (user-reviewed copy first).
+# These are *logical* config paths; reads below route them through
+# resolve_path() so a wheel run from an arbitrary CWD still finds the user's
+# config dir / packaged defaults (the dev/editable case still resolves ./config).
 _VOCAB_CANDIDATES = [
     Path("config/concepts.yaml"),
     Path("config/concepts_draft.yaml"),
@@ -122,8 +126,21 @@ def assign_themes(
             return []
     else:
         for i, candidate in enumerate(_VOCAB_CANDIDATES):
-            if candidate.exists():
-                resolved = candidate
+            # Route the logical config/ path through resolve_path so a wheel run
+            # finds the user config dir / packaged default; resolve_path raises
+            # when nothing matches, so a miss just falls through to the next
+            # candidate (preserving the original "try concepts then draft" order).
+            # An absolute override (e.g. a test monkeypatch) is honoured as-is so
+            # resolve_path's fallback tiers can't rescue a nonexistent absolute
+            # path back to the real config.
+            if candidate.is_absolute():
+                resolved = candidate if candidate.exists() else None
+            else:
+                try:
+                    resolved = _resolve_path(candidate)
+                except FileNotFoundError:
+                    resolved = None
+            if resolved is not None:
                 # N8b: warn once when falling back to the draft file — the user
                 # hasn't yet promoted concepts_draft.yaml → concepts.yaml.
                 if i > 0 and not _warned_concepts_fallback:

@@ -18,6 +18,7 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from lit_monitor.core.path_utils import resolve_path
 from lit_monitor.graph.long_tail import extract_long_tail_and_validate
 
 
@@ -179,7 +180,7 @@ class TestExtractLongTailMalformedOutput:
 class TestPromptRoundTrip:
     def test_prompt_yaml_carries_required_placeholders(self) -> None:
         """N2: the long_tail_ner YAML ships {text} and {low_conf_json}."""
-        yaml_path = Path("config/prompts/long_tail_ner.example.yaml")
+        yaml_path = resolve_path(Path("config/prompts/long_tail_ner.example.yaml"))
         assert yaml_path.exists(), (
             "long_tail_ner.example.yaml is the long-lived prompt asset — "
             "must exist alongside other config/prompts/*.example.yaml files."

@@ -22,39 +22,51 @@ from lit_monitor.core.strict_mode import strict_fallback
 _DEFAULT_CONFIG_DIR = Path.home() / ".config" / "lit-monitor"
 _DEFAULT_SECRETS_PATH = _DEFAULT_CONFIG_DIR / "config.toml"
 
+# The user's XDG-style config dir. Computed from HOME at import time; a
+# pip-installed wheel finds its config here (seeded on first-run).
+_USER_CONFIG_DIR = Path.home() / ".config" / "lit-monitor"
 
-def _find_project_root() -> Path:
-    """Locate the project root containing pyproject.toml.
 
-    Search order:
-    1. LIT_MONITOR_ROOT env var (hard override for any install layout)
-    2. Walk up from CWD — works when running lit-monitor from the project dir
-    3. Walk up from __file__ — works for editable installs / venv setups
-    Raises RuntimeError if no pyproject.toml is found in either walk.
+def _repo_config_dir() -> Path | None:
+    """Locate the repo's editable/dev ``config/`` dir (pyproject + config/).
+
+    Walks up from both CWD and this module's location so it works whether
+    lit-monitor is run from the project directory or from an editable install
+    with the .venv inside the project root. Returns ``None`` when no
+    pyproject+config pair is found — that is the pip-installed-wheel case,
+    where there is no repo to fall back to.
+    """
+    for base in (Path.cwd(), Path(__file__).resolve().parent):
+        candidate = base
+        for _ in range(12):
+            if (candidate / "pyproject.toml").exists() and (candidate / "config").exists():
+                return candidate / "config"
+            candidate = candidate.parent
+    return None
+
+
+def config_dir() -> Path:
+    """Resolve the active config directory (three-tier precedence).
+
+    Precedence:
+    1. ``$LIT_MONITOR_ROOT/config`` — hard override for any install layout.
+    2. ``~/.config/lit-monitor`` when it already holds ``paths.yaml`` — the
+       primary location for a pip-installed wheel (seeded on first-run).
+    3. The repo ``./config`` when a pyproject+config pair is found by walking
+       up from CWD / this module — the editable/dev fallback.
+    4. Else the user dir, so first-run can seed it.
+
+    This is resolved on every call (not cached) so HOME / CWD / env changes —
+    including those made by tests via monkeypatch — take effect immediately.
     """
     if root := os.environ.get("LIT_MONITOR_ROOT"):
-        return Path(root)
-    # CWD walk-up: the common case — user runs from the project directory
-    candidate = Path.cwd()
-    for _ in range(8):
-        if (candidate / "pyproject.toml").exists():
-            return candidate
-        candidate = candidate.parent
-    # __file__ walk-up: editable installs / .venv inside project root
-    candidate = Path(__file__).resolve().parent
-    for _ in range(12):
-        if (candidate / "pyproject.toml").exists():
-            return candidate
-        candidate = candidate.parent
-    raise RuntimeError(
-        "lit-monitor: could not locate project root (no pyproject.toml found).\n"
-        "Either run lit-monitor from within the project directory, or set the\n"
-        "LIT_MONITOR_ROOT environment variable to the project path."
-    )
-
-
-_PROJECT_ROOT = _find_project_root()
-_CONFIG_DIR = _PROJECT_ROOT / "config"
+        return Path(root) / "config"
+    user_dir = Path.home() / ".config" / "lit-monitor"
+    if (user_dir / "paths.yaml").exists():
+        return user_dir
+    if (repo := _repo_config_dir()) is not None:
+        return repo
+    return user_dir
 # ---------------------------------------------------------------------------
 # Config classes (simple namespaces — not dataclasses to keep it lightweight)
 # ---------------------------------------------------------------------------
@@ -82,8 +94,8 @@ class Config:
         paths_yaml: Path | None = None,
         extraction_yaml: Path | None = None,
     ) -> None:
-        paths_yaml = paths_yaml or _CONFIG_DIR / "paths.yaml"
-        extraction_yaml = extraction_yaml or _CONFIG_DIR / "extraction.yaml"
+        paths_yaml = paths_yaml or config_dir() / "paths.yaml"
+        extraction_yaml = extraction_yaml or config_dir() / "extraction.yaml"
         raw_paths = _load_yaml(paths_yaml)
         # Validate structure; validated model provides Pydantic-coerced values.
         validated_paths = PathsConfig.model_validate(raw_paths)
@@ -314,7 +326,7 @@ class Config:
     @property
     def topics(self) -> list[dict]:
         if self._topics is None:
-            p = _CONFIG_DIR / "topics.yaml"
+            p = config_dir() / "topics.yaml"
             if p.exists():
                 raw = _load_yaml(p)
                 self._topics = raw.get("searches", [])
@@ -337,7 +349,7 @@ class Config:
     @property
     def researchers(self) -> list[dict]:
         if self._researchers is None:
-            p = _CONFIG_DIR / "researchers.yaml"
+            p = config_dir() / "researchers.yaml"
             self._researchers = (
                 _load_yaml(p).get("researchers", []) if p.exists() else []
             )
@@ -345,13 +357,13 @@ class Config:
     @property
     def concepts(self) -> dict:
         if self._concepts is None:
-            p = _CONFIG_DIR / "concepts.yaml"
+            p = config_dir() / "concepts.yaml"
             self._concepts = _load_yaml(p) if p.exists() else {}
         return self._concepts
     @property
     def domain_context(self) -> str:
         if not self._domain_context:
-            p = _CONFIG_DIR / "domain_context.yaml"
+            p = config_dir() / "domain_context.yaml"
             if p.exists():
                 self._domain_context = _load_yaml(p).get("domain_focus", "")
         return self._domain_context

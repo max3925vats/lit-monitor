@@ -19,11 +19,11 @@ from typing import Any
 
 import yaml as _yaml
 
-# Import the source module rather than the attribute so test-suite
-# patches like ``patch("lit_monitor.core.config._config_mod._CONFIG_DIR", tmp_path)``
-# affect every read inside the section helpers below. Binding the name
-# at import time would freeze the path before the patch applies.
+# Call ``config_dir()`` at read time (never bind the path at import) so the
+# three-tier resolver honours HOME / LIT_MONITOR_ROOT / CWD changes — including
+# those a test makes via monkeypatch — on every section helper below.
 from lit_monitor.core import config as _config_mod
+from lit_monitor.core.config import config_dir
 from lit_monitor.core.path_utils import resolve_path as _resolve_path
 from lit_monitor.core.strict_mode import get_strict_override, set_strict
 from lit_monitor.setup.health_check import run_health_check
@@ -53,8 +53,8 @@ def _validate_yaml_file(path: Path) -> tuple[bool, str]:
 def check_core_configs() -> dict[str, tuple[bool, str]]:
     """Validate paths.yaml and extraction.yaml."""
     results: dict[str, tuple[bool, str]] = {}
-    results["paths.yaml"] = _validate_yaml_file(_config_mod._CONFIG_DIR / "paths.yaml")
-    results["extraction.yaml"] = _validate_yaml_file(_config_mod._CONFIG_DIR / "extraction.yaml")
+    results["paths.yaml"] = _validate_yaml_file(config_dir() / "paths.yaml")
+    results["extraction.yaml"] = _validate_yaml_file(config_dir() / "extraction.yaml")
     return results
 
 
@@ -92,7 +92,7 @@ def check_optional_configs() -> dict[str, tuple[bool, str]]:
         "researchers.yaml",
         "concepts.yaml",
     ):
-        p = _config_mod._CONFIG_DIR / optional_name
+        p = config_dir() / optional_name
         if p.exists():
             results[optional_name] = _validate_yaml_file(p)
         else:
@@ -103,7 +103,7 @@ def check_optional_configs() -> dict[str, tuple[bool, str]]:
 def check_prompts() -> dict[str, tuple[bool, str]]:
     """Validate the four prompt YAMLs, with .example.yaml fallbacks."""
     results: dict[str, tuple[bool, str]] = {}
-    prompts_dir = _config_mod._CONFIG_DIR / "prompts"
+    prompts_dir = config_dir() / "prompts"
     for prompt_name in ("clustering.yaml", "extraction.yaml", "rationale.yaml", "synthesis.yaml"):
         p = prompts_dir / prompt_name
         example_p = prompts_dir / prompt_name.replace(".yaml", ".example.yaml")

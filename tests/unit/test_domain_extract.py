@@ -9,6 +9,8 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
+from lit_monitor.core.path_utils import resolve_path
+
 
 # ---------------------------------------------------------------------------
 # Prompt YAML round-trip + registry registration
@@ -16,7 +18,7 @@ import yaml
 class TestPromptYaml:
     def test_yaml_file_present_and_loads(self) -> None:
         """The example prompt ships with the package and parses as YAML."""
-        path = Path("config/prompts/domain_extraction.example.yaml")
+        path = resolve_path(Path("config/prompts/domain_extraction.example.yaml"))
         assert path.exists(), "domain_extraction.example.yaml should ship with repo"
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         assert "system" in data

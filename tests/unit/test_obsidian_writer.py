@@ -5,6 +5,7 @@ All I/O goes to tmp_path; no real vault required.
 """
 from __future__ import annotations
 
+from importlib.resources import files as _pkg_files
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -28,7 +29,9 @@ def _make_config(tmp_path: Path) -> SimpleNamespace:
         extraction_model="qwen2.5:7b",
     )
     return config
-_TEMPLATE_DIR = Path("config/templates")
+# Note templates ship as package data (relocated from config/templates for the
+# PyPI wheel). Resolve via importlib.resources so these tests are CWD-independent.
+_TEMPLATE_DIR = Path(str(_pkg_files("lit_monitor._data") / "note_templates"))
 _PAPER = {
     "doi": "10.1234/test.2024",
     "title": "Filtration of Model Proteins at Scale",

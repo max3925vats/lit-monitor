@@ -554,6 +554,7 @@ def first_run(ctx: click.Context) -> None:
     import time
     import webbrowser
 
+    from lit_monitor.core.seed import seed_user_config
     from lit_monitor.server.config_io import (
         load_server_config,
         save_secrets,
@@ -581,6 +582,19 @@ def first_run(ctx: click.Context) -> None:
         click.echo(f"  Wrote credentials to {SECRETS_PATH} (mode 0600).")
     else:
         click.echo(f"Found existing credentials at {SECRETS_PATH} — skipping credential prompts.")
+
+    # Step 1b: seed the user config dir from the packaged example configs.
+    # Idempotent — only writes files that don't exist yet, so re-running
+    # first-run never clobbers the user's edits.
+    seed_target = SECRETS_PATH.parent  # ~/.config/lit-monitor
+    seeded = seed_user_config(seed_target)
+    if seeded:
+        click.echo(f"  Seeded {len(seeded)} example config(s) into {seed_target}:")
+        for path in seeded:
+            click.echo(f"    - {path.name}")
+        click.echo("  Edit these (or use the web Setup wizard) to configure lit-monitor.")
+    else:
+        click.echo(f"  Config files already present in {seed_target} — nothing to seed.")
 
     # Step 2: server settings. Always prompt (re-runnable), defaults from
     # the existing [server] block if present.
@@ -826,9 +840,13 @@ def _suggest_topics(clusters: dict, suggested_path: Path) -> None:  # noqa: F821
     """
     import yaml as _yaml
 
+    from lit_monitor.core.config import config_dir as _config_dir
     from lit_monitor.vocabulary.clusterer import clusters_to_topics_yaml
 
-    _topics_live = Path("config/topics.yaml")
+    # The live topics.yaml is user config we read-and-append, so anchor it on the
+    # active config dir (write location) — a CWD-relative ``config/topics.yaml``
+    # would miss the user's real file in a wheel run from an arbitrary CWD.
+    _topics_live = _config_dir() / "topics.yaml"
 
     # Always write the suggested file so it's available even if the user skips.
     suggested_yaml = clusters_to_topics_yaml(clusters)
@@ -978,14 +996,29 @@ def build_vocabulary_cmd(
     _setup_logging("build_vocabulary", verbose=ctx.obj.get("verbose", False))
     from collections import Counter
 
+    from lit_monitor.core.config import config_dir as _config_dir
     from lit_monitor.vocabulary.clusterer import (
-        CONCEPTS_DRAFT_PATH,
-        TOPICS_SUGGESTED_PATH,
+        CONCEPTS_DRAFT_PATH as _CONCEPTS_DRAFT_LOGICAL,
+    )
+    from lit_monitor.vocabulary.clusterer import (
+        TOPICS_SUGGESTED_PATH as _TOPICS_SUGGESTED_LOGICAL,
+    )
+    from lit_monitor.vocabulary.clusterer import (
         _refine_clustering,
         build_vocabulary,
     )
     from lit_monitor.vocabulary.keyword_extractor import extract_all_keywords
     from lit_monitor.vocabulary.normalizer import normalise_keywords
+
+    # Both files are GENERATED outputs (draft + suggested), so they must land in
+    # the active config dir — not a CWD-relative ``config/`` path that a wheel
+    # run from an arbitrary CWD would create in the wrong place. config_dir()
+    # honours LIT_MONITOR_ROOT and the dev ./config fallback. The imported
+    # constants stay logical (public import + documented); we resolve to the
+    # write location here.
+    _active_config_dir = _config_dir()
+    CONCEPTS_DRAFT_PATH = _active_config_dir / _CONCEPTS_DRAFT_LOGICAL.name
+    TOPICS_SUGGESTED_PATH = _active_config_dir / _TOPICS_SUGGESTED_LOGICAL.name
 
     if refine and refine_only:
         click.echo("Error: --refine and --refine-only are mutually exclusive.", err=True)
@@ -2831,17 +2864,24 @@ def graph_rebuild(all_data: bool, aliases_only: bool) -> None:
 @graph_cmd.command("propose-aliases")
 @click.option("--min-ratio", default=80, type=int,
               help="Fuzzy match threshold (0-100). Higher = stricter clusters. Default: 80.")
-@click.option("--out", default="config/entity_aliases.suggested.yaml",
-              help="Output YAML path.")
+@click.option("--out", default=None,
+              help="Output YAML path. Default: <config-dir>/entity_aliases.suggested.yaml.")
 @click.option("--with-llm", is_flag=True, default=False,
               help="N6: validate fuzzy clusters via cloud-Ollama before writing. "
                    "Requires OLLAMA_API_KEY. Falls back to fuzzy-only on any LLM failure.")
-def graph_propose_aliases(min_ratio: int, out: str, with_llm: bool) -> None:
+def graph_propose_aliases(min_ratio: int, out: str | None, with_llm: bool) -> None:
     """Propose new aliases via fuzzy clustering (optional --with-llm consensus)."""
     from pathlib import Path
 
+    from lit_monitor.core.config import config_dir as _config_dir
     from lit_monitor.graph import safe_graph_db
     from lit_monitor.graph.propose_aliases import propose_aliases, write_proposal_file
+
+    # Default the GENERATED output to the active config dir (write location) so a
+    # wheel run doesn't drop it in a CWD-relative ``config/``. An explicit --out
+    # is honoured verbatim. config_dir() honours LIT_MONITOR_ROOT / dev ./config.
+    if out is None:
+        out = str(_config_dir() / "entity_aliases.suggested.yaml")
 
     graph_db = safe_graph_db()
     if graph_db is None:
@@ -3524,8 +3564,14 @@ def _load_domain_text() -> str | None:
 
     import yaml
 
-    path = Path("config/domain_context.yaml")
-    if not path.exists():
+    from lit_monitor.core.path_utils import resolve_path as _resolve_path
+
+    # Route the read through resolve_path so a wheel run resolves the user's
+    # config dir / packaged default (dev/editable still resolves ./config);
+    # resolve_path raises when nothing matches, which maps to "no domain text".
+    try:
+        path = _resolve_path(Path("config/domain_context.yaml"))
+    except FileNotFoundError:
         return None
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))

@@ -1,0 +1,46 @@
+# Item routing configuration — maps every Zotero item type to its pipeline,
+# extraction schema, and source_type value written to the papers table.
+#
+# pipeline:        brain_build | skip
+# default_schema:  paper  (only live schema after R-10; "review" is assigned
+#                  dynamically by H4 detect_review(), not here)
+# source_type:     value written to papers.source_type in the state DB
+#
+# Adding a new item type: copy any existing entry, change the key, and set the
+# three fields.  load_item_routes() will pick it up on next import.
+
+routes:
+  journalArticle:
+    pipeline: brain_build
+    default_schema: paper
+    source_type: paper
+
+  conferencePaper:
+    pipeline: brain_build
+    default_schema: paper
+    source_type: paper
+
+  preprint:
+    pipeline: brain_build
+    default_schema: paper
+    source_type: paper
+
+  bookSection:
+    pipeline: skip
+    default_schema: paper
+    source_type: skipped_book_section
+
+  book:
+    pipeline: skip
+    default_schema: paper
+    source_type: skipped_book
+
+  thesis:
+    pipeline: skip
+    default_schema: paper
+    source_type: skipped_thesis
+
+  report:
+    pipeline: skip
+    default_schema: paper
+    source_type: report

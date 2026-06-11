@@ -10,9 +10,16 @@ config/topics.yaml
 config/domain_context.yaml
 config/researchers.yaml
 config/paths.yaml
-# Prompt files — example versions ship in git; real versions stay local
+# Prompt files — example versions ship in git; real versions stay local.
+# (Legacy repo location, pre-PyPI relocation.)
 config/prompts/*.yaml
 !config/prompts/*.example.yaml
+# PyPI relocation: ship-default prompts now live as package data under
+# lit_monitor/_data/config/prompts/. Same policy — the *.example.yaml templates
+# are the tracked ship-defaults (resolve_path falls back to them); any live,
+# user-customised *.yaml in that dir stays local and is NOT committed.
+lit_monitor/_data/config/prompts/*.yaml
+!lit_monitor/_data/config/prompts/*.example.yaml
 
 # --- Auto-generated config artifacts ---
 config/concepts_draft.yaml

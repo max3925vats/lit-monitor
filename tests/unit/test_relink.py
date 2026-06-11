@@ -227,10 +227,9 @@ def test_referenced_by_persist_zone_round_trip(tmp_path, caplog):
     }
     extraction = {"core_finding": "x", "core_finding_confidence": "explicit"}
 
-    # 1. Render note via production template (no test fixture).
-    note_path_str = write_paper_note(
-        paper, extraction, config, template_dir=Path("config/templates"),
-    )
+    # 1. Render note via production template (no test fixture). With no
+    # template_dir, write_paper_note resolves the packaged note templates.
+    note_path_str = write_paper_note(paper, extraction, config)
     note_path = Path(note_path_str)
     rendered = note_path.read_text(encoding="utf-8")
 

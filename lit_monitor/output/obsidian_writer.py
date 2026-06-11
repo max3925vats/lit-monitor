@@ -23,7 +23,26 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined, nodes
 from jinja2.ext import Extension
 
 from lit_monitor.core.atomic_write import atomic_write_text
+from lit_monitor.core.config import config_dir
 from lit_monitor.llm.extractor import compute_confidence_score
+
+
+def _default_note_template_dir() -> Path:
+    """Resolve the Obsidian note-template dir in a CWD/install-independent way.
+
+    A pip-installed wheel has no repo-relative ``config/templates`` on disk, so
+    the old ``Path("config/templates")`` default broke note writing whenever the
+    process ran outside the repo root. Resolution order:
+
+    1. ``<config_dir()>/templates`` — lets a user override the shipped templates.
+    2. The packaged ``lit_monitor/_data/note_templates`` (ships in the wheel).
+    """
+    user_templates = config_dir() / "templates"
+    if user_templates.is_dir():
+        return user_templates
+    from importlib.resources import files
+
+    return Path(str(files("lit_monitor._data") / "note_templates"))
 
 
 class _PersistExtension(Extension):
@@ -274,7 +293,7 @@ def write_paper_note(
         filename. Used by rerender to update a note in place.
     """
     if template_dir is None:
-        template_dir = Path("config/templates")
+        template_dir = _default_note_template_dir()
     if schema_fields is None:
         schema_fields = _DEFAULT_PAPER_SCHEMA_FIELDS
     vault_path = Path(config.obsidian.vault_path)

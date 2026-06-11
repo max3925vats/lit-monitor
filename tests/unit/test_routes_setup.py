@@ -1,4 +1,6 @@
 """Unit tests for the helpers in scripts/server/routes/setup.py."""
+from importlib.resources import files as _pkg_files
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -13,6 +15,12 @@ from lit_monitor.server.routes.setup import (
     _validate_credentials,
     _validate_extraction,
     _validate_paths,
+)
+
+# extraction.example.yaml ships as package data (relocated from config/ for the
+# PyPI wheel). Resolve via importlib.resources so these tests follow it.
+_EXTRACTION_EXAMPLE = Path(
+    str(_pkg_files("lit_monitor._data.config_examples") / "extraction.example.yaml")
 )
 
 
@@ -495,13 +503,12 @@ class TestSafeSavePreference:
 
     def test_writes_preferred_viewer_and_asked_user(self, tmp_path):
         import shutil
-        from pathlib import Path
 
         import yaml
 
         from lit_monitor.server.config_io import safe_save_preference
 
-        src = Path("config/extraction.example.yaml")
+        src = _EXTRACTION_EXAMPLE
         dst = tmp_path / "extraction.yaml"
         shutil.copy(src, dst)
         safe_save_preference("browser", config_path=dst)
@@ -517,7 +524,7 @@ class TestSafeSavePreference:
         from lit_monitor.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
-        shutil.copy("config/extraction.example.yaml", dst)
+        shutil.copy(_EXTRACTION_EXAMPLE, dst)
         safe_save_preference("obsidian", enabled=False, config_path=dst)
         data = yaml.safe_load(dst.read_text())
         assert data["discovery"]["notify"]["enabled"] is False
@@ -531,7 +538,7 @@ class TestSafeSavePreference:
         from lit_monitor.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
-        shutil.copy("config/extraction.example.yaml", dst)
+        shutil.copy(_EXTRACTION_EXAMPLE, dst)
         safe_save_preference("none", enabled=True, config_path=dst)
         data = yaml.safe_load(dst.read_text())
         assert data["discovery"]["notify"]["enabled"] is True
@@ -542,7 +549,7 @@ class TestSafeSavePreference:
         from lit_monitor.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
-        shutil.copy("config/extraction.example.yaml", dst)
+        shutil.copy(_EXTRACTION_EXAMPLE, dst)
         with pytest.raises(ValueError):
             safe_save_preference("bogus", config_path=dst)
 
@@ -555,7 +562,7 @@ class TestSafeSavePreference:
         from lit_monitor.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
-        shutil.copy("config/extraction.example.yaml", dst)
+        shutil.copy(_EXTRACTION_EXAMPLE, dst)
         before = yaml.safe_load(dst.read_text())
         safe_save_preference("none", config_path=dst)
         after = yaml.safe_load(dst.read_text())
@@ -572,7 +579,7 @@ class TestSafeSavePreference:
         from lit_monitor.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
-        shutil.copy("config/extraction.example.yaml", dst)
+        shutil.copy(_EXTRACTION_EXAMPLE, dst)
         safe_save_preference("browser", config_path=dst)
         # No .tmp files left behind
         leftover = list(tmp_path.glob("*.tmp"))
@@ -587,7 +594,7 @@ class TestSafeSavePreference:
         from lit_monitor.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
-        shutil.copy("config/extraction.example.yaml", dst)
+        shutil.copy(_EXTRACTION_EXAMPLE, dst)
         safe_save_preference("none", config_path=dst)
         data = yaml.safe_load(dst.read_text())
         assert data["discovery"]["notify"]["preferred_viewer"] == "none"
@@ -724,7 +731,7 @@ class TestDigestAutoWriteCheckbox:
         from lit_monitor.server.config_io import safe_save_digest_auto_write
 
         dst = tmp_path / "extraction.yaml"
-        shutil.copy("config/extraction.example.yaml", dst)
+        shutil.copy(_EXTRACTION_EXAMPLE, dst)
 
         safe_save_digest_auto_write(False, config_path=dst)
         data = yaml.safe_load(dst.read_text())

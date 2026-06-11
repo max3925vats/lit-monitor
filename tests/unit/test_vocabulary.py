@@ -242,6 +242,31 @@ def test_build_vocabulary_empty_input_returns_empty(tmp_path):
     assert not mock_complete.called, "LLM should not be called when keyword list is empty"
     assert result == {"themes": [], "unclustered": []}
     assert output_file.exists()
+
+
+@pytest.mark.unit
+def test_build_vocabulary_default_output_targets_config_dir(tmp_path, monkeypatch):
+    """Phase 2: with no output_path, build_vocabulary writes the generated draft
+    into config_dir() — a wheel run must NOT drop concepts_draft.yaml in a
+    CWD-relative config/. LIT_MONITOR_ROOT redirects config_dir to tmp so this
+    never touches the user's real config."""
+    from lit_monitor.vocabulary.clusterer import build_vocabulary
+
+    cfg_dir = tmp_path / "config"
+    cfg_dir.mkdir()
+    monkeypatch.setenv("LIT_MONITOR_ROOT", str(tmp_path))
+    # Park CWD with no config/ so a CWD-relative write would be visible there.
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    mock_llm = MockLLMClient()
+    with patch.object(mock_llm, "complete", return_value=_MOCK_CLUSTERER_RESPONSE):
+        # Empty input is enough: the no-keywords branch still writes output_path.
+        build_vocabulary({}, mock_llm)
+
+    assert (cfg_dir / "concepts_draft.yaml").exists()
+    assert not (elsewhere / "config").exists()
 # ---------------------------------------------------------------------------
 # Regression test for CLI tuple-unpacking bug (G7 follow-up)
 # ---------------------------------------------------------------------------
@@ -817,7 +842,10 @@ def test_suggest_topics_non_interactive_skips_prompt(tmp_path, monkeypatch, caps
     """
     from lit_monitor.cli import _suggest_topics
 
-    # Change CWD so Path("config/topics.yaml") resolves inside tmp_path.
+    # Redirect the active config dir to tmp via LIT_MONITOR_ROOT so the live
+    # topics.yaml lookup resolves inside tmp (here: absent) — never the user's
+    # real config. chdir keeps the suggested-file write inside tmp too.
+    monkeypatch.setenv("LIT_MONITOR_ROOT", str(tmp_path))
     monkeypatch.chdir(tmp_path)
     # Fake non-TTY stdin.
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
@@ -848,7 +876,11 @@ def test_suggest_topics_append_preserves_existing_searches_and_config(tmp_path, 
 
     from lit_monitor.cli import _suggest_topics
 
-    # Change CWD so Path("config/topics.yaml") resolves to tmp_path/config/topics.yaml.
+    # Redirect the active config dir to tmp via LIT_MONITOR_ROOT so the live
+    # topics.yaml that _suggest_topics reads/appends resolves to
+    # tmp_path/config/topics.yaml — NEVER the user's real config. chdir keeps
+    # the suggested-file write inside tmp too.
+    monkeypatch.setenv("LIT_MONITOR_ROOT", str(tmp_path))
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     monkeypatch.chdir(tmp_path)
@@ -898,6 +930,9 @@ def test_suggest_topics_no_new_entries_skips_prompt(tmp_path, monkeypatch, capsy
     """
     from lit_monitor.cli import _suggest_topics
 
+    # Redirect the active config dir to tmp via LIT_MONITOR_ROOT so the live
+    # topics.yaml _suggest_topics reads resolves inside tmp, never real config.
+    monkeypatch.setenv("LIT_MONITOR_ROOT", str(tmp_path))
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     monkeypatch.chdir(tmp_path)

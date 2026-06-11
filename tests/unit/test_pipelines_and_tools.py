@@ -1846,8 +1846,11 @@ class TestDigestAutoWriteFlag:
 
     def test_flag_default_true_in_example_yaml(self):
         """P10b: extraction.example.yaml ships with auto_write: true (backward compat)."""
+        from importlib.resources import files
+
         import yaml
-        raw = Path("config/extraction.example.yaml").read_text()
+        example = files("lit_monitor._data.config_examples") / "extraction.example.yaml"
+        raw = example.read_text()
         data = yaml.safe_load(raw)
         assert data["discovery"]["digest"]["auto_write"] is True
 
