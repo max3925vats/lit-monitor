@@ -569,3 +569,32 @@ class TestScoreBreakdownEndpoint:
         """Non-DOI path → 422 (regex guard)."""
         r = client_with_db.get("/api/papers/not-a-doi/score-breakdown")
         assert r.status_code == 422
+
+
+def test_paper_snapshot_route_includes_zotero_key(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    import scripts.server.routes.papers as papers_mod
+    from scripts.core.state_db import StateDB
+    from scripts.graph import GraphDB
+    from scripts.server.app import create_app
+
+    graph = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+    graph.add_paper(
+        doi="10.5555/web",
+        paper_metadata={"title": "Web", "year": 2024, "journal": "J"},
+        entities=[],
+        relationships=[],
+    )
+    state = StateDB(tmp_path / "state.db")
+    state.upsert_paper({"doi": "10.5555/web", "title": "Web", "zotero_key": "ZWEB"})
+
+    monkeypatch.setattr(papers_mod, "safe_graph_db", lambda *a, **kw: graph)
+    monkeypatch.setattr(papers_mod, "_snapshot_state_db", lambda: state)
+
+    client = TestClient(create_app())
+    resp = client.get("/api/papers/10.5555/web")
+    assert resp.status_code == 200
+    meta = resp.json()["metadata"]
+    assert meta["zotero_key"] == "ZWEB"
+    assert meta["zotero_deeplink"] == "zotero://select/library/items/ZWEB"

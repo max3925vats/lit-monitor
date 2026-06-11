@@ -457,3 +457,103 @@ class TestGetPapersByQuery:
 
         get_papers_by_query("antibody", mode="graph", k=5, graph_db=mock_gdb)
         mock_gdb.close.assert_not_called()
+
+
+def test_zotero_deeplink_builds_user_library_form():
+    from scripts.api.queries import _zotero_deeplink
+
+    assert _zotero_deeplink("ZKEY123") == "zotero://select/library/items/ZKEY123"
+
+
+def test_zotero_deeplink_none_for_none_key():
+    from scripts.api.queries import _zotero_deeplink
+
+    assert _zotero_deeplink(None) is None
+
+
+def test_snapshot_includes_zotero_key_when_linked(tmp_path):
+    from scripts.api.queries import get_paper_snapshot
+    from scripts.core.state_db import StateDB
+    from scripts.graph import GraphDB
+
+    graph = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+    graph.add_paper(
+        doi="10.1/linked",
+        paper_metadata={"title": "Linked", "year": 2024, "journal": "J"},
+        entities=[],
+        relationships=[],
+    )
+    state = StateDB(tmp_path / "state.db")
+    state.upsert_paper({"doi": "10.1/linked", "title": "Linked", "zotero_key": "ZK9"})
+
+    snap = get_paper_snapshot("10.1/linked", graph, state)
+    assert snap["metadata"]["zotero_key"] == "ZK9"
+    assert snap["metadata"]["zotero_deeplink"] == "zotero://select/library/items/ZK9"
+
+
+def test_snapshot_keys_present_and_none_when_unlinked(tmp_path):
+    from scripts.api.queries import get_paper_snapshot
+    from scripts.core.state_db import StateDB
+    from scripts.graph import GraphDB
+
+    graph = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+    graph.add_paper(
+        doi="10.1/unlinked",
+        paper_metadata={"title": "Unlinked", "year": 2024, "journal": "J"},
+        entities=[],
+        relationships=[],
+    )
+    state = StateDB(tmp_path / "state.db")
+    state.upsert_paper({"doi": "10.1/unlinked", "title": "Unlinked"})  # no zotero_key
+
+    snap = get_paper_snapshot("10.1/unlinked", graph, state)
+    # Keys MUST be present (parity stability), value None.
+    assert snap["metadata"]["zotero_key"] is None
+    assert snap["metadata"]["zotero_deeplink"] is None
+
+
+def test_snapshot_normalizes_doi_for_zotero_lookup(tmp_path):
+    """Regression for Audit Top Finding #4: a URL-wrapped / mixed-case input DOI
+    still finds the key stored under the canonical form."""
+    from scripts.api.queries import get_paper_snapshot
+    from scripts.core.state_db import StateDB
+    from scripts.graph import GraphDB
+
+    # The graph node is stored under the NON-canonical (mixed-case) DOI so that
+    # the raw-DOI graph metadata lookup still resolves when the caller passes the
+    # mixed-case form. The state.db row, however, is stored under the CANONICAL
+    # (lowercased) DOI — the form the ingest path uses as the key. The only way
+    # the zotero lookup can succeed is if get_paper_snapshot normalizes the input
+    # DOI before the state read. Delete the normalize_doi() call and this fails
+    # (zotero_key -> None), so the test is non-vacuous on the §4 trap.
+    graph = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+    graph.add_paper(
+        doi="10.1/CASE",  # graph keyed on the mixed-case input
+        paper_metadata={"title": "Case", "year": 2024, "journal": "J"},
+        entities=[],
+        relationships=[],
+    )
+    state = StateDB(tmp_path / "state.db")
+    # state keyed on the canonical (lowercased) DOI — normalize_doi("10.1/CASE")
+    state.upsert_paper({"doi": "10.1/case", "title": "Case", "zotero_key": "ZKCASE"})
+
+    snap = get_paper_snapshot("10.1/CASE", graph, state)  # mixed-case input
+    assert snap["metadata"]["zotero_key"] == "ZKCASE"
+    assert snap["metadata"]["zotero_deeplink"] == "zotero://select/library/items/ZKCASE"
+
+
+def test_snapshot_without_state_db_keeps_keys_none(tmp_path):
+    """Backward-compat: 2-arg call (no state_db) still returns the keys as None."""
+    from scripts.api.queries import get_paper_snapshot
+    from scripts.graph import GraphDB
+
+    graph = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+    graph.add_paper(
+        doi="10.1/nostate",
+        paper_metadata={"title": "NoState", "year": 2024, "journal": "J"},
+        entities=[],
+        relationships=[],
+    )
+    snap = get_paper_snapshot("10.1/nostate", graph)  # no state_db arg
+    assert snap["metadata"]["zotero_key"] is None
+    assert snap["metadata"]["zotero_deeplink"] is None

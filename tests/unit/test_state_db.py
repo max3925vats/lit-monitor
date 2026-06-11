@@ -1142,3 +1142,27 @@ class TestInterestVectors:
         out_vec, n = db2.get_interest_vector("global")
         assert n == 7
         assert np.allclose(out_vec, np.array([1.0, 2.0], dtype=np.float32))
+
+
+def test_get_zotero_key_returns_key_for_linked_paper(tmp_path):
+    from scripts.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    db.upsert_paper({"doi": "10.1/abc", "title": "T", "zotero_key": "ZKEY123"})
+    assert db.get_zotero_key("10.1/abc") == "ZKEY123"
+
+
+def test_get_zotero_key_none_for_unknown_doi(tmp_path):
+    from scripts.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    # Unknown DOI must NOT raise — mirrors the "unknown id is not an error" convention.
+    assert db.get_zotero_key("10.9/missing") is None
+
+
+def test_get_zotero_key_none_for_unlinked_paper(tmp_path):
+    from scripts.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    db.upsert_paper({"doi": "10.1/nolink", "title": "T"})  # no zotero_key
+    assert db.get_zotero_key("10.1/nolink") is None

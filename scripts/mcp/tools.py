@@ -275,7 +275,7 @@ def get_paper_details(doi: str) -> dict[str, Any]:
             "relationships_out": [],
         }
 
-    return get_paper_snapshot(doi, db)
+    return get_paper_snapshot(doi, db, _get_state_db())
 
 
 # ---------------------------------------------------------------------------

@@ -657,6 +657,25 @@ class StateDB:
                 "SELECT * FROM papers WHERE doi = ?", (doi,)
             ).fetchone()
         return dict(row) if row else None
+
+    def get_zotero_key(self, doi: str) -> str | None:
+        """Return the Zotero item key for a paper by DOI, or None if unlinked.
+
+        Read-only, parameterized. The caller is responsible for normalizing the
+        DOI to the canonical form (see scripts/core/doi.py::normalize_doi and
+        Audit Top Finding #4) before calling — this method does a literal match
+        on the stored ``papers.doi`` primary key. An unknown DOI returns None
+        (not an error), matching the convention used by the other read accessors.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT zotero_key FROM papers WHERE doi = ?",
+                (doi,),
+            ).fetchone()
+        if row is None:
+            return None
+        return row["zotero_key"]
+
     def get_all_by_source_type(self, source_type: str) -> list[dict]:
         with self._connect() as conn:
             rows = conn.execute(

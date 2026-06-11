@@ -785,3 +785,26 @@ class TestDiscoveryMcpTools:
 
         json.dumps(tools.get_recent_discovery_runs())
         json.dumps(tools.get_discovery_run_papers(run_id=rid))
+
+
+def test_get_paper_details_includes_zotero_key(monkeypatch, tmp_path):
+    from scripts.core.state_db import StateDB
+    from scripts.graph import GraphDB
+    from scripts.mcp import tools as tools_mod
+
+    graph = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
+    graph.add_paper(
+        doi="10.7/mcp",
+        paper_metadata={"title": "Mcp", "year": 2024, "journal": "J"},
+        entities=[],
+        relationships=[],
+    )
+    state = StateDB(tmp_path / "state.db")
+    state.upsert_paper({"doi": "10.7/mcp", "title": "Mcp", "zotero_key": "ZMCP"})
+
+    monkeypatch.setattr(tools_mod, "_get_graph_db", lambda: graph)
+    monkeypatch.setattr(tools_mod, "_get_state_db", lambda: state)
+
+    result = tools_mod.get_paper_details("10.7/mcp")
+    assert result["metadata"]["zotero_key"] == "ZMCP"
+    assert result["metadata"]["zotero_deeplink"] == "zotero://select/library/items/ZMCP"
