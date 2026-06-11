@@ -8,9 +8,6 @@ resolution-markers = [
     "python_full_version < '3.13'",
 ]
 
-[manifest]
-overrides = [{ name = "typer", specifier = ">=0.9.0" }]
-
 [[package]]
 name = "accelerate"
 version = "1.13.0"
@@ -939,24 +936,6 @@ wheels = [
 ]
 
 [[package]]
-name = "findpapers"
-version = "0.6.7"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "colorama" },
-    { name = "edlib" },
-    { name = "inquirer" },
-    { name = "lxml" },
-    { name = "requests" },
-    { name = "typer" },
-    { name = "xmltodict" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/69/95/5137957a6ffd1281f8a1928ada5ff8d7ab5b13605f79b1a20b67a7f12184/findpapers-0.6.7.tar.gz", hash = "sha256:f5d2bdefb7b85a34eada75adfe5c521a3e01a07c099e8b9beb9010a55cefed4b", size = 96157, upload-time = "2022-11-09T19:09:14.466Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a6/de/f48f1ab15f0146d10fe2a960ee41af55dc905db3b5fa89049ca93d710c07/findpapers-0.6.7-py3-none-any.whl", hash = "sha256:6bd872138fb0cad88ddc272ed475df004388b62ac944b2848c0d26afeb831c2b", size = 104238, upload-time = "2022-11-09T19:09:12.991Z" },
-]
-
-[[package]]
 name = "flatbuffers"
 version = "25.12.19"
 source = { registry = "https://pypi.org/simple" }
@@ -1637,12 +1616,15 @@ dependencies = [
     { name = "bibtexparser" },
     { name = "chromadb" },
     { name = "click" },
+    { name = "colorama" },
+    { name = "edlib" },
     { name = "fastapi" },
-    { name = "findpapers" },
     { name = "habanero" },
     { name = "inflect" },
+    { name = "inquirer" },
     { name = "jinja2" },
     { name = "kuzu" },
+    { name = "lxml" },
     { name = "mcp" },
     { name = "plyer" },
     { name = "pydantic" },
@@ -1660,6 +1642,7 @@ dependencies = [
     { name = "tenacity" },
     { name = "tomli-w" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "xmltodict" },
 ]
 
 [package.optional-dependencies]
@@ -1688,14 +1671,17 @@ requires-dist = [
     { name = "bibtexparser" },
     { name = "chromadb", specifier = ">=0.5.3" },
     { name = "click", specifier = ">=8.0" },
+    { name = "colorama", specifier = ">=0.4.3" },
+    { name = "edlib", specifier = ">=1.3" },
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "findpapers" },
     { name = "habanero" },
     { name = "inflect", specifier = ">=7" },
+    { name = "inquirer", specifier = ">=2.7" },
     { name = "jinja2" },
     { name = "kuzu", specifier = ">=0.6" },
     { name = "litellm", marker = "extra == 'cloud'" },
     { name = "litellm", marker = "extra == 'litellm'" },
+    { name = "lxml", specifier = ">=4.9" },
     { name = "mcp", specifier = ">=1.0" },
     { name = "mypy", marker = "extra == 'dev'" },
     { name = "plyer", specifier = ">=2.1" },
@@ -1720,6 +1706,7 @@ requires-dist = [
     { name = "torch", marker = "extra == 'nlp'", specifier = ">=2.2" },
     { name = "transformers", marker = "extra == 'nlp'", specifier = ">=4.40" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
+    { name = "xmltodict", specifier = ">=0.12" },
 ]
 provides-extras = ["dev", "litellm", "cloud", "nlp", "server", "graph", "mcp", "notify"]
 
