@@ -21,7 +21,7 @@ def _resolve_ollama_host() -> str:
     lazy and fully guarded so this still works when config is absent.
     """
     try:
-        from scripts.core.config import get_config
+        from lit_monitor.core.config import get_config
         cfg = get_config()
     except Exception:  # noqa: BLE001 — config may be absent/unreadable in setup checks
         return _OLLAMA_BASE

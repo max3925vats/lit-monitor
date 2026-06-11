@@ -20,8 +20,8 @@ from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
 from fastapi.testclient import TestClient
 
-from scripts.server.routes.settings import router as settings_router
-from scripts.server.runtime import reset_runtime
+from lit_monitor.server.routes.settings import router as settings_router
+from lit_monitor.server.runtime import reset_runtime
 
 TEMPLATES_DIR = Path(__file__).parents[2] / "scripts" / "server" / "templates"
 
@@ -45,7 +45,7 @@ def restore_app_templates():
     instance; without restoration that object leaks into sibling tests run later
     in the same session (order-dependent flakiness).
     """
-    import scripts.server.app as app_mod
+    import lit_monitor.server.app as app_mod
     original = app_mod.templates
     yield
     app_mod.templates = original
@@ -54,7 +54,7 @@ def restore_app_templates():
 def _make_client(config_path=None) -> TestClient:
     import json as _json
 
-    import scripts.server.app as app_mod
+    import lit_monitor.server.app as app_mod
 
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     templates.env.filters["fromjson"] = _json.loads
@@ -248,7 +248,7 @@ def _post_to_real_file(tmp_path, section, payload):
     Patches CONFIG_DIR so safe_save_settings_section reads/writes the tmp file
     instead of the repo's real config. Returns (response, loaded_yaml_dict).
     """
-    import scripts.server.config_io as cfg_io
+    import lit_monitor.server.config_io as cfg_io
 
     config_path = tmp_path / "extraction.yaml"
     config_path.write_text("{}\n", encoding="utf-8")
@@ -351,7 +351,7 @@ class TestSettingsUIRoundTrip:
 class TestSafeSaveSettingsSection:
     def test_atomic_write(self, tmp_path):
         """Verify the function writes and the file is readable YAML after save."""
-        from scripts.server.config_io import safe_save_settings_section
+        from lit_monitor.server.config_io import safe_save_settings_section
 
         config_path = tmp_path / "extraction.yaml"
         config_path.write_text(
@@ -372,7 +372,7 @@ class TestSafeSaveSettingsSection:
         assert result["clustering"]["k_min"] == 8
 
     def test_creates_file_if_absent(self, tmp_path):
-        from scripts.server.config_io import safe_save_settings_section
+        from lit_monitor.server.config_io import safe_save_settings_section
 
         config_path = tmp_path / "extraction.yaml"
         assert not config_path.exists()
@@ -384,7 +384,7 @@ class TestSafeSaveSettingsSection:
         assert result["web_ui"]["show_feedback_buttons"] is False
 
     def test_unknown_section_raises_value_error(self, tmp_path):
-        from scripts.server.config_io import safe_save_settings_section
+        from lit_monitor.server.config_io import safe_save_settings_section
 
         config_path = tmp_path / "extraction.yaml"
         config_path.write_text("{}\n", encoding="utf-8")
@@ -400,7 +400,7 @@ class TestSafeSaveSettingsSection:
         the helper rejects it with ValueError (the route maps ValueError to a
         4xx) and the file on disk is left UNCHANGED.
         """
-        from scripts.server.config_io import safe_save_settings_section
+        from lit_monitor.server.config_io import safe_save_settings_section
 
         config_path = tmp_path / "extraction.yaml"
         original = "ranking:\n  semantic_weight: 0.4\n"
@@ -419,7 +419,7 @@ class TestSafeSaveSettingsSection:
         guard) but has no place in the ranking schema. The per-section model
         uses extra="forbid", so this must raise and NOT corrupt the file.
         """
-        from scripts.server.config_io import safe_save_settings_section
+        from lit_monitor.server.config_io import safe_save_settings_section
 
         config_path = tmp_path / "extraction.yaml"
         original = "ranking:\n  weights:\n    domain_context: 0.2\n"
@@ -438,7 +438,7 @@ class TestSafeSaveSettingsSection:
         ``clustering.enabled`` is a bool; a non-coercible string must be
         rejected rather than written verbatim.
         """
-        from scripts.server.config_io import safe_save_settings_section
+        from lit_monitor.server.config_io import safe_save_settings_section
 
         config_path = tmp_path / "extraction.yaml"
         original = "clustering:\n  enabled: true\n"
@@ -466,7 +466,7 @@ class TestSafeSaveSettingsSection:
     )
     def test_valid_payload_written(self, tmp_path, section, payload):
         """B8: a valid payload for each section is accepted and persisted."""
-        from scripts.server.config_io import safe_save_settings_section
+        from lit_monitor.server.config_io import safe_save_settings_section
 
         config_path = tmp_path / "extraction.yaml"
         config_path.write_text("{}\n", encoding="utf-8")
@@ -484,7 +484,7 @@ class TestSafeSaveSettingsSection:
         SettingsValidationError (NOT a plain 'unknown section' ValueError) on an
         unknown key, since FeedbackSettings is extra="forbid".
         """
-        from scripts.server.config_io import (
+        from lit_monitor.server.config_io import (
             SettingsValidationError,
             safe_save_settings_section,
         )
@@ -513,7 +513,7 @@ class TestSafeSaveSettingsSection:
         comment in extraction.yaml the first time a user toggled an Advanced
         Settings flag. The fix uses ruamel.yaml round-trip mode.
         """
-        from scripts.server.config_io import safe_save_settings_section
+        from lit_monitor.server.config_io import safe_save_settings_section
 
         config_path = tmp_path / "extraction.yaml"
         original = (

@@ -13,11 +13,11 @@ import logging
 import re
 from typing import Any
 
-from scripts.core.doi import normalize_doi
-from scripts.graph.migrations import (
+from lit_monitor.core.doi import normalize_doi
+from lit_monitor.graph.migrations import (
     TYPED_PAPER_TO_PAPER_PREDS as _PAPER_TO_PAPER_PREDS,
 )
-from scripts.graph.migrations import (
+from lit_monitor.graph.migrations import (
     TYPED_PREDICATES as _TYPED_PREDS,
 )
 
@@ -304,7 +304,7 @@ def get_related_papers(
     if mode not in ("vector", "graph", "hybrid"):
         raise ValueError(f"mode must be vector/graph/hybrid, got {mode!r}")
 
-    from scripts.retrieval.branch import retrieve_doi_candidates  # noqa: PLC0415
+    from lit_monitor.retrieval.branch import retrieve_doi_candidates  # noqa: PLC0415
 
     results = retrieve_doi_candidates(
         mode,  # positional rag_mode
@@ -667,7 +667,7 @@ def get_schema_text(graph_db: Any) -> str:
     """
     try:
         # Lazy import so H1 doesn't crash before Phase 4a A1 ships.
-        from scripts.graph.schema_describer import (  # type: ignore[import-not-found]  # noqa: PLC0415
+        from lit_monitor.graph.schema_describer import (  # type: ignore[import-not-found]  # noqa: PLC0415
             describe_schema,
         )
     except (ImportError, ModuleNotFoundError, TypeError):
@@ -974,7 +974,7 @@ def get_papers_by_query(
     owns_graph_db = False
     if graph_db is None and mode in ("graph", "hybrid"):
         try:
-            from scripts.graph.import_citations import safe_graph_db  # noqa: PLC0415
+            from lit_monitor.graph.import_citations import safe_graph_db  # noqa: PLC0415
             graph_db = safe_graph_db()
             if graph_db is not None:
                 owns_graph_db = True
@@ -1024,7 +1024,7 @@ def get_papers_by_query(
             doi_scores = graph_results
         else:
             # --- Hybrid: RRF-fuse graph + vector --------------------------------
-            from scripts.retrieval.rrf import reciprocal_rank_fusion  # noqa: PLC0415
+            from lit_monitor.retrieval.rrf import reciprocal_rank_fusion  # noqa: PLC0415
 
             vector_results: list[tuple[str, float]] = []
             if embeddings_db is not None:

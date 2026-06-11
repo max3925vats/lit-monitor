@@ -34,7 +34,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from scripts.core.path_utils import resolve_path as _resolve_path
+from lit_monitor.core.path_utils import resolve_path as _resolve_path
 
 logger = logging.getLogger(__name__)
 

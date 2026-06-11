@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("LIT_MONITOR_STATE_DB", str(tmp_path / "state.db"))
-    from scripts.server.app import create_app  # noqa: PLC0415
+    from lit_monitor.server.app import create_app  # noqa: PLC0415
 
     return TestClient(create_app())
 
@@ -72,7 +72,7 @@ class TestAskHistory:
 
 class TestAskAnswer:
     def _result(self):
-        from scripts.graph.ask import AskResult  # noqa: PLC0415
+        from lit_monitor.graph.ask import AskResult  # noqa: PLC0415
 
         return AskResult(
             cypher="MATCH (p:Paper) RETURN p LIMIT 5",
@@ -97,7 +97,7 @@ class TestAskAnswer:
         assert "enter a question" in r.text.lower()
 
     def test_answer_empty_rows_says_no_matches(self, client):
-        from scripts.graph.ask import AskResult  # noqa: PLC0415
+        from lit_monitor.graph.ask import AskResult  # noqa: PLC0415
 
         res = AskResult(
             cypher="MATCH (p) RETURN p",

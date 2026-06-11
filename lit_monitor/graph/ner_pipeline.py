@@ -77,7 +77,7 @@ def build_mention_edges(
         List of ``MentionEdge`` objects ready for ``graph_db.add_paper``.
         Empty list is valid — ``graph_db.add_paper`` handles this gracefully.
     """
-    from scripts.graph.entity_extractor import (  # noqa: PLC0415
+    from lit_monitor.graph.entity_extractor import (  # noqa: PLC0415
         EntityTuple,
         MentionEdge,
         extract_entities,
@@ -122,7 +122,7 @@ def build_mention_edges(
     if use_biobert and text:
         try:
             if biobert_factory is None:
-                from scripts.graph.ner import BiobertNER  # noqa: PLC0415
+                from lit_monitor.graph.ner import BiobertNER  # noqa: PLC0415
                 biobert = BiobertNER()
             else:
                 biobert = biobert_factory()
@@ -148,7 +148,7 @@ def build_mention_edges(
                 if e.confidence < _BIOBERT_LOW_CONF_THRESHOLD
             ]
             if llm_long_tail_fn is None:
-                from scripts.graph.long_tail import extract_long_tail_and_validate  # noqa: PLC0415
+                from lit_monitor.graph.long_tail import extract_long_tail_and_validate  # noqa: PLC0415
                 llm_long_tail_fn = extract_long_tail_and_validate
             payload = llm_long_tail_fn(text, low_conf)
             llm_edges = from_llm_cloud(payload, paper_id, normalizer)

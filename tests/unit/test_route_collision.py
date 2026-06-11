@@ -144,7 +144,7 @@ def test_no_typed_param_routes_shadow_static_siblings() -> None:
     scripts/server/app.py and ensure the static-segment router is included
     BEFORE the typed-param router.
     """
-    from scripts.server.app import create_app
+    from lit_monitor.server.app import create_app
 
     failures = _collect_route_failures(create_app())
     assert not failures, (
@@ -162,7 +162,7 @@ def test_notify_handler_path_specifically() -> None:
     """
     from fastapi.testclient import TestClient
 
-    from scripts.server.app import create_app
+    from lit_monitor.server.app import create_app
 
     client = TestClient(create_app(), follow_redirects=False)
     r = client.get("/discovery/notify-handler?run_id=1")

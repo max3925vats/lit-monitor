@@ -24,9 +24,9 @@ from typing import Any
 
 import numpy as np
 
-from scripts.clustering.atrophy import compute_cluster_feedback_weights_from_db
-from scripts.learning.ranking import rank_papers_by_interest
-from scripts.learning.rocchio import soft_gate
+from lit_monitor.clustering.atrophy import compute_cluster_feedback_weights_from_db
+from lit_monitor.learning.ranking import rank_papers_by_interest
+from lit_monitor.learning.rocchio import soft_gate
 
 logger = logging.getLogger(__name__)
 

@@ -16,8 +16,8 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.core.state_db import StateDB
-from scripts.server.app import create_app
+from lit_monitor.core.state_db import StateDB
+from lit_monitor.server.app import create_app
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -44,7 +44,7 @@ def client(db, monkeypatch) -> TestClient:
     Monkeypatches get_runtime on the ingest route module (where it's
     imported) — same pattern as test_brain_build_dashboard.py.
     """
-    from scripts.server.routes import ingest as ingest_route
+    from lit_monitor.server.routes import ingest as ingest_route
 
     fake_runtime = _make_fake_runtime(db)
     monkeypatch.setattr(ingest_route, "get_runtime", lambda: fake_runtime)
@@ -60,7 +60,7 @@ def client(db, monkeypatch) -> TestClient:
 class TestHappyPath:
     def test_returns_202_and_queued_status(self, client, db, monkeypatch):
         """H2: valid request returns 202 with status=queued and paper_id=doi."""
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
 
@@ -75,7 +75,7 @@ class TestHappyPath:
 
     def test_queue_row_marked_done_after_success(self, client, db, monkeypatch):
         """H2: after _process_paper succeeds, ingest_queue row has status='done'."""
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
 
@@ -96,7 +96,7 @@ class TestHappyPath:
 
     def test_optional_fields_accepted(self, client, db, monkeypatch):
         """H2: optional fields (authors, year, abstract, zotero_key) are accepted."""
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
 
@@ -148,7 +148,7 @@ class TestValidation:
 
     def test_valid_doi_formats_accepted(self, client, monkeypatch):
         """H2: DOIs with long suffixes and slashes are accepted."""
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
 
@@ -160,7 +160,7 @@ class TestValidation:
 
     def test_oversized_title_returns_422(self, client):
         """P2.3: a title longer than the cap (500) → 422 (validator rejects)."""
-        from scripts.server.routes.ingest import _MAX_TITLE_LEN
+        from lit_monitor.server.routes.ingest import _MAX_TITLE_LEN
 
         oversized = "x" * (_MAX_TITLE_LEN + 100)  # 600 chars
         r = client.post(
@@ -170,8 +170,8 @@ class TestValidation:
 
     def test_normal_length_title_accepted(self, client, monkeypatch):
         """P2.3: a normal-length title still passes (regression guard)."""
-        from scripts.server.routes import ingest as ingest_route
-        from scripts.server.routes.ingest import _MAX_TITLE_LEN
+        from lit_monitor.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes.ingest import _MAX_TITLE_LEN
 
         monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
 
@@ -188,7 +188,7 @@ class TestValidation:
         _DOI_RE's \\S+ suffix is unbounded, so without the length cap this
         regex-valid but absurdly long DOI would slip through.
         """
-        from scripts.server.routes.ingest import _MAX_DOI_LEN
+        from lit_monitor.server.routes.ingest import _MAX_DOI_LEN
 
         # Regex-valid prefix + an oversized suffix pushing past the cap.
         oversized = "10.1234/" + ("x" * _MAX_DOI_LEN)
@@ -199,7 +199,7 @@ class TestValidation:
 
     def test_normal_doi_accepted(self, client, monkeypatch):
         """Q3.5: a normal-length DOI still passes (regression guard)."""
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
 
@@ -218,7 +218,7 @@ class TestValidation:
 class TestDuplicateDOI:
     def test_duplicate_doi_returns_409(self, client, db, monkeypatch):
         """H2: second POST with same DOI returns 409."""
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
 
@@ -238,7 +238,7 @@ class TestDuplicateDOI:
 
     def test_duplicate_response_body(self, client, db, monkeypatch):
         """H2: 409 body contains status=duplicate and the paper_id."""
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
 
@@ -260,7 +260,7 @@ class TestDuplicateDOI:
         constraint — which must be caught and mapped to the same 409 the SELECT
         path returns, NOT propagated as a 500.
         """
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
 
@@ -316,7 +316,7 @@ class TestR28FailureSemantics:
         on the queue row (see sibling tests) and surfaced via the H3 status
         endpoint. The endpoint itself stays 202.
         """
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         def boom(*a, **kw):
             raise RuntimeError("simulated pipeline failure")
@@ -336,7 +336,7 @@ class TestR28FailureSemantics:
         that never transitions to 'done' or 'failed' is invisible corruption
         that H3's queue listing would present as an active job.
         """
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         def boom(*a, **kw):
             raise RuntimeError("simulated pipeline failure")
@@ -362,7 +362,7 @@ class TestR28FailureSemantics:
 
     def test_process_paper_failure_records_error_text(self, client, db, monkeypatch):
         """H2: the error column must contain the exception message."""
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         def boom(*a, **kw):
             raise RuntimeError("simulated pipeline failure")
@@ -389,7 +389,7 @@ class TestR28FailureSemantics:
         Explicitly asserts the negation (not 'queued') separate from the
         positive assertion (is 'failed') so test failures are maximally clear.
         """
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         def boom(*a, **kw):
             raise RuntimeError("boom")
@@ -527,7 +527,7 @@ class TestQueueListing:
 
     def test_two_items_ordered_descending(self, client, monkeypatch):
         """H3: two ingests → list ordered newest-first (queued_at DESC)."""
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
         client.post("/api/ingest", json={"doi": "10.1234/a", "title": "A"})
@@ -543,7 +543,7 @@ class TestQueueListing:
 
     def test_response_shape(self, client, monkeypatch):
         """H3: each item in the queue list has the expected keys."""
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
         client.post("/api/ingest", json={"doi": "10.1234/shape", "title": "S"})
@@ -569,7 +569,7 @@ class TestDoiStatus:
 
     def test_known_doi_returns_row(self, client, monkeypatch):
         """H3: known DOI → 200 with correct doi and status."""
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
         client.post("/api/ingest", json={"doi": "10.1234/known", "title": "K"})
@@ -582,7 +582,7 @@ class TestDoiStatus:
 
     def test_known_doi_response_has_all_fields(self, client, monkeypatch):
         """H3: status response includes all five expected keys."""
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         monkeypatch.setattr(ingest_route, "_process_paper", lambda *a, **kw: (True, []))
         client.post("/api/ingest", json={"doi": "10.1234/fields", "title": "F"})
@@ -635,7 +635,7 @@ class TestAsyncIngestTransitions:
 
     def test_processed_true_yields_done(self, client, db, monkeypatch):
         """A1: _process_paper returning (True, [...]) → queue status 'done'."""
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         monkeypatch.setattr(
             ingest_route, "_process_paper", lambda *a, **kw: (True, ["topic"])
@@ -658,7 +658,7 @@ class TestAsyncIngestTransitions:
         This is the EXPECTED path when the Zotero item has no .md attachment
         yet — it is NOT an error and must not be marked 'failed'.
         """
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         monkeypatch.setattr(
             ingest_route, "_process_paper", lambda *a, **kw: (False, [])
@@ -680,7 +680,7 @@ class TestAsyncIngestTransitions:
 
     def test_raising_yields_failed_with_error_text(self, client, db, monkeypatch):
         """A1: _process_paper raising → queue status 'failed' + error text."""
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.server.routes import ingest as ingest_route
 
         def boom(*a, **kw):
             raise RuntimeError("a1 simulated failure")
@@ -717,8 +717,8 @@ class TestSynthesizedZoteroItem:
         item passed and assert the shape, including that ZoteroClient
         .extract_authors round-trips the request authors.
         """
-        from scripts.core.zotero_client import ZoteroClient
-        from scripts.server.routes import ingest as ingest_route
+        from lit_monitor.core.zotero_client import ZoteroClient
+        from lit_monitor.server.routes import ingest as ingest_route
 
         captured: dict = {}
 

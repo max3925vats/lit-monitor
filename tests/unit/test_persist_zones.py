@@ -16,8 +16,8 @@ import logging
 
 import pytest
 
-from scripts.core.strict_mode import set_strict
-from scripts.output.obsidian_writer import (
+from lit_monitor.core.strict_mode import set_strict
+from lit_monitor.output.obsidian_writer import (
     _find_malformed_persist_markers,
     update_note_preserve_persist_zones,
 )

@@ -57,7 +57,7 @@ def _make_mock_result(papers):
 @pytest.mark.unit
 def test_search_runner_converts_findpapers_output(tmp_path):
     """run_searches returns correctly structured paper dicts."""
-    from scripts.search.search_runner import run_searches
+    from lit_monitor.search.search_runner import run_searches
     mock_result = _make_mock_result([_make_mock_paper()])
     with patch("scripts.search.search_runner._S2_AVAILABLE", False):
         with patch("scripts.search.search_runner._findpapers"):
@@ -74,7 +74,7 @@ def test_search_runner_converts_findpapers_output(tmp_path):
 @pytest.mark.unit
 def test_search_runner_deduplicates_same_doi():
     """Same DOI from multiple topics appears only once."""
-    from scripts.search.search_runner import run_searches
+    from lit_monitor.search.search_runner import run_searches
     mock_result = _make_mock_result([_make_mock_paper(doi="10.1/same")])
     config = _make_config(topics=["query1 AND ProteinA", "query2 AND UF"])
     with patch("scripts.search.search_runner._S2_AVAILABLE", False):
@@ -85,8 +85,8 @@ def test_search_runner_deduplicates_same_doi():
 @pytest.mark.unit
 def test_known_dois_filtered(tmp_path):
     """filter_known_dois removes papers already in state DB."""
-    from scripts.core.state_db import StateDB
-    from scripts.search.search_runner import filter_known_dois
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.search.search_runner import filter_known_dois
     db = StateDB(str(tmp_path / "state.db"))
     db.upsert_paper({"doi": "10.1/known", "title": "Known Paper", "source_type": "paper"})
     papers = [
@@ -104,7 +104,7 @@ def test_missing_api_key_logs_warning_not_error(caplog, tmp_path):
     """Missing Scopus key produces a warning, not an exception."""
     import logging
 
-    from scripts.search.search_runner import run_searches
+    from lit_monitor.search.search_runner import run_searches
     mock_result = _make_mock_result([])
     config = _make_config(wos_key=None, scopus_key=None)
     with caplog.at_level(logging.WARNING):
@@ -116,7 +116,7 @@ def test_missing_api_key_logs_warning_not_error(caplog, tmp_path):
 @pytest.mark.unit
 def test_search_runner_topic_search_failure_continues():
     """If one topic search fails, others still run."""
-    from scripts.search.search_runner import run_searches
+    from lit_monitor.search.search_runner import run_searches
     second_result = _make_mock_result([_make_mock_paper(doi="10.1/second")])
     config = _make_config(topics=["query_one", "query_two"])
     with patch("scripts.search.search_runner._S2_AVAILABLE", False):
@@ -129,7 +129,7 @@ def test_search_runner_topic_search_failure_continues():
 @pytest.mark.unit
 def test_no_topics_returns_empty():
     """run_searches with empty topics returns [] without hitting findpapers."""
-    from scripts.search.search_runner import run_searches
+    from lit_monitor.search.search_runner import run_searches
     config = _make_config(topics=[])
     with patch("scripts.search.search_runner._findpapers") as mock_fp:
         results = run_searches(config)
@@ -141,7 +141,7 @@ def test_no_topics_returns_empty():
 @pytest.mark.unit
 def test_researcher_tracker_sets_tracked_flag():
     """run_researcher_searches returns papers with tracked_author=True."""
-    from scripts.search.researcher_tracker import run_researcher_searches
+    from lit_monitor.search.researcher_tracker import run_researcher_searches
     researcher = {"name": "Author2 G"}
     config = _make_config(researchers=[researcher])
     mock_result = _make_mock_result([_make_mock_paper(doi="10.1/author2_2024")])
@@ -152,7 +152,7 @@ def test_researcher_tracker_sets_tracked_flag():
 @pytest.mark.unit
 def test_researcher_tracker_deduplicates():
     """Same DOI from two author searches appears only once."""
-    from scripts.search.researcher_tracker import run_researcher_searches
+    from lit_monitor.search.researcher_tracker import run_researcher_searches
     config = _make_config(researchers=[{"name": "Author2 G"}, {"name": "Author1 A"}])
     mock_result = _make_mock_result([_make_mock_paper(doi="10.1/shared")])
     with patch("scripts.search.researcher_tracker._findpapers"):
@@ -162,7 +162,7 @@ def test_researcher_tracker_deduplicates():
 @pytest.mark.unit
 def test_researcher_tracker_no_researchers_returns_empty():
     """No researchers configured → empty list without calling findpapers."""
-    from scripts.search.researcher_tracker import run_researcher_searches
+    from lit_monitor.search.researcher_tracker import run_researcher_searches
     config = _make_config(researchers=[])
     with patch("scripts.search.researcher_tracker._findpapers") as mock_fp:
         results = run_researcher_searches(config)
@@ -171,11 +171,11 @@ def test_researcher_tracker_no_researchers_returns_empty():
 @pytest.mark.unit
 def test_openalex_abstract_reconstruction():
     """_reconstruct_abstract correctly reconstructs from inverted index."""
-    from scripts.search.researcher_tracker import _reconstruct_abstract
+    from lit_monitor.search.researcher_tracker import _reconstruct_abstract
     inverted = {"The": [0], "quick": [1], "brown": [2], "fox": [3]}
     result = _reconstruct_abstract(inverted)
     assert result == "The quick brown fox"
 @pytest.mark.unit
 def test_openalex_abstract_none_returns_empty():
-    from scripts.search.researcher_tracker import _reconstruct_abstract
+    from lit_monitor.search.researcher_tracker import _reconstruct_abstract
     assert _reconstruct_abstract(None) == ""

@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from scripts.learning.ranking import rank_papers_by_interest
+from lit_monitor.learning.ranking import rank_papers_by_interest
 
 
 class _FakeEmbeddings:

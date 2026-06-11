@@ -19,12 +19,12 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from scripts.core.markdown_processor import strip_end_matter, strip_references_section
-from scripts.core.strict_mode import strict_fallback
-from scripts.llm import extraction_schema as _es
-from scripts.llm.llm_client import LLMClient, parse_llm_json
-from scripts.llm.prompt_safety import sanitize_for_prompt
-from scripts.llm.token_budget import CHARS_PER_TOKEN, SYSTEM_PROMPT_RESERVE_TOKENS
+from lit_monitor.core.markdown_processor import strip_end_matter, strip_references_section
+from lit_monitor.core.strict_mode import strict_fallback
+from lit_monitor.llm import extraction_schema as _es
+from lit_monitor.llm.llm_client import LLMClient, parse_llm_json
+from lit_monitor.llm.prompt_safety import sanitize_for_prompt
+from lit_monitor.llm.token_budget import CHARS_PER_TOKEN, SYSTEM_PROMPT_RESERVE_TOKENS
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +225,7 @@ def _build_system_prompt(
     _null = _es.null_instruction(content_type)
     _conf_vals = ", ".join(sorted(_es.confidence_values()))
 
-    from scripts.llm.prompt_registry import load_extraction_prompts
+    from lit_monitor.llm.prompt_registry import load_extraction_prompts
     _ep = load_extraction_prompts()
 
     pass_section = (
@@ -268,7 +268,7 @@ def _build_system_prompt(
 
 
 def _build_extraction_user_prompt(text: str, ocr_heavy: bool) -> str:
-    from scripts.llm.prompt_registry import load_extraction_prompts
+    from lit_monitor.llm.prompt_registry import load_extraction_prompts
     _ep = load_extraction_prompts()
     # C1: sanitize the paper fulltext once at this boundary. Paper text comes
     # from a Zotero markdown attachment (user-controllable) and could carry

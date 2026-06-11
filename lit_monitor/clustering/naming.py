@@ -15,7 +15,7 @@ import logging
 # Delayed-import guard: if prompt_registry isn't importable (e.g. bare test env
 # without full install), we fall back to None and name_cluster returns None gracefully.
 try:
-    from scripts.llm.prompt_registry import load_prompt
+    from lit_monitor.llm.prompt_registry import load_prompt
 except Exception:  # pragma: no cover
     load_prompt = None  # type: ignore[assignment]
 
@@ -50,7 +50,7 @@ def name_cluster(
     # Lazily build the LLM client if not supplied
     if llm is None:
         try:
-            from scripts.llm.llm_client import build_llm_client
+            from lit_monitor.llm.llm_client import build_llm_client
             llm = build_llm_client()
         except Exception as exc:
             logger.info("C: LLM client construction failed: %s", exc)

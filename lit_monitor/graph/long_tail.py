@@ -29,8 +29,8 @@ import logging
 import os
 from typing import Any
 
-from scripts.llm.llm_client import strip_markdown_fences
-from scripts.llm.prompt_safety import sanitize_for_prompt
+from lit_monitor.llm.llm_client import strip_markdown_fences
+from lit_monitor.llm.prompt_safety import sanitize_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ _MAX_TEXT_CHARS = 6000
 # ---------------------------------------------------------------------------
 def _load_runtime_config() -> Any:
     """Indirection so tests can monkeypatch config lookup."""
-    from scripts.core.config import load_config  # noqa: PLC0415
+    from lit_monitor.core.config import load_config  # noqa: PLC0415
 
     return load_config()
 
@@ -245,7 +245,7 @@ def extract_long_tail_and_validate(
                 return _preserve_low_conf(
                     low_conf_entities, reason="cloud disabled"
                 )
-            from scripts.llm.llm_client import OllamaClient  # noqa: PLC0415
+            from lit_monitor.llm.llm_client import OllamaClient  # noqa: PLC0415
 
             cloud_model = getattr(
                 config.graph.ner, "cloud_model", "gemma2:27b-cloud"
@@ -263,7 +263,7 @@ def extract_long_tail_and_validate(
     # ---- Load the prompt (registry or override).
     if prompt is None:
         try:
-            from scripts.llm.prompt_registry import load_prompt  # noqa: PLC0415
+            from lit_monitor.llm.prompt_registry import load_prompt  # noqa: PLC0415
 
             prompt = load_prompt("long_tail_ner")
         except Exception as exc:  # noqa: BLE001 — defensive perimeter

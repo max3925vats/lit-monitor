@@ -21,8 +21,8 @@ from typing import Any
 import numpy as np
 import pytest
 
-import scripts.pipelines.discovery as discovery
-from scripts.core.state_db import StateDB
+import lit_monitor.pipelines.discovery as discovery
+from lit_monitor.core.state_db import StateDB
 
 # --------------------------------------------------------------------------- #
 # Fakes

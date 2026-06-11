@@ -18,16 +18,16 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from scripts.core.strict_mode import strict_fallback
-from scripts.llm.extractor import (
+from lit_monitor.core.strict_mode import strict_fallback
+from lit_monitor.llm.extractor import (
     ALL_PAPER_FIELDS,
     compute_confidence_score,
     extract_fields,
     extract_paper,
     failed_phases,
 )
-from scripts.llm.prompt_safety import sanitize_for_prompt
-from scripts.obsidian_tools.rerender import rerender_note
+from lit_monitor.llm.prompt_safety import sanitize_for_prompt
+from lit_monitor.obsidian_tools.rerender import rerender_note
 
 logger = logging.getLogger(__name__)
 def re_extract(
@@ -239,7 +239,7 @@ def _open_graph_db_safe() -> Any | None:
     Lazily imports so the module remains usable without the [graph] extra.
     """
     try:
-        from scripts.graph.import_citations import safe_graph_db
+        from lit_monitor.graph.import_citations import safe_graph_db
         return safe_graph_db()
     except Exception as exc:
         logger.warning("N7: could not open GraphDB: %s", exc)
@@ -328,7 +328,7 @@ def _re_extract_with_graph(
     directly (same pattern used in other non-extractor LLM sites in this repo).
     Merges the result into existing and persists to state_db.
     """
-    from scripts.llm.prompt_registry import load_prompt
+    from lit_monitor.llm.prompt_registry import load_prompt
 
     prompt = load_prompt("re_extract_with_graph")
 

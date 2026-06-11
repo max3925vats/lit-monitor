@@ -29,7 +29,7 @@ except ImportError:  # pragma: no cover
     _findpapers = None  # type: ignore[assignment]
     _fp_load = None  # type: ignore[assignment]
 
-from scripts.search._constants import FINDPAPERS_TIMEOUT_SECONDS
+from lit_monitor.search._constants import FINDPAPERS_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 _OPENALEX_AUTHOR_URL = "https://api.openalex.org/works"
@@ -63,7 +63,7 @@ def run_researcher_searches(
     list[dict]
         Deduplicated paper dicts with tracked_author=True.
     """
-    from scripts.search.search_runner import _convert_findpapers_results, _load_api_secrets
+    from lit_monitor.search.search_runner import _convert_findpapers_results, _load_api_secrets
 
     researchers = _get_researchers(config)
     if not researchers:
@@ -261,7 +261,7 @@ def _openalex_author_lookup(
     Query OpenAlex works API filtered by author ORCID.
     Returns a list of paper dicts (tracked_author=True).
     """
-    from scripts.core.http_client import get_json
+    from lit_monitor.core.http_client import get_json
     orcid_url = orcid if orcid.startswith("http") else f"https://orcid.org/{orcid}"
     from_date = since.isoformat()
     params_str = (
@@ -269,7 +269,7 @@ def _openalex_author_lookup(
         f"&per-page=50&select=id,doi,title,authorships,publication_year,"
         f"primary_location,keywords,abstract_inverted_index"
     )
-    from scripts.search.search_runner import _load_api_secrets
+    from lit_monitor.search.search_runner import _load_api_secrets
     email = (
         os.environ.get("LIT_MONITOR_MAILTO")
         or _load_api_secrets().get("email", "")

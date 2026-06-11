@@ -31,7 +31,7 @@ from typing import Any
 import yaml
 from rapidfuzz import fuzz
 
-from scripts.graph.aliases import load_aliases
+from lit_monitor.graph.aliases import load_aliases
 
 logger = logging.getLogger(__name__)
 
@@ -212,10 +212,10 @@ def _consult_llm(
         try:
             # Lazy imports — keep module-level imports free of LLM clients so
             # the G11 test_no_llm_imports_in_module assertion still passes.
-            from scripts.llm.llm_client import OllamaClient  # noqa: PLC0415
+            from lit_monitor.llm.llm_client import OllamaClient  # noqa: PLC0415
 
             if cfg is None:
-                from scripts.core.config import load_config  # noqa: PLC0415
+                from lit_monitor.core.config import load_config  # noqa: PLC0415
                 cfg = load_config()
             # Prefer graph.aliases.cloud_model if the user set one; otherwise
             # reuse the NER cloud model so a single env tuning controls both
@@ -245,7 +245,7 @@ def _consult_llm(
     # ---- Load the prompt (registry or override).
     if prompt is None:
         try:
-            from scripts.llm.prompt_registry import load_prompt  # noqa: PLC0415
+            from lit_monitor.llm.prompt_registry import load_prompt  # noqa: PLC0415
 
             prompt = load_prompt("alias_consensus")
         except Exception as exc:  # noqa: BLE001 — defensive perimeter
@@ -261,7 +261,7 @@ def _consult_llm(
     # string field before serializing. Lazy import keeps the module LLM-free
     # (test_no_llm_imports_in_module). The original `clusters_by_type` is
     # untouched — verdicts round-trip via opaque cluster_id, not these strings.
-    from scripts.llm.prompt_safety import sanitize_for_prompt  # noqa: PLC0415
+    from lit_monitor.llm.prompt_safety import sanitize_for_prompt  # noqa: PLC0415
 
     safe_records = [
         {
@@ -319,7 +319,7 @@ def _consult_llm(
     # ---- Parse the JSON response. Tolerate ```json ... ``` fences.
     # Lazy import keeps the module-level surface free of scripts.llm.* so the
     # G11 test ``test_no_llm_imports_in_module`` still passes.
-    from scripts.llm.llm_client import strip_markdown_fences
+    from lit_monitor.llm.llm_client import strip_markdown_fences
 
     try:
         cleaned = strip_markdown_fences(response)

@@ -21,10 +21,10 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from scripts.core.atomic_write import atomic_write_text
-from scripts.core.strict_mode import strict_fallback
-from scripts.llm.prompt_registry import load_prompt
-from scripts.llm.prompt_safety import sanitize_for_prompt
+from lit_monitor.core.atomic_write import atomic_write_text
+from lit_monitor.core.strict_mode import strict_fallback
+from lit_monitor.llm.prompt_registry import load_prompt
+from lit_monitor.llm.prompt_safety import sanitize_for_prompt
 
 logger = logging.getLogger(__name__)
 _SYNTHESIS_TEMPLATE = """\
@@ -121,7 +121,7 @@ def synthesize(
         expanded_terms = _expand_query(topic, llm)
         # Build entity_ids from expanded surface forms via graph resolve, if possible.
         entity_ids = _resolve_entity_ids(expanded_terms, graph_db)
-        from scripts.retrieval.branch import retrieve_doi_candidates
+        from lit_monitor.retrieval.branch import retrieve_doi_candidates
         # W1: forward exclude_id (None here — synthesize has no seed paper) and
         # reranker config so the vector leg of hybrid preserves v0.3.3 behaviour.
         doi_candidates = retrieve_doi_candidates(
@@ -151,7 +151,7 @@ def synthesize(
         # (``_apply_reranker``); the previous ``from scripts.output.reranker
         # import rerank`` raised ImportError and was silently swallowed.
         if _reranker_cfg and similar:
-            from scripts.output.embeddings import _apply_reranker, _reranker_enabled
+            from lit_monitor.output.embeddings import _apply_reranker, _reranker_enabled
             if _reranker_enabled(_reranker_cfg):
                 similar = _apply_reranker(topic, similar, top_k, _reranker_cfg)
         use_chunks = False  # no chunk-level passages in graph/hybrid mode

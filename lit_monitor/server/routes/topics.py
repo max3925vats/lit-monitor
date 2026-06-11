@@ -14,7 +14,7 @@ from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException
 
-from scripts.server.runtime import get_runtime
+from lit_monitor.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def get_expansion_suggestions(topic_name: str, top_k: int = 3) -> dict:
     Note: Suggestion-only. The caller is responsible for presenting these to
     the user and applying them only after explicit opt-in.
     """
-    from scripts.graph.query_expansion import suggest_expansions
+    from lit_monitor.graph.query_expansion import suggest_expansions
 
     name = unquote(topic_name).strip()
     if not name:

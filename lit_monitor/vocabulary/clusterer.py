@@ -20,10 +20,10 @@ from pathlib import Path
 
 import yaml
 
-from scripts.llm.llm_client import LLMClient, parse_llm_json
-from scripts.llm.prompt_registry import load_clustering_prompts
-from scripts.llm.prompt_safety import sanitize_for_prompt
-from scripts.llm.token_budget import CHARS_PER_TOKEN, SYSTEM_PROMPT_RESERVE_TOKENS
+from lit_monitor.llm.llm_client import LLMClient, parse_llm_json
+from lit_monitor.llm.prompt_registry import load_clustering_prompts
+from lit_monitor.llm.prompt_safety import sanitize_for_prompt
+from lit_monitor.llm.token_budget import CHARS_PER_TOKEN, SYSTEM_PROMPT_RESERVE_TOKENS
 
 logger = logging.getLogger(__name__)
 

@@ -37,29 +37,29 @@ from typing import Any
 import numpy as np
 import requests
 
-from scripts.api.queries import get_graph_signals_for_candidate
-from scripts.core.doi import normalize_doi
-from scripts.core.doi_resolver import resolve_doi
-from scripts.core.item_router import detect_review
-from scripts.core.strict_mode import strict_fallback
-from scripts.graph import safe_graph_db
-from scripts.llm.extractor import extract_paper
-from scripts.llm.llm_client import RateLimitError
-from scripts.llm.ranker import (
+from lit_monitor.api.queries import get_graph_signals_for_candidate
+from lit_monitor.core.doi import normalize_doi
+from lit_monitor.core.doi_resolver import resolve_doi
+from lit_monitor.core.item_router import detect_review
+from lit_monitor.core.strict_mode import strict_fallback
+from lit_monitor.graph import safe_graph_db
+from lit_monitor.llm.extractor import extract_paper
+from lit_monitor.llm.llm_client import RateLimitError
+from lit_monitor.llm.ranker import (
     _GRAPH_AUTHORS_NORM_CAP,
     _GRAPH_CITATION_NORM_CAP,
     _GRAPH_ENTITY_NORM_CAP,
     rank_papers,
 )
-from scripts.obsidian_tools.relink import relink_note
-from scripts.output.obsidian_writer import write_paper_note
-from scripts.pipelines._ingest import (
+from lit_monitor.obsidian_tools.relink import relink_note
+from lit_monitor.output.obsidian_writer import write_paper_note
+from lit_monitor.pipelines._ingest import (
     build_graph_tuples,
     build_ner_mention_edges,
     index_embeddings_and_mark_phases,
     maybe_extract_llm_relationships,
 )
-from scripts.pipelines.brain_build import (
+from lit_monitor.pipelines.brain_build import (
     RateLimitExhausted,  # P5.5: reuse the P4.5 domain exception (catchable in API/web)
     _check_item_quality,  # A2: metadata quality gate
     _extract_keywords,
@@ -69,9 +69,9 @@ from scripts.pipelines.brain_build import (
     _paper_embed_text,
     _parse_year,
 )
-from scripts.search.researcher_tracker import run_researcher_searches
-from scripts.search.search_runner import DEFAULT_DATABASES, filter_known_dois, run_searches
-from scripts.search.semantic_scholar import enrich_paper
+from lit_monitor.search.researcher_tracker import run_researcher_searches
+from lit_monitor.search.search_runner import DEFAULT_DATABASES, filter_known_dois, run_searches
+from lit_monitor.search.semantic_scholar import enrich_paper
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,7 @@ def _resolve_app_url() -> str:
     the notification itself.
     """
     try:
-        from scripts.server.config_io import load_server_config
+        from lit_monitor.server.config_io import load_server_config
 
         srv = load_server_config()
         host = srv.get("host") or "localhost"
@@ -335,7 +335,7 @@ def run_discovery(
         # P2: fire OS notification after the run row is committed.
         # Wrapped in try/except so any failure here is non-fatal.
         try:
-            from scripts.notify.os_notification import notify_discovery_complete
+            from lit_monitor.notify.os_notification import notify_discovery_complete
             # Defensive getattr chain: handles configs that predate the
             # discovery.notify block — falls through with enabled=False.
             notify_cfg = getattr(getattr(config, "discovery", None), "notify", None)
@@ -388,7 +388,7 @@ def _rank_papers_graph(
     apply there — consistent with the domain/cluster legs, which the graph path
     also does not run.
     """
-    from scripts.retrieval.branch import retrieve_doi_candidates
+    from lit_monitor.retrieval.branch import retrieve_doi_candidates
     graph_db = safe_graph_db()
     try:
         if graph_db is None:
@@ -437,7 +437,7 @@ def _rank_papers_graph(
         # except below, leaving every graph/hybrid paper with rationale="".
         _top = scored[:top_k]
         try:
-            from scripts.llm.ranker import _get_rationales  # type: ignore[attr-defined]
+            from lit_monitor.llm.ranker import _get_rationales  # type: ignore[attr-defined]
             rationales = _get_rationales(_top, llm, domain_context="")
             for p in _top:
                 p["llm_rationale"] = rationales.get(p.get("doi", ""), "")
@@ -875,11 +875,11 @@ def _run_exploration_searches(
             return []
 
         try:
-            from scripts.clustering.atrophy import (
+            from lit_monitor.clustering.atrophy import (
                 compute_cluster_feedback_weights_from_db,
                 find_under_engaged_clusters,
             )
-            from scripts.clustering.exploration import build_exploration_queries
+            from lit_monitor.clustering.exploration import build_exploration_queries
 
             ref_now = now or datetime.now()
             floor = float(
@@ -1001,7 +1001,7 @@ def _write_digest(
     len(DEFAULT_DATABASES) + 1 (for S2 supplementary search).
     recent_runs: if provided, a Pipeline Run Summary section is prepended (L2).
     """
-    from scripts.output.digest_renderer import render_digest  # DR1: single renderer
+    from lit_monitor.output.digest_renderer import render_digest  # DR1: single renderer
 
     run_date = str(date.today())
     vault_path = Path(config.obsidian.vault_path)
@@ -1048,7 +1048,7 @@ def _run_ingestion(
     fetch only items added after the stored version and update the stored
     version on completion.
     """
-    from scripts.core.zotero_client import ZoteroClient
+    from lit_monitor.core.zotero_client import ZoteroClient
     # Version-based Zotero polling — compare against last-seen library version.
     # On the first run there is no baseline; store the current version and skip
     # processing (the full library is already handled by brain-build).
@@ -1209,7 +1209,7 @@ def _run_ingestion(
                     "last_updated": _now(),
                 })
                 # Assign vocabulary themes from Zotero tags (B2).
-                from scripts.vocabulary.normalizer import assign_themes
+                from lit_monitor.vocabulary.normalizer import assign_themes
                 themes = assign_themes(keywords)
                 paper_record = {
                     "doi": doi,
@@ -1264,8 +1264,8 @@ def _run_ingestion(
                 chunks: list = []
                 if fulltext:
                     try:
-                        from scripts.core.chunker import chunk_markdown
-                        from scripts.core.markdown_processor import strip_end_matter
+                        from lit_monitor.core.chunker import chunk_markdown
+                        from lit_monitor.core.markdown_processor import strip_end_matter
                         chunks = chunk_markdown(strip_end_matter(fulltext), doi)
                     except Exception as exc:
                         logger.warning("Chunking failed for %s (non-fatal): %s", doi, exc)
@@ -1408,7 +1408,7 @@ def _run_ingestion(
         # M4: append novel discovered_topics to topics.yaml and concepts.yaml.
         if _topics_batch:
             try:
-                from scripts.vocabulary.topic_merger import merge_discovered_topics
+                from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
                 merged = merge_discovered_topics(_topics_batch)
                 if merged:
                     logger.warning(

@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from scripts.core.strict_mode import strict_fallback
+from lit_monitor.core.strict_mode import strict_fallback
 
 _module_logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ _module_logger = logging.getLogger(__name__)
 # [graph] extra installed.  If the package is absent, the name resolves to
 # None and maybe_extract_llm_relationships will catch it gracefully.
 try:
-    from scripts.graph.relationship_llm import extract_llm_relationships  # noqa: E402
+    from lit_monitor.graph.relationship_llm import extract_llm_relationships  # noqa: E402
 except Exception:  # ImportError or missing optional dep
     extract_llm_relationships = None  # type: ignore[assignment]
 
@@ -79,10 +79,10 @@ def build_graph_tuples(
     only ``GraphDB`` instantiation does).
     """
     try:
-        from scripts.graph.aliases import load_aliases
-        from scripts.graph.entity_extractor import extract_entities
-        from scripts.graph.normalizer import EntityNormalizer
-        from scripts.graph.relationship_extractor import extract_relationships
+        from lit_monitor.graph.aliases import load_aliases
+        from lit_monitor.graph.entity_extractor import extract_entities
+        from lit_monitor.graph.normalizer import EntityNormalizer
+        from lit_monitor.graph.relationship_extractor import extract_relationships
     except Exception as exc:  # pragma: no cover — defensive
         _module_logger.warning("G6 build_graph_tuples: import failed: %s", exc)
         return [], []
@@ -137,9 +137,9 @@ def build_ner_mention_edges(
     it is not used internally.
     """
     try:
-        from scripts.graph.aliases import load_aliases  # noqa: PLC0415
-        from scripts.graph.ner_pipeline import build_mention_edges  # noqa: PLC0415
-        from scripts.graph.normalizer import EntityNormalizer  # noqa: PLC0415
+        from lit_monitor.graph.aliases import load_aliases  # noqa: PLC0415
+        from lit_monitor.graph.ner_pipeline import build_mention_edges  # noqa: PLC0415
+        from lit_monitor.graph.normalizer import EntityNormalizer  # noqa: PLC0415
     except Exception as exc:
         _module_logger.warning(
             "N4 build_ner_mention_edges: import failed for %s: %s", source_doi, exc,

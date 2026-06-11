@@ -27,7 +27,7 @@ def _configured_graph_path() -> str | None:
     yields None and the caller falls back to the production default.
     """
     try:
-        from scripts.core.config import get_config
+        from lit_monitor.core.config import get_config
 
         graph_cfg = getattr(getattr(get_config(), "retrieval", None), "graph_db", None)
         if graph_cfg is None:
@@ -57,7 +57,7 @@ def safe_graph_db(persist_dir: str | None = None) -> Any | None:
         cannot be opened.
     """
     try:
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
     except ImportError:
         logger.warning(
             "[graph] extra not installed; skipping graph mirror. "

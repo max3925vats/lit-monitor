@@ -33,7 +33,7 @@ def _make_graph_db_with_overlap(overlap_count: int) -> MagicMock:
 
 class TestShouldFireForResearcher:
     def test_returns_true_when_overlap_meets_threshold(self):
-        from scripts.search.researcher_tracker import should_fire_for_researcher
+        from lit_monitor.search.researcher_tracker import should_fire_for_researcher
 
         graph_db = _make_graph_db_with_overlap(2)
         assert should_fire_for_researcher(
@@ -44,7 +44,7 @@ class TestShouldFireForResearcher:
         ) is True
 
     def test_returns_false_when_overlap_below_threshold(self):
-        from scripts.search.researcher_tracker import should_fire_for_researcher
+        from lit_monitor.search.researcher_tracker import should_fire_for_researcher
 
         graph_db = _make_graph_db_with_overlap(0)
         assert should_fire_for_researcher(
@@ -55,7 +55,7 @@ class TestShouldFireForResearcher:
         ) is False
 
     def test_returns_true_fail_safe_when_graph_none(self):
-        from scripts.search.researcher_tracker import should_fire_for_researcher
+        from lit_monitor.search.researcher_tracker import should_fire_for_researcher
 
         assert should_fire_for_researcher(
             "Jane Smith",
@@ -65,7 +65,7 @@ class TestShouldFireForResearcher:
         ) is True
 
     def test_returns_true_fail_safe_when_entities_empty(self):
-        from scripts.search.researcher_tracker import should_fire_for_researcher
+        from lit_monitor.search.researcher_tracker import should_fire_for_researcher
 
         graph_db = MagicMock()
         assert should_fire_for_researcher(
@@ -76,7 +76,7 @@ class TestShouldFireForResearcher:
         ) is True
 
     def test_returns_true_fail_open_on_exception(self):
-        from scripts.search.researcher_tracker import should_fire_for_researcher
+        from lit_monitor.search.researcher_tracker import should_fire_for_researcher
 
         graph_db = MagicMock()
         graph_db._conn.execute.side_effect = RuntimeError("Graph offline")
@@ -89,7 +89,7 @@ class TestShouldFireForResearcher:
         ) is True
 
     def test_min_overlap_zero_always_fires(self):
-        from scripts.search.researcher_tracker import should_fire_for_researcher
+        from lit_monitor.search.researcher_tracker import should_fire_for_researcher
 
         graph_db = _make_graph_db_with_overlap(0)
         assert should_fire_for_researcher(
@@ -100,7 +100,7 @@ class TestShouldFireForResearcher:
         ) is True
 
     def test_meets_exact_threshold(self):
-        from scripts.search.researcher_tracker import should_fire_for_researcher
+        from lit_monitor.search.researcher_tracker import should_fire_for_researcher
 
         graph_db = _make_graph_db_with_overlap(1)
         assert should_fire_for_researcher(

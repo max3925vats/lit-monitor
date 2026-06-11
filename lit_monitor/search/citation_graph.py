@@ -26,10 +26,10 @@ from typing import TYPE_CHECKING, Any
 
 from rapidfuzz import fuzz
 
-from scripts.search._constants import S2_TIMEOUT_SECONDS
+from lit_monitor.search._constants import S2_TIMEOUT_SECONDS
 
 if TYPE_CHECKING:
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
 logger = logging.getLogger(__name__)
 

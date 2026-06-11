@@ -28,8 +28,8 @@ from typing import Any
 
 import click
 
-from scripts.core.strict_mode import set_strict, strict_fallback
-from scripts.setup.reset import (
+from lit_monitor.core.strict_mode import set_strict, strict_fallback
+from lit_monitor.setup.reset import (
     ResetResult,
     ResetTarget,
     _format_size_bytes,
@@ -179,13 +179,13 @@ def _maybe_set_s2_key(secrets: dict[str, Any]) -> None:
 # Shared object factory helpers
 # ---------------------------------------------------------------------------
 def _make_config():
-    from scripts.core.config import get_config
+    from lit_monitor.core.config import get_config
     return get_config()
 def _make_state_db(config):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     return StateDB(config.state_db.path)
 def _make_embeddings_db(config):
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
     persist_dir = str(Path(config.state_db.path).parent / "chroma")
     # Use embeddings.ollama_host if explicitly set; fall back to brain_build host.
     ollama_host = getattr(config.embeddings, "ollama_host", None)
@@ -214,7 +214,7 @@ def _make_embeddings_db(config):
         state_db_path=str(Path(config.state_db.path).expanduser()),
     )
 def _make_zotero_client(config, secrets: dict):
-    from scripts.core.zotero_client import ZoteroClient
+    from lit_monitor.core.zotero_client import ZoteroClient
     zot_secrets = secrets.get("zotero", {})
     return ZoteroClient(
         library_id=str(zot_secrets.get("library_id", config.zotero.library_id)),
@@ -223,7 +223,7 @@ def _make_zotero_client(config, secrets: dict):
         local_storage_path=config.zotero.local_storage_path,
     )
 def _make_llm(config, mode: str, model_override: str | None = None, think: bool = True):
-    from scripts.llm.llm_client import (
+    from lit_monitor.llm.llm_client import (
         _OLLAMA_NUM_CTX_DEFAULTS,
         OllamaClient,
         get_clients_for_passes,
@@ -309,7 +309,7 @@ def main(ctx: click.Context, verbose: bool, strict: bool) -> None:
 @click.pass_context
 def check(ctx: click.Context) -> None:
     """Verify configuration, Ollama, and Zotero are all reachable."""
-    from scripts.setup.health_check import run_health_check
+    from lit_monitor.setup.health_check import run_health_check
     _setup_logging("check", verbose=ctx.obj.get("verbose", False))
     overall_ok = True
     # Single in-process call returns per-section results in the same
@@ -388,14 +388,14 @@ def diagnose(ctx: click.Context, config_only: bool) -> None:
     Exit code 0 if all files load cleanly; 1 if any FAIL.
     """
     _setup_logging("diagnose", verbose=ctx.obj.get("verbose", False))
-    from scripts.setup.diagnose import (
+    from lit_monitor.setup.diagnose import (
         ABSENT_OPTIONAL_MSG,
         check_core_configs,
         check_optional_configs,
         check_prompts,
         check_schemas,
     )
-    from scripts.setup.health_check import run_health_check
+    from lit_monitor.setup.health_check import run_health_check
     # Helper closure: prints a single (label, (ok, msg)) row in the same
     # format the old inline _check_yaml emitted. Mutates `all_ok` via
     # nonlocal so the section loops match the original control flow.
@@ -483,7 +483,7 @@ def serve(
 
     import uvicorn
 
-    from scripts.server.config_io import load_server_config
+    from lit_monitor.server.config_io import load_server_config
 
     _setup_logging("serve", verbose=ctx.obj.get("verbose", False))
     # Propagate OLLAMA_API_KEY into the process env so embedding/LLM calls
@@ -554,12 +554,12 @@ def first_run(ctx: click.Context) -> None:
     import time
     import webbrowser
 
-    from scripts.server.config_io import (
+    from lit_monitor.server.config_io import (
         load_server_config,
         save_secrets,
         save_server_config,
     )
-    from scripts.setup._paths import SECRETS_PATH
+    from lit_monitor.setup._paths import SECRETS_PATH
 
     _setup_logging("first_run", verbose=ctx.obj.get("verbose", False))
 
@@ -671,7 +671,7 @@ def status(ctx: click.Context) -> None:
 
     # G13: append graph line when [graph] extra is present
     try:
-        from scripts.graph import safe_graph_db as _safe_graph_db
+        from lit_monitor.graph import safe_graph_db as _safe_graph_db
         _g = _safe_graph_db()
         if _g is not None:
             try:
@@ -826,7 +826,7 @@ def _suggest_topics(clusters: dict, suggested_path: Path) -> None:  # noqa: F821
     """
     import yaml as _yaml
 
-    from scripts.vocabulary.clusterer import clusters_to_topics_yaml
+    from lit_monitor.vocabulary.clusterer import clusters_to_topics_yaml
 
     _topics_live = Path("config/topics.yaml")
 
@@ -978,14 +978,14 @@ def build_vocabulary_cmd(
     _setup_logging("build_vocabulary", verbose=ctx.obj.get("verbose", False))
     from collections import Counter
 
-    from scripts.vocabulary.clusterer import (
+    from lit_monitor.vocabulary.clusterer import (
         CONCEPTS_DRAFT_PATH,
         TOPICS_SUGGESTED_PATH,
         _refine_clustering,
         build_vocabulary,
     )
-    from scripts.vocabulary.keyword_extractor import extract_all_keywords
-    from scripts.vocabulary.normalizer import normalise_keywords
+    from lit_monitor.vocabulary.keyword_extractor import extract_all_keywords
+    from lit_monitor.vocabulary.normalizer import normalise_keywords
 
     if refine and refine_only:
         click.echo("Error: --refine and --refine-only are mutually exclusive.", err=True)
@@ -996,7 +996,7 @@ def build_vocabulary_cmd(
     if refine_only:
         import yaml as _yaml
 
-        from scripts.llm.llm_client import OllamaClient
+        from lit_monitor.llm.llm_client import OllamaClient
         try:
             config = _make_config()
             _maybe_set_ollama_key(_load_secrets())
@@ -1110,7 +1110,7 @@ def build_vocabulary_cmd(
     # almost no room for the response under an 8192-token context window.
     refine_llm_obj = None
     if refine:
-        from scripts.llm.llm_client import OllamaClient
+        from lit_monitor.llm.llm_client import OllamaClient
         bv = config.build_vocabulary
         raw_timeout = getattr(bv, "timeout", None)
         refine_llm_obj = OllamaClient(
@@ -1163,7 +1163,7 @@ def compare_models_cmd(
 ) -> None:
     """Compare LLM models on extraction quality. Review outputs in comparison/."""
     _setup_logging("compare", verbose=ctx.obj.get("verbose", False))
-    from scripts.pipelines.model_compare import run_model_comparison
+    from lit_monitor.pipelines.model_compare import run_model_comparison
     try:
         config = _make_config()
         secrets = _load_secrets()
@@ -1242,9 +1242,9 @@ def brain_build_cmd(
     # M3: hydrate S2_API_KEY before importing brain_build (which transitively
     # imports scripts.search.semantic_scholar at module-load time).
     _maybe_set_s2_key(_load_secrets())
-    from scripts.core.state_db import CURRENT_SCHEMA_VERSION
-    from scripts.output.embeddings import check_embed_model_change
-    from scripts.pipelines.brain_build import (
+    from lit_monitor.core.state_db import CURRENT_SCHEMA_VERSION
+    from lit_monitor.output.embeddings import check_embed_model_change
+    from lit_monitor.pipelines.brain_build import (
         RateLimitExhausted,
         _process_paper,
         run_brain_build,
@@ -1356,8 +1356,8 @@ def brain_build_cmd(
         click.echo(click.style(
             f"\n── {len(summary.no_doi_items)} item(s) with no DOI ──", bold=True,
         ))
-        from scripts.llm.extractor import extract_paper as _extract_paper
-        from scripts.output.obsidian_writer import write_paper_note
+        from lit_monitor.llm.extractor import extract_paper as _extract_paper
+        from lit_monitor.output.obsidian_writer import write_paper_note
         for item_info in summary.no_doi_items:
             click.echo(f"\n  Title: {item_info['title']}")
             click.echo(f"  Key:   {item_info['zotero_key']}")
@@ -1418,9 +1418,9 @@ def run_cmd(
     # M3: hydrate S2_API_KEY before importing discovery (which transitively
     # imports scripts.search.semantic_scholar at module-load time).
     _maybe_set_s2_key(_load_secrets())
-    from scripts.output.embeddings import check_embed_model_change
-    from scripts.pipelines.brain_build import RateLimitExhausted
-    from scripts.pipelines.discovery import run_discovery
+    from lit_monitor.output.embeddings import check_embed_model_change
+    from lit_monitor.pipelines.brain_build import RateLimitExhausted
+    from lit_monitor.pipelines.discovery import run_discovery
     try:
         config = _make_config()
         secrets = _load_secrets()
@@ -1441,7 +1441,7 @@ def run_cmd(
     # error — surface it before discovery searches start. Probe with
     # safe_graph_db() so we don't have to import GraphDB directly here.
     if rag_mode in ("graph", "hybrid"):
-        from scripts.graph import safe_graph_db as _probe_graph_db
+        from lit_monitor.graph import safe_graph_db as _probe_graph_db
         _probe = _probe_graph_db()
         if _probe is None:
             raise click.UsageError(
@@ -1508,7 +1508,7 @@ def obsidian() -> None:
 def obsidian_relink(ctx: click.Context, doi: str | None, rag_mode: str | None) -> None:
     """Update ## Related Work and ## Referenced By sections across notes."""
     _setup_logging("relink", verbose=ctx.obj.get("verbose", False))
-    from scripts.obsidian_tools.relink import relink_note
+    from lit_monitor.obsidian_tools.relink import relink_note
     try:
         config = _make_config()
         state_db = _make_state_db(config)
@@ -1520,7 +1520,7 @@ def obsidian_relink(ctx: click.Context, doi: str | None, rag_mode: str | None) -
     # effective mode (CLI flag → config default → "vector"). C4 fix: previously
     # graph_db was opened only when the CLI flag was set, so an implicit
     # config-default of "graph" silently degraded to vector with graph_db=None.
-    from scripts.graph import safe_graph_db as _safe_graph_db
+    from lit_monitor.graph import safe_graph_db as _safe_graph_db
     _effective_rag = rag_mode or getattr(
         getattr(config, "retrieval", None), "default_mode", "vector"
     ) or "vector"
@@ -1605,7 +1605,7 @@ def obsidian_relink(ctx: click.Context, doi: str | None, rag_mode: str | None) -
 def obsidian_retheme(ctx: click.Context, old: str, new_theme: str) -> None:
     """Bulk rename a theme and rewrite all wikilinks across the vault."""
     _setup_logging("retheme", verbose=ctx.obj.get("verbose", False))
-    from scripts.obsidian_tools.retheme import retheme
+    from lit_monitor.obsidian_tools.retheme import retheme
     try:
         config = _make_config()
     except Exception as exc:
@@ -1632,7 +1632,7 @@ def obsidian_rerender(
 ) -> None:
     """Regenerate Obsidian notes from extraction JSON in state DB."""
     _setup_logging("rerender", verbose=ctx.obj.get("verbose", False))
-    from scripts.obsidian_tools.rerender import rerender_all, rerender_note
+    from lit_monitor.obsidian_tools.rerender import rerender_all, rerender_note
     try:
         config = _make_config()
         state_db = _make_state_db(config)
@@ -1691,7 +1691,7 @@ def obsidian_synthesize(
         raise click.UsageError("--topic and --topics-file are mutually exclusive.")
     if not topic and not topics_file:
         raise click.UsageError("Provide either --topic TOPIC or --topics-file PATH.")
-    from scripts.obsidian_tools.synthesize import synthesize
+    from lit_monitor.obsidian_tools.synthesize import synthesize
     try:
         config = _make_config()
         state_db = _make_state_db(config)
@@ -1705,7 +1705,7 @@ def obsidian_synthesize(
         getattr(config, "retrieval", None), "default_mode", "vector"
     ) or "vector"
     # G9: open graph_db once for the whole synthesize batch (None when [graph] extra absent).
-    from scripts.graph import safe_graph_db as _safe_graph_db
+    from lit_monitor.graph import safe_graph_db as _safe_graph_db
     _graph_db = _safe_graph_db() if _effective_rag in ("graph", "hybrid") else None
     # W4: explicit --rag-mode graph|hybrid without the [graph] extra is a hard
     # error (mirrors obsidian_relink). Implicit config-default fallthrough is
@@ -1806,7 +1806,7 @@ def obsidian_rechunk_all(ctx: click.Context, doi: str | None, rechunk_all: bool)
     except Exception as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
-    from scripts.core.chunker import chunk_markdown
+    from lit_monitor.core.chunker import chunk_markdown
 
     def _rechunk_doi(d: str) -> bool:
         record = state_db.get_paper(d)
@@ -1821,7 +1821,7 @@ def obsidian_rechunk_all(ctx: click.Context, doi: str | None, rechunk_all: bool)
         if fulltext is None:
             logging.getLogger(__name__).debug("No markdown attachment for %s — skipping", d)
             return False
-        from scripts.core.markdown_processor import strip_end_matter
+        from lit_monitor.core.markdown_processor import strip_end_matter
         chunks = chunk_markdown(strip_end_matter(fulltext), d)
         embeddings_db.add_chunks(d, chunks)
         return True
@@ -1907,7 +1907,7 @@ def obsidian_re_extract(
 ) -> None:
     """Re-run LLM extraction for a specific DOI or set of records."""
     _setup_logging("re_extract", verbose=ctx.obj.get("verbose", False))
-    from scripts.obsidian_tools.re_extract import (
+    from lit_monitor.obsidian_tools.re_extract import (
         re_extract,
         re_extract_all_failed_phase,
     )
@@ -1992,15 +1992,15 @@ def obsidian_build_citation_graph(
     Requires pass-4 extraction to have run for the target paper(s).
     Use ``lit-monitor obsidian re-extract --pass 4 --scope all`` first.
     """
-    from scripts.core.config import Config
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.config import Config
+    from lit_monitor.core.state_db import StateDB
 
     _setup_logging("build_citation_graph", verbose=ctx.obj.get("verbose", False))
 
     # M3: hydrate S2_API_KEY from config.toml before importing search modules,
     # which capture the env var at import time into _DEFAULT_S2_API_KEY.
     _maybe_set_s2_key(_load_secrets())
-    from scripts.search.citation_graph import build_citation_graph
+    from lit_monitor.search.citation_graph import build_citation_graph
 
     config = Config()
     state_db = StateDB(config.state_db.path)
@@ -2053,7 +2053,7 @@ def obsidian_build_citation_graph(
 
     # G5: mirror resolved citation_edges into Kuzu after E1 work, unless opted out.
     if not no_graph:
-        from scripts.graph.import_citations import mirror_citations, safe_graph_db
+        from lit_monitor.graph.import_citations import mirror_citations, safe_graph_db
         graph_db = safe_graph_db()
         if graph_db is not None:
             try:
@@ -2121,8 +2121,8 @@ def obsidian_rebuild_citations(
     # M3: hydrate S2_API_KEY from config.toml before importing search modules,
     # which capture the env var at import time into _DEFAULT_S2_API_KEY.
     _maybe_set_s2_key(_load_secrets())
-    from scripts.obsidian_tools.relink import relink_note
-    from scripts.search.citation_graph import build_citation_graph
+    from lit_monitor.obsidian_tools.relink import relink_note
+    from lit_monitor.search.citation_graph import build_citation_graph
 
     try:
         config = _make_config()
@@ -2144,7 +2144,7 @@ def obsidian_rebuild_citations(
     # rebuild-citations, so the mode comes purely from config (no explicit
     # user request → implicit fallback to vector when the [graph] extra is
     # missing, logged at INFO inside safe_graph_db).
-    from scripts.graph import safe_graph_db as _safe_graph_db
+    from lit_monitor.graph import safe_graph_db as _safe_graph_db
     _effective_rag = getattr(
         getattr(config, "retrieval", None), "default_mode", "vector"
     ) or "vector"
@@ -2213,7 +2213,7 @@ def _rebuild_citations_body(
     if scope == "doi":
         if not doi:
             raise click.UsageError("--doi is required when --scope doi.")
-        from scripts.obsidian_tools.re_extract import re_extract
+        from lit_monitor.obsidian_tools.re_extract import re_extract
         llm = _make_llm(config, mode="brain_build")
         click.echo(f"Re-extracting complex phase for {doi}…")
         re_extract(
@@ -2264,7 +2264,7 @@ def _rebuild_citations_body(
 
     # G5: mirror resolved citation_edges into Kuzu after E1 work, unless opted out.
     if not no_graph:
-        from scripts.graph.import_citations import mirror_citations, safe_graph_db
+        from lit_monitor.graph.import_citations import mirror_citations, safe_graph_db
         graph_db = safe_graph_db()
         if graph_db is not None:
             try:
@@ -2341,7 +2341,7 @@ def obsidian_sync(
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
 
-    from scripts.obsidian_tools.sync import sync_notes
+    from lit_monitor.obsidian_tools.sync import sync_notes
 
     result = sync_notes(state_db, config, doi=doi, since=since, limit=limit)
     click.echo(
@@ -2673,9 +2673,9 @@ def graph_backfill(
 
     from rich.progress import Progress
 
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
-    from scripts.graph import safe_graph_db
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.graph import safe_graph_db
 
     # --ner-with-llm implies --ner.
     if ner_with_llm:
@@ -2704,7 +2704,7 @@ def graph_backfill(
     try:
         if ner:
             # N5: NER-augmented backfill path.
-            from scripts.graph.backfill import backfill_ner  # noqa: PLC0415
+            from lit_monitor.graph.backfill import backfill_ner  # noqa: PLC0415
 
             with Progress() as progress:
                 task = progress.add_task("NER backfilling...", total=None)
@@ -2731,7 +2731,7 @@ def graph_backfill(
 
         elif do_relationships:
             # R5: relationship backfill path.
-            from scripts.graph.backfill import backfill_relationships  # noqa: PLC0415
+            from lit_monitor.graph.backfill import backfill_relationships  # noqa: PLC0415
 
             with Progress() as progress:
                 task = progress.add_task("Relationship backfilling...", total=None)
@@ -2758,7 +2758,7 @@ def graph_backfill(
 
         else:
             # G10: schema-only backfill path (unchanged).
-            from scripts.graph.backfill import backfill_papers  # noqa: PLC0415
+            from lit_monitor.graph.backfill import backfill_papers  # noqa: PLC0415
 
             filter_doi = doi if not all_papers else None
 
@@ -2796,10 +2796,10 @@ def graph_backfill(
 @click.confirmation_option(prompt="This is destructive — continue?")
 def graph_rebuild(all_data: bool, aliases_only: bool) -> None:
     """Rebuild the knowledge graph (destructive)."""
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
-    from scripts.graph import safe_graph_db
-    from scripts.graph.backfill import rebuild_aliases_only, rebuild_all
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.graph import safe_graph_db
+    from lit_monitor.graph.backfill import rebuild_aliases_only, rebuild_all
 
     if not (all_data or aliases_only):
         raise click.UsageError("Must specify --all or --aliases-only.")
@@ -2840,8 +2840,8 @@ def graph_propose_aliases(min_ratio: int, out: str, with_llm: bool) -> None:
     """Propose new aliases via fuzzy clustering (optional --with-llm consensus)."""
     from pathlib import Path
 
-    from scripts.graph import safe_graph_db
-    from scripts.graph.propose_aliases import propose_aliases, write_proposal_file
+    from lit_monitor.graph import safe_graph_db
+    from lit_monitor.graph.propose_aliases import propose_aliases, write_proposal_file
 
     graph_db = safe_graph_db()
     if graph_db is None:
@@ -2889,7 +2889,7 @@ def graph_status(by_source: bool) -> None:
     from rich.table import Table
 
     try:
-        from scripts.graph import safe_graph_db
+        from lit_monitor.graph import safe_graph_db
     except ImportError:
         click.echo("[graph] extra not installed.")
         click.echo("Install with: uv sync --extra graph")
@@ -3035,15 +3035,15 @@ def ask_command(
         lit-monitor ask how many papers are from 2023
     """
     # Lazy imports — keeps CLI startup fast for non-ask commands.
-    from scripts.core.config import get_config
-    from scripts.graph import safe_graph_db
-    from scripts.graph.ask import (
+    from lit_monitor.core.config import get_config
+    from lit_monitor.graph import safe_graph_db
+    from lit_monitor.graph.ask import (
         execute_cypher,
         generate_cypher,
         render_rows,
         summarize_results,
     )
-    from scripts.graph.schema_describer import describe_schema
+    from lit_monitor.graph.schema_describer import describe_schema
 
     question = " ".join(question_words).strip()
     if not question:
@@ -3184,7 +3184,7 @@ def mcp_serve_command() -> None:
     # Lazy import — only triggered when running `mcp serve`, so CLI startup
     # for all other commands is unaffected by the [mcp] extra being present
     # or absent.
-    from scripts.mcp.graph_server import main as server_main  # noqa: PLC0415
+    from lit_monitor.mcp.graph_server import main as server_main  # noqa: PLC0415
 
     try:
         server_main()
@@ -3235,9 +3235,9 @@ def chunks_backfill_cmd(
         )
         raise click.exceptions.Exit(2)
 
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
-    from scripts.pipelines.chunks_backfill import backfill_chunks
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.pipelines.chunks_backfill import backfill_chunks
 
     config = get_config()
     state_db = StateDB(config.state_db.path)
@@ -3280,9 +3280,9 @@ def discovery_view(run_selector: str, run_id: int | None, top_k: int) -> None:
     from rich.console import Console
     from rich.table import Table
 
-    from scripts.api.queries import get_discovery_run, get_discovery_run_papers
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
+    from lit_monitor.api.queries import get_discovery_run, get_discovery_run_papers
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
 
     cfg = get_config()
     db = StateDB(Path(cfg.state_db.path).expanduser())
@@ -3357,10 +3357,10 @@ def discovery_export_md(
     """Export a discovery run as a Markdown digest file (P7)."""
     from pathlib import Path
 
-    from scripts.api.queries import get_discovery_run, get_discovery_run_papers
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
-    from scripts.output.digest_renderer import render_digest
+    from lit_monitor.api.queries import get_discovery_run, get_discovery_run_papers
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.output.digest_renderer import render_digest
 
     cfg = get_config()
     db = StateDB(Path(cfg.state_db.path).expanduser())
@@ -3404,8 +3404,8 @@ def embeddings_status_cmd() -> None:
     Shows: collection name, provider, model, dimension, creation date,
     and whether it is the currently active collection.
     """
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
 
     cfg = get_config()
     db = StateDB(Path(cfg.state_db.path).expanduser())
@@ -3484,7 +3484,7 @@ def embeddings_switch_cmd(
         lit-monitor embeddings switch --provider ollama \\
             --model nomic-embed-text --confirm
     """
-    from scripts.pipelines.embeddings_migration import switch_provider
+    from lit_monitor.pipelines.embeddings_migration import switch_provider
     switch_provider(
         provider=provider,
         model=model,
@@ -3505,7 +3505,7 @@ def embeddings_rebuild_cmd(keep_old: bool, confirm: bool) -> None:
     Use this after manually editing the embedding model in extraction.yaml
     to rebuild the ChromaDB collection with the new model.
     """
-    from scripts.pipelines.embeddings_migration import rebuild_active
+    from lit_monitor.pipelines.embeddings_migration import rebuild_active
     rebuild_active(keep_old=keep_old, confirm=confirm)
 
 
@@ -3548,9 +3548,9 @@ def domain_analyze_cmd() -> None:
 
     from rich.console import Console
 
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
-    from scripts.domain.extract import analyze_domain
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.domain.extract import analyze_domain
 
     text = _load_domain_text()
     if text is None:
@@ -3592,8 +3592,8 @@ def domain_view_cmd() -> None:
     from rich.console import Console
     from rich.table import Table
 
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
 
     cfg = get_config()
     db = StateDB(Path(cfg.state_db.path).expanduser())
@@ -3634,8 +3634,8 @@ def domain_clear_cmd() -> None:
     """Wipe the domain extraction table — useful before re-analysis."""
     from pathlib import Path
 
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
 
     cfg = get_config()
     db = StateDB(Path(cfg.state_db.path).expanduser())
@@ -3668,9 +3668,9 @@ def cluster_recompute_cmd(ctx: click.Context, threshold: int | None) -> None:
     """
     from pathlib import Path
 
-    from scripts.clustering.recompute import recompute_clusters
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
+    from lit_monitor.clustering.recompute import recompute_clusters
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
 
     cfg = get_config()
     db = StateDB(Path(cfg.state_db.path).expanduser())
@@ -3706,8 +3706,8 @@ def cluster_view_cmd(ctx: click.Context) -> None:
     from rich.console import Console
     from rich.table import Table
 
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
 
     cfg = get_config()
     db = StateDB(Path(cfg.state_db.path).expanduser())
@@ -3754,10 +3754,10 @@ def cluster_assign_cmd(ctx: click.Context) -> None:
 
     import numpy as np
 
-    from scripts.clustering.assign import assign_papers_to_clusters
-    from scripts.clustering.kmeans import Cluster
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
+    from lit_monitor.clustering.assign import assign_papers_to_clusters
+    from lit_monitor.clustering.kmeans import Cluster
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
 
     cfg = get_config()
     db = StateDB(Path(cfg.state_db.path).expanduser())
@@ -3810,9 +3810,9 @@ def cluster_writeback_tags_cmd(ctx: click.Context, dry_run: bool) -> None:
     """
     from pathlib import Path
 
-    from scripts.clustering.write_back import push_tags_to_zotero
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
+    from lit_monitor.clustering.write_back import push_tags_to_zotero
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
 
     cfg = get_config()
     db = StateDB(Path(cfg.state_db.path).expanduser())
@@ -3859,9 +3859,9 @@ def cluster_writeback_collections_cmd(
     """
     from pathlib import Path
 
-    from scripts.clustering.write_back import push_collections_to_zotero
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
+    from lit_monitor.clustering.write_back import push_collections_to_zotero
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
 
     cfg = get_config()
     db = StateDB(Path(cfg.state_db.path).expanduser())
@@ -3909,9 +3909,9 @@ def trending_suggest_cmd() -> None:
     """
     from pathlib import Path
 
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
-    from scripts.graph.trending import find_trending_concepts
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.graph.trending import find_trending_concepts
 
     cfg = get_config()
     if not cfg.trending_concepts.enabled:
@@ -3923,7 +3923,7 @@ def trending_suggest_cmd() -> None:
 
     db = StateDB(Path(cfg.state_db.path).expanduser())
     try:
-        from scripts.graph.db import GraphDB
+        from lit_monitor.graph.db import GraphDB
 
         graph_path = Path(cfg.retrieval.graph_db.persist_dir).expanduser()
         graph_db = GraphDB(str(graph_path))
@@ -3961,8 +3961,8 @@ def trending_view_cmd() -> None:
     """List all trending-concept suggestions (pending, accepted, dismissed)."""
     from pathlib import Path
 
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
 
     cfg = get_config()
     db = StateDB(Path(cfg.state_db.path).expanduser())
@@ -3988,9 +3988,9 @@ def trending_accept_cmd(suggestion_id: int) -> None:
     """Accept a suggestion (SUGGESTION_ID); add the concept to topics.yaml."""
     from pathlib import Path
 
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
-    from scripts.server.config_io import safe_save_topics
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.server.config_io import safe_save_topics
 
     # Guard config/state-db load with the canonical friendly-error pattern used
     # by sibling main-level commands: a malformed config should exit cleanly
@@ -4028,8 +4028,8 @@ def trending_dismiss_cmd(suggestion_id: int) -> None:
     """Dismiss a suggestion (SUGGESTION_ID); suppresses re-suggestion for the cooldown window."""
     from pathlib import Path
 
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
 
     # Guard config/state-db load with the canonical friendly-error pattern used
     # by sibling main-level commands: a malformed config should exit cleanly
@@ -4073,12 +4073,12 @@ def topics_expansions_suggest_cmd(topic_name: str, top_k: int) -> None:
     """Suggest top-K co-occurring entities for TOPIC_NAME's primary entity."""
     from pathlib import Path
 
-    from scripts.core.config import get_config
-    from scripts.graph.query_expansion import suggest_expansions
+    from lit_monitor.core.config import get_config
+    from lit_monitor.graph.query_expansion import suggest_expansions
 
     cfg = get_config()
     try:
-        from scripts.graph.db import GraphDB
+        from lit_monitor.graph.db import GraphDB
 
         graph_path = Path(cfg.retrieval.graph_db.persist_dir).expanduser()
         graph_db = GraphDB(str(graph_path))
@@ -4137,7 +4137,7 @@ def learning_recompute_cmd(ctx: click.Context) -> None:
 
     import numpy as np
 
-    from scripts.learning.rocchio import (
+    from lit_monitor.learning.rocchio import (
         COLD_START_FLOOR,
         build_interest_inputs,
         compute_interest_vector,
@@ -4226,7 +4226,7 @@ def learning_view_cmd(ctx: click.Context, top_k: int, per_cluster: bool) -> None
     _setup_logging("learning", verbose=ctx.obj.get("verbose", False))
     import numpy as np
 
-    from scripts.learning.rocchio import COLD_START_FLOOR, soft_gate
+    from lit_monitor.learning.rocchio import COLD_START_FLOOR, soft_gate
 
     try:
         config = _make_config()
@@ -4272,7 +4272,7 @@ def learning_view_cmd(ctx: click.Context, top_k: int, per_cluster: bool) -> None
         # CU-1: ranking computation is shared with the /insights page via
         # rank_papers_by_interest; the CLI keeps its own cosmetic rendering
         # (signed +.3f cosine, 60-char title truncation) at the render site.
-        from scripts.learning.ranking import rank_papers_by_interest
+        from lit_monitor.learning.ranking import rank_papers_by_interest
 
         i_norm = float(np.linalg.norm(interest_vec))
         if i_norm < 1e-9 or not np.isfinite(i_norm):
@@ -4307,7 +4307,7 @@ def _learning_view_per_cluster(config, state_db) -> None:  # noqa: ANN001 — du
     assignments. Clusters are listed sorted by weight ascending (most-atrophied
     first) so an un-engaged theme is easy to spot.
     """
-    from scripts.clustering.atrophy import (
+    from lit_monitor.clustering.atrophy import (
         compute_cluster_feedback_weights_from_db,
     )
 

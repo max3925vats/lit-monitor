@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts.output.embeddings import EmbeddingsDB
+from lit_monitor.output.embeddings import EmbeddingsDB
 
 
 def _fake_urlopen_success(captured: list):

@@ -4,9 +4,9 @@ from __future__ import annotations
 from datetime import datetime
 from unittest.mock import MagicMock
 
-from scripts.core.state_db import StateDB
-from scripts.graph import GraphDB
-from scripts.graph.backfill import (
+from lit_monitor.core.state_db import StateDB
+from lit_monitor.graph import GraphDB
+from lit_monitor.graph.backfill import (
     backfill_papers,
     rebuild_aliases_only,
     rebuild_all,
@@ -160,7 +160,7 @@ class TestRebuildAll:
         """
         from unittest.mock import patch
 
-        from scripts.graph.relationship_validator import VALID_PREDICATES
+        from lit_monitor.graph.relationship_validator import VALID_PREDICATES
 
         state_db = MagicMock()
         graph_db = MagicMock()
@@ -215,7 +215,7 @@ class TestBackfillNer:
 
     def _fake_edge(self, paper_id: str):
         """Return a minimal MentionEdge for mocking build_mention_edges."""
-        from scripts.graph.entity_extractor import MentionEdge
+        from lit_monitor.graph.entity_extractor import MentionEdge
         return MentionEdge(
             paper_id=paper_id,
             entity_key="test_entity",
@@ -230,7 +230,7 @@ class TestBackfillNer:
 
     def test_backfill_ner_processes_unprocessed_papers(self, tmp_path, monkeypatch):
         """N5: backfill_ner runs pipeline on papers where ner_processed_at IS NULL."""
-        from scripts.graph.backfill import backfill_ner
+        from lit_monitor.graph.backfill import backfill_ner
 
         state_db = StateDB(tmp_path / "state.db")
         for doi in ("10.0/a", "10.0/b"):
@@ -251,7 +251,7 @@ class TestBackfillNer:
 
     def test_backfill_ner_idempotent_on_rerun(self, tmp_path, monkeypatch):
         """N5: re-running backfill_ner after success is a no-op."""
-        from scripts.graph.backfill import backfill_ner
+        from lit_monitor.graph.backfill import backfill_ner
 
         state_db = StateDB(tmp_path / "state.db")
         for doi in ("10.0/a", "10.0/b"):
@@ -269,7 +269,7 @@ class TestBackfillNer:
 
     def test_backfill_ner_respects_limit(self, tmp_path, monkeypatch):
         """N5: limit= caps the number of papers processed."""
-        from scripts.graph.backfill import backfill_ner
+        from lit_monitor.graph.backfill import backfill_ner
 
         state_db = StateDB(tmp_path / "state.db")
         for doi in ("10.0/a", "10.0/b", "10.0/c"):
@@ -283,7 +283,7 @@ class TestBackfillNer:
 
     def test_backfill_ner_respects_since_filter(self, tmp_path, monkeypatch):
         """N5: since= filters candidates by papers.last_updated."""
-        from scripts.graph.backfill import backfill_ner
+        from lit_monitor.graph.backfill import backfill_ner
 
         state_db = StateDB(tmp_path / "state.db")
         state_db.upsert_paper({"doi": "10.0/old", "title": "O", "year": 2020, "source_type": "zotero"})
@@ -305,7 +305,7 @@ class TestBackfillNer:
 
     def test_backfill_ner_with_llm_flag_passed_through(self, tmp_path, monkeypatch):
         """N5: with_llm=True sets use_cloud_llm=True in build_mention_edges."""
-        from scripts.graph.backfill import backfill_ner
+        from lit_monitor.graph.backfill import backfill_ner
 
         state_db = StateDB(tmp_path / "state.db")
         state_db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
@@ -324,7 +324,7 @@ class TestBackfillNer:
 
     def test_backfill_ner_without_llm_flag(self, tmp_path, monkeypatch):
         """N5: with_llm=False (default) sets use_cloud_llm=False."""
-        from scripts.graph.backfill import backfill_ner
+        from lit_monitor.graph.backfill import backfill_ner
 
         state_db = StateDB(tmp_path / "state.db")
         state_db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
@@ -343,7 +343,7 @@ class TestBackfillNer:
 
     def test_backfill_ner_per_paper_failure_counted(self, tmp_path, monkeypatch):
         """N5: per-paper failures are counted + skipped, not raised."""
-        from scripts.graph.backfill import backfill_ner
+        from lit_monitor.graph.backfill import backfill_ner
 
         state_db = StateDB(tmp_path / "state.db")
         for doi in ("10.0/a", "10.0/b"):
@@ -366,7 +366,7 @@ class TestBackfillNer:
 
     def test_backfill_ner_progress_callback_called(self, tmp_path, monkeypatch):
         """N5: progress_callback receives (doi, done, total) for each paper."""
-        from scripts.graph.backfill import backfill_ner
+        from lit_monitor.graph.backfill import backfill_ner
 
         state_db = StateDB(tmp_path / "state.db")
         for doi in ("10.0/a", "10.0/b"):
@@ -401,7 +401,7 @@ class TestBackfillRelationships:
 
     def test_processes_unprocessed_papers(self, tmp_path, monkeypatch):
         """R5: backfill_relationships runs over papers where rel_processed_at IS NULL."""
-        from scripts.graph.backfill import backfill_relationships
+        from lit_monitor.graph.backfill import backfill_relationships
 
         state_db, graph_db = self._setup(tmp_path)
 
@@ -418,7 +418,7 @@ class TestBackfillRelationships:
 
     def test_idempotent_on_rerun(self, tmp_path, monkeypatch):
         """R5: re-running after rel_processed_at stamped is a no-op."""
-        from scripts.graph.backfill import backfill_relationships
+        from lit_monitor.graph.backfill import backfill_relationships
 
         state_db, graph_db = self._setup(tmp_path)
 
@@ -438,7 +438,7 @@ class TestBackfillRelationships:
 
     def test_respects_limit(self, tmp_path, monkeypatch):
         """R5: limit= caps the number of papers processed."""
-        from scripts.graph.backfill import backfill_relationships
+        from lit_monitor.graph.backfill import backfill_relationships
 
         state_db, graph_db = self._setup(tmp_path, dois=("10.0/a", "10.0/b", "10.0/c"))
 
@@ -454,7 +454,7 @@ class TestBackfillRelationships:
 
     def test_with_llm_flag_propagates_via_cfg_shim(self, tmp_path, monkeypatch):
         """R5: with_llm=True reaches maybe_extract_llm_relationships via the cfg shim."""
-        from scripts.graph.backfill import backfill_relationships
+        from lit_monitor.graph.backfill import backfill_relationships
 
         state_db, graph_db = self._setup(tmp_path, dois=("10.0/a",))
 
@@ -480,7 +480,7 @@ class TestBackfillRelationships:
 
     def test_with_llm_false_propagates_via_cfg_shim(self, tmp_path, monkeypatch):
         """R5: with_llm=False (default) sets cfg.graph.relationships.llm_enabled=False."""
-        from scripts.graph.backfill import backfill_relationships
+        from lit_monitor.graph.backfill import backfill_relationships
 
         state_db, graph_db = self._setup(tmp_path, dois=("10.0/a",))
 
@@ -505,7 +505,7 @@ class TestBackfillRelationships:
 
     def test_per_paper_failure_counted(self, tmp_path, monkeypatch):
         """R5: per-paper failures are counted + skipped, not raised."""
-        from scripts.graph.backfill import backfill_relationships
+        from lit_monitor.graph.backfill import backfill_relationships
 
         state_db, graph_db = self._setup(tmp_path)
 
@@ -530,7 +530,7 @@ class TestBackfillRelationships:
 
     def test_entities_not_passed_to_graph_db(self, tmp_path, monkeypatch):
         """R5: entities=[] in graph_db.add_paper — R5 never touches MENTIONS edges."""
-        from scripts.graph.backfill import backfill_relationships
+        from lit_monitor.graph.backfill import backfill_relationships
 
         state_db, graph_db = self._setup(tmp_path, dois=("10.0/a",))
         captured_entities: list[list] = []
@@ -560,7 +560,7 @@ class TestBackfillRelationships:
 
     def test_progress_callback_called(self, tmp_path, monkeypatch):
         """R5: progress_callback receives (doi, done, total) for each paper."""
-        from scripts.graph.backfill import backfill_relationships
+        from lit_monitor.graph.backfill import backfill_relationships
 
         state_db, graph_db = self._setup(tmp_path)
 

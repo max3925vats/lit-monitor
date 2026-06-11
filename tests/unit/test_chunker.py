@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.core.chunker import _split_into_sections, chunk_markdown
+from lit_monitor.core.chunker import _split_into_sections, chunk_markdown
 
 # ---------------------------------------------------------------------------
 # Basic behaviour
@@ -241,7 +241,7 @@ def test_giant_single_sentence_is_hard_sliced():
 @pytest.mark.unit
 def test_chunk_offsets_correct_with_repeated_boilerplate():
     """A9 — repeated boilerplate must not confuse chunk offset tracking."""
-    from scripts.core.chunker import chunk_markdown
+    from lit_monitor.core.chunker import chunk_markdown
     boilerplate = "These authors contributed equally to this work.\n\n"
     text = (
         "## Section A\n\n"
@@ -269,7 +269,7 @@ def test_references_absent_when_strip_end_matter_applied_first():
     Verifies that the pipeline pattern strip_end_matter(text) -> chunk_markdown()
     keeps bibliography text out of the chunks collection.
     """
-    from scripts.core.markdown_processor import strip_end_matter
+    from lit_monitor.core.markdown_processor import strip_end_matter
 
     body = "word " * 300  # ~1500 chars of real content
     refs = "\n\n## References\n\n1. Smith J et al. (2020) A great paper. J Sci 10:1.\n2. Doe A. (2019) Another paper.\n"
@@ -305,7 +305,7 @@ def _sentence_texts(paragraph: str, max_chars: int) -> list[str]:
     offsets are document-relative, so we slice the original paragraph to
     recover each fragment's exact text.
     """
-    from scripts.core.chunker import _Span, _split_on_sentences
+    from lit_monitor.core.chunker import _Span, _split_on_sentences
 
     para = _Span(text=paragraph, char_start=0, char_end=len(paragraph))
     spans = _split_on_sentences(para, max_chars=max_chars)

@@ -74,8 +74,8 @@ def analyze_domain(
     # ---- Build LLM client if caller didn't supply one ------------------
     if llm is None:
         try:
-            from scripts.core.config import get_config
-            from scripts.llm.llm_client import get_client
+            from lit_monitor.core.config import get_config
+            from lit_monitor.llm.llm_client import get_client
 
             cfg = cfg if cfg is not None else get_config()
             llm = get_client(cfg, mode="ingestion")
@@ -85,8 +85,8 @@ def analyze_domain(
 
     # ---- Load + render prompt ------------------------------------------
     try:
-        from scripts.llm.prompt_registry import load_prompt
-        from scripts.llm.prompt_safety import sanitize_for_prompt
+        from lit_monitor.llm.prompt_registry import load_prompt
+        from lit_monitor.llm.prompt_safety import sanitize_for_prompt
 
         prompt = load_prompt("domain_extraction")
         # C1: the domain_focus paragraph is free-text user config; scrub role
@@ -112,7 +112,7 @@ def analyze_domain(
         return None
 
     # ---- Strip fences + thinking blocks + parse JSON --------------------
-    from scripts.llm.llm_client import strip_markdown_fences
+    from lit_monitor.llm.llm_client import strip_markdown_fences
 
     cleaned = strip_markdown_fences(raw)
 

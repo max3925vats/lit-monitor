@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.pipelines.brain_build import (
+from lit_monitor.pipelines.brain_build import (
     _paper_embed_text,
     _parse_year,
     run_brain_build,
@@ -38,7 +38,7 @@ def _make_config(tmp_path: Path) -> SimpleNamespace:
         extraction_model="gemma4:e4b",
     )
 def _make_state_db(tmp_path: Path):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     return StateDB(tmp_path / "state.db")
 def _make_llm() -> MagicMock:
     llm = MagicMock()
@@ -592,8 +592,8 @@ def test_rate_limit_abort_after_three_consecutive_429s(tmp_path):
     uncatchable in API/web contexts). The failing paper is NOT marked as
     'error' — --resume should retry it.
     """
-    from scripts.llm.llm_client import RateLimitError
-    from scripts.pipelines.brain_build import RateLimitExhausted
+    from lit_monitor.llm.llm_client import RateLimitError
+    from lit_monitor.pipelines.brain_build import RateLimitExhausted
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
     embeddings_db = MagicMock()

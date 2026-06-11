@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from scripts.core import http_client
+from lit_monitor.core import http_client
 
 
 @pytest.fixture(autouse=True)

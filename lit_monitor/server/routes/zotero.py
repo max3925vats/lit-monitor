@@ -14,7 +14,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
-from scripts.server.config_io import load_secrets
+from lit_monitor.server.config_io import load_secrets
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/zotero", tags=["zotero"])
@@ -42,7 +42,7 @@ def _build_client():
     library_type = "user"
     local_storage_path = "~/Zotero/storage"
     try:
-        from scripts.server.runtime import get_runtime
+        from lit_monitor.server.runtime import get_runtime
 
         cfg = get_runtime().config
         library_type = cfg.zotero.library_type or library_type
@@ -51,7 +51,7 @@ def _build_client():
         # No paths.yaml yet, or schema mismatch — fine, use defaults.
         logger.debug("zotero route: using default config (runtime.config unavailable: %s)", exc)
 
-    from scripts.core.zotero_client import ZoteroClient
+    from lit_monitor.core.zotero_client import ZoteroClient
 
     return ZoteroClient(
         library_id=str(library_id),

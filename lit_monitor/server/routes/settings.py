@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from scripts.server.config_io import (
+from lit_monitor.server.config_io import (
     SettingsValidationError,
     safe_save_settings_section,
 )
@@ -28,14 +28,14 @@ router = APIRouter(tags=["settings"])
 
 def _get_templates():
     """Lazy import to avoid circular dependency at module load."""
-    from scripts.server.app import templates
+    from lit_monitor.server.app import templates
     return templates
 
 
 def _load_extraction_config() -> dict[str, Any]:
     """Return current extraction.yaml content as a dict (best-effort)."""
     try:
-        from scripts.server.config_io import load_config
+        from lit_monitor.server.config_io import load_config
         return load_config("extraction")
     except Exception:
         return {}

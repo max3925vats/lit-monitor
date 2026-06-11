@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts.server import scheduler
+from lit_monitor.server import scheduler
 
 # ---------------------------------------------------------------------------
 # Fixtures

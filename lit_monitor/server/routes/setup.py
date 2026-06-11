@@ -20,11 +20,11 @@ import yaml
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from scripts.core.atomic_write import atomic_write_text
-from scripts.core.path_utils import resolve_path as _resolve_path
-from scripts.server import config_io
-from scripts.server.app import templates
-from scripts.server.config_io import (
+from lit_monitor.core.atomic_write import atomic_write_text
+from lit_monitor.core.path_utils import resolve_path as _resolve_path
+from lit_monitor.server import config_io
+from lit_monitor.server.app import templates
+from lit_monitor.server.config_io import (
     load_config,
     load_secrets,
     safe_save_digest_auto_write,
@@ -32,7 +32,7 @@ from scripts.server.config_io import (
     save_config,
     save_secrets,
 )
-from scripts.server.runtime import get_runtime
+from lit_monitor.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/setup", tags=["setup"])
@@ -419,7 +419,7 @@ def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[st
 @router.get("/", response_class=HTMLResponse)
 def landing(request: Request) -> HTMLResponse:
     """Wizard landing — one status card per step (8 total)."""
-    from scripts.setup.check_configured import check_configured
+    from lit_monitor.setup.check_configured import check_configured
 
     checks = check_configured()
     steps = _build_step_descriptors(checks)
@@ -512,7 +512,7 @@ def save_credentials(
 
     # Live test using the F2.3 /api/zotero/test helper directly. It never
     # raises — it always returns {ok, message}.
-    from scripts.server.routes.zotero import test as zotero_test
+    from lit_monitor.server.routes.zotero import test as zotero_test
 
     test_result = zotero_test()
 
@@ -653,7 +653,7 @@ def collections_options(request: Request, current: str = "") -> HTMLResponse:
     On 503 (creds missing) or any other failure, falls back to a text
     input + banner telling the user to complete step 1 first.
     """
-    from scripts.server.routes.zotero import collections as zotero_collections
+    from lit_monitor.server.routes.zotero import collections as zotero_collections
 
     names: list[str] = []
     try:
@@ -685,7 +685,7 @@ def collections_options(request: Request, current: str = "") -> HTMLResponse:
 @router.get("/fs-modal", response_class=HTMLResponse)
 def fs_modal(request: Request, path: str) -> HTMLResponse:
     """Render the directory browser modal for a given path."""
-    from scripts.server.routes.fs import ls
+    from lit_monitor.server.routes.fs import ls
 
     try:
         result = ls(path=path)
@@ -1404,10 +1404,10 @@ def save_notify_preference(
 def setup_check(request: Request, name: str) -> HTMLResponse:
     """Return the inline status snippet for one of the four checks."""
     if name == "secrets":
-        from scripts.setup.check_configured import check_configured
+        from lit_monitor.setup.check_configured import check_configured
         results = check_configured()
     elif name == "ollama":
-        from scripts.setup.check_ollama import check_ollama
+        from lit_monitor.setup.check_ollama import check_ollama
         # Pass the configured brain_build model so the ollama check can probe it.
         model = None
         try:
@@ -1417,7 +1417,7 @@ def setup_check(request: Request, name: str) -> HTMLResponse:
             pass
         results = check_ollama(model=model)
     elif name == "zotero":
-        from scripts.setup.check_zotero import check_zotero
+        from lit_monitor.setup.check_zotero import check_zotero
         results = check_zotero()
     elif name == "vault":
         results = _check_vault()

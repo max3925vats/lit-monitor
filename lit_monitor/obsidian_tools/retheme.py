@@ -15,8 +15,8 @@ import logging
 import re
 from pathlib import Path
 
-from scripts.core.atomic_write import atomic_write_text
-from scripts.core.strict_mode import strict_fallback
+from lit_monitor.core.atomic_write import atomic_write_text
+from lit_monitor.core.strict_mode import strict_fallback
 
 logger = logging.getLogger(__name__)
 def retheme(vault_path: str | Path, old_theme: str, new_theme: str) -> dict[str, int]:

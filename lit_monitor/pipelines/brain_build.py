@@ -29,27 +29,27 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
-from scripts.core.doi_resolver import resolve_doi
-from scripts.core.item_router import detect_review, get_route
-from scripts.core.strict_mode import strict_fallback
-from scripts.core.zotero_client import ZoteroClient
-from scripts.graph import safe_graph_db
-from scripts.llm.extraction_schema import all_fields_for_schema
-from scripts.llm.extractor import extract_fields, extract_paper
-from scripts.llm.llm_client import RateLimitError
-from scripts.output.obsidian_writer import write_paper_note
-from scripts.pipelines._ingest import (
+from lit_monitor.core.doi_resolver import resolve_doi
+from lit_monitor.core.item_router import detect_review, get_route
+from lit_monitor.core.strict_mode import strict_fallback
+from lit_monitor.core.zotero_client import ZoteroClient
+from lit_monitor.graph import safe_graph_db
+from lit_monitor.llm.extraction_schema import all_fields_for_schema
+from lit_monitor.llm.extractor import extract_fields, extract_paper
+from lit_monitor.llm.llm_client import RateLimitError
+from lit_monitor.output.obsidian_writer import write_paper_note
+from lit_monitor.pipelines._ingest import (
     build_graph_tuples,
     build_ner_mention_edges,
     index_embeddings_and_mark_phases,
     maybe_extract_llm_relationships,
 )
-from scripts.search.semantic_scholar import enrich_paper
+from lit_monitor.search.semantic_scholar import enrich_paper
 
 # Bundle C: module-level import so tests can patch brain_build.recompute_clusters.
 # Wrapped in try/except so the module loads cleanly even before sklearn is installed.
 try:
-    from scripts.clustering.recompute import recompute_clusters
+    from lit_monitor.clustering.recompute import recompute_clusters
 except Exception:  # pragma: no cover
     recompute_clusters = None  # type: ignore[assignment]
 
@@ -361,7 +361,7 @@ def run_brain_build(
         # M4: append novel discovered_topics to topics.yaml and concepts.yaml.
         if _topics_batch:
             try:
-                from scripts.vocabulary.topic_merger import merge_discovered_topics
+                from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
                 merged = merge_discovered_topics(_topics_batch)
                 if merged:
                     logger.warning(
@@ -567,7 +567,7 @@ def _process_paper(
     })
     # Assign vocabulary themes from Zotero tags (B2).
     # Gracefully returns [] when no vocabulary file exists — no crash.
-    from scripts.vocabulary.normalizer import assign_themes
+    from lit_monitor.vocabulary.normalizer import assign_themes
     themes = assign_themes(keywords)
     # Write Obsidian note
     paper_record = {
@@ -629,8 +629,8 @@ def _process_paper(
     chunks: list = []
     if fulltext:
         try:
-            from scripts.core.chunker import chunk_markdown
-            from scripts.core.markdown_processor import strip_end_matter
+            from lit_monitor.core.chunker import chunk_markdown
+            from lit_monitor.core.markdown_processor import strip_end_matter
             chunks = chunk_markdown(strip_end_matter(fulltext), doi)
         except Exception as exc:
             logger.warning("Chunking failed for %s (non-fatal): %s", doi, exc)

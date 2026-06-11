@@ -58,8 +58,8 @@ def switch_provider(
     """
     import click
 
-    from scripts.core.config import get_config
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.config import get_config
+    from lit_monitor.core.state_db import StateDB
 
     cfg = get_config()
     state_db = StateDB(Path(cfg.state_db.path).expanduser())
@@ -169,7 +169,7 @@ def rebuild_active(*, keep_old: bool, confirm: bool) -> None:
     confirm:
         Required when keep_old=False (destructive).
     """
-    from scripts.core.config import get_config
+    from lit_monitor.core.config import get_config
     cfg = get_config()
 
     active_provider = getattr(cfg.embedding, "provider", "ollama")
@@ -276,7 +276,7 @@ def _rebuild_collection(
     so the old collection remains the active one.  A subsequent re-run will
     restart the rebuild from scratch.
     """
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
 
     # Determine ollama_host from config if the provider is ollama.
     ollama_host = "http://localhost:11434"

@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.server.app import create_app
+from lit_monitor.server.app import create_app
 
 # ---------------------------------------------------------------------------
 # Fixture

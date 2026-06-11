@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from scripts.cli import main
+from lit_monitor.cli import main
 
 
 @pytest.fixture

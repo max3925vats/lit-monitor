@@ -31,7 +31,7 @@ def _get_templates():
     Mirrors the accessor used by corpus.py / ask.py: the ``templates`` object is
     created in app.py, which imports this router inside create_app().
     """
-    from scripts.server.app import templates  # noqa: PLC0415
+    from lit_monitor.server.app import templates  # noqa: PLC0415
 
     return templates
 
@@ -45,8 +45,8 @@ def _last_indexed() -> str | None:
     advisory "last indexed" line, never load-bearing.
     """
     try:
-        from scripts.core.config import get_config  # noqa: PLC0415
-        from scripts.core.state_db import StateDB  # noqa: PLC0415
+        from lit_monitor.core.config import get_config  # noqa: PLC0415
+        from lit_monitor.core.state_db import StateDB  # noqa: PLC0415
 
         state_db = StateDB(get_config().state_db.path)
         with state_db._connect() as conn:
@@ -71,13 +71,13 @@ def _get_graph_overview() -> dict[str, Any]:
     The acquired GraphDB handle is always closed (try/except, mirroring
     ``check_graph``). Module-level so the route tests can patch this single seam.
     """
-    from scripts.api.queries import (  # noqa: PLC0415
+    from lit_monitor.api.queries import (  # noqa: PLC0415
         get_corpus_stats,
         get_entity_counts_by_source,
         get_entity_counts_by_type,
     )
-    from scripts.graph import safe_graph_db  # noqa: PLC0415 — patch point in tests
-    from scripts.setup.check_graph import _indexed_total  # noqa: PLC0415
+    from lit_monitor.graph import safe_graph_db  # noqa: PLC0415 — patch point in tests
+    from lit_monitor.setup.check_graph import _indexed_total  # noqa: PLC0415
 
     db = safe_graph_db()
     if db is None:

@@ -15,7 +15,7 @@ import pytest
 
 
 def _make_state_db(tmp_path: Path):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     return StateDB(tmp_path / "state.db")
 
 
@@ -40,7 +40,7 @@ def _make_config(tmp_path: Path) -> SimpleNamespace:
 @pytest.mark.unit
 def test_retrieve_doi_candidates_vector_returns_embeddings():
     """G9 branch helper: vector mode calls embeddings_db.find_similar_to_text."""
-    from scripts.retrieval.branch import retrieve_doi_candidates
+    from lit_monitor.retrieval.branch import retrieve_doi_candidates
 
     embeddings_db = MagicMock()
     embeddings_db.find_similar_to_text.return_value = [
@@ -66,7 +66,7 @@ def test_retrieve_doi_candidates_vector_returns_embeddings():
 @pytest.mark.unit
 def test_retrieve_doi_candidates_graph_returns_graph_results():
     """G9 branch helper: graph mode calls graph_db.find_similar_papers."""
-    from scripts.retrieval.branch import retrieve_doi_candidates
+    from lit_monitor.retrieval.branch import retrieve_doi_candidates
 
     embeddings_db = MagicMock()
     graph_db = MagicMock()
@@ -88,7 +88,7 @@ def test_retrieve_doi_candidates_graph_returns_graph_results():
 @pytest.mark.unit
 def test_retrieve_doi_candidates_hybrid_fuses_both():
     """G9 branch helper: hybrid mode calls both and returns fused DOIs."""
-    from scripts.retrieval.branch import retrieve_doi_candidates
+    from lit_monitor.retrieval.branch import retrieve_doi_candidates
 
     embeddings_db = MagicMock()
     embeddings_db.find_similar_to_text.return_value = [
@@ -123,7 +123,7 @@ def test_retrieve_doi_candidates_hybrid_fuses_doi_variants_into_one():
     Before AR-4 the legs were fused by RAW string, so the two variants produced
     two distinct fused rows for the same paper.
     """
-    from scripts.retrieval.branch import retrieve_doi_candidates
+    from lit_monitor.retrieval.branch import retrieve_doi_candidates
 
     embeddings_db = MagicMock()
     embeddings_db.find_similar_to_text.return_value = [
@@ -151,7 +151,7 @@ def test_retrieve_doi_candidates_hybrid_fuses_doi_variants_into_one():
 @pytest.mark.unit
 def test_retrieve_doi_candidates_vector_empty_when_no_embeddings_db():
     """G9 branch helper: vector mode returns [] when embeddings_db is None."""
-    from scripts.retrieval.branch import retrieve_doi_candidates
+    from lit_monitor.retrieval.branch import retrieve_doi_candidates
 
     results = retrieve_doi_candidates(
         "vector",
@@ -166,7 +166,7 @@ def test_retrieve_doi_candidates_vector_empty_when_no_embeddings_db():
 @pytest.mark.unit
 def test_retrieve_doi_candidates_graph_empty_when_no_graph_db():
     """G9 branch helper: graph mode returns [] when graph_db is None."""
-    from scripts.retrieval.branch import retrieve_doi_candidates
+    from lit_monitor.retrieval.branch import retrieve_doi_candidates
 
     results = retrieve_doi_candidates(
         "graph",
@@ -181,7 +181,7 @@ def test_retrieve_doi_candidates_graph_empty_when_no_graph_db():
 @pytest.mark.unit
 def test_branch_helper_unknown_mode_raises():
     """G9: retrieve_doi_candidates raises ValueError for unknown rag_mode."""
-    from scripts.retrieval.branch import retrieve_doi_candidates
+    from lit_monitor.retrieval.branch import retrieve_doi_candidates
 
     with pytest.raises(ValueError, match="Unknown rag_mode"):
         retrieve_doi_candidates("turbo", query_text="test")
@@ -190,7 +190,7 @@ def test_branch_helper_unknown_mode_raises():
 @pytest.mark.unit
 def test_retrieve_doi_candidates_graph_failure_returns_empty():
     """G9 branch helper: graph retrieval failure is caught and returns []."""
-    from scripts.retrieval.branch import retrieve_doi_candidates
+    from lit_monitor.retrieval.branch import retrieve_doi_candidates
 
     graph_db = MagicMock()
     graph_db.find_similar_papers.side_effect = RuntimeError("graph DB down")
@@ -211,7 +211,7 @@ def test_retrieve_doi_candidates_graph_failure_returns_empty():
 @pytest.mark.unit
 def test_expand_query_falls_back_to_topic_on_llm_failure():
     """G9: _expand_query returns [topic] and logs WARN when LLM raises."""
-    from scripts.obsidian_tools.synthesize import _expand_query
+    from lit_monitor.obsidian_tools.synthesize import _expand_query
 
     llm = MagicMock()
     llm.complete.side_effect = RuntimeError("LLM offline")
@@ -232,8 +232,8 @@ def test_expand_query_falls_back_to_topic_on_llm_failure():
 @pytest.mark.unit
 def test_expand_query_raises_under_strict():
     """P4.4: in --strict, a query-expansion LLM failure escalates to a raise."""
-    import scripts.core.strict_mode as _sm
-    from scripts.obsidian_tools.synthesize import _expand_query
+    import lit_monitor.core.strict_mode as _sm
+    from lit_monitor.obsidian_tools.synthesize import _expand_query
 
     llm = MagicMock()
     llm.complete.side_effect = RuntimeError("LLM offline")
@@ -250,7 +250,7 @@ def test_expand_query_raises_under_strict():
 @pytest.mark.unit
 def test_expand_query_returns_list_on_success():
     """G9: _expand_query returns LLM-parsed list on success."""
-    from scripts.obsidian_tools.synthesize import _expand_query
+    from lit_monitor.obsidian_tools.synthesize import _expand_query
 
     llm = MagicMock()
     expanded_json = '["membrane fouling", "biofouling", "flux decline"]'
@@ -269,7 +269,7 @@ def test_expand_query_returns_list_on_success():
 @pytest.mark.unit
 def test_expand_query_none_llm_returns_topic():
     """G9: _expand_query returns [topic] when llm is None."""
-    from scripts.obsidian_tools.synthesize import _expand_query
+    from lit_monitor.obsidian_tools.synthesize import _expand_query
 
     result = _expand_query("bioreactor fouling", None)
     assert result == ["bioreactor fouling"]
@@ -278,7 +278,7 @@ def test_expand_query_none_llm_returns_topic():
 @pytest.mark.unit
 def test_expand_query_bad_json_falls_back():
     """G9: _expand_query returns [topic] when LLM returns non-JSON."""
-    from scripts.obsidian_tools.synthesize import _expand_query
+    from lit_monitor.obsidian_tools.synthesize import _expand_query
 
     llm = MagicMock()
     llm.complete.return_value = "Sorry, I cannot help with that."
@@ -323,7 +323,7 @@ def test_config_retrieval_default_mode_defaults_to_vector(tmp_path):
         encoding="utf-8",
     )
 
-    from scripts.core.config import Config
+    from lit_monitor.core.config import Config
     cfg = Config(paths_yaml=paths_yaml, extraction_yaml=extraction_yaml)
     assert cfg.retrieval.default_mode == "vector"
 
@@ -353,7 +353,7 @@ def test_config_retrieval_default_mode_reads_from_yaml(tmp_path):
         encoding="utf-8",
     )
 
-    from scripts.core.config import Config
+    from lit_monitor.core.config import Config
     cfg = Config(paths_yaml=paths_yaml, extraction_yaml=extraction_yaml)
     assert cfg.retrieval.default_mode == "graph"
 
@@ -365,7 +365,7 @@ def test_config_retrieval_default_mode_reads_from_yaml(tmp_path):
 @pytest.mark.unit
 def test_synthesize_graph_mode_calls_expand_query(tmp_path):
     """G9: synthesize with rag_mode='graph' triggers _expand_query."""
-    from scripts.obsidian_tools.synthesize import synthesize
+    from lit_monitor.obsidian_tools.synthesize import synthesize
 
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
@@ -405,7 +405,7 @@ def test_synthesize_graph_mode_calls_expand_query(tmp_path):
 @pytest.mark.unit
 def test_synthesize_vector_mode_unchanged(tmp_path):
     """G9: synthesize with rag_mode='vector' uses the existing chunk/paper path unchanged."""
-    from scripts.obsidian_tools.synthesize import synthesize
+    from lit_monitor.obsidian_tools.synthesize import synthesize
 
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)

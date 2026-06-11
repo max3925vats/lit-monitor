@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from scripts.graph.query_expansion import suggest_expansions
+from lit_monitor.graph.query_expansion import suggest_expansions
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ import tomllib
 
 import requests
 
-from scripts.setup._paths import SECRETS_PATH as _SECRETS_PATH
+from lit_monitor.setup._paths import SECRETS_PATH as _SECRETS_PATH
 
 _ZOTERO_BASE = "https://api.zotero.org"
 _TIMEOUT = 10

@@ -23,10 +23,10 @@ import yaml as _yaml
 # patches like ``patch("scripts.core.config._config_mod._CONFIG_DIR", tmp_path)``
 # affect every read inside the section helpers below. Binding the name
 # at import time would freeze the path before the patch applies.
-from scripts.core import config as _config_mod
-from scripts.core.path_utils import resolve_path as _resolve_path
-from scripts.core.strict_mode import get_strict_override, set_strict
-from scripts.setup.health_check import run_health_check
+from lit_monitor.core import config as _config_mod
+from lit_monitor.core.path_utils import resolve_path as _resolve_path
+from lit_monitor.core.strict_mode import get_strict_override, set_strict
+from lit_monitor.setup.health_check import run_health_check
 
 logger = logging.getLogger(__name__)
 

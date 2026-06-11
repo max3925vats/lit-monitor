@@ -12,8 +12,8 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from scripts.server.app import templates
-from scripts.server.runtime import get_runtime
+from lit_monitor.server.app import templates
+from lit_monitor.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["brain-build"])

@@ -25,7 +25,7 @@ from typing import Literal
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from scripts.core.atomic_write import atomic_write_text
+from lit_monitor.core.atomic_write import atomic_write_text
 
 logger = logging.getLogger(__name__)
 

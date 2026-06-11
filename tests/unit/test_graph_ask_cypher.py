@@ -21,7 +21,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from scripts.graph.ask import generate_cypher
+from lit_monitor.graph.ask import generate_cypher
 
 
 # ---------------------------------------------------------------------------
@@ -264,7 +264,7 @@ class TestPromptRoundTrip:
         assert "{schema}" in raw
 
     def test_prompt_loads_through_registry(self) -> None:
-        from scripts.llm.prompt_registry import _reset_prompt_cache, load_prompt
+        from lit_monitor.llm.prompt_registry import _reset_prompt_cache, load_prompt
 
         _reset_prompt_cache()
         prompt = load_prompt("ask_cypher")
@@ -317,7 +317,7 @@ class TestPromptRoundTrip:
     def test_prompt_required_placeholders_registered(self) -> None:
         """A2: prompt_registry must declare {question} (and {schema}) as
         required for ask_cypher so YAML typos surface at load time."""
-        from scripts.llm.prompt_registry import required_placeholders
+        from lit_monitor.llm.prompt_registry import required_placeholders
 
         req = required_placeholders("ask_cypher")
         # {question} must be in user_template; {schema} may be in system.

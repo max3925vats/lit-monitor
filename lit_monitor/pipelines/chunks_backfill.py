@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from scripts.core.state_db import StateDB
+from lit_monitor.core.state_db import StateDB
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def backfill_chunks(
     dict[str, int]
         ``{processed, succeeded, failed}`` counts.
     """
-    from scripts.core.chunker import chunk_markdown
+    from lit_monitor.core.chunker import chunk_markdown
 
     # embeddings_indexed=1 means add_paper succeeded (the vector index is current).
     # That is the right gate: we only re-chunk papers whose main embedding

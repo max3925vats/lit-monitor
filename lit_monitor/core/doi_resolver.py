@@ -24,7 +24,7 @@ import os
 
 from habanero import Crossref
 
-from scripts.core.strict_mode import strict_fallback
+from lit_monitor.core.strict_mode import strict_fallback
 
 logger = logging.getLogger(__name__)
 

@@ -37,40 +37,40 @@ def _read_raw(path: Path) -> str:
 
 @pytest.mark.unit
 def test_is_novel_returns_true_for_new_topic():
-    from scripts.vocabulary.topic_merger import _is_novel
+    from lit_monitor.vocabulary.topic_merger import _is_novel
     assert _is_novel("system fouling", ["filtration"], []) is True
 
 
 @pytest.mark.unit
 def test_is_novel_returns_false_for_exact_match():
-    from scripts.vocabulary.topic_merger import _is_novel
+    from lit_monitor.vocabulary.topic_merger import _is_novel
     assert _is_novel("filtration", ["filtration"], []) is False
 
 
 @pytest.mark.unit
 def test_is_novel_returns_false_for_fuzzy_match_above_threshold():
-    from scripts.vocabulary.topic_merger import _is_novel
+    from lit_monitor.vocabulary.topic_merger import _is_novel
     # "diafiltration" vs "diafiltrations" — high ratio, should be not novel
     assert _is_novel("diafiltrations", ["diafiltration"], []) is False
 
 
 @pytest.mark.unit
 def test_is_novel_returns_true_for_dissimilar_topic():
-    from scripts.vocabulary.topic_merger import _is_novel
+    from lit_monitor.vocabulary.topic_merger import _is_novel
     # Completely unrelated topics have low ratio → novel
     assert _is_novel("protein aggregation", ["membrane flux"], []) is True
 
 
 @pytest.mark.unit
 def test_is_novel_checks_already_appended_list():
-    from scripts.vocabulary.topic_merger import _is_novel
+    from lit_monitor.vocabulary.topic_merger import _is_novel
     # Not in existing_names but in already_appended — should NOT be novel
     assert _is_novel("IgG purification", [], ["IgG purification"]) is False
 
 
 @pytest.mark.unit
 def test_is_novel_case_insensitive():
-    from scripts.vocabulary.topic_merger import _is_novel
+    from lit_monitor.vocabulary.topic_merger import _is_novel
     assert _is_novel("Filtration", ["filtration"], []) is False
 
 
@@ -80,7 +80,7 @@ def test_is_novel_case_insensitive():
 
 @pytest.mark.unit
 def test_empty_doi_topics_returns_empty(tmp_path):
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     result = merge_discovered_topics(
         [],
         topics_path=tmp_path / "topics.yaml",
@@ -91,7 +91,7 @@ def test_empty_doi_topics_returns_empty(tmp_path):
 
 @pytest.mark.unit
 def test_novel_topic_returned_in_list(tmp_path):
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     topics_path = tmp_path / "topics.yaml"
     _make_topics_yaml(topics_path, ["filtration"])
     result = merge_discovered_topics(
@@ -104,7 +104,7 @@ def test_novel_topic_returned_in_list(tmp_path):
 
 @pytest.mark.unit
 def test_existing_topic_not_returned(tmp_path):
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     topics_path = tmp_path / "topics.yaml"
     _make_topics_yaml(topics_path, ["filtration"])
     result = merge_discovered_topics(
@@ -121,7 +121,7 @@ def test_existing_topic_not_returned(tmp_path):
 
 @pytest.mark.unit
 def test_novel_topic_appended_to_topics_yaml(tmp_path):
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     topics_path = tmp_path / "topics.yaml"
     _make_topics_yaml(topics_path, ["filtration"])
     merge_discovered_topics(
@@ -135,7 +135,7 @@ def test_novel_topic_appended_to_topics_yaml(tmp_path):
 
 @pytest.mark.unit
 def test_topic_entry_contains_auto_comment(tmp_path):
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     topics_path = tmp_path / "topics.yaml"
     _make_topics_yaml(topics_path, [])
     merge_discovered_topics(
@@ -150,7 +150,7 @@ def test_topic_entry_contains_auto_comment(tmp_path):
 
 @pytest.mark.unit
 def test_missing_topics_yaml_skips_gracefully(tmp_path):
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     # topics_path does not exist — should not raise
     result = merge_discovered_topics(
         [("10.1/doi", ["IgG retention"])],
@@ -166,7 +166,7 @@ def test_missing_topics_yaml_skips_gracefully(tmp_path):
 @pytest.mark.unit
 def test_existing_topics_yaml_not_overwritten(tmp_path):
     """Existing content is preserved after append (raw-text append, no full dump)."""
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     topics_path = tmp_path / "topics.yaml"
     _make_topics_yaml(topics_path, ["filtration"])
     original_content = _read_raw(topics_path)
@@ -185,7 +185,7 @@ def test_existing_topics_yaml_not_overwritten(tmp_path):
 
 @pytest.mark.unit
 def test_novel_topic_appended_to_concepts_yaml(tmp_path):
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     concepts_path = tmp_path / "concepts.yaml"
     _make_concepts_yaml(concepts_path, ["Biologics"])
     merge_discovered_topics(
@@ -204,7 +204,7 @@ def test_concepts_yaml_append_lands_as_sibling_theme(tmp_path):
     theme.  Prior implementation hard-coded 2-space indent and broke when
     existing themes used 0-space indent (the default of yaml.dump).
     """
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     concepts_path = tmp_path / "concepts.yaml"
     _make_concepts_yaml(concepts_path, ["Biologics"])
     merge_discovered_topics(
@@ -244,7 +244,7 @@ def test_topics_append_uses_atomic_write(tmp_path, monkeypatch):
     path. The content assertions in the other tests still guarantee the write
     actually lands.
     """
-    import scripts.vocabulary.topic_merger as tm
+    import lit_monitor.vocabulary.topic_merger as tm
 
     topics_path = tmp_path / "topics.yaml"
     _make_topics_yaml(topics_path, [])
@@ -274,7 +274,7 @@ def test_topics_append_uses_atomic_write(tmp_path, monkeypatch):
 @pytest.mark.unit
 def test_concepts_append_uses_atomic_write(tmp_path, monkeypatch):
     """A3-3: appending to concepts.yaml must also route through atomic_write_text."""
-    import scripts.vocabulary.topic_merger as tm
+    import lit_monitor.vocabulary.topic_merger as tm
 
     concepts_path = tmp_path / "concepts.yaml"
     _make_concepts_yaml(concepts_path, ["Biologics"])
@@ -304,7 +304,7 @@ def test_concepts_append_uses_atomic_write(tmp_path, monkeypatch):
 
 @pytest.mark.unit
 def test_same_topic_from_two_dois_appended_only_once(tmp_path):
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     topics_path = tmp_path / "topics.yaml"
     _make_topics_yaml(topics_path, [])
     result = merge_discovered_topics(
@@ -323,7 +323,7 @@ def test_same_topic_from_two_dois_appended_only_once(tmp_path):
 
 @pytest.mark.unit
 def test_two_distinct_novel_topics_both_appended(tmp_path):
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     topics_path = tmp_path / "topics.yaml"
     _make_topics_yaml(topics_path, [])
     result = merge_discovered_topics(
@@ -340,7 +340,7 @@ def test_two_distinct_novel_topics_both_appended(tmp_path):
 
 @pytest.mark.unit
 def test_empty_topic_strings_ignored(tmp_path):
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     topics_path = tmp_path / "topics.yaml"
     _make_topics_yaml(topics_path, [])
     result = merge_discovered_topics(
@@ -353,7 +353,7 @@ def test_empty_topic_strings_ignored(tmp_path):
 
 @pytest.mark.unit
 def test_empty_topics_list_for_doi_skipped(tmp_path):
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     topics_path = tmp_path / "topics.yaml"
     _make_topics_yaml(topics_path, [])
     result = merge_discovered_topics(
@@ -373,7 +373,7 @@ def test_append_with_trailing_scalar_keys_produces_valid_yaml(tmp_path):
     """N6: auto-added entries must land inside searches: list even when scalar
     keys follow the list (e.g. date_window_days, screen_all).
     """
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     topics_path = tmp_path / "topics.yaml"
     # Reproduce the real-world topics.yaml layout: searches: list followed by
     # top-level scalar keys at the same indent level.
@@ -407,7 +407,7 @@ def test_append_with_trailing_scalar_keys_produces_valid_yaml(tmp_path):
 @pytest.mark.unit
 def test_append_does_not_produce_document_end_marker(tmp_path):
     """N6: auto-added entries must not contain the YAML document-end marker '...'."""
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     topics_path = tmp_path / "topics.yaml"
     _make_topics_yaml(topics_path, [])
     merge_discovered_topics(
@@ -424,7 +424,7 @@ def test_append_does_not_produce_document_end_marker(tmp_path):
 @pytest.mark.unit
 def test_append_with_two_indent_style_produces_valid_yaml(tmp_path):
     """N6: also works when the topics.yaml uses 2-space-indented list items (git HEAD format)."""
-    from scripts.vocabulary.topic_merger import merge_discovered_topics
+    from lit_monitor.vocabulary.topic_merger import merge_discovered_topics
     topics_path = tmp_path / "topics.yaml"
     topics_path.write_text(
         "searches:\n"
@@ -453,8 +453,8 @@ def test_append_with_two_indent_style_produces_valid_yaml(tmp_path):
 @pytest.mark.unit
 def test_all_writes_fail_not_reported_as_appended(tmp_path, monkeypatch):
     """P4.3: when both _append_* raise, the topic is NOT reported as appended."""
-    import scripts.core.strict_mode as _sm
-    import scripts.vocabulary.topic_merger as tm
+    import lit_monitor.core.strict_mode as _sm
+    import lit_monitor.vocabulary.topic_merger as tm
 
     topics_path = tmp_path / "topics.yaml"
     concepts_path = tmp_path / "concepts.yaml"
@@ -480,8 +480,8 @@ def test_all_writes_fail_not_reported_as_appended(tmp_path, monkeypatch):
 @pytest.mark.unit
 def test_all_writes_fail_raises_under_strict(tmp_path, monkeypatch):
     """P4.3: in --strict, an all-writes-fail topic escalates to a raise."""
-    import scripts.core.strict_mode as _sm
-    import scripts.vocabulary.topic_merger as tm
+    import lit_monitor.core.strict_mode as _sm
+    import lit_monitor.vocabulary.topic_merger as tm
 
     topics_path = tmp_path / "topics.yaml"
     concepts_path = tmp_path / "concepts.yaml"

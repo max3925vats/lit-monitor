@@ -19,9 +19,9 @@ from typing import Any
 import tomli_w
 import yaml
 
-from scripts.core.atomic_write import atomic_write_text
-from scripts.core.path_utils import resolve_path as _resolve_path
-from scripts.setup._paths import SECRETS_PATH
+from lit_monitor.core.atomic_write import atomic_write_text
+from lit_monitor.core.path_utils import resolve_path as _resolve_path
+from lit_monitor.setup._paths import SECRETS_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -338,7 +338,7 @@ def _validate_settings_section(section: str, data: dict[str, Any]) -> None:
     """
     from pydantic import ValidationError
 
-    from scripts.core.config_schema import (
+    from lit_monitor.core.config_schema import (
         ClusteringSettings,
         DiscoverySettings,
         EmbeddingSettings,

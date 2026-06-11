@@ -16,10 +16,10 @@ import logging
 
 import numpy as np
 
-from scripts.clustering.assign import assign_papers_to_clusters
-from scripts.clustering.kmeans import Cluster, compute_clusters, map_to_existing_clusters
-from scripts.clustering.naming import name_cluster
-from scripts.core.state_db import NewClusterSpec
+from lit_monitor.clustering.assign import assign_papers_to_clusters
+from lit_monitor.clustering.kmeans import Cluster, compute_clusters, map_to_existing_clusters
+from lit_monitor.clustering.naming import name_cluster
+from lit_monitor.core.state_db import NewClusterSpec
 
 logger = logging.getLogger(__name__)
 

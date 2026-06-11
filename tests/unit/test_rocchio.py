@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pytest
 
-from scripts.learning.rocchio import (
+from lit_monitor.learning.rocchio import (
     COLD_START_FLOOR,
     IMPLICIT_SAVE_WEIGHT,
     SOFT_GATE_K,

@@ -15,8 +15,8 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.server.app import create_app
-from scripts.server.runtime import get_runtime, reset_runtime
+from lit_monitor.server.app import create_app
+from lit_monitor.server.runtime import get_runtime, reset_runtime
 
 
 @pytest.fixture(autouse=True)
@@ -163,7 +163,7 @@ def test_graph_mode_without_extra_refuses_with_warning(client, monkeypatch):
 @pytest.mark.unit
 def test_default_rag_mode_reads_config():
     """_default_rag_mode reads retrieval.default_mode from runtime config."""
-    from scripts.server.routes import discovery as disc
+    from lit_monitor.server.routes import discovery as disc
 
     runtime = get_runtime()
     runtime._config = SimpleNamespace(

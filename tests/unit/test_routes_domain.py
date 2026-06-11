@@ -16,8 +16,8 @@ def client_with_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Test
     runtime whose ``.state_db`` IS the same instance the test seeds — so
     writes via the fixture and reads via the route hit the same connection.
     """
-    from scripts.core.state_db import StateDB
-    from scripts.server.app import create_app
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.server.app import create_app
 
     db_path = tmp_path / "state.db"
     db = StateDB(db_path)
@@ -157,7 +157,7 @@ class TestConfigDirResolution:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from scripts.server import config_io
+        from lit_monitor.server import config_io
 
         # CWD is some OTHER directory with no config/ in it — proves the route
         # does not depend on the process working directory.
@@ -198,7 +198,7 @@ class TestConfigDirResolution:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A3-4: a config dir without the file → 404 (resolution honored)."""
-        from scripts.server import config_io
+        from lit_monitor.server import config_io
 
         other_cwd = tmp_path / "elsewhere2"
         other_cwd.mkdir()

@@ -17,12 +17,12 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from scripts.learning.rocchio import (
+from lit_monitor.learning.rocchio import (
     build_interest_inputs,
     compute_interest_vector,
     soft_gate,
 )
-from scripts.llm.ranker import rank_papers
+from lit_monitor.llm.ranker import rank_papers
 
 # Two orthogonal "taste directions" in a tiny embedding space.
 _LIKED_DIR = np.array([1.0, 0.0, 0.0], dtype=np.float32)       # saved toward this

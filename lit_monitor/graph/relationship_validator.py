@@ -31,7 +31,7 @@ VALID_PREDICATES: frozenset[str] = frozenset(
 )
 
 if TYPE_CHECKING:
-    from scripts.graph.relationship_extractor import RelationshipTuple
+    from lit_monitor.graph.relationship_extractor import RelationshipTuple
 
 
 class RelationshipValidator:

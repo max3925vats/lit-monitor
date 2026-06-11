@@ -26,7 +26,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from scripts.mcp.cypher_guard import CypherSafetyError, guard
+from lit_monitor.mcp.cypher_guard import CypherSafetyError, guard
 
 # ---------------------------------------------------------------------------
 # Helper
@@ -468,8 +468,8 @@ class TestExceptionHierarchy:
 class TestRunCypherIntegration:
     def test_run_cypher_happy_path(self, tmp_path, monkeypatch) -> None:
         """Happy-path: read-only MATCH returns list[dict]."""
-        from scripts.graph import GraphDB
-        from scripts.mcp import tools
+        from lit_monitor.graph import GraphDB
+        from lit_monitor.mcp import tools
 
         db = GraphDB(persist_dir=str(tmp_path / "b3.kuzu"))
         db.add_paper(
@@ -486,7 +486,7 @@ class TestRunCypherIntegration:
 
     def test_run_cypher_safety_raises_value_error(self, monkeypatch) -> None:
         """CypherSafetyError IS-A ValueError — MCP dispatch catches it."""
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
 
         monkeypatch.setattr(tools, "_get_graph_db", lambda: MagicMock())
         with pytest.raises(ValueError):
@@ -494,8 +494,8 @@ class TestRunCypherIntegration:
 
     def test_run_cypher_returns_list_of_dicts(self, tmp_path, monkeypatch) -> None:
         """Multi-row results are list[dict] with correct column names."""
-        from scripts.graph import GraphDB
-        from scripts.mcp import tools
+        from lit_monitor.graph import GraphDB
+        from lit_monitor.mcp import tools
 
         db = GraphDB(persist_dir=str(tmp_path / "b3b.kuzu"))
         db.add_paper(
@@ -522,8 +522,8 @@ class TestRunCypherIntegration:
         self, tmp_path, monkeypatch
     ) -> None:
         """When no LIMIT is provided, LIMIT 100 is injected before execution."""
-        from scripts.graph import GraphDB
-        from scripts.mcp import tools
+        from lit_monitor.graph import GraphDB
+        from lit_monitor.mcp import tools
 
         db = GraphDB(persist_dir=str(tmp_path / "b3c.kuzu"))
         # Only one paper — even without LIMIT it should complete fine.
@@ -541,8 +541,8 @@ class TestRunCypherIntegration:
 
     def test_run_cypher_custom_limit(self, tmp_path, monkeypatch) -> None:
         """Custom limit parameter is forwarded to guard."""
-        from scripts.graph import GraphDB
-        from scripts.mcp import tools
+        from lit_monitor.graph import GraphDB
+        from lit_monitor.mcp import tools
 
         db = GraphDB(persist_dir=str(tmp_path / "b3d.kuzu"))
         db.add_paper(
@@ -559,7 +559,7 @@ class TestRunCypherIntegration:
         self, monkeypatch
     ) -> None:
         """When graph backend is None, RuntimeError is raised."""
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
 
         monkeypatch.setattr(tools, "_get_graph_db", lambda: None)
         with pytest.raises(RuntimeError, match="Graph backend unavailable"):

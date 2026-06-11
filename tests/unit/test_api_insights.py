@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from scripts.api.insights import get_cluster_weights, get_learning_state
+from lit_monitor.api.insights import get_cluster_weights, get_learning_state
 
 
 # --------------------------------------------------------------------------- #
@@ -112,7 +112,7 @@ def test_get_learning_state_absent() -> None:
 # get_cluster_weights
 # --------------------------------------------------------------------------- #
 def test_get_cluster_weights_sorted(monkeypatch) -> None:
-    import scripts.api.insights as insights_mod
+    import lit_monitor.api.insights as insights_mod
 
     monkeypatch.setattr(
         insights_mod,
@@ -133,7 +133,7 @@ def test_get_cluster_weights_sorted(monkeypatch) -> None:
 
 
 def test_get_cluster_weights_empty(monkeypatch) -> None:
-    import scripts.api.insights as insights_mod
+    import lit_monitor.api.insights as insights_mod
 
     monkeypatch.setattr(
         insights_mod,

@@ -17,8 +17,8 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
-from scripts.api import insights as insights_api
-from scripts.server.runtime import get_runtime
+from lit_monitor.api import insights as insights_api
+from lit_monitor.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def _safe_db() -> Any | None:
 
 def _get_templates():
     """Lazy import to avoid circular dependency at module load."""
-    from scripts.server.app import templates
+    from lit_monitor.server.app import templates
     return templates
 
 

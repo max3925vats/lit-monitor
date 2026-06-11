@@ -30,7 +30,7 @@ import numpy as np
 os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
 import chromadb
 
-from scripts.core.strict_mode import strict_fallback
+from lit_monitor.core.strict_mode import strict_fallback
 
 logger = logging.getLogger(__name__)
 _COLLECTION_NAME = "lit_monitor_v1"
@@ -150,7 +150,7 @@ class EmbeddingsDB:
         """
         if state_db_path is not None:
             try:
-                from scripts.core.state_db import StateDB
+                from lit_monitor.core.state_db import StateDB
                 sdb = StateDB(state_db_path)
                 prov = sdb.get_embedding_provenance(collection_name)
                 if prov is not None:
@@ -595,7 +595,7 @@ class EmbeddingsDB:
             raw: list[float] = self._embed(text)
             return np.array(raw, dtype=np.float32)
         else:
-            from scripts.llm.embedding_client import embed_via_litellm
+            from lit_monitor.llm.embedding_client import embed_via_litellm
             model = getattr(self, "model", self._DEFAULT_LITELLM_MODEL)
             return embed_via_litellm(text, model=model)
 
@@ -647,7 +647,7 @@ class EmbeddingsDB:
             except _EmbedContextLengthError as ctx_err:
                 # In strict mode, raise immediately on the first context-length error
                 # rather than silently truncating the embedding input.
-                from scripts.core.strict_mode import is_strict
+                from lit_monitor.core.strict_mode import is_strict
                 if is_strict():
                     raise RuntimeError(
                         f"Ollama /api/embed: input {len(current)} chars exceeded "
@@ -754,7 +754,7 @@ def _apply_reranker(
 ) -> list[dict[str, Any]]:
     """Rerank candidates with the cross-encoder and return top_k results."""
     try:
-        from scripts.output.reranker import get_reranker
+        from lit_monitor.output.reranker import get_reranker
         model_name = getattr(reranker_config, "model", "mixedbread-ai/mxbai-rerank-large-v2")
         device = getattr(reranker_config, "device", None)
         reranker = get_reranker(model_name=model_name, device=device)

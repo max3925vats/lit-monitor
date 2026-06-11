@@ -15,7 +15,7 @@ from pathlib import Path
 
 from rapidfuzz import fuzz
 
-from scripts.core.strict_mode import strict_fallback
+from lit_monitor.core.strict_mode import strict_fallback
 
 logger = logging.getLogger(__name__)
 

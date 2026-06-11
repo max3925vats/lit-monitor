@@ -26,7 +26,7 @@ def app(tmp_path):
     from fastapi import FastAPI
     from fastapi.templating import Jinja2Templates
 
-    from scripts.server.routes.trending import router as trending_router
+    from lit_monitor.server.routes.trending import router as trending_router
 
     app = FastAPI()
     app.include_router(trending_router)
@@ -202,7 +202,7 @@ class TestTrendingPageCopy:
 
 class TestSafeSaveTopics:
     def test_atomic_add_creates_file(self, tmp_path):
-        from scripts.server.config_io import safe_save_topics
+        from lit_monitor.server.config_io import safe_save_topics
 
         topics_path = tmp_path / "topics.yaml"
         new_topic = {"name": "biorefinery", "query": "biorefinery AND design", "databases": ["arxiv"]}
@@ -216,7 +216,7 @@ class TestSafeSaveTopics:
     def test_atomic_add_appends_to_existing(self, tmp_path):
         import yaml
 
-        from scripts.server.config_io import safe_save_topics
+        from lit_monitor.server.config_io import safe_save_topics
 
         topics_path = tmp_path / "topics.yaml"
         existing = {"searches": [{"name": "existing", "query": "existing AND topic"}]}
@@ -234,7 +234,7 @@ class TestSafeSaveTopics:
     def test_does_not_remove_existing_topics(self, tmp_path):
         import yaml
 
-        from scripts.server.config_io import safe_save_topics
+        from lit_monitor.server.config_io import safe_save_topics
 
         topics_path = tmp_path / "topics.yaml"
         existing = {

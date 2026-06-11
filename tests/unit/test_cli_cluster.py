@@ -75,7 +75,7 @@ class TestClusterRecomputeCmd:
         target the source modules (scripts.core.config.get_config,
         scripts.core.state_db.StateDB), NOT scripts.cli._make_config.
         """
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         runner = CliRunner()
 
@@ -92,7 +92,7 @@ class TestClusterRecomputeCmd:
 
     def test_recompute_respects_threshold_flag(self):
         """--threshold option overrides config value: 50 papers < 200 → skipped."""
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         runner = CliRunner()
 
@@ -122,7 +122,7 @@ class TestClusterViewCmd:
         and scripts.core.state_db.StateDB) — not the dead scripts.cli._make_config
         / _make_state_db helpers, which the handler never calls.
         """
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         runner = CliRunner()
         state_db = _mock_state_db(150, 3)  # 3 named clusters: "Theme 0/1/2"
@@ -138,7 +138,7 @@ class TestClusterViewCmd:
 
     def test_view_handles_empty_clusters(self):
         """cluster view with no clusters shows the recompute hint and exits 0."""
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         runner = CliRunner()
         state_db = _mock_state_db(50, 0)  # no clusters
@@ -162,7 +162,7 @@ class TestClusterWriteBackCmd:
         Patches target the lazy-imported source modules. Mock return value
         carries the full key set the CLI echoes (tags_added, papers_processed).
         """
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         runner = CliRunner()
 
@@ -185,7 +185,7 @@ class TestClusterWriteBackCmd:
 
     def test_tags_confirm_flag_passes_dry_run_false(self):
         """cluster write-back tags --confirm passes dry_run=False."""
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         runner = CliRunner()
 
@@ -206,7 +206,7 @@ class TestClusterWriteBackCmd:
 
     def test_collections_default_dry_run(self):
         """cluster write-back collections is dry-run by default."""
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         runner = CliRunner()
 

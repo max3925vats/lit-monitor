@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from scripts.core.state_db import StateDB
+from lit_monitor.core.state_db import StateDB
 
 # ---------------------------------------------------------------------------
 # Fixture — a small, varied corpus

@@ -12,8 +12,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.core.state_db import StateDB
-from scripts.search.citation_graph import (
+from lit_monitor.core.state_db import StateDB
+from lit_monitor.search.citation_graph import (
     _doi_from_ref,
     _extract_first_author,
     _extract_year,

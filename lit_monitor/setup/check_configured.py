@@ -13,7 +13,7 @@ from __future__ import annotations
 import tomllib
 from typing import Literal, NamedTuple
 
-from scripts.setup._paths import SECRETS_PATH as _SECRETS_PATH
+from lit_monitor.setup._paths import SECRETS_PATH as _SECRETS_PATH
 
 
 class CheckResult(NamedTuple):

@@ -13,8 +13,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
-from scripts.core.doi import normalize_doi
-from scripts.retrieval.rrf import reciprocal_rank_fusion
+from lit_monitor.core.doi import normalize_doi
+from lit_monitor.retrieval.rrf import reciprocal_rank_fusion
 
 logger = logging.getLogger(__name__)
 

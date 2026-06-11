@@ -32,7 +32,7 @@ def _hermetic_reference_papers(tmp_path):
     set the module attr, so it overrides our default for the duration of that
     block (and restores it on exit).
     """
-    from scripts.pipelines import model_compare as mc
+    from lit_monitor.pipelines import model_compare as mc
 
     with patch.object(mc, "_REFERENCE_REAL", tmp_path / "nonexistent_reference.yaml"):
         yield
@@ -81,7 +81,7 @@ def test_compare_models_no_extraction_failures(tmp_path):
     extract_paper() has no 'passes' parameter — every paper silently failed.
     This test would have caught that.
     """
-    from scripts.pipelines.model_compare import run_model_comparison
+    from lit_monitor.pipelines.model_compare import run_model_comparison
 
     config = _make_config(tmp_path)
     state_db = _make_state_db_with_one_paper()
@@ -133,7 +133,7 @@ def test_extract_paper_rejects_passes_kwarg():
     """
     import inspect
 
-    from scripts.llm.extractor import extract_paper
+    from lit_monitor.llm.extractor import extract_paper
 
     sig = inspect.signature(extract_paper)
     assert "passes" not in sig.parameters, (
@@ -148,7 +148,7 @@ def test_extract_paper_rejects_passes_kwarg():
 @pytest.mark.unit
 def test_compare_models_writes_output_json(tmp_path):
     """run_model_comparison must write a summary JSON file to the output directory."""
-    from scripts.pipelines.model_compare import run_model_comparison
+    from lit_monitor.pipelines.model_compare import run_model_comparison
 
     config = _make_config(tmp_path)
     state_db = _make_state_db_with_one_paper()
@@ -195,7 +195,7 @@ def test_resolve_output_dir_is_under_user_config_home():
     Pre-fix, ``_OUTPUT_DIR = Path(__file__).parent.parent.parent / "comparison"``
     pointed at the package install root, which is read-only for wheel installs.
     """
-    from scripts.pipelines.model_compare import _resolve_output_dir
+    from lit_monitor.pipelines.model_compare import _resolve_output_dir
 
     out = _resolve_output_dir()
     expected = Path("~/.config/lit-monitor/comparison").expanduser()
@@ -205,7 +205,7 @@ def test_resolve_output_dir_is_under_user_config_home():
     assert str(out).startswith(str(config_home))
     assert "site-packages" not in str(out)
     # Not resolved relative to the source file's install tree.
-    import scripts.pipelines.model_compare as mc
+    import lit_monitor.pipelines.model_compare as mc
     pkg_root = Path(mc.__file__).parent.parent.parent
     assert pkg_root not in out.parents
 
@@ -219,7 +219,7 @@ def test_load_reference_papers_real_overrides_example(tmp_path):
     """When the real reference_papers.yaml has entries, it is used over example."""
     import yaml
 
-    from scripts.pipelines import model_compare as mc
+    from lit_monitor.pipelines import model_compare as mc
 
     real = tmp_path / "reference_papers.yaml"
     example = tmp_path / "reference_papers.example.yaml"
@@ -238,7 +238,7 @@ def test_load_reference_papers_falls_back_to_example_when_real_empty(tmp_path):
     """When the real file is missing or has no paper entries, example is used."""
     import yaml
 
-    from scripts.pipelines import model_compare as mc
+    from lit_monitor.pipelines import model_compare as mc
 
     real = tmp_path / "reference_papers.yaml"
     example = tmp_path / "reference_papers.example.yaml"
@@ -255,7 +255,7 @@ def test_load_reference_papers_falls_back_to_example_when_real_empty(tmp_path):
 @pytest.mark.unit
 def test_null_honesty_violation_counted_for_fabricated_field():
     """A non-null value for an expected_null field increments the violation count."""
-    from scripts.pipelines.model_compare import _ModelScore, _score_extraction
+    from lit_monitor.pipelines.model_compare import _ModelScore, _score_extraction
 
     score = _ModelScore(model="test")
     reference = {"expected_null": ["statistical_methods", "data_availability"]}
@@ -273,7 +273,7 @@ def test_null_honesty_violation_counted_for_fabricated_field():
 @pytest.mark.unit
 def test_null_honesty_zero_when_correctly_null():
     """When all expected_null fields are null/empty/absent, no violation is counted."""
-    from scripts.pipelines.model_compare import _ModelScore, _score_extraction
+    from lit_monitor.pipelines.model_compare import _ModelScore, _score_extraction
 
     score = _ModelScore(model="test")
     reference = {"expected_null": ["statistical_methods", "data_availability"]}
@@ -292,7 +292,7 @@ def test_null_honesty_zero_when_correctly_null():
 @pytest.mark.unit
 def test_null_honesty_no_reference_contributes_zero():
     """A paper with no reference entry (reference=None) contributes 0 violations."""
-    from scripts.pipelines.model_compare import _ModelScore, _score_extraction
+    from lit_monitor.pipelines.model_compare import _ModelScore, _score_extraction
 
     score = _ModelScore(model="test")
     extraction = {"statistical_methods": "fabricated"}
@@ -307,7 +307,7 @@ def test_summary_includes_null_honesty_in_json_and_markdown(tmp_path):
     """scores.json carries null_honesty_violations and the markdown table has the column."""
     import json
 
-    from scripts.pipelines.model_compare import (
+    from lit_monitor.pipelines.model_compare import (
         _ComparisonResult,
         _ModelScore,
         _write_summary,

@@ -20,8 +20,8 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from scripts.cli import main
-from scripts.setup import reset as reset_mod
+from lit_monitor.cli import main
+from lit_monitor.setup import reset as reset_mod
 
 
 # ---------------------------------------------------------------------------

@@ -13,12 +13,12 @@ from typing import Any
 # Import the modules (not the functions) so monkeypatching at the source
 # module path — e.g. ``patch("scripts.setup.check_configured.check_configured")``
 # in the existing CLI test suite — continues to work transparently.
-from scripts.setup import check_configured as _check_configured_mod
-from scripts.setup import check_graph as _check_graph_mod
-from scripts.setup import check_ollama as _check_ollama_mod
-from scripts.setup import check_vault as _check_vault_mod
-from scripts.setup import check_zotero as _check_zotero_mod
-from scripts.setup.check_configured import CheckResult
+from lit_monitor.setup import check_configured as _check_configured_mod
+from lit_monitor.setup import check_graph as _check_graph_mod
+from lit_monitor.setup import check_ollama as _check_ollama_mod
+from lit_monitor.setup import check_vault as _check_vault_mod
+from lit_monitor.setup import check_zotero as _check_zotero_mod
+from lit_monitor.setup.check_configured import CheckResult
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def _get_configured_ollama_model() -> str | None:
     missing or unloadable config must not abort the health check.
     """
     try:
-        from scripts.core.config import get_config
+        from lit_monitor.core.config import get_config
         cfg = get_config()
         return getattr(cfg.brain_build, "model", None)
     except Exception as exc:

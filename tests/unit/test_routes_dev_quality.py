@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 def _make_dev_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """Return a TestClient against a freshly-created app with /dev mounted."""
     monkeypatch.setenv("LIT_MONITOR_DEV", "1")
-    from scripts.server.app import create_app
+    from lit_monitor.server.app import create_app
 
     return TestClient(create_app())
 

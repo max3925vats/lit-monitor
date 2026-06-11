@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts.setup import reset as reset_mod
+from lit_monitor.setup import reset as reset_mod
 
 
 # ---------------------------------------------------------------------------

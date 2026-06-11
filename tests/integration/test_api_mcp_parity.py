@@ -22,8 +22,8 @@ def fixture_graph(tmp_path):
     Uses tmp_path so each test run gets a fresh DB (no cross-test pollution).
     add_paper expects EntityTuple objects (not plain dicts) for the entities list.
     """
-    from scripts.graph import GraphDB
-    from scripts.graph.entity_extractor import EntityTuple
+    from lit_monitor.graph import GraphDB
+    from lit_monitor.graph.entity_extractor import EntityTuple
 
     db = GraphDB(persist_dir=str(tmp_path / "parity.kuzu"))
     db.add_paper(
@@ -47,7 +47,7 @@ def fixture_graph(tmp_path):
 @pytest.fixture
 def fixture_state(tmp_path):
     """state.db with a zotero_key row for the parity DOI."""
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     db = StateDB(tmp_path / "parity_state.db")
     db.upsert_paper(
@@ -69,8 +69,8 @@ def test_http_mcp_get_paper_shape_parity(fixture_graph, fixture_state, monkeypat
     # Patch BOTH surfaces to return the SAME shared ``fixture_graph`` handle.
     # papers.py binds safe_graph_db at module level; tools.py exposes
     # _get_graph_db as a module-level callable. Patch both bindings directly.
-    import scripts.server.routes.papers as _papers_module
-    from scripts.mcp import tools as _tools_module
+    import lit_monitor.server.routes.papers as _papers_module
+    from lit_monitor.mcp import tools as _tools_module
 
     monkeypatch.setattr(_papers_module, "safe_graph_db", lambda *a, **kw: fixture_graph)
     monkeypatch.setattr(_tools_module, "_get_graph_db", lambda: fixture_graph)
@@ -78,7 +78,7 @@ def test_http_mcp_get_paper_shape_parity(fixture_graph, fixture_state, monkeypat
     monkeypatch.setattr(_papers_module, "_snapshot_state_db", lambda: fixture_state)
     monkeypatch.setattr(_tools_module, "_get_state_db", lambda: fixture_state)
 
-    from scripts.server.app import create_app
+    from lit_monitor.server.app import create_app
 
     # --- MCP surface FIRST ---
     # Order matters: AR-2 made the HTTP route close() its graph handle in a

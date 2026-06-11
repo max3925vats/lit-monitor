@@ -15,8 +15,8 @@ from __future__ import annotations
 import json
 import logging
 
-from scripts.core.strict_mode import strict_fallback
-from scripts.output.obsidian_writer import write_paper_note
+from lit_monitor.core.strict_mode import strict_fallback
+from lit_monitor.output.obsidian_writer import write_paper_note
 
 logger = logging.getLogger(__name__)
 def rerender_note(doi: str, config, state_db) -> str:
@@ -35,7 +35,7 @@ def rerender_note(doi: str, config, state_db) -> str:
     source_type = record.get("source_type", "paper")
     existing_note_path = record.get("note_path") or None
     if source_type in ("paper", "review"):
-        from scripts.vocabulary.normalizer import assign_themes
+        from lit_monitor.vocabulary.normalizer import assign_themes
         authors = json.loads(record.get("authors") or "[]")
         keywords = json.loads(record.get("keywords_json") or "[]")
         themes = assign_themes(keywords)

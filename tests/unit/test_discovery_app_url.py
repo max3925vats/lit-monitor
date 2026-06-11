@@ -5,7 +5,7 @@ These cover scripts/pipelines/discovery.py::_resolve_app_url.
 """
 from __future__ import annotations
 
-from scripts.pipelines.discovery import _DEFAULT_APP_URL, _resolve_app_url
+from lit_monitor.pipelines.discovery import _DEFAULT_APP_URL, _resolve_app_url
 
 
 def test_resolve_app_url_uses_configured_host_port(monkeypatch):

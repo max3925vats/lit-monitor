@@ -90,8 +90,8 @@ def run_model_comparison(
     Returns:
         _ComparisonResult with per-model scores.
     """
-    from scripts.llm.extractor import extract_paper
-    from scripts.llm.llm_client import LiteLLMClient, OllamaClient
+    from lit_monitor.llm.extractor import extract_paper
+    from lit_monitor.llm.llm_client import LiteLLMClient, OllamaClient
     run_date = datetime.now().strftime("%Y-%m-%d_%H%M")
     out_dir = _resolve_output_dir() / f"{run_date}_{mode}"
     out_dir.mkdir(parents=True, exist_ok=True)

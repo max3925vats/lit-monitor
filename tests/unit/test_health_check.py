@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from scripts.setup.check_configured import CheckResult
-from scripts.setup.diagnose import run_diagnose
-from scripts.setup.health_check import run_health_check
+from lit_monitor.setup.check_configured import CheckResult
+from lit_monitor.setup.diagnose import run_diagnose
+from lit_monitor.setup.health_check import run_health_check
 
 
 class TestRunHealthCheck:

@@ -14,7 +14,7 @@ import sys
 import pytest
 from click.testing import CliRunner
 
-from scripts.cli import main
+from lit_monitor.cli import main
 
 
 @pytest.fixture()
@@ -90,7 +90,7 @@ class TestMcpServeBannerAndRun:
 
         # Patch at the module level so the lazy import inside mcp_serve_command
         # gets the fake.
-        import scripts.mcp.graph_server as gs
+        import lit_monitor.mcp.graph_server as gs
 
         monkeypatch.setattr(gs, "main", fake_server_main)
 
@@ -112,7 +112,7 @@ class TestMcpServeBannerAndRun:
         def raise_keyboard_interrupt() -> None:
             raise KeyboardInterrupt
 
-        import scripts.mcp.graph_server as gs
+        import lit_monitor.mcp.graph_server as gs
 
         monkeypatch.setattr(gs, "main", raise_keyboard_interrupt)
 

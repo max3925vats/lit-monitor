@@ -36,9 +36,9 @@ import time
 from pathlib import Path
 from typing import Any
 
-from scripts.graph.migrations import apply_migrations, apply_schema
-from scripts.graph.normalizer import EntityNormalizer
-from scripts.graph.relationship_validator import VALID_PREDICATES
+from lit_monitor.graph.migrations import apply_migrations, apply_schema
+from lit_monitor.graph.normalizer import EntityNormalizer
+from lit_monitor.graph.relationship_validator import VALID_PREDICATES
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +321,7 @@ class GraphDB:
             # Best-effort: an import failure here must never break the R28
             # ingest invariant — schema cache staleness is benign.
             try:
-                from scripts.graph.schema_describer import (  # noqa: PLC0415
+                from lit_monitor.graph.schema_describer import (  # noqa: PLC0415
                     invalidate_schema_cache,
                 )
                 invalidate_schema_cache(self)
@@ -619,7 +619,7 @@ class GraphDB:
         str | None
             The matched canonical_id, or ``None`` if no match found within scope.
         """
-        from scripts.graph.aliases import load_aliases
+        from lit_monitor.graph.aliases import load_aliases
 
         t0 = time.perf_counter()
 

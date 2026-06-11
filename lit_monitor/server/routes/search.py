@@ -13,7 +13,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, field_validator
 
 # Import at module level so tests can monkeypatch this binding directly.
-from scripts.api.queries import get_papers_by_query
+from lit_monitor.api.queries import get_papers_by_query
 
 router = APIRouter(tags=["search"])
 

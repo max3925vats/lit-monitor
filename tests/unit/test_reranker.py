@@ -56,7 +56,7 @@ def fake_st():
     need specific predict() return values should configure it themselves.
     Also resets the reranker singleton so each test gets a fresh state.
     """
-    import scripts.output.reranker as reranker_mod
+    import lit_monitor.output.reranker as reranker_mod
 
     fake_mod = types.ModuleType("sentence_transformers")
     mock_ce_cls = MagicMock(name="CrossEncoder")
@@ -103,7 +103,7 @@ def test_reranker_module_imports_without_side_effects():
 @pytest.mark.unit
 def test_rerank_reorders_by_cross_encoder_score(fake_st):
     """rerank() returns candidates sorted by cross-encoder score, not input order."""
-    from scripts.output.reranker import Reranker
+    from lit_monitor.output.reranker import Reranker
 
     candidates = _make_candidates(["worst match", "medium match", "best match"])
     # Scores assigned in reverse order: 'best match' gets highest score.
@@ -124,7 +124,7 @@ def test_rerank_reorders_by_cross_encoder_score(fake_st):
 @pytest.mark.unit
 def test_rerank_truncates_to_top_k(fake_st):
     """top_k truncation works after reranking."""
-    from scripts.output.reranker import Reranker
+    from lit_monitor.output.reranker import Reranker
 
     candidates = _make_candidates(["a", "b", "c", "d"])
     mock_scores = [0.8, 0.6, 0.4, 0.2]
@@ -143,7 +143,7 @@ def test_rerank_truncates_to_top_k(fake_st):
 @pytest.mark.unit
 def test_rerank_empty_candidates_returns_empty(fake_st):
     """rerank() with empty input returns []."""
-    from scripts.output.reranker import Reranker
+    from lit_monitor.output.reranker import Reranker
 
     fake_st.CrossEncoder.return_value = MagicMock()
     reranker = Reranker(model_name="mock-model")
@@ -155,7 +155,7 @@ def test_rerank_empty_candidates_returns_empty(fake_st):
 @pytest.mark.unit
 def test_rerank_result_has_rerank_score_key(fake_st):
     """Each output dict must carry a rerank_score field."""
-    from scripts.output.reranker import Reranker
+    from lit_monitor.output.reranker import Reranker
 
     candidates = _make_candidates(["doc"])
     mock_ce_instance = MagicMock()
@@ -176,7 +176,7 @@ def test_rerank_result_has_rerank_score_key(fake_st):
 @pytest.mark.unit
 def test_reranker_disabled_config_skips_reranking():
     """`_reranker_enabled` returns False when config.enabled is False."""
-    from scripts.output.embeddings import _reranker_enabled
+    from lit_monitor.output.embeddings import _reranker_enabled
 
     cfg = _make_reranker_config(enabled=False)
     assert _reranker_enabled(cfg) is False
@@ -185,7 +185,7 @@ def test_reranker_disabled_config_skips_reranking():
 @pytest.mark.unit
 def test_reranker_none_config_skips_reranking():
     """`_reranker_enabled` returns False when config is None."""
-    from scripts.output.embeddings import _reranker_enabled
+    from lit_monitor.output.embeddings import _reranker_enabled
 
     assert _reranker_enabled(None) is False
 
@@ -193,7 +193,7 @@ def test_reranker_none_config_skips_reranking():
 @pytest.mark.unit
 def test_reranker_enabled_config_returns_true():
     """`_reranker_enabled` returns True when config.enabled is True."""
-    from scripts.output.embeddings import _reranker_enabled
+    from lit_monitor.output.embeddings import _reranker_enabled
 
     cfg = _make_reranker_config(enabled=True)
     assert _reranker_enabled(cfg) is True
@@ -202,7 +202,7 @@ def test_reranker_enabled_config_returns_true():
 @pytest.mark.unit
 def test_reranker_multiplier_with_disabled_config_returns_1():
     """`_reranker_multiplier` returns 1 (no extra candidates) when reranker disabled."""
-    from scripts.output.embeddings import _reranker_multiplier
+    from lit_monitor.output.embeddings import _reranker_multiplier
 
     cfg = _make_reranker_config(enabled=False)
     assert _reranker_multiplier(cfg, "query") == 1
@@ -211,7 +211,7 @@ def test_reranker_multiplier_with_disabled_config_returns_1():
 @pytest.mark.unit
 def test_reranker_multiplier_with_enabled_config():
     """`_reranker_multiplier` returns configured multiplier when reranker enabled."""
-    from scripts.output.embeddings import _reranker_multiplier
+    from lit_monitor.output.embeddings import _reranker_multiplier
 
     cfg = _make_reranker_config(enabled=True)
     cfg.candidate_multiplier = 3
@@ -221,7 +221,7 @@ def test_reranker_multiplier_with_enabled_config():
 @pytest.mark.unit
 def test_find_similar_to_text_calls_reranker_when_enabled(tmp_path):
     """find_similar_to_text passes candidates to the reranker when config enables it."""
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
 
     db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
     db._embed = MagicMock(return_value=[0.1] * 768)
@@ -244,7 +244,7 @@ def test_find_similar_to_text_calls_reranker_when_enabled(tmp_path):
 @pytest.mark.unit
 def test_find_similar_to_text_skips_reranker_when_disabled(tmp_path):
     """find_similar_to_text does NOT call reranker when config.enabled is False."""
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
 
     db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
     db._embed = MagicMock(return_value=[0.1] * 768)

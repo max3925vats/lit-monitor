@@ -7,7 +7,7 @@ rank-time wiring that *uses* it (soft-gated re-ranking) lands in Bundle J2.
 
 from __future__ import annotations
 
-from scripts.learning.rocchio import (
+from lit_monitor.learning.rocchio import (
     BETA,
     COLD_START_FLOOR,
     GAMMA,

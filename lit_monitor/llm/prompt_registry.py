@@ -29,9 +29,9 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field
 
-from scripts.core.path_utils import resolve_path as _resolve_path
-from scripts.core.strict_mode import strict_fallback
-from scripts.llm.extraction_schema import domain_context_values
+from lit_monitor.core.path_utils import resolve_path as _resolve_path
+from lit_monitor.core.strict_mode import strict_fallback
+from lit_monitor.llm.extraction_schema import domain_context_values
 
 logger = logging.getLogger(__name__)
 

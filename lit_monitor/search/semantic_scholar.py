@@ -27,8 +27,8 @@ import re
 from datetime import date, timedelta
 from typing import Any
 
-from scripts.core.strict_mode import strict_fallback
-from scripts.search._constants import S2_TIMEOUT_SECONDS
+from lit_monitor.core.strict_mode import strict_fallback
+from lit_monitor.search._constants import S2_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 

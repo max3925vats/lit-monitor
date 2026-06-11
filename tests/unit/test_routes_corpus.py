@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("LIT_MONITOR_STATE_DB", str(tmp_path / "state.db"))
-    from scripts.server.app import create_app  # noqa: PLC0415
+    from lit_monitor.server.app import create_app  # noqa: PLC0415
 
     return TestClient(create_app())
 
@@ -355,7 +355,7 @@ def test_related_vector_no_embeddings_shows_neighbour_notice(client, monkeypatch
 
 def test_get_related_vector_uses_embeddings_no_graph(monkeypatch):
     """Vector mode finds neighbours via ChromaDB and NEVER opens the graph."""
-    from scripts.server.routes import corpus as corpus_mod
+    from lit_monitor.server.routes import corpus as corpus_mod
 
     graph_opened = {"count": 0}
 
@@ -386,7 +386,7 @@ def test_get_related_vector_uses_embeddings_no_graph(monkeypatch):
 
 
 def test_get_related_vector_none_when_embeddings_absent(monkeypatch):
-    from scripts.server.routes import corpus as corpus_mod
+    from lit_monitor.server.routes import corpus as corpus_mod
 
     monkeypatch.setattr(corpus_mod, "_get_state_db", lambda: object())
     monkeypatch.setattr(corpus_mod, "_get_embeddings_db", lambda: None)
@@ -394,7 +394,7 @@ def test_get_related_vector_none_when_embeddings_absent(monkeypatch):
 
 
 def test_get_related_graph_none_when_no_graph(monkeypatch):
-    from scripts.server.routes import corpus as corpus_mod
+    from lit_monitor.server.routes import corpus as corpus_mod
 
     monkeypatch.setattr(corpus_mod, "safe_graph_db", lambda: None)
     assert corpus_mod._get_related("10.1/a", "graph", 10) is None

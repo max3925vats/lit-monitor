@@ -23,12 +23,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts.server.routes.setup import (
+from lit_monitor.server.routes.setup import (
     _validate_domain,
     _validate_researchers,
     _validate_topics,
 )
-from scripts.vocabulary.normalizer import assign_themes
+from lit_monitor.vocabulary.normalizer import assign_themes
 
 # config/examples/ lives two levels up from this test file's repo (tests/unit/).
 _REPO_ROOT = Path(__file__).resolve().parents[2]

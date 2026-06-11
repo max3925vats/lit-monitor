@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from scripts.llm.llm_client import MockLLMClient
+from lit_monitor.llm.llm_client import MockLLMClient
 
 
 # ---------------------------------------------------------------------------
@@ -21,7 +21,7 @@ from scripts.llm.llm_client import MockLLMClient
 @pytest.mark.unit
 def test_normaliser_collapses_near_duplicates():
     """Strings that are near-duplicates (>=88 similarity) collapse to one key."""
-    from scripts.vocabulary.normalizer import normalise_keywords
+    from lit_monitor.vocabulary.normalizer import normalise_keywords
     # Case variants of the same word must collapse to a single cluster.
     raw = ["filtration", "Filtration", "FILTRATION"]
     result = normalise_keywords(raw)
@@ -30,18 +30,18 @@ def test_normaliser_collapses_near_duplicates():
 @pytest.mark.unit
 def test_normaliser_preserves_distinct_terms():
     """Genuinely different terms must remain in separate clusters."""
-    from scripts.vocabulary.normalizer import normalise_keywords
+    from lit_monitor.vocabulary.normalizer import normalise_keywords
     raw = ["filtration", "stage2filtration", "osmotic pressure", "viscosity"]
     result = normalise_keywords(raw)
     assert len(result) == 4, f"Expected 4 distinct clusters, got {len(result)}: {list(result)}"
 @pytest.mark.unit
 def test_normaliser_returns_empty_on_empty_input():
-    from scripts.vocabulary.normalizer import normalise_keywords
+    from lit_monitor.vocabulary.normalizer import normalise_keywords
     assert normalise_keywords([]) == {}
 @pytest.mark.unit
 def test_normaliser_strips_and_lowercases():
     """Variants that differ only by case/whitespace collapse to one cluster."""
-    from scripts.vocabulary.normalizer import normalise_keywords
+    from lit_monitor.vocabulary.normalizer import normalise_keywords
     raw = ["  ProteinA  ", "PROTEINA", "proteina"]
     result = normalise_keywords(raw)
     assert len(result) == 1
@@ -50,7 +50,7 @@ def test_normaliser_strips_and_lowercases():
 @pytest.mark.unit
 def test_normaliser_variant_list_contains_all_originals():
     """Each cluster's variant list should include all (normalised) inputs."""
-    from scripts.vocabulary.normalizer import normalise_keywords
+    from lit_monitor.vocabulary.normalizer import normalise_keywords
     raw = ["TopicX", "topicx", "Topicx"]
 
     result = normalise_keywords(raw)
@@ -78,7 +78,7 @@ _MOCK_CLUSTERER_RESPONSE = json.dumps(_MOCK_CONCEPTS)
 @pytest.mark.unit
 def test_clusterer_writes_draft_yaml(tmp_path):
     """build_vocabulary writes a valid YAML file with 'themes' and 'unclustered'."""
-    from scripts.vocabulary.clusterer import build_vocabulary
+    from lit_monitor.vocabulary.clusterer import build_vocabulary
     keywords = {
         "filtration": ["filtration"],
         "viscosity": ["viscosity", "viscosity "],
@@ -102,7 +102,7 @@ def test_clusterer_writes_draft_yaml(tmp_path):
 @pytest.mark.unit
 def test_unclustered_not_silently_dropped():
     """flag_unmapped returns keywords not present in any theme."""
-    from scripts.vocabulary.clusterer import flag_unmapped
+    from lit_monitor.vocabulary.clusterer import flag_unmapped
     keywords = ["filtration", "some rare keyword", "another unknown term"]
     unmapped = flag_unmapped(keywords, _MOCK_CONCEPTS, threshold=0.75)
     assert "some rare keyword" in unmapped or "another unknown term" in unmapped
@@ -112,7 +112,7 @@ def test_unclustered_not_silently_dropped():
 @pytest.mark.unit
 def test_map_keywords_returns_correct_themes():
     """Keywords exactly in a theme's list should map to that theme."""
-    from scripts.vocabulary.clusterer import map_keywords_to_themes
+    from lit_monitor.vocabulary.clusterer import map_keywords_to_themes
     keywords = ["filtration", "viscosity", "topicx"]
     result = map_keywords_to_themes(keywords, _MOCK_CONCEPTS)
     assert "Mock Theme A" in result["filtration"]
@@ -123,7 +123,7 @@ def test_map_keywords_returns_correct_themes():
 @pytest.mark.unit
 def test_map_keywords_empty_list_for_unknown():
     """A keyword in no theme returns an empty list — not an error."""
-    from scripts.vocabulary.clusterer import map_keywords_to_themes
+    from lit_monitor.vocabulary.clusterer import map_keywords_to_themes
     result = map_keywords_to_themes(["completely unknown term xyz"], _MOCK_CONCEPTS)
     assert result["completely unknown term xyz"] == []
 
@@ -140,7 +140,7 @@ def test_build_vocabulary_passes_all_keywords_to_llm(tmp_path):
     tuple-unpacking fix (kw for kw, _ in pairs). Clusterer itself no longer
     filters anything — it trusts its input.
     """
-    from scripts.vocabulary.clusterer import build_vocabulary
+    from lit_monitor.vocabulary.clusterer import build_vocabulary
 
     # Mix of long keywords and a short 8-char one that looks like an item key.
     # The clusterer must send ALL of them to the LLM.
@@ -169,7 +169,7 @@ def test_build_vocabulary_chunked(tmp_path):
     Regression test for G7: the old implementation sent all keywords in one
     call, causing the LLM to hang on large libraries.
     """
-    from scripts.vocabulary.clusterer import build_vocabulary
+    from lit_monitor.vocabulary.clusterer import build_vocabulary
 
     # Generate 100 distinct synthetic keywords (all 'real' — no item keys)
     keywords = {f"keyword_{i:03d}": [f"keyword_{i:03d}"] for i in range(100)}
@@ -194,7 +194,7 @@ def test_build_vocabulary_chunked(tmp_path):
 @pytest.mark.unit
 def test_merge_clusters_unions_keywords():
     """_merge_clusters unions keyword lists for same-named themes and appends new themes."""
-    from scripts.vocabulary.clusterer import _merge_clusters
+    from lit_monitor.vocabulary.clusterer import _merge_clusters
 
     base = {
         "themes": [
@@ -231,7 +231,7 @@ def test_merge_clusters_unions_keywords():
 @pytest.mark.unit
 def test_build_vocabulary_empty_input_returns_empty(tmp_path):
     """build_vocabulary returns empty result gracefully when given an empty keyword dict."""
-    from scripts.vocabulary.clusterer import build_vocabulary
+    from lit_monitor.vocabulary.clusterer import build_vocabulary
 
     output_file = tmp_path / "concepts_draft.yaml"
     mock_llm = MockLLMClient()
@@ -256,7 +256,7 @@ def test_keyword_pairs_first_element_is_keyword():
     actual keyword strings — resulting in all 418 keywords being filtered out
     by build_vocabulary's item-key guard.
     """
-    from scripts.vocabulary.keyword_extractor import extract_all_keywords
+    from lit_monitor.vocabulary.keyword_extractor import extract_all_keywords
 
     mock_zot_client = MagicMock()
     mock_zot_client._zot.everything.return_value = [
@@ -286,7 +286,7 @@ def test_keyword_pairs_first_element_is_keyword():
 @pytest.mark.unit
 def test_extract_all_keywords_returns_pairs():
     """extract_all_keywords returns (keyword, zotero_key) tuples."""
-    from scripts.vocabulary.keyword_extractor import extract_all_keywords
+    from lit_monitor.vocabulary.keyword_extractor import extract_all_keywords
     # Build a mock ZoteroClient
     mock_zot_client = MagicMock()
     mock_zot_client._zot.everything.return_value = [
@@ -304,7 +304,7 @@ def test_extract_all_keywords_returns_pairs():
 @pytest.mark.unit
 def test_extract_all_keywords_deduplicates_within_item():
     """Same tag appearing twice on the same item should appear only once."""
-    from scripts.vocabulary.keyword_extractor import extract_all_keywords
+    from lit_monitor.vocabulary.keyword_extractor import extract_all_keywords
     mock_zot_client = MagicMock()
     mock_zot_client._zot.everything.return_value = [
         {"data": {
@@ -319,7 +319,7 @@ def test_extract_all_keywords_deduplicates_within_item():
 @pytest.mark.unit
 def test_extract_all_keywords_skips_empty_tags():
     """Empty tag strings are not included in output."""
-    from scripts.vocabulary.keyword_extractor import extract_all_keywords
+    from lit_monitor.vocabulary.keyword_extractor import extract_all_keywords
     mock_zot_client = MagicMock()
     mock_zot_client._zot.everything.return_value = [
         {"data": {"key": "XYZ", "tags": [{"tag": ""}, {"tag": "  "}, {"tag": "TopicX"}]}},
@@ -359,7 +359,7 @@ _REMEDIATION_UNKNOWN_THEME_RESPONSE = json.dumps({
 @pytest.mark.unit
 def test_recover_partial_json_extracts_complete_themes():
     """Salvages complete theme objects from a JSON string truncated mid-array."""
-    from scripts.vocabulary.clusterer import _recover_partial_json
+    from lit_monitor.vocabulary.clusterer import _recover_partial_json
 
     # Simulate a response that was cut off during the third theme
     truncated = (
@@ -380,7 +380,7 @@ def test_recover_partial_json_extracts_complete_themes():
 @pytest.mark.unit
 def test_recover_partial_json_returns_none_when_no_complete_themes():
     """Returns None when the JSON is so truncated that no theme is complete."""
-    from scripts.vocabulary.clusterer import _recover_partial_json
+    from lit_monitor.vocabulary.clusterer import _recover_partial_json
 
     truncated = '{\n  "themes": [\n    {"name": "Incomplete", "keywords": ["only'
     result = _recover_partial_json(truncated)
@@ -390,7 +390,7 @@ def test_recover_partial_json_returns_none_when_no_complete_themes():
 @pytest.mark.unit
 def test_build_vocabulary_uses_recovery_on_parse_failure(tmp_path):
     """build_vocabulary falls back to _recover_partial_json when parse_llm_json raises."""
-    from scripts.vocabulary.clusterer import build_vocabulary
+    from lit_monitor.vocabulary.clusterer import build_vocabulary
 
     keywords = {"filtration": ["filtration"], "viscosity": ["viscosity"]}
     output_file = tmp_path / "concepts_draft.yaml"
@@ -418,7 +418,7 @@ def test_build_vocabulary_uses_recovery_on_parse_failure(tmp_path):
 @pytest.mark.unit
 def test_remediate_unclustered_places_keywords_in_existing_themes(tmp_path):
     """Remediation pass assigns unclustered keywords into their matching themes."""
-    from scripts.vocabulary.clusterer import _remediate_unclustered
+    from lit_monitor.vocabulary.clusterer import _remediate_unclustered
 
     merged = {
         "themes": [
@@ -443,7 +443,7 @@ def test_remediate_unclustered_places_keywords_in_existing_themes(tmp_path):
 @pytest.mark.unit
 def test_remediate_unclustered_skips_unknown_themes(tmp_path):
     """Remediation gracefully skips theme names the LLM invented that don't exist."""
-    from scripts.vocabulary.clusterer import _remediate_unclustered
+    from lit_monitor.vocabulary.clusterer import _remediate_unclustered
 
     merged = {
         "themes": [{"name": "Mock Theme A", "keywords": ["filtration"]}],
@@ -461,7 +461,7 @@ def test_remediate_unclustered_skips_unknown_themes(tmp_path):
 @pytest.mark.unit
 def test_remediate_unclustered_noop_when_no_unclustered():
     """Remediation pass makes no LLM call when unclustered list is empty."""
-    from scripts.vocabulary.clusterer import _remediate_unclustered
+    from lit_monitor.vocabulary.clusterer import _remediate_unclustered
 
     merged = {
         "themes": [{"name": "Mock Theme A", "keywords": ["filtration"]}],
@@ -495,7 +495,7 @@ _REFINEMENT_UNKNOWN_THEME_RESPONSE = json.dumps({
 @pytest.mark.unit
 def test_refine_clustering_adds_cross_theme_keywords():
     """Refinement pass correctly adds keywords to additional themes."""
-    from scripts.vocabulary.clusterer import _refine_clustering
+    from lit_monitor.vocabulary.clusterer import _refine_clustering
 
     merged = {
         "themes": [
@@ -521,7 +521,7 @@ def test_refine_clustering_adds_cross_theme_keywords():
 @pytest.mark.unit
 def test_refine_clustering_skips_unknown_themes():
     """Refinement gracefully skips theme names in additions that don't exist."""
-    from scripts.vocabulary.clusterer import _refine_clustering
+    from lit_monitor.vocabulary.clusterer import _refine_clustering
 
     merged = {
         "themes": [{"name": "Mock Theme A", "keywords": ["filtration"]}],
@@ -539,7 +539,7 @@ def test_refine_clustering_skips_unknown_themes():
 @pytest.mark.unit
 def test_refine_clustering_noop_when_no_themes():
     """Refinement pass makes no LLM call when there are no themes."""
-    from scripts.vocabulary.clusterer import _refine_clustering
+    from lit_monitor.vocabulary.clusterer import _refine_clustering
 
     merged = {"themes": [], "unclustered": ["orphan"]}
     mock_llm = MockLLMClient()
@@ -564,7 +564,7 @@ _ROLE_MARKER = "<|im_start|>"
 def test_remediate_unclustered_strips_role_marker_from_prompt():
     """C1 review: a role marker in a theme name OR an unclustered keyword must
     be stripped from the remediation user prompt."""
-    from scripts.vocabulary.clusterer import _remediate_unclustered
+    from lit_monitor.vocabulary.clusterer import _remediate_unclustered
 
     merged = {
         "themes": [
@@ -589,7 +589,7 @@ def test_remediate_unclustered_strips_role_marker_from_prompt():
 def test_refine_clustering_strips_role_marker_from_prompt():
     """C1 review: a role marker in any keyword/theme rendered into the
     refinement prompt must be stripped."""
-    from scripts.vocabulary.clusterer import _refine_clustering
+    from lit_monitor.vocabulary.clusterer import _refine_clustering
 
     merged = {
         "themes": [
@@ -633,7 +633,7 @@ _EMPTY_ADDITIONS_TRUNCATION = (
 @pytest.mark.unit
 def test_recover_partial_refinement_json_extracts_complete_entries():
     """Salvages complete theme-addition entries from a JSON string truncated mid-dict."""
-    from scripts.vocabulary.clusterer import _recover_partial_refinement_json
+    from lit_monitor.vocabulary.clusterer import _recover_partial_refinement_json
 
     result = _recover_partial_refinement_json(_TRUNCATED_REFINEMENT)
 
@@ -650,7 +650,7 @@ def test_recover_partial_refinement_json_extracts_complete_entries():
 @pytest.mark.unit
 def test_recover_partial_refinement_json_returns_none_when_nothing_recoverable():
     """Returns None when the JSON is so truncated that no entry is complete."""
-    from scripts.vocabulary.clusterer import _recover_partial_refinement_json
+    from lit_monitor.vocabulary.clusterer import _recover_partial_refinement_json
 
     result = _recover_partial_refinement_json(_EMPTY_ADDITIONS_TRUNCATION)
     assert result is None
@@ -659,7 +659,7 @@ def test_recover_partial_refinement_json_returns_none_when_nothing_recoverable()
 @pytest.mark.unit
 def test_recover_partial_refinement_json_returns_none_without_additions_key():
     """Returns None when the raw string has no 'additions' key at all."""
-    from scripts.vocabulary.clusterer import _recover_partial_refinement_json
+    from lit_monitor.vocabulary.clusterer import _recover_partial_refinement_json
 
     result = _recover_partial_refinement_json('{"something_else": {}}')
     assert result is None
@@ -668,7 +668,7 @@ def test_recover_partial_refinement_json_returns_none_without_additions_key():
 @pytest.mark.unit
 def test_refine_clustering_uses_partial_recovery_on_truncation():
     """When parse_llm_json fails, _refine_clustering falls back to partial recovery."""
-    from scripts.vocabulary.clusterer import _refine_clustering
+    from lit_monitor.vocabulary.clusterer import _refine_clustering
 
     merged = {
         "themes": [
@@ -695,7 +695,7 @@ def test_refine_clustering_uses_partial_recovery_on_truncation():
 @pytest.mark.unit
 def test_clusters_to_topics_yaml_format():
     """Output has a valid topics.yaml schema: searches list with name/query/databases."""
-    from scripts.vocabulary.clusterer import clusters_to_topics_yaml
+    from lit_monitor.vocabulary.clusterer import clusters_to_topics_yaml
     clusters = {
         "themes": [
             {
@@ -741,7 +741,7 @@ def test_clusters_to_topics_yaml_format():
 @pytest.mark.unit
 def test_clusters_to_topics_yaml_empty_themes():
     """Empty clusters produce an empty searches list without error."""
-    from scripts.vocabulary.clusterer import clusters_to_topics_yaml
+    from lit_monitor.vocabulary.clusterer import clusters_to_topics_yaml
     raw = clusters_to_topics_yaml({"themes": [], "unclustered": []})
     data = yaml.safe_load(raw)
     assert data == {"searches": []}
@@ -750,7 +750,7 @@ def test_clusters_to_topics_yaml_empty_themes():
 @pytest.mark.unit
 def test_clusters_to_topics_yaml_databases_override():
     """Caller can specify alternative database lists."""
-    from scripts.vocabulary.clusterer import clusters_to_topics_yaml
+    from lit_monitor.vocabulary.clusterer import clusters_to_topics_yaml
     clusters = {
         "themes": [{"name": "Test Theme", "keywords": ["some keyword"]}],
         "unclustered": [],
@@ -766,7 +766,7 @@ def test_clusters_to_topics_yaml_query_uses_short_phrases():
     Queries prefer 2–3 word phrases from the keyword list rather than
     single-word or very long terms.
     """
-    from scripts.vocabulary.clusterer import clusters_to_topics_yaml
+    from lit_monitor.vocabulary.clusterer import clusters_to_topics_yaml
     clusters = {
         "themes": [
             {
@@ -796,7 +796,7 @@ def test_clusters_to_topics_yaml_query_uses_short_phrases():
 @pytest.mark.unit
 def test_clusters_to_topics_yaml_header_comment():
     """Generated YAML string starts with an auto-generated warning comment."""
-    from scripts.vocabulary.clusterer import clusters_to_topics_yaml
+    from lit_monitor.vocabulary.clusterer import clusters_to_topics_yaml
     raw = clusters_to_topics_yaml({"themes": [], "unclustered": []})
     assert raw.startswith("#")
     assert "Auto-generated" in raw
@@ -805,7 +805,7 @@ def test_clusters_to_topics_yaml_header_comment():
 @pytest.mark.unit
 def test_topics_suggested_path_constant():
     """TOPICS_SUGGESTED_PATH points to the expected config location."""
-    from scripts.vocabulary.clusterer import TOPICS_SUGGESTED_PATH
+    from lit_monitor.vocabulary.clusterer import TOPICS_SUGGESTED_PATH
     assert TOPICS_SUGGESTED_PATH == Path("config/topics_suggested.yaml")
 
 
@@ -815,7 +815,7 @@ def test_suggest_topics_non_interactive_skips_prompt(tmp_path, monkeypatch, caps
     In non-interactive mode (stdin not a TTY), _suggest_topics writes the
     suggested file and prints the diff but never prompts.
     """
-    from scripts.cli import _suggest_topics
+    from lit_monitor.cli import _suggest_topics
 
     # Change CWD so Path("config/topics.yaml") resolves inside tmp_path.
     monkeypatch.chdir(tmp_path)
@@ -846,7 +846,7 @@ def test_suggest_topics_append_preserves_existing_searches_and_config(tmp_path, 
     """
     import yaml
 
-    from scripts.cli import _suggest_topics
+    from lit_monitor.cli import _suggest_topics
 
     # Change CWD so Path("config/topics.yaml") resolves to tmp_path/config/topics.yaml.
     config_dir = tmp_path / "config"
@@ -896,7 +896,7 @@ def test_suggest_topics_no_new_entries_skips_prompt(tmp_path, monkeypatch, capsy
     When all suggested themes already exist in topics.yaml, _suggest_topics
     prints a 'nothing new' message and does not call click.confirm().
     """
-    from scripts.cli import _suggest_topics
+    from lit_monitor.cli import _suggest_topics
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
@@ -929,7 +929,7 @@ def test_suggest_topics_no_new_entries_skips_prompt(tmp_path, monkeypatch, capsy
 @pytest.mark.unit
 def test_extract_all_keywords_raises_after_all_retries_exhausted():
     """When every attempt fails, extract_all_keywords raises RuntimeError."""
-    from scripts.vocabulary.keyword_extractor import extract_all_keywords
+    from lit_monitor.vocabulary.keyword_extractor import extract_all_keywords
     mock_zot_client = MagicMock()
     mock_zot_client._zot.everything.side_effect = TimeoutError("read timed out")
     mock_zot_client._zot.items.return_value = []
@@ -941,7 +941,7 @@ def test_extract_all_keywords_raises_after_all_retries_exhausted():
 @pytest.mark.unit
 def test_extract_all_keywords_succeeds_on_second_attempt():
     """A single transient failure followed by a success returns the keywords."""
-    from scripts.vocabulary.keyword_extractor import extract_all_keywords
+    from lit_monitor.vocabulary.keyword_extractor import extract_all_keywords
     mock_zot_client = MagicMock()
     good_items = [{"data": {"key": "ABC", "tags": [{"tag": "membrane"}]}}]
     # First call raises; second call returns the items list.
@@ -960,7 +960,7 @@ def test_extract_all_keywords_succeeds_on_second_attempt():
 @pytest.mark.unit
 def test_assign_themes_returns_empty_when_no_vocab(tmp_path):
     """assign_themes returns [] without raising when no vocabulary file exists."""
-    from scripts.vocabulary.normalizer import assign_themes
+    from lit_monitor.vocabulary.normalizer import assign_themes
     # Pass a non-existent path explicitly — no crash expected
     result = assign_themes(["filtration", "mab"], vocab_path=tmp_path / "nonexistent.yaml")
     assert result == []
@@ -969,7 +969,7 @@ def test_assign_themes_returns_empty_when_no_vocab(tmp_path):
 @pytest.mark.unit
 def test_assign_themes_returns_empty_for_empty_keywords(tmp_path):
     """assign_themes returns [] immediately for empty keyword list."""
-    from scripts.vocabulary.normalizer import assign_themes
+    from lit_monitor.vocabulary.normalizer import assign_themes
     # Even if a vocab file exists, empty keywords → []
     vocab = tmp_path / "concepts.yaml"
     vocab.write_text("themes:\n  - name: TopicX\n    keywords:\n      - filtration\n")
@@ -979,7 +979,7 @@ def test_assign_themes_returns_empty_for_empty_keywords(tmp_path):
 @pytest.mark.unit
 def test_assign_themes_matches_exact_keyword(tmp_path):
     """An exact keyword match (ratio=100) always triggers theme assignment."""
-    from scripts.vocabulary.normalizer import assign_themes
+    from lit_monitor.vocabulary.normalizer import assign_themes
     vocab = tmp_path / "concepts.yaml"
     vocab.write_text(
         "themes:\n"
@@ -1012,7 +1012,7 @@ def test_assign_themes_fuzzy_match(tmp_path):
     """
     from rapidfuzz import fuzz
 
-    from scripts.vocabulary.normalizer import assign_themes
+    from lit_monitor.vocabulary.normalizer import assign_themes
 
     paper_kw = "protein A purification"
     vocab_kw = "protein-a-purification"
@@ -1042,7 +1042,7 @@ def test_assign_themes_fuzzy_match(tmp_path):
 @pytest.mark.unit
 def test_assign_themes_multiple_themes_matched(tmp_path):
     """Multiple themes can match a single paper's keywords."""
-    from scripts.vocabulary.normalizer import assign_themes
+    from lit_monitor.vocabulary.normalizer import assign_themes
     vocab = tmp_path / "concepts.yaml"
     vocab.write_text(
         "themes:\n"
@@ -1064,7 +1064,7 @@ def test_themes_assigned_during_brain_build(tmp_path):
     from types import SimpleNamespace
     from unittest.mock import MagicMock, patch
 
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     # Write a minimal vocab file
     vocab_dir = tmp_path / "config"
@@ -1114,7 +1114,7 @@ def test_themes_assigned_during_brain_build(tmp_path):
 
     (tmp_path / "vault" / "Literature" / "Papers" / "test_note.md").touch()
 
-    from scripts.pipelines.brain_build import _process_paper
+    from lit_monitor.pipelines.brain_build import _process_paper
 
     zotero_client = MagicMock()
     zotero_client.get_markdown_attachment.return_value = "Filtration paper text in markdown."
@@ -1161,7 +1161,7 @@ def test_keywords_per_chunk_smart_sizes_from_num_ctx():
         raw_k  = (22576 - 800) / 30 ≈ 725 keywords
     The result is clamped to _MAX_KEYWORDS_PER_CHUNK=1000, so we expect ~725.
     """
-    from scripts.vocabulary.clusterer import _keywords_per_chunk
+    from lit_monitor.vocabulary.clusterer import _keywords_per_chunk
     keywords = [f"keyword_{i}" for i in range(100)]  # avg ~10 chars
     llm = MockLLMClient()
     llm.num_ctx = 8192
@@ -1172,7 +1172,7 @@ def test_keywords_per_chunk_smart_sizes_from_num_ctx():
 @pytest.mark.unit
 def test_keywords_per_chunk_respects_user_cap_hard_clamp():
     """`user_cap` clamps the smart-computed size DOWN. Never above the cap."""
-    from scripts.vocabulary.clusterer import _keywords_per_chunk
+    from lit_monitor.vocabulary.clusterer import _keywords_per_chunk
     keywords = [f"keyword_{i}" for i in range(100)]
     llm = MockLLMClient()
     llm.num_ctx = 8192
@@ -1183,7 +1183,7 @@ def test_keywords_per_chunk_respects_user_cap_hard_clamp():
 @pytest.mark.unit
 def test_keywords_per_chunk_clamps_to_min_floor():
     """Tiny num_ctx still yields at least _MIN_KEYWORDS_PER_CHUNK=20."""
-    from scripts.vocabulary.clusterer import _MIN_KEYWORDS_PER_CHUNK, _keywords_per_chunk
+    from lit_monitor.vocabulary.clusterer import _MIN_KEYWORDS_PER_CHUNK, _keywords_per_chunk
     keywords = ["a very long verbose keyword phrase " * 5] * 10  # very long avg length
     llm = MockLLMClient()
     llm.num_ctx = 2048  # very small
@@ -1194,7 +1194,7 @@ def test_keywords_per_chunk_clamps_to_min_floor():
 @pytest.mark.unit
 def test_keywords_per_chunk_honors_chunk_chars_override():
     """`chunk_chars_override` bypasses num_ctx math."""
-    from scripts.vocabulary.clusterer import _keywords_per_chunk
+    from lit_monitor.vocabulary.clusterer import _keywords_per_chunk
     keywords = [f"kw_{i}" for i in range(50)]  # avg 5 chars
     llm = MockLLMClient()
     llm.num_ctx = 131072  # would normally yield ~5000+ keywords
@@ -1212,7 +1212,7 @@ def test_build_vocabulary_default_chunk_size_uses_smart_sizing(tmp_path):
     in a single LLM call — the old default of 60 would also produce 1 call here,
     but the test asserts the smart-sized path is taken (no hard cap clamping).
     """
-    from scripts.vocabulary.clusterer import build_vocabulary
+    from lit_monitor.vocabulary.clusterer import build_vocabulary
     keywords = {f"kw_{i:03d}": [f"kw_{i:03d}"] for i in range(50)}
     output_file = tmp_path / "concepts_draft.yaml"
     mock_llm = MockLLMClient()
@@ -1233,7 +1233,7 @@ def test_build_vocabulary_default_chunk_size_uses_smart_sizing(tmp_path):
 @pytest.mark.unit
 def test_build_vocabulary_chunk_size_clamps_smart_sizing(tmp_path):
     """When chunk_size>0 and smaller than the smart-computed value, it clamps."""
-    from scripts.vocabulary.clusterer import build_vocabulary
+    from lit_monitor.vocabulary.clusterer import build_vocabulary
     keywords = {f"kw_{i:03d}": [f"kw_{i:03d}"] for i in range(100)}
     output_file = tmp_path / "concepts_draft.yaml"
     mock_llm = MockLLMClient()
@@ -1262,8 +1262,8 @@ def test_assign_themes_warns_when_vocab_has_dict_keywords(tmp_path, caplog):
     """
     import logging
 
-    import scripts.vocabulary.normalizer as _norm
-    from scripts.vocabulary.normalizer import assign_themes
+    import lit_monitor.vocabulary.normalizer as _norm
+    from lit_monitor.vocabulary.normalizer import assign_themes
 
     # Reset the one-shot flag in case a prior test in this module fired it.
     _norm._warned_vocab_corruption = False
@@ -1295,8 +1295,8 @@ def test_assign_themes_warning_is_one_shot_per_process(tmp_path, caplog):
     """
     import logging
 
-    import scripts.vocabulary.normalizer as _norm
-    from scripts.vocabulary.normalizer import assign_themes
+    import lit_monitor.vocabulary.normalizer as _norm
+    from lit_monitor.vocabulary.normalizer import assign_themes
 
     _norm._warned_vocab_corruption = False
     vocab = tmp_path / "concepts.yaml"

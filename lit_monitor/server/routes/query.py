@@ -67,7 +67,7 @@ async def ask(body: AskRequest) -> dict:
     The pipeline contains blocking LLM calls so it runs in a thread via
     asyncio.to_thread to avoid stalling the event loop.
     """
-    from scripts.graph.ask import run_pipeline  # noqa: PLC0415
+    from lit_monitor.graph.ask import run_pipeline  # noqa: PLC0415
 
     # LLM calls inside run_pipeline are blocking → off-thread.
     result = await asyncio.to_thread(
@@ -105,8 +105,8 @@ def _execute_cypher(query: str) -> list[dict]:
         HTTPException 503: Graph backend unavailable (safe_graph_db returned None).
         HTTPException 500: Cypher execution failed (execute_cypher returned None).
     """
-    from scripts.graph import safe_graph_db  # noqa: PLC0415
-    from scripts.graph.ask import execute_cypher  # noqa: PLC0415
+    from lit_monitor.graph import safe_graph_db  # noqa: PLC0415
+    from lit_monitor.graph.ask import execute_cypher  # noqa: PLC0415
 
     db = safe_graph_db()
     if db is None:
@@ -133,7 +133,7 @@ def run_cypher_endpoint(body: CypherRequest) -> dict:
     user's query is never echoed back to prevent info-leak of e.g. injection
     attempts.
     """
-    from scripts.mcp.cypher_guard import CypherSafetyError, guard  # noqa: PLC0415
+    from lit_monitor.mcp.cypher_guard import CypherSafetyError, guard  # noqa: PLC0415
 
     try:
         safe_query = guard(body.query, hard_limit=100)

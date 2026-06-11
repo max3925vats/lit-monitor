@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.llm.llm_client import MockLLMClient
+from lit_monitor.llm.llm_client import MockLLMClient
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -53,7 +53,7 @@ def test_extract_complex_sends_full_text_including_references():
     Key difference from extract_simple: references are needed for
     key_citations substantiveness judgment.
     """
-    from scripts.llm.extractor import extract_complex
+    from lit_monitor.llm.extractor import extract_complex
 
     seen_user_prompts: list[str] = []
 
@@ -77,7 +77,7 @@ def test_extract_complex_sends_full_text_including_references():
 @pytest.mark.unit
 def test_extract_complex_does_not_call_strip_end_matter():
     """extract_complex() must not call strip_end_matter (that's for extract_simple)."""
-    from scripts.llm.extractor import extract_complex
+    from lit_monitor.llm.extractor import extract_complex
 
     llm = MockLLMClient(mock_response_key="paper_pass3")
     with patch("scripts.llm.extractor.strip_end_matter") as mock_strip:
@@ -93,7 +93,7 @@ def test_extract_complex_does_not_call_strip_end_matter():
 @pytest.mark.unit
 def test_extract_complex_single_llm_call_for_short_text():
     """Short text → exactly one LLM call, n_chunks == 1."""
-    from scripts.llm.extractor import extract_complex
+    from lit_monitor.llm.extractor import extract_complex
 
     llm = MockLLMClient(mock_response_key="paper_pass3")
     pr = extract_complex(SAMPLE_TEXT, llm)
@@ -110,7 +110,7 @@ def test_extract_complex_single_llm_call_for_long_text():
     cause multiple calls here — whole-paper context is required for
     citation substantiveness judgment.
     """
-    from scripts.llm.extractor import extract_complex
+    from lit_monitor.llm.extractor import extract_complex
 
     # Force a very small num_ctx so any chunking would be triggered.
     class SmallCtxMock(MockLLMClient):
@@ -129,7 +129,7 @@ def test_extract_complex_single_llm_call_for_long_text():
 @pytest.mark.unit
 def test_extract_complex_warns_when_text_exceeds_budget(caplog):
     """extract_complex() logs WARNING when fulltext exceeds the estimated input budget."""
-    from scripts.llm.extractor import extract_complex
+    from lit_monitor.llm.extractor import extract_complex
 
     class TinyCtxMock(MockLLMClient):
         num_ctx = 512  # tiny → budget ≈ 4000 chars (clamped to _MIN_CHUNK_CHARS)
@@ -152,7 +152,7 @@ def test_extract_complex_warns_when_text_exceeds_budget(caplog):
 @pytest.mark.unit
 def test_paper_complex_fields_contains_citation_fields():
     """key_citations and comparison_to_prior must be in PAPER_COMPLEX_FIELDS (M3)."""
-    from scripts.llm.extractor import PAPER_COMPLEX_FIELDS
+    from lit_monitor.llm.extractor import PAPER_COMPLEX_FIELDS
     assert "key_citations" in PAPER_COMPLEX_FIELDS
     assert "comparison_to_prior" in PAPER_COMPLEX_FIELDS
 
@@ -160,14 +160,14 @@ def test_paper_complex_fields_contains_citation_fields():
 @pytest.mark.unit
 def test_paper_complex_fields_contains_discovered_topics():
     """discovered_topics must be in PAPER_COMPLEX_FIELDS (M4 field, complex phase)."""
-    from scripts.llm.extractor import PAPER_COMPLEX_FIELDS
+    from lit_monitor.llm.extractor import PAPER_COMPLEX_FIELDS
     assert "discovered_topics" in PAPER_COMPLEX_FIELDS
 
 
 @pytest.mark.unit
 def test_paper_complex_fields_does_not_overlap_simple_fields():
     """Simple and complex field sets must be disjoint."""
-    from scripts.llm.extractor import PAPER_COMPLEX_FIELDS, PAPER_SIMPLE_FIELDS
+    from lit_monitor.llm.extractor import PAPER_COMPLEX_FIELDS, PAPER_SIMPLE_FIELDS
     overlap = set(PAPER_SIMPLE_FIELDS) & set(PAPER_COMPLEX_FIELDS)
     assert not overlap, f"Fields appear in both phases: {overlap}"
 
@@ -179,7 +179,7 @@ def test_paper_complex_fields_does_not_overlap_simple_fields():
 @pytest.mark.unit
 def test_re_extract_phases_complex_calls_extract_paper_with_complex():
     """re_extract(phases=["complex"]) must call extract_paper with phases=("complex",)."""
-    from scripts.obsidian_tools.re_extract import re_extract
+    from lit_monitor.obsidian_tools.re_extract import re_extract
 
     record = {
         "doi": "10.1/test",
@@ -218,7 +218,7 @@ def test_re_extract_complex_passes_existing_extraction_to_extract_paper():
     This test verifies that re_extract passes the loaded existing extraction
     so that extract_paper can merge rather than start from scratch.
     """
-    from scripts.obsidian_tools.re_extract import re_extract
+    from lit_monitor.obsidian_tools.re_extract import re_extract
 
     existing = {
         "core_finding": "Simple phase result.",
@@ -271,7 +271,7 @@ def test_re_extract_complex_passes_existing_extraction_to_extract_paper():
 @pytest.mark.unit
 def test_re_extract_default_runs_both_phases():
     """re_extract() with no phases arg must call extract_paper with both phases."""
-    from scripts.obsidian_tools.re_extract import re_extract
+    from lit_monitor.obsidian_tools.re_extract import re_extract
 
     record = {
         "doi": "10.1/default",
@@ -299,7 +299,7 @@ def test_re_extract_default_runs_both_phases():
 @pytest.mark.unit
 def test_re_extract_raises_for_unknown_source_type():
     """re_extract() raises ValueError for unrecognised source_type."""
-    from scripts.obsidian_tools.re_extract import re_extract
+    from lit_monitor.obsidian_tools.re_extract import re_extract
 
     record = {
         "doi": "10.1/bad",
@@ -324,7 +324,7 @@ def test_re_extract_raises_for_unknown_source_type():
 def test_re_extract_all_failed_phase_targets_complex_error_papers():
     """re_extract_all_failed_phase("complex") re-runs papers whose stored
     extraction recorded a complex-phase failure (B10 _phase_errors)."""
-    from scripts.obsidian_tools.re_extract import re_extract_all_failed_phase
+    from lit_monitor.obsidian_tools.re_extract import re_extract_all_failed_phase
 
     errored = {
         "doi": "10.1/complex_fail",
@@ -364,7 +364,7 @@ def test_re_extract_all_failed_phase_targets_complex_error_papers():
 def test_re_extract_all_failed_phase_targets_simple_error_papers():
     """re_extract_all_failed_phase("simple") re-runs papers whose stored
     extraction recorded a simple-phase failure (B10 _phase_errors)."""
-    from scripts.obsidian_tools.re_extract import re_extract_all_failed_phase
+    from lit_monitor.obsidian_tools.re_extract import re_extract_all_failed_phase
 
     errored = {
         "doi": "10.1/simple_fail",
@@ -401,7 +401,7 @@ def test_re_extract_all_failed_phase_targets_simple_error_papers():
 @pytest.mark.unit
 def test_re_extract_all_failed_phase_skips_healthy_papers():
     """Papers without the phase-specific error key are skipped."""
-    from scripts.obsidian_tools.re_extract import re_extract_all_failed_phase
+    from lit_monitor.obsidian_tools.re_extract import re_extract_all_failed_phase
 
     healthy = {
         "doi": "10.1/healthy",
@@ -430,7 +430,7 @@ def test_re_extract_all_failed_phase_skips_healthy_papers():
 @pytest.mark.unit
 def test_re_extract_all_failed_phase_raises_on_invalid_phase():
     """re_extract_all_failed_phase() raises ValueError for unrecognised phase names."""
-    from scripts.obsidian_tools.re_extract import re_extract_all_failed_phase
+    from lit_monitor.obsidian_tools.re_extract import re_extract_all_failed_phase
 
     state_db = MagicMock()
     state_db.get_all_by_source_type.return_value = []
@@ -447,7 +447,7 @@ def test_re_extract_all_failed_phase_raises_on_invalid_phase():
 @pytest.mark.unit
 def test_re_extract_all_failed_phase_counts_individual_failures():
     """Single-item failures increment the 'failed' counter and do not abort the batch."""
-    from scripts.obsidian_tools.re_extract import re_extract_all_failed_phase
+    from lit_monitor.obsidian_tools.re_extract import re_extract_all_failed_phase
 
     records = [
         {
@@ -482,8 +482,8 @@ def test_re_extract_all_failed_phase_counts_individual_failures():
 def test_re_extract_all_failed_phase_raises_under_strict():
     """P4.4: in --strict a per-paper re-extract failure escalates to a raise
     instead of being silently counted in stats['failed']."""
-    import scripts.core.strict_mode as _sm
-    from scripts.obsidian_tools.re_extract import re_extract_all_failed_phase
+    import lit_monitor.core.strict_mode as _sm
+    from lit_monitor.obsidian_tools.re_extract import re_extract_all_failed_phase
 
     record = {
         "doi": "10.1/fail",

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.mcp.graph_server import SERVER_HOST, TOOL_NAMES, _build_server
+from lit_monitor.mcp.graph_server import SERVER_HOST, TOOL_NAMES, _build_server
 
 
 def test_tool_names_count() -> None:
@@ -73,7 +73,7 @@ def test_call_tool_unknown_returns_error_text() -> None:
 def test_graph_server_module_importable() -> None:
     """B1: importing the module doesn't trigger GraphDB construction or signal
     handler installation (those only fire inside main())."""
-    import scripts.mcp.graph_server as gs
+    import lit_monitor.mcp.graph_server as gs
 
     assert hasattr(gs, "TOOL_NAMES")
     assert hasattr(gs, "main")

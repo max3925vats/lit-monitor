@@ -33,8 +33,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from scripts.core.config import get_config
-from scripts.core.state_db import StateDB
+from lit_monitor.core.config import get_config
+from lit_monitor.core.state_db import StateDB
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,7 @@ def sandbox_embeddings_db(cfg: Any = None):
             this as part of the cache key, so injected configs produce a
             separate cached instance from the default-runtime path.
     """
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
 
     if cfg is None:
         cfg = get_config()
@@ -189,7 +189,7 @@ def sandbox_graph_db():
     constructor form — matching the production pattern in
     ``scripts/graph/import_citations.py::safe_graph_db``.
     """
-    from scripts.graph import GraphDB  # lazy — kuzu optional extra
+    from lit_monitor.graph import GraphDB  # lazy — kuzu optional extra
 
     return GraphDB(persist_dir=SANDBOX_GRAPH_DIR)
 

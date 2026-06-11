@@ -18,10 +18,10 @@ from __future__ import annotations
 # without knowing the internal module layout.  The import is always available
 # regardless of whether kuzu is installed; the lazy kuzu import inside GraphDB
 # ensures that non-graph users see no errors at import time.
-from scripts.graph.db import GraphDB
-from scripts.graph.import_citations import safe_graph_db
+from lit_monitor.graph.db import GraphDB
+from lit_monitor.graph.import_citations import safe_graph_db
 
 # N1 (Phase 2): BioBERT NER — lazy transformers import, safe to import always.
-from scripts.graph.ner import BiobertNER, NerSpan
+from lit_monitor.graph.ner import BiobertNER, NerSpan
 
 __all__ = ["GraphDB", "safe_graph_db", "BiobertNER", "NerSpan"]

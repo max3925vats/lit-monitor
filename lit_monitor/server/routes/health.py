@@ -38,7 +38,7 @@ def _cached_health_check() -> dict[str, dict[str, Sequence[Any]]]:
     result is returned and no underlying Ollama/Zotero probe runs.
     """
     global _health_cache, _health_cache_at
-    from scripts.setup.health_check import run_health_check
+    from lit_monitor.setup.health_check import run_health_check
 
     now = time.monotonic()
     if _health_cache is not None and (now - _health_cache_at) < _HEALTH_CACHE_TTL_SECONDS:

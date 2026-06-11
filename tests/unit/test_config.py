@@ -70,7 +70,7 @@ def _make_extraction_yaml(tmp_path: Path) -> Path:
 @pytest.mark.unit
 def test_paths_config_valid_full():
     """A well-formed paths dict validates without error."""
-    from scripts.core.config_schema import PathsConfig
+    from lit_monitor.core.config_schema import PathsConfig
     PathsConfig.model_validate({
         "zotero": {"library_type": "user", "library_id": "123"},
         "obsidian": {"vault_path": "/absolute/path/to/vault"},
@@ -82,7 +82,7 @@ def test_paths_config_valid_full():
 @pytest.mark.unit
 def test_config_validation_rejects_missing_vault_path():
     """PathsConfig raises ValidationError when vault_path key is absent."""
-    from scripts.core.config_schema import PathsConfig
+    from lit_monitor.core.config_schema import PathsConfig
     with pytest.raises(ValidationError, match="vault_path"):
         PathsConfig.model_validate({
             "zotero": {"library_type": "user", "library_id": "123"},
@@ -95,7 +95,7 @@ def test_config_validation_rejects_missing_vault_path():
 @pytest.mark.unit
 def test_paths_config_rejects_missing_obsidian_section():
     """PathsConfig raises ValidationError when the obsidian section is absent."""
-    from scripts.core.config_schema import PathsConfig
+    from lit_monitor.core.config_schema import PathsConfig
     with pytest.raises(ValidationError, match="obsidian"):
         PathsConfig.model_validate({
             "zotero": {"library_type": "user", "library_id": "123"},
@@ -107,7 +107,7 @@ def test_paths_config_rejects_missing_obsidian_section():
 @pytest.mark.unit
 def test_paths_config_rejects_invalid_library_type():
     """PathsConfig raises ValidationError when library_type is not 'user' or 'group'."""
-    from scripts.core.config_schema import PathsConfig
+    from lit_monitor.core.config_schema import PathsConfig
     with pytest.raises(ValidationError, match="library_type"):
         PathsConfig.model_validate({
             "zotero": {"library_type": "organisation", "library_id": "123"},
@@ -118,7 +118,7 @@ def test_paths_config_rejects_invalid_library_type():
 @pytest.mark.unit
 def test_paths_config_allows_extra_keys():
     """Unknown keys in paths.yaml are silently accepted (extra='allow')."""
-    from scripts.core.config_schema import PathsConfig
+    from lit_monitor.core.config_schema import PathsConfig
     PathsConfig.model_validate({
         "zotero": {"library_type": "user", "library_id": "123"},
         "obsidian": {"vault_path": "/vault"},
@@ -133,7 +133,7 @@ def test_paths_config_allows_extra_keys():
 @pytest.mark.unit
 def test_extraction_config_valid_full():
     """A well-formed extraction dict validates without error."""
-    from scripts.core.config_schema import ExtractionConfig
+    from lit_monitor.core.config_schema import ExtractionConfig
     ExtractionConfig.model_validate({
         "brain_build": {
             "provider": "ollama", "model": "phi4-mini",
@@ -154,7 +154,7 @@ def test_config_validation_rejects_invalid_model_name():
     'Model name' in D1 context means the provider discriminator — 'openai'
     is not a valid value; only 'ollama' and 'litellm' are accepted.
     """
-    from scripts.core.config_schema import LLMProviderConfig
+    from lit_monitor.core.config_schema import LLMProviderConfig
     with pytest.raises(ValidationError, match="provider"):
         LLMProviderConfig.model_validate({"provider": "openai", "model": "gpt-4"})
 
@@ -162,7 +162,7 @@ def test_config_validation_rejects_invalid_model_name():
 @pytest.mark.unit
 def test_llm_provider_rejects_temperature_above_1():
     """LLMProviderConfig raises ValidationError for temperature > 1.0."""
-    from scripts.core.config_schema import LLMProviderConfig
+    from lit_monitor.core.config_schema import LLMProviderConfig
     with pytest.raises(ValidationError, match="temperature"):
         LLMProviderConfig.model_validate({"provider": "ollama", "temperature": 1.5})
 
@@ -170,7 +170,7 @@ def test_llm_provider_rejects_temperature_above_1():
 @pytest.mark.unit
 def test_llm_provider_rejects_temperature_below_0():
     """LLMProviderConfig raises ValidationError for temperature < 0.0."""
-    from scripts.core.config_schema import LLMProviderConfig
+    from lit_monitor.core.config_schema import LLMProviderConfig
     with pytest.raises(ValidationError, match="temperature"):
         LLMProviderConfig.model_validate({"provider": "ollama", "temperature": -0.1})
 
@@ -178,7 +178,7 @@ def test_llm_provider_rejects_temperature_below_0():
 @pytest.mark.unit
 def test_llm_provider_accepts_litellm_provider():
     """LLMProviderConfig accepts provider='litellm' without error."""
-    from scripts.core.config_schema import LLMProviderConfig
+    from lit_monitor.core.config_schema import LLMProviderConfig
     cfg = LLMProviderConfig.model_validate({
         "provider": "litellm",
         "litellm_model": "anthropic/claude-haiku-4-5",
@@ -195,7 +195,7 @@ def test_config_comparison_models_malformed_entry_raises():
     must fail validation rather than silently passing as a free-form dict and
     blowing up later in the model-comparison pipeline.
     """
-    from scripts.core.config_schema import ExtractionConfig
+    from lit_monitor.core.config_schema import ExtractionConfig
     with pytest.raises(ValidationError):
         ExtractionConfig.model_validate({
             "comparison_models": [{"foo": "bar"}],
@@ -205,7 +205,7 @@ def test_config_comparison_models_malformed_entry_raises():
 @pytest.mark.unit
 def test_extraction_config_allows_extra_keys():
     """Per-pass model keys (pass1_model etc.) are extra keys — should not raise."""
-    from scripts.core.config_schema import ExtractionConfig
+    from lit_monitor.core.config_schema import ExtractionConfig
     ExtractionConfig.model_validate({
         "brain_build": {
             "provider": "ollama",
@@ -228,7 +228,7 @@ def test_config_init_raises_on_invalid_extraction_provider(tmp_path):
     """Config() raises ValidationError when a mode section has provider='anthropic'."""
     from pydantic import ValidationError as PydanticValidationError
 
-    from scripts.core.config import Config
+    from lit_monitor.core.config import Config
 
     paths = _make_paths_yaml(tmp_path)
     extraction = tmp_path / "extraction.yaml"
@@ -246,7 +246,7 @@ def test_config_init_raises_on_invalid_extraction_provider(tmp_path):
 @pytest.mark.unit
 def test_config_init_accepts_valid_yaml(tmp_path):
     """Config() loads cleanly when both YAML files are valid — no regression."""
-    from scripts.core.config import Config
+    from lit_monitor.core.config import Config
 
     paths = _make_paths_yaml(tmp_path)
     extraction = _make_extraction_yaml(tmp_path)
@@ -270,11 +270,11 @@ def test_config_load_yaml_logs_error_on_parse_fail(tmp_path, caplog, monkeypatch
     """
     import logging
 
-    from scripts.core.config import _load_yaml
+    from lit_monitor.core.config import _load_yaml
 
     # Make sure strict mode is off so we exercise the fallback-to-{} path.
     monkeypatch.delenv("LIT_MONITOR_STRICT", raising=False)
-    import scripts.core.strict_mode as _sm
+    import lit_monitor.core.strict_mode as _sm
     _sm._strict_override = None
 
     bad = tmp_path / "bad.yaml"
@@ -294,10 +294,10 @@ def test_config_load_yaml_logs_error_on_parse_fail(tmp_path, caplog, monkeypatch
 @pytest.mark.unit
 def test_config_load_yaml_strict_mode_raises_on_parse_fail(tmp_path, monkeypatch):
     """In strict mode a malformed YAML file raises (does not silently return {})."""
-    from scripts.core.config import _load_yaml
+    from lit_monitor.core.config import _load_yaml
 
     monkeypatch.setenv("LIT_MONITOR_STRICT", "1")
-    import scripts.core.strict_mode as _sm
+    import lit_monitor.core.strict_mode as _sm
     _sm._strict_override = None  # let env var be the source of truth
 
     bad = tmp_path / "bad.yaml"
@@ -319,6 +319,6 @@ def test_web_ui_show_feedback_buttons_default_true():
     buttons defaulted off. P4 flips ``WebUiSettings.show_feedback_buttons`` to
     True so a fresh install collects feedback without manual config.
     """
-    from scripts.core.config_schema import WebUiSettings
+    from lit_monitor.core.config_schema import WebUiSettings
 
     assert WebUiSettings().show_feedback_buttons is True

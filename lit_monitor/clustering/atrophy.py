@@ -65,7 +65,7 @@ import logging
 import math
 from datetime import datetime, timedelta
 
-from scripts.learning.rocchio import (
+from lit_monitor.learning.rocchio import (
     HALF_LIFE_DAYS,
     _classify_signal,
     _event_age_days,

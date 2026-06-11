@@ -8,7 +8,7 @@ pass, writing each note via the same rerender path used by
 
 Typical usage
 -------------
-    from scripts.obsidian_tools.sync import sync_notes
+    from lit_monitor.obsidian_tools.sync import sync_notes
     result = sync_notes(state_db, cfg, limit=50)
     # result = {"processed": N, "succeeded": M, "failed": K}
 
@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from scripts.core.strict_mode import strict_fallback
+from lit_monitor.core.strict_mode import strict_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def _rerender_one(doi: str, state_db: Any, cfg: Any) -> None:
 
     Signature matches rerender.rerender_note: (doi, config, state_db).
     """
-    from scripts.obsidian_tools.rerender import rerender_note
+    from lit_monitor.obsidian_tools.rerender import rerender_note
     rerender_note(doi, cfg, state_db)
 
 

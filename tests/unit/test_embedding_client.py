@@ -12,7 +12,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from scripts.llm.embedding_client import embed_via_ollama
+from lit_monitor.llm.embedding_client import embed_via_ollama
 
 
 def _fake_urlopen_returning(body_bytes: bytes):

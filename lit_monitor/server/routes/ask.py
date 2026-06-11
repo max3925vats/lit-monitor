@@ -17,11 +17,11 @@ import logging
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
-from scripts.core.config import get_config  # patched in tests
-from scripts.graph.ask import run_pipeline  # patched in tests
-from scripts.graph.import_citations import safe_graph_db  # patched in tests
-from scripts.mcp.cypher_guard import CypherSafetyError, guard
-from scripts.obsidian_tools.save_answer import save_ask_answer
+from lit_monitor.core.config import get_config  # patched in tests
+from lit_monitor.graph.ask import run_pipeline  # patched in tests
+from lit_monitor.graph.import_citations import safe_graph_db  # patched in tests
+from lit_monitor.mcp.cypher_guard import CypherSafetyError, guard
+from lit_monitor.obsidian_tools.save_answer import save_ask_answer
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ def _get_templates():
     Mirrors the accessor used by themes.py / feedback.py: the ``templates``
     object is created in app.py, which imports this router inside create_app().
     """
-    from scripts.server.app import templates  # noqa: PLC0415
+    from lit_monitor.server.app import templates  # noqa: PLC0415
 
     return templates
 
@@ -104,7 +104,7 @@ def _execute_guarded_cypher(safe_query: str) -> list[dict]:
     error so the route's generic-error handler catches it — the browser never
     sees backend detail.
     """
-    from scripts.graph.ask import execute_cypher  # noqa: PLC0415
+    from lit_monitor.graph.ask import execute_cypher  # noqa: PLC0415
 
     db = safe_graph_db()
     if db is None:

@@ -21,8 +21,8 @@ import logging
 # ``scripts.setup.check_graph.safe_graph_db``. This import is cheap and safe even
 # without the [graph] extra: ``safe_graph_db`` itself lazily imports KuzuDB and
 # returns None when it is missing (see scripts/graph/import_citations.py).
-from scripts.graph import safe_graph_db
-from scripts.setup.check_configured import CheckResult
+from lit_monitor.graph import safe_graph_db
+from lit_monitor.setup.check_configured import CheckResult
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +38,8 @@ def _indexed_total() -> tuple[int, int]:
     ``(0, 0)`` so the health aggregator never crashes.
     """
     try:
-        from scripts.core.config import get_config
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.config import get_config
+        from lit_monitor.core.state_db import StateDB
 
         state_db = StateDB(get_config().state_db.path)
         with state_db._connect() as conn:

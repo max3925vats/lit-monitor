@@ -11,7 +11,7 @@ import logging
 
 import numpy as np
 
-from scripts.clustering.kmeans import Cluster
+from lit_monitor.clustering.kmeans import Cluster
 
 logger = logging.getLogger(__name__)
 

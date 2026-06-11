@@ -17,13 +17,13 @@ from typing import TYPE_CHECKING, Any
 
 from rapidfuzz import fuzz
 
-from scripts.core.atomic_write import atomic_write_text
-from scripts.core.strict_mode import strict_fallback
-from scripts.llm.prompt_safety import sanitize_for_prompt
+from lit_monitor.core.atomic_write import atomic_write_text
+from lit_monitor.core.strict_mode import strict_fallback
+from lit_monitor.llm.prompt_safety import sanitize_for_prompt
 
 if TYPE_CHECKING:
-    from scripts.core.state_db import StateDB
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
 logger = logging.getLogger(__name__)
 _RELATED_WORK_SECTION = "## Related Work\n"
 _REFERENCED_BY_SECTION = "## Referenced By\n"
@@ -217,7 +217,7 @@ def relink_note(
         # G9: graph or hybrid — use branch helper, then rerank if configured.
         # W1: vector leg of hybrid must preserve v0.3.3 reranker contract
         # (exclude self, pass query + reranker_config through).
-        from scripts.retrieval.branch import retrieve_doi_candidates
+        from lit_monitor.retrieval.branch import retrieve_doi_candidates
         _reranker_query = sanitize_for_prompt(note_text)
         doi_candidates = retrieve_doi_candidates(
             _rag_mode,
@@ -359,7 +359,7 @@ def _doi_pairs_to_similar(
     # was a phantom symbol that raised ImportError on every call (silently
     # swallowed by except Exception).
     if reranker_cfg is not None and reranker_query and results:
-        from scripts.output.embeddings import _apply_reranker, _reranker_enabled
+        from lit_monitor.output.embeddings import _apply_reranker, _reranker_enabled
         if _reranker_enabled(reranker_cfg):
             results = _apply_reranker(reranker_query, results, top_k, reranker_cfg)
     return results

@@ -19,9 +19,9 @@ import yaml
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from scripts.domain.extract import analyze_domain
-from scripts.server import config_io
-from scripts.server.runtime import get_runtime
+from lit_monitor.domain.extract import analyze_domain
+from lit_monitor.server import config_io
+from lit_monitor.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +132,7 @@ def post_reject(row_id: int) -> dict:
 def get_domain_page(request: Request) -> HTMLResponse:
     """Render the domain review UI."""
     # Imported here so create_app() can wire `templates` first.
-    from scripts.server.app import templates
+    from lit_monitor.server.app import templates
 
     extraction = get_runtime().state_db.list_domain_extraction()
     return templates.TemplateResponse(

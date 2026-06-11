@@ -12,8 +12,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.server import runtime as runtime_mod
-from scripts.server.app import create_app
+from lit_monitor.server import runtime as runtime_mod
+from lit_monitor.server.app import create_app
 
 
 # ---------------------------------------------------------------------------
@@ -22,7 +22,7 @@ from scripts.server.app import create_app
 @pytest.mark.unit
 def test_get_all_brain_build_progress_joins_papers(tmp_path) -> None:
     """A papers row matching the progress row's DOI surfaces as paper_title."""
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     db = StateDB(tmp_path / "state.db")
     doi = "10.1234/example.001"
@@ -64,7 +64,7 @@ def test_dashboard_renders_db_unavailable_when_runtime_fails(
         raise RuntimeError("no runtime in test")
 
     # Patch on the route module (where it's imported) and the source module.
-    from scripts.server.routes import brain_build as bb_route
+    from lit_monitor.server.routes import brain_build as bb_route
 
     monkeypatch.setattr(bb_route, "get_runtime", _boom)
 
@@ -140,7 +140,7 @@ def test_dashboard_aggregates_progress_correctly(
         state_db = _FakeDB()
         config = _FakeConfig()
 
-    from scripts.server.routes import brain_build as bb_route
+    from lit_monitor.server.routes import brain_build as bb_route
 
     monkeypatch.setattr(bb_route, "get_runtime", lambda: _FakeRuntime())
 

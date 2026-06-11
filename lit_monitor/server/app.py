@@ -18,14 +18,14 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from scripts.server.csrf import _ALLOWED_HOSTS, LocalOriginMiddleware
-from scripts.server.routes.fs import router as fs_router
-from scripts.server.routes.zotero import router as zotero_router
+from lit_monitor.server.csrf import _ALLOWED_HOSTS, LocalOriginMiddleware
+from lit_monitor.server.routes.fs import router as fs_router
+from lit_monitor.server.routes.zotero import router as zotero_router
 
 # NOTE: setup router imports `templates` from this module, so its import
 # must come AFTER the `templates = Jinja2Templates(...)` line below to
 # avoid an AttributeError at import time. We import it inside create_app().
-from scripts.server.runtime import get_runtime
+from lit_monitor.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ def _resolve_allowed_hosts() -> frozenset[str]:
     would be inert at best and is sloppy. Real hostnames are still added.
     """
     try:
-        from scripts.server.config_io import load_server_config
+        from lit_monitor.server.config_io import load_server_config
 
         host = str(load_server_config().get("host", "")).strip().lower()
     except Exception as exc:  # noqa: BLE001 — never let config IO break boot
@@ -167,17 +167,17 @@ def create_app() -> FastAPI:
 
     # Imported lazily so the setup module can safely `from scripts.server.app
     # import templates` — by the time create_app() runs, `templates` is bound.
-    from scripts.server.routes.brain_build import router as brain_build_router
-    from scripts.server.routes.control import router as control_router
-    from scripts.server.routes.discovery import router as discovery_router
-    from scripts.server.routes.discovery_notify import (  # noqa: PLC0415
+    from lit_monitor.server.routes.brain_build import router as brain_build_router
+    from lit_monitor.server.routes.control import router as control_router
+    from lit_monitor.server.routes.discovery import router as discovery_router
+    from lit_monitor.server.routes.discovery_notify import (  # noqa: PLC0415
         router as discovery_notify_router,
     )
-    from scripts.server.routes.health import router as health_router
-    from scripts.server.routes.ingest import router as ingest_router
-    from scripts.server.routes.schedule import router as schedule_router
-    from scripts.server.routes.setup import router as setup_router
-    from scripts.server.routes.sse import router as sse_router
+    from lit_monitor.server.routes.health import router as health_router
+    from lit_monitor.server.routes.ingest import router as ingest_router
+    from lit_monitor.server.routes.schedule import router as schedule_router
+    from lit_monitor.server.routes.setup import router as setup_router
+    from lit_monitor.server.routes.sse import router as sse_router
 
     app.include_router(setup_router)
     app.include_router(brain_build_router)
@@ -199,44 +199,44 @@ def create_app() -> FastAPI:
 
     # H4: GET /api/papers/{doi} — paper snapshot (wraps H1 get_paper_snapshot).
     # H5: GET /api/papers/{doi}/related — related papers (vector/graph/hybrid).
-    from scripts.server.routes.papers import router as papers_router  # noqa: PLC0415
+    from lit_monitor.server.routes.papers import router as papers_router  # noqa: PLC0415
 
     app.include_router(papers_router)
 
     # H6: GET /api/entities — listing; GET /api/entities/{id} — neighborhood.
-    from scripts.server.routes.entities import router as entities_router  # noqa: PLC0415
+    from lit_monitor.server.routes.entities import router as entities_router  # noqa: PLC0415
 
     app.include_router(entities_router)
 
     # H8: POST /api/ask — NL→Cypher→execute→summarize pipeline.
     #     POST /api/cypher — read-only Cypher escape hatch with B3's guard.
-    from scripts.server.routes.query import router as query_router  # noqa: PLC0415
+    from lit_monitor.server.routes.query import router as query_router  # noqa: PLC0415
 
     app.include_router(query_router)
 
     # FE-1: /ask page (browser surface over run_pipeline; JSON /api/ask unchanged).
-    from scripts.server.routes.ask import router as ask_router  # noqa: PLC0415
+    from lit_monitor.server.routes.ask import router as ask_router  # noqa: PLC0415
 
     app.include_router(ask_router)
 
     # H10: POST /api/search — free-text paper retrieval (vector/graph/hybrid).
-    from scripts.server.routes.search import router as search_router  # noqa: PLC0415
+    from lit_monitor.server.routes.search import router as search_router  # noqa: PLC0415
 
     app.include_router(search_router)
 
     # Bundle G (v0.9): /api/domain — LLM extraction of structured focus
     # areas from config/domain_context.yaml. Also /domain page (HTMX UI).
-    from scripts.server.routes.domain import router as domain_router  # noqa: PLC0415
+    from lit_monitor.server.routes.domain import router as domain_router  # noqa: PLC0415
 
     app.include_router(domain_router)
 
     # Bundle E (v0.9): /api/trending + /trending — trending-concept suggestion queue.
-    from scripts.server.routes.trending import router as trending_router  # noqa: PLC0415
+    from lit_monitor.server.routes.trending import router as trending_router  # noqa: PLC0415
 
     app.include_router(trending_router)
 
     # Bundle E (v0.9): /api/topics/{name}/expansion-suggestions — query expansion.
-    from scripts.server.routes.topics import router as topics_router  # noqa: PLC0415
+    from lit_monitor.server.routes.topics import router as topics_router  # noqa: PLC0415
 
     app.include_router(topics_router)
 
@@ -245,27 +245,27 @@ def create_app() -> FastAPI:
     # so the index route is matched first. Both live in the same router; FastAPI
     # evaluates routes in registration order so the static GET /themes endpoint
     # (no param) will never be shadowed by the /{cluster_id} typed param.
-    from scripts.server.routes.themes import router as themes_router  # noqa: PLC0415
+    from lit_monitor.server.routes.themes import router as themes_router  # noqa: PLC0415
 
     app.include_router(themes_router)
 
     # Bundle H (v0.9): /feedback + /api/feedback — feedback events admin view.
-    from scripts.server.routes.feedback import router as feedback_router  # noqa: PLC0415
+    from lit_monitor.server.routes.feedback import router as feedback_router  # noqa: PLC0415
 
     app.include_router(feedback_router)
 
     # FE2-2: /corpus — list lens over the processed-papers corpus (state DB).
-    from scripts.server.routes.corpus import corpus_router  # noqa: PLC0415
+    from lit_monitor.server.routes.corpus import corpus_router  # noqa: PLC0415
 
     app.include_router(corpus_router)
 
     # FG-4: /graph — read-only corpus-wide Knowledge Graph overview page.
-    from scripts.server.routes.graph import graph_router  # noqa: PLC0415
+    from lit_monitor.server.routes.graph import graph_router  # noqa: PLC0415
 
     app.include_router(graph_router)
 
     # Bundle H (v0.9): /settings + /api/settings/{section} — Advanced Settings.
-    from scripts.server.routes.settings import router as settings_router  # noqa: PLC0415
+    from lit_monitor.server.routes.settings import router as settings_router  # noqa: PLC0415
 
     app.include_router(settings_router)
 
@@ -274,7 +274,7 @@ def create_app() -> FastAPI:
     # than killing the whole server.
     if dev_mode:
         try:
-            from scripts.server.routes import dev as dev_routes
+            from lit_monitor.server.routes import dev as dev_routes
 
             app.include_router(dev_routes.router)
             logger.info("Dev mode enabled — /dev router mounted.")

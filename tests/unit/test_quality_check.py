@@ -10,7 +10,7 @@ import math
 
 import numpy as np
 
-from scripts.eval.quality_check import (
+from lit_monitor.eval.quality_check import (
     FAIL,
     PASS,
     WARN,

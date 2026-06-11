@@ -18,7 +18,7 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from scripts.graph.long_tail import extract_long_tail_and_validate
+from lit_monitor.graph.long_tail import extract_long_tail_and_validate
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +94,7 @@ class TestExtractLongTailHappyPath:
 class TestExtractLongTailDisabled:
     def test_disabled_returns_empty_when_flag_false(self, monkeypatch) -> None:
         """N2: graph.ner.cloud_long_tail_enabled=false → empty, no LLM call."""
-        from scripts.graph import long_tail as lt
+        from lit_monitor.graph import long_tail as lt
 
         fake_config = MagicMock()
         fake_config.graph.ner.cloud_long_tail_enabled = False
@@ -110,7 +110,7 @@ class TestExtractLongTailDisabled:
 
     def test_disabled_when_no_api_key(self, monkeypatch) -> None:
         """N2: OLLAMA_API_KEY absent → empty, no LLM call."""
-        from scripts.graph import long_tail as lt
+        from lit_monitor.graph import long_tail as lt
 
         monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
         fake_config = MagicMock()
@@ -194,7 +194,7 @@ class TestPromptRoundTrip:
         The registry's Prompt schema requires `system` + `user_template`, so the
         YAML keys MUST use that naming. This test enforces that contract.
         """
-        from scripts.llm.prompt_registry import _reset_prompt_cache, load_prompt
+        from lit_monitor.llm.prompt_registry import _reset_prompt_cache, load_prompt
 
         _reset_prompt_cache()
         prompt = load_prompt("long_tail_ner")
@@ -207,7 +207,7 @@ class TestPromptRoundTrip:
 
     def test_prompt_render_with_required_placeholders_does_not_raise(self) -> None:
         """N2: the user_template renders cleanly when both placeholders are supplied."""
-        from scripts.llm.prompt_registry import _reset_prompt_cache, load_prompt
+        from lit_monitor.llm.prompt_registry import _reset_prompt_cache, load_prompt
 
         _reset_prompt_cache()
         prompt = load_prompt("long_tail_ner")
@@ -265,7 +265,7 @@ class TestOffsetContract:
 class TestPreserveLowConfOnDisabled:
     def test_disabled_returns_low_conf_as_keep_true(self, monkeypatch):
         """N2 fix: when disabled, preserve low_conf_entities as keep=True (enrichment, not gate)."""
-        from scripts.graph import long_tail as lt
+        from lit_monitor.graph import long_tail as lt
         fake_config = MagicMock()
         fake_config.graph.ner.cloud_long_tail_enabled = False
         monkeypatch.setattr(lt, "_load_runtime_config", lambda: fake_config)
@@ -318,7 +318,7 @@ class TestDisabledPathsSkipLLMConstruction:
         gate fails. No OllamaClient should be constructed (test would explode
         on the import inside the function if we tried).
         """
-        from scripts.graph import long_tail as lt
+        from lit_monitor.graph import long_tail as lt
 
         fake_config = MagicMock()
         fake_config.graph.ner.cloud_long_tail_enabled = False

@@ -14,8 +14,8 @@ Public surface:
 """
 from __future__ import annotations
 
-from scripts.clustering.kmeans import Cluster, compute_clusters, map_to_existing_clusters
-from scripts.clustering.naming import name_cluster
+from lit_monitor.clustering.kmeans import Cluster, compute_clusters, map_to_existing_clusters
+from lit_monitor.clustering.naming import name_cluster
 
 __all__ = [
     "Cluster",

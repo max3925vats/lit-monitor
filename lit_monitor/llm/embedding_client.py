@@ -11,11 +11,11 @@ Both functions return a 1-D float32 numpy array.  Dimension is determined
 by the model, not hardcoded here.
 
 Ollama (default)
-    from scripts.llm.embedding_client import embed_via_ollama
+    from lit_monitor.llm.embedding_client import embed_via_ollama
     vec = embed_via_ollama("text", model="mxbai-embed-large")
 
 LiteLLM (any compatible provider)
-    from scripts.llm.embedding_client import embed_via_litellm
+    from lit_monitor.llm.embedding_client import embed_via_litellm
     vec = embed_via_litellm("text", model="text-embedding-3-large")
 """
 from __future__ import annotations

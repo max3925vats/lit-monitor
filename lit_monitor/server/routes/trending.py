@@ -17,8 +17,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from scripts.server.config_io import safe_save_topics
-from scripts.server.runtime import get_runtime
+from lit_monitor.server.config_io import safe_save_topics
+from lit_monitor.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +128,7 @@ def dismiss_trending_suggestion(suggestion_id: int) -> dict:
 @router.get("/trending", response_class=HTMLResponse)
 def trending_page(request: Request) -> HTMLResponse:
     """Render the trending-concept suggestion queue as an HTMX-driven HTML page."""
-    from scripts.server.app import templates
+    from lit_monitor.server.app import templates
 
     db = _safe_db()
     suggestions: list[dict] = []

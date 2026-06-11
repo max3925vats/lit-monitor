@@ -64,7 +64,7 @@ class TestScoreBreakdownInRanker:
 
     def test_breakdown_present_on_every_paper(self):
         """rank_papers() adds score_breakdown dict to every output paper."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [
             _make_candidate("10.1/a", 0.7),
@@ -88,7 +88,7 @@ class TestScoreBreakdownInRanker:
 
     def test_breakdown_values_rounded_to_3_decimals(self):
         """All values in score_breakdown are floats rounded to 3 decimal places."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.123456)]
         db = _make_db(0.123456)
@@ -106,7 +106,7 @@ class TestScoreBreakdownInRanker:
 
     def test_breakdown_sums_approximately_to_total_score(self):
         """sum(breakdown.values()) ≈ similarity_score (within rounding tolerance)."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.6)]
         db = _make_db(0.6)
@@ -124,7 +124,7 @@ class TestScoreBreakdownInRanker:
 
     def test_breakdown_includes_vector_signal(self):
         """score_breakdown always has a 'vector' key."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.8)]
         db = _make_db(0.8)
@@ -135,7 +135,7 @@ class TestScoreBreakdownInRanker:
 
     def test_breakdown_vector_value_matches_similarity_score_when_no_domain(self):
         """Without domain context, breakdown['vector'] == similarity_score."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a")]
         db = _make_db(0.75)
@@ -149,7 +149,7 @@ class TestScoreBreakdownInRanker:
 
     def test_breakdown_includes_domain_context_signal_when_enabled(self):
         """domain_context key is present and > 0.0 when domain_context_emb + weight provided."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         domain_emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         candidates = [_make_candidate("10.1/a", 1.0)]  # embedding aligned with domain
@@ -169,7 +169,7 @@ class TestScoreBreakdownInRanker:
 
     def test_breakdown_domain_zero_when_disabled(self):
         """domain_context is 0.0 when weight=0.0 (disabled)."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.5)]
         db = _make_db(0.5)
@@ -188,7 +188,7 @@ class TestScoreBreakdownInRanker:
 
     def test_breakdown_domain_zero_when_no_embedding_on_candidate(self):
         """domain_context = 0.0 when candidate has no _embedding (no crash)."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         domain_emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         candidates = [_make_candidate("10.1/noemb", has_embedding=False)]
@@ -207,7 +207,7 @@ class TestScoreBreakdownInRanker:
 
     def test_breakdown_json_serializable(self):
         """score_breakdown can be serialized to JSON without error."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.5)]
         db = _make_db(0.5)
@@ -221,7 +221,7 @@ class TestScoreBreakdownInRanker:
 
     def test_empty_candidates_returns_empty(self):
         """rank_papers([]) returns [] even with Bundle B present."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         result = rank_papers([], MagicMock(), MagicMock())
         assert result == []
@@ -252,7 +252,7 @@ class TestDigestMarkdownDecomposition:
 
     def test_show_in_md_false_no_table(self):
         """show_in_md=False → no breakdown table in the rendered Markdown."""
-        from scripts.output.digest_renderer import render_digest
+        from lit_monitor.output.digest_renderer import render_digest
 
         run = {"run_date": "2026-05-31"}
         papers = [self._make_paper()]
@@ -270,7 +270,7 @@ class TestDigestMarkdownDecomposition:
 
     def test_show_in_md_default_is_false(self):
         """Without show_score_decomposition kwarg, no table appears (default off)."""
-        from scripts.output.digest_renderer import render_digest
+        from lit_monitor.output.digest_renderer import render_digest
 
         run = {"run_date": "2026-05-31"}
         papers = [self._make_paper()]
@@ -281,7 +281,7 @@ class TestDigestMarkdownDecomposition:
 
     def test_show_in_md_true_renders_table(self):
         """show_in_md=True → breakdown table present per paper."""
-        from scripts.output.digest_renderer import render_digest
+        from lit_monitor.output.digest_renderer import render_digest
 
         run = {"run_date": "2026-05-31"}
         papers = [self._make_paper()]
@@ -298,7 +298,7 @@ class TestDigestMarkdownDecomposition:
 
     def test_table_has_score_column(self):
         """Breakdown table has 'Score' column header."""
-        from scripts.output.digest_renderer import render_digest
+        from lit_monitor.output.digest_renderer import render_digest
 
         run = {"run_date": "2026-05-31"}
         papers = [self._make_paper()]
@@ -314,7 +314,7 @@ class TestDigestMarkdownDecomposition:
 
     def test_table_has_total_row(self):
         """Breakdown table includes a bold **total** row."""
-        from scripts.output.digest_renderer import render_digest
+        from lit_monitor.output.digest_renderer import render_digest
 
         run = {"run_date": "2026-05-31"}
         papers = [self._make_paper()]
@@ -330,7 +330,7 @@ class TestDigestMarkdownDecomposition:
 
     def test_table_domain_context_signal_present(self):
         """domain_context signal row appears in the table when breakdown has it."""
-        from scripts.output.digest_renderer import render_digest
+        from lit_monitor.output.digest_renderer import render_digest
 
         run = {"run_date": "2026-05-31"}
         papers = [self._make_paper()]
@@ -346,7 +346,7 @@ class TestDigestMarkdownDecomposition:
 
     def test_no_breakdown_key_no_crash(self):
         """Papers without score_breakdown key: show_in_md=True renders gracefully (no table)."""
-        from scripts.output.digest_renderer import render_digest
+        from lit_monitor.output.digest_renderer import render_digest
 
         run = {"run_date": "2026-05-31"}
         papers = [{"doi": "10.1/a", "title": "T", "similarity_score": 0.5}]
@@ -372,7 +372,7 @@ class TestStateDBAugmentedMigration:
 
     def test_column_added_on_fresh_db(self, tmp_path):
         """Fresh StateDB has score_breakdown_json column on discovery_paper_results."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
@@ -384,7 +384,7 @@ class TestStateDBAugmentedMigration:
 
     def test_add_discovery_paper_persists_breakdown(self, tmp_path):
         """add_discovery_paper with score_breakdown persists JSON to the column."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         run_id = db.start_discovery_run(run_params=None)
@@ -414,7 +414,7 @@ class TestStateDBAugmentedMigration:
 
     def test_add_discovery_paper_no_breakdown_stores_null(self, tmp_path):
         """add_discovery_paper without score_breakdown stores NULL (backward compat)."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         run_id = db.start_discovery_run(run_params=None)
@@ -452,7 +452,7 @@ class TestWebUIPanel:
     @pytest.fixture()
     def _seeded_db_with_breakdown(self, tmp_path):
         """StateDB with one run + one paper that has score_breakdown_json."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state_webui.db")
         run_id = db.start_discovery_run(run_params=None)
@@ -472,8 +472,8 @@ class TestWebUIPanel:
         """GET /discovery/{run_id} includes 'Why this paper?' when breakdown stored."""
         from fastapi.testclient import TestClient
 
-        from scripts.server.app import create_app
-        from scripts.server.runtime import reset_runtime
+        from lit_monitor.server.app import create_app
+        from lit_monitor.server.runtime import reset_runtime
 
         reset_runtime()
         db, run_id = _seeded_db_with_breakdown
@@ -491,8 +491,8 @@ class TestWebUIPanel:
         """Panel uses a native <details> element (no JS framework)."""
         from fastapi.testclient import TestClient
 
-        from scripts.server.app import create_app
-        from scripts.server.runtime import reset_runtime
+        from lit_monitor.server.app import create_app
+        from lit_monitor.server.runtime import reset_runtime
 
         reset_runtime()
         db, run_id = _seeded_db_with_breakdown
@@ -511,9 +511,9 @@ class TestWebUIPanel:
         """Paper without score_breakdown_json: no 'Why this paper?' panel shown."""
         from fastapi.testclient import TestClient
 
-        from scripts.core.state_db import StateDB
-        from scripts.server.app import create_app
-        from scripts.server.runtime import reset_runtime
+        from lit_monitor.core.state_db import StateDB
+        from lit_monitor.server.app import create_app
+        from lit_monitor.server.runtime import reset_runtime
 
         reset_runtime()
         db = StateDB(tmp_path / "state_nobreakdown.db")

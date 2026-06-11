@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 def client(tmp_path, monkeypatch):
     """Minimal test client — state DB pointed at tmp so no real FS side-effects."""
     monkeypatch.setenv("LIT_MONITOR_STATE_DB", str(tmp_path / "state.db"))
-    from scripts.server.app import create_app  # noqa: PLC0415
+    from lit_monitor.server.app import create_app  # noqa: PLC0415
 
     return TestClient(create_app())
 
@@ -36,7 +36,7 @@ class TestAsk:
         """200 with expected prose/rows/cypher from a mocked pipeline."""
         from unittest.mock import patch
 
-        from scripts.graph.ask import AskResult  # noqa: PLC0415
+        from lit_monitor.graph.ask import AskResult  # noqa: PLC0415
 
         fake = AskResult(
             cypher="MATCH (p) RETURN p LIMIT 100",
@@ -67,7 +67,7 @@ class TestAsk:
         """model kwarg from the request body reaches run_pipeline."""
         from unittest.mock import patch
 
-        from scripts.graph.ask import AskResult  # noqa: PLC0415
+        from lit_monitor.graph.ask import AskResult  # noqa: PLC0415
 
         captured: dict = {}
 
@@ -84,7 +84,7 @@ class TestAsk:
         """Pipeline failure (None cypher, empty rows) still returns 200 — best-effort."""
         from unittest.mock import patch
 
-        from scripts.graph.ask import AskResult  # noqa: PLC0415
+        from lit_monitor.graph.ask import AskResult  # noqa: PLC0415
 
         fake = AskResult(
             cypher=None,

@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from scripts.search.semantic_scholar import (
+from lit_monitor.search.semantic_scholar import (
     _strip_findpapers_format,
     enrich_paper,
     search_semantic_scholar,

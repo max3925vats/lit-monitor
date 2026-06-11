@@ -136,7 +136,7 @@ class ServerRuntime:
     def config(self) -> Any:
         if self._config is None:
             # Local import: avoids paying the cost at module load time.
-            from scripts.core.config import get_config
+            from lit_monitor.core.config import get_config
 
             self._config = get_config()
         return self._config
@@ -144,7 +144,7 @@ class ServerRuntime:
     @property
     def state_db(self) -> Any:
         if self._state_db is None:
-            from scripts.core.state_db import StateDB
+            from lit_monitor.core.state_db import StateDB
 
             self._state_db = StateDB(self.config.state_db.path)
         return self._state_db
@@ -152,7 +152,7 @@ class ServerRuntime:
     @property
     def embeddings_db(self) -> Any:
         if self._embeddings_db is None:
-            from scripts.output.embeddings import EmbeddingsDB
+            from lit_monitor.output.embeddings import EmbeddingsDB
 
             cfg = self.config
             persist_dir = str(Path(cfg.state_db.path).parent / "chroma")
@@ -172,7 +172,7 @@ class ServerRuntime:
     @property
     def zotero_client(self) -> Any:
         if self._zotero_client is None:
-            from scripts.core.zotero_client import ZoteroClient
+            from lit_monitor.core.zotero_client import ZoteroClient
 
             cfg = self.config
             zot_secrets = self.secrets.get("zotero", {})
@@ -196,7 +196,7 @@ class ServerRuntime:
         install requires a runtime reset — acceptable and consistent.
         """
         if not self._graph_db_resolved:
-            from scripts.graph.import_citations import safe_graph_db
+            from lit_monitor.graph.import_citations import safe_graph_db
 
             # Argless call uses the default production path
             # (~/.config/lit-monitor/graph.kuzu), matching every other

@@ -6,15 +6,15 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.server.app import create_app
-from scripts.setup.check_configured import CheckResult
+from lit_monitor.server.app import create_app
+from lit_monitor.setup.check_configured import CheckResult
 
 
 @pytest.fixture(autouse=True)
 def _reset_health_cache():
     """P6.23: clear the badge TTL cache before each test so the patched
     run_health_check is always re-invoked and tests don't pollute each other."""
-    import scripts.server.routes.health as _health
+    import lit_monitor.server.routes.health as _health
 
     _health._health_cache = None
     _health._health_cache_at = 0.0
@@ -125,7 +125,7 @@ def test_badge_healthy_when_only_warn_severity(client: TestClient) -> None:
     overall badge stays healthy. Warn = "look at the detail panel", not
     "something is broken".
     """
-    from scripts.setup.check_configured import CheckResult
+    from lit_monitor.setup.check_configured import CheckResult
 
     ok = {"probe": CheckResult(True, "ok", severity="ok")}
     warn = {"scopus.api_key": CheckResult(True, "absent", severity="warn")}
@@ -146,7 +146,7 @@ def test_badge_healthy_when_optional_scopus_missing_only(client: TestClient) -> 
     scopus missing" bug. The warn row still renders in the detail panel,
     but the rolled-up badge colour reflects "nothing is broken".
     """
-    from scripts.setup.check_configured import CheckResult
+    from lit_monitor.setup.check_configured import CheckResult
 
     fake_results = {
         "config": {"secrets_file": CheckResult(True, "ok", severity="ok")},
@@ -177,7 +177,7 @@ def test_badge_degraded_when_single_fail_with_warn(client: TestClient) -> None:
     the badge to misconfigured because misconfigured requires ≥2 *failing*
     sections.
     """
-    from scripts.setup.check_configured import CheckResult
+    from lit_monitor.setup.check_configured import CheckResult
 
     ok = {"probe": CheckResult(True, "ok", severity="ok")}
     warn = {"scopus.api_key": CheckResult(True, "absent", severity="warn")}
@@ -196,7 +196,7 @@ def test_badge_detail_renders_warning_pill_for_warn_severity(
     client: TestClient,
 ) -> None:
     """severity='warn' rows must render with class='pill warning', not success."""
-    from scripts.setup.check_configured import CheckResult
+    from lit_monitor.setup.check_configured import CheckResult
 
     fake_results = {
         "config": {"secrets_file": CheckResult(True, "ok", severity="ok")},
@@ -266,7 +266,7 @@ def test_health_badge_caches_within_ttl(client: TestClient) -> None:
 @pytest.mark.unit
 def test_health_badge_recomputes_after_ttl_expiry(client: TestClient) -> None:
     """P6.23: once the TTL elapses, the next request recomputes."""
-    import scripts.server.routes.health as _health
+    import lit_monitor.server.routes.health as _health
 
     fake_results = {
         "config": {"secrets_file": CheckResult(True, "ok", "ok")},

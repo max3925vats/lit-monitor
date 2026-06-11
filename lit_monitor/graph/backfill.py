@@ -13,12 +13,12 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from scripts.graph.aliases import load_aliases
-from scripts.graph.entity_extractor import extract_entities
-from scripts.graph.migrations import apply_schema
-from scripts.graph.ner_pipeline import build_mention_edges
-from scripts.graph.normalizer import EntityNormalizer
-from scripts.graph.relationship_extractor import extract_relationships
+from lit_monitor.graph.aliases import load_aliases
+from lit_monitor.graph.entity_extractor import extract_entities
+from lit_monitor.graph.migrations import apply_schema
+from lit_monitor.graph.ner_pipeline import build_mention_edges
+from lit_monitor.graph.normalizer import EntityNormalizer
+from lit_monitor.graph.relationship_extractor import extract_relationships
 
 logger = logging.getLogger(__name__)
 
@@ -282,7 +282,7 @@ def backfill_relationships(
         Summary dict with keys ``papers_processed``, ``edges_added``,
         ``failures``.
     """
-    from scripts.pipelines._ingest import maybe_extract_llm_relationships  # noqa: PLC0415
+    from lit_monitor.pipelines._ingest import maybe_extract_llm_relationships  # noqa: PLC0415
 
     candidates = state_db.get_papers_for_rel_backfill(
         since=since, limit=limit, only_unprocessed=True,
@@ -338,7 +338,7 @@ def backfill_relationships(
             return getattr(self._base, name)
 
     if cfg is None:
-        from scripts.core.config import get_config  # noqa: PLC0415
+        from lit_monitor.core.config import get_config  # noqa: PLC0415
         cfg = get_config()
     cfg_for_backfill = _CfgShim(cfg, with_llm)
 

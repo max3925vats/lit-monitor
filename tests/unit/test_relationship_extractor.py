@@ -14,12 +14,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from scripts.graph.relationship_extractor import (
+from lit_monitor.graph.relationship_extractor import (
     RelationshipTuple,
     _excerpt,
     extract_relationships,
 )
-from scripts.graph.relationship_validator import (
+from lit_monitor.graph.relationship_validator import (
     VALID_PREDICATES,
     RelationshipValidator,
 )

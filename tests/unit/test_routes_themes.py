@@ -24,8 +24,8 @@ from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
 from fastapi.testclient import TestClient
 
-from scripts.server.routes.themes import router as themes_router
-from scripts.server.runtime import reset_runtime
+from lit_monitor.server.routes.themes import router as themes_router
+from lit_monitor.server.runtime import reset_runtime
 
 TEMPLATES_DIR = Path(__file__).parents[2] / "scripts" / "server" / "templates"
 
@@ -43,14 +43,14 @@ def fresh_runtime():
 
 @pytest.fixture()
 def empty_db(tmp_path):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     return StateDB(tmp_path / "state.db")
 
 
 @pytest.fixture()
 def seeded_db(tmp_path):
     """StateDB with one active cluster and two papers in it."""
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     db = StateDB(tmp_path / "state.db")
     with db._connect() as conn:
@@ -92,7 +92,7 @@ def _make_api_client(db, monkeypatch) -> TestClient:
 
 def _make_html_client(db, monkeypatch) -> TestClient:
     """App with themes router + real templates for HTML tests."""
-    import scripts.server.app as app_mod
+    import lit_monitor.server.app as app_mod
 
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     templates.env.filters["fromjson"] = _json.loads
@@ -158,7 +158,7 @@ class TestGetThemeDetail:
         assert r.status_code == 404
 
     def test_404_for_archived_cluster(self, tmp_path, monkeypatch):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             conn.execute(

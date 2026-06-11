@@ -22,7 +22,7 @@ import pytest
 class TestProvenanceTable:
     def test_table_exists(self, tmp_path):
         """embedding_provenance table is created on first StateDB init."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             rows = conn.execute(
@@ -32,7 +32,7 @@ class TestProvenanceTable:
 
     def test_record_provenance(self, tmp_path):
         """record_embedding_provenance writes a row readable via raw SQL."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         db.record_embedding_provenance(
             collection_name="papers",
@@ -52,7 +52,7 @@ class TestProvenanceTable:
 
     def test_get_provenance_returns_dict(self, tmp_path):
         """get_embedding_provenance returns a proper dict, not None."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         db.record_embedding_provenance("papers", "ollama", "mxbai-embed-large", 1024)
         result = db.get_embedding_provenance("papers")
@@ -64,13 +64,13 @@ class TestProvenanceTable:
 
     def test_get_provenance_missing_returns_none(self, tmp_path):
         """get_embedding_provenance returns None for unknown collection."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         assert db.get_embedding_provenance("nonexistent") is None
 
     def test_set_current_clears_old(self, tmp_path):
         """set_current_embedding_collection marks only one row current."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         db.record_embedding_provenance("papers_v1", "ollama", "mxbai-embed-large", 1024)
         db.record_embedding_provenance("papers_v2_openai", "litellm", "text-embedding-3-large", 3072)
@@ -87,7 +87,7 @@ class TestProvenanceTable:
 
     def test_list_provenance_returns_all_rows(self, tmp_path):
         """list_embedding_provenance returns all rows in created_at DESC order."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         db.record_embedding_provenance("papers_v1", "ollama", "mxbai-embed-large", 1024)
         db.record_embedding_provenance("papers_v2_litellm", "litellm", "text-embedding-3-large", 3072)
@@ -99,7 +99,7 @@ class TestProvenanceTable:
 
     def test_record_provenance_upsert(self, tmp_path):
         """record_embedding_provenance is idempotent — second call overwrites."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         db.record_embedding_provenance("papers", "ollama", "mxbai-embed-large", 1024)
         db.record_embedding_provenance("papers", "ollama", "nomic-embed-text", 768)
@@ -121,7 +121,7 @@ class TestEmbeddingsDBProviderDispatch:
         NOT through embed_via_ollama directly.  We patch _embed_call to avoid
         real network calls while still confirming the dispatch path.
         """
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
         fake_vec = [1.0] * 1024  # _embed_call returns list[float]
         db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
         assert db.provider == "ollama"
@@ -133,7 +133,7 @@ class TestEmbeddingsDBProviderDispatch:
     def test_litellm_dispatch_when_configured(self, tmp_path):
         """provider='litellm' routes through LiteLLM path (litellm import optional)."""
         pytest.importorskip("litellm")
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
         fake_vec = np.ones(3072, dtype=np.float32)
         with patch("scripts.llm.embedding_client.embed_via_litellm", return_value=fake_vec) as mock:
             db = EmbeddingsDB(
@@ -148,13 +148,13 @@ class TestEmbeddingsDBProviderDispatch:
 
     def test_invalid_provider_raises(self, tmp_path):
         """provider='bogus' raises ValueError with 'provider' in the message."""
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
         with pytest.raises(ValueError, match="provider"):
             EmbeddingsDB(persist_dir=str(tmp_path / "chroma"), provider="bogus")
 
     def test_add_paper_uses_provider(self, tmp_path):
         """add_paper() goes through the provider abstraction, not hardcoded Ollama."""
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
         db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
         # _embed_call is the final Ollama HTTP call; patch it to avoid network I/O.
         with patch.object(db, "_embed_call", return_value=[0.5] * 1024):
@@ -182,7 +182,7 @@ class TestProvenanceOverridesConstructor:
 
         # Manually plant a provenance record in state.db
         state_db_path = tmp_path / "state.db"
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         sdb = StateDB(state_db_path)
         sdb.record_embedding_provenance(
             collection_name="lit_monitor_v1",  # _COLLECTION_NAME default
@@ -194,7 +194,7 @@ class TestProvenanceOverridesConstructor:
         fake_ollama_vec = np.ones(1024, dtype=np.float32)
         with patch("scripts.llm.embedding_client.embed_via_ollama", return_value=fake_ollama_vec):
             # Construct with litellm — provenance should override
-            from scripts.output.embeddings import EmbeddingsDB
+            from lit_monitor.output.embeddings import EmbeddingsDB
             db = EmbeddingsDB(
                 persist_dir=str(tmp_path / "chroma"),
                 provider="litellm",
@@ -207,7 +207,7 @@ class TestProvenanceOverridesConstructor:
 
     def test_no_provenance_uses_constructor_args(self, tmp_path):
         """With no recorded provenance, constructor args are used as-is."""
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
 
         # Import here to avoid circular import issues
         db = EmbeddingsDB(
@@ -233,7 +233,7 @@ class TestBundleAEmbedTextRegression:
         For the Ollama path, _embed_call is the underlying call.  Patch it to
         count calls without real network I/O.
         """
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
         call_count = 0
 
         def counting_embed_call(text: str) -> list:
@@ -255,7 +255,7 @@ class TestBundleAEmbedTextRegression:
         module-global cache. A per-instance dict means instance B does NOT see
         instance A's cached vectors (so A is free to be garbage-collected).
         """
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
 
         db_a = EmbeddingsDB(persist_dir=str(tmp_path / "chroma_a"))
         db_b = EmbeddingsDB(persist_dir=str(tmp_path / "chroma_b"))
@@ -274,7 +274,7 @@ class TestBundleAEmbedTextRegression:
     def test_embed_text_cache_evicts_lru(self, tmp_path):
         """Cache is bounded at _EMBED_TEXT_CACHE_MAXSIZE; the least-recently-used
         entry is evicted once the cap is exceeded."""
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
 
         db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
         cap = db._EMBED_TEXT_CACHE_MAXSIZE
@@ -294,7 +294,7 @@ class TestBundleAEmbedTextRegression:
         keeps the test offline — without it, CI runners with no Ollama
         connection fail with URLError.
         """
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
         db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
         # _embed returns list[float]; embed_text wraps it via np.array(..., float32).
         with patch.object(db, "_embed", return_value=[1.0] * 1024):
@@ -305,7 +305,7 @@ class TestBundleAEmbedTextRegression:
 
     def test_embed_text_empty_raises(self, tmp_path):
         """embed_text with empty string still raises ValueError."""
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
         db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
         with pytest.raises(ValueError):
             db.embed_text("")
@@ -316,7 +316,7 @@ class TestBundleAEmbedTextRegression:
         Verify the provider attribute is set correctly and the call reaches
         _embed_call (the final Ollama HTTP call) rather than bypassing it.
         """
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
         db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
         assert db.provider == "ollama"
         assert db.model == "mxbai-embed-large"

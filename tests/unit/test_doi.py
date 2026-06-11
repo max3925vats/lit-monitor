@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.core.doi import normalize_doi
+from lit_monitor.core.doi import normalize_doi
 
 
 @pytest.mark.parametrize("raw,expected", [

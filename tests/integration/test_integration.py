@@ -50,7 +50,7 @@ def test_ollama_extraction_round_trip(real_llm):
     - core_finding is populated (not null for a clear text)
     - All Pass 1 confidence fields are one of: explicit, inferred, absent
     """
-    from scripts.llm.extractor import extract_paper
+    from lit_monitor.llm.extractor import extract_paper
 
     result = extract_paper(
         fulltext=_SYNTHETIC_PAPER_TEXT,
@@ -136,8 +136,8 @@ def test_obsidian_paper_note_written_to_vault(real_config, tmp_path):
     """
     import copy as _copy
 
-    from scripts.core.config import _Namespace
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.core.config import _Namespace
+    from lit_monitor.output.obsidian_writer import write_paper_note
 
     if not _live_mode():
         _skip_or_fail(
@@ -222,7 +222,7 @@ def test_chromadb_add_and_find_similar(real_config, tmp_chroma_dir):
     """
     import requests as _requests
 
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
 
     host = getattr(real_config.ingestion, "ollama_host", "http://localhost:11434")
 
@@ -350,10 +350,10 @@ def test_single_paper_ingestion_end_to_end(
     """
     import copy as _copy
 
-    from scripts.core.config import _Namespace
-    from scripts.core.zotero_client import ZoteroClient
-    from scripts.llm.extractor import extract_paper
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.core.config import _Namespace
+    from lit_monitor.core.zotero_client import ZoteroClient
+    from lit_monitor.llm.extractor import extract_paper
+    from lit_monitor.output.obsidian_writer import write_paper_note
 
     if not _live_mode():
         _skip_or_fail(
@@ -471,7 +471,7 @@ def test_single_paper_ingestion_end_to_end(
         resp = _requests.get(f"{host}/api/tags", timeout=5)
         pulled = [m.get("name", "") for m in resp.json().get("models", [])]
         if any("mxbai-embed-large" in p for p in pulled):
-            from scripts.output.embeddings import EmbeddingsDB
+            from lit_monitor.output.embeddings import EmbeddingsDB
             db = EmbeddingsDB(str(tmp_chroma_dir), ollama_host=host)
             embed_text = f"{title} {extraction.get('core_finding', '')}"
             db.add_paper(doi, embed_text, {"title": title, "year": year})

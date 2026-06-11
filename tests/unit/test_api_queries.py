@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from scripts.api.queries import (
+from lit_monitor.api.queries import (
     _validate_doi,
     get_corpus_stats,
     get_entity_neighborhood,
@@ -15,8 +15,8 @@ from scripts.api.queries import (
     get_schema_text,
     list_entities,
 )
-from scripts.graph import GraphDB
-from scripts.graph.entity_extractor import EntityTuple
+from lit_monitor.graph import GraphDB
+from lit_monitor.graph.entity_extractor import EntityTuple
 
 
 @pytest.fixture
@@ -203,7 +203,7 @@ class TestGetSchemaText:
 class TestGetRelatedPapers:
     def test_returns_list(self, populated_graph, monkeypatch):
         """get_related_papers wraps retrieve_doi_candidates; monkeypatch to avoid embeddings."""
-        from scripts.retrieval import branch as branch_mod
+        from lit_monitor.retrieval import branch as branch_mod
 
         def fake_retrieve(
             rag_mode: str,
@@ -222,7 +222,7 @@ class TestGetRelatedPapers:
         # Re-import inside the test so monkeypatch is active
         from importlib import reload
 
-        import scripts.api.queries as q_mod
+        import lit_monitor.api.queries as q_mod
 
         reload(q_mod)
         result = q_mod.get_related_papers("10.0/a", mode="graph", k=10, cfg=None)
@@ -247,41 +247,41 @@ class TestGetPapersByQuery:
 
     def test_invalid_mode_raises(self) -> None:
         """Unknown mode raises ValueError before touching any backend."""
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
         with pytest.raises(ValueError, match="unknown mode"):
             get_papers_by_query("antibody", mode="bogus", k=10)
 
     def test_k_zero_raises(self) -> None:
         """k=0 is below the valid range."""
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
         with pytest.raises(ValueError, match="k must be"):
             get_papers_by_query("antibody", mode="graph", k=0)
 
     def test_k_negative_raises(self) -> None:
         """Negative k raises ValueError."""
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
         with pytest.raises(ValueError, match="k must be"):
             get_papers_by_query("antibody", mode="graph", k=-5)
 
     def test_k_above_100_raises(self) -> None:
         """k > 100 raises ValueError."""
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
         with pytest.raises(ValueError, match="k must be"):
             get_papers_by_query("antibody", mode="graph", k=101)
 
     def test_empty_query_returns_empty_list(self) -> None:
         """Whitespace-only query → [] without contacting any backend."""
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
         assert get_papers_by_query("   ", mode="vector", k=10) == []
 
     def test_empty_string_returns_empty_list(self) -> None:
         """Empty string query → [] without error."""
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
         assert get_papers_by_query("", mode="graph", k=10) == []
 
     def test_vector_mode_no_embeddings_db_returns_empty(self) -> None:
         """Vector mode with embeddings_db=None → [] gracefully."""
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
         result = get_papers_by_query("antibody", mode="vector", k=10, embeddings_db=None)
         assert result == []
 
@@ -289,7 +289,7 @@ class TestGetPapersByQuery:
         """Vector mode: results include doi, title, and score fields."""
         from unittest.mock import MagicMock
 
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
 
         mock_edb = MagicMock()
         mock_edb.find_similar_to_text.return_value = [
@@ -310,7 +310,7 @@ class TestGetPapersByQuery:
         """Graph mode: score field is present in output."""
         from unittest.mock import MagicMock
 
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
 
         mock_gdb = MagicMock()
         mock_gdb.resolve_query_entity.return_value = "antibody|method"
@@ -340,7 +340,7 @@ class TestGetPapersByQuery:
         """Graph mode: query that resolves to no entity → []."""
         from unittest.mock import MagicMock
 
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
 
         mock_gdb = MagicMock()
         mock_gdb.resolve_query_entity.return_value = None  # unresolvable
@@ -354,7 +354,7 @@ class TestGetPapersByQuery:
         """Hybrid with graph resolving to None and no vector backend → []."""
         from unittest.mock import MagicMock
 
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
 
         # Provide graph_db directly so no real kuzu is opened; entity resolves
         # to None so graph leg produces no hits. embeddings_db=None so vector
@@ -374,14 +374,14 @@ class TestGetPapersByQuery:
 
     def test_k_1_is_valid(self) -> None:
         """k=1 is the minimum valid value and does not raise."""
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
         # No backends → returns [] without error
         result = get_papers_by_query("x", mode="vector", k=1, embeddings_db=None)
         assert result == []
 
     def test_k_100_is_valid(self) -> None:
         """k=100 is the maximum valid value and does not raise."""
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
         result = get_papers_by_query("x", mode="vector", k=100, embeddings_db=None)
         assert result == []
 
@@ -389,7 +389,7 @@ class TestGetPapersByQuery:
         """P3.6: a lazily-acquired GraphDB is closed after a successful call."""
         from unittest.mock import MagicMock
 
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
 
         mock_gdb = MagicMock()
         mock_gdb.resolve_query_entity.return_value = "antibody|method"
@@ -406,7 +406,7 @@ class TestGetPapersByQuery:
         # quirk in this suite).
         import sys
 
-        import scripts.graph.import_citations  # noqa: F401 — ensure in sys.modules
+        import lit_monitor.graph.import_citations  # noqa: F401 — ensure in sys.modules
         ic_mod = sys.modules["scripts.graph.import_citations"]
         monkeypatch.setattr(ic_mod, "safe_graph_db", lambda *a, **k: mock_gdb)
 
@@ -421,7 +421,7 @@ class TestGetPapersByQuery:
         raises an unexpected error that escapes the function."""
         from unittest.mock import MagicMock
 
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
 
         mock_gdb = MagicMock()
         mock_gdb.resolve_query_entity.return_value = "x|method"
@@ -432,7 +432,7 @@ class TestGetPapersByQuery:
 
         import sys
 
-        import scripts.graph.import_citations  # noqa: F401 — ensure in sys.modules
+        import lit_monitor.graph.import_citations  # noqa: F401 — ensure in sys.modules
         ic_mod = sys.modules["scripts.graph.import_citations"]
         monkeypatch.setattr(ic_mod, "safe_graph_db", lambda *a, **k: mock_gdb)
 
@@ -446,7 +446,7 @@ class TestGetPapersByQuery:
         (the caller owns its lifecycle)."""
         from unittest.mock import MagicMock
 
-        from scripts.api.queries import get_papers_by_query
+        from lit_monitor.api.queries import get_papers_by_query
 
         mock_gdb = MagicMock()
         mock_gdb.resolve_query_entity.return_value = "antibody|method"
@@ -460,21 +460,21 @@ class TestGetPapersByQuery:
 
 
 def test_zotero_deeplink_builds_user_library_form():
-    from scripts.api.queries import _zotero_deeplink
+    from lit_monitor.api.queries import _zotero_deeplink
 
     assert _zotero_deeplink("ZKEY123") == "zotero://select/library/items/ZKEY123"
 
 
 def test_zotero_deeplink_none_for_none_key():
-    from scripts.api.queries import _zotero_deeplink
+    from lit_monitor.api.queries import _zotero_deeplink
 
     assert _zotero_deeplink(None) is None
 
 
 def test_snapshot_includes_zotero_key_when_linked(tmp_path):
-    from scripts.api.queries import get_paper_snapshot
-    from scripts.core.state_db import StateDB
-    from scripts.graph import GraphDB
+    from lit_monitor.api.queries import get_paper_snapshot
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.graph import GraphDB
 
     graph = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
     graph.add_paper(
@@ -492,9 +492,9 @@ def test_snapshot_includes_zotero_key_when_linked(tmp_path):
 
 
 def test_snapshot_keys_present_and_none_when_unlinked(tmp_path):
-    from scripts.api.queries import get_paper_snapshot
-    from scripts.core.state_db import StateDB
-    from scripts.graph import GraphDB
+    from lit_monitor.api.queries import get_paper_snapshot
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.graph import GraphDB
 
     graph = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
     graph.add_paper(
@@ -515,9 +515,9 @@ def test_snapshot_keys_present_and_none_when_unlinked(tmp_path):
 def test_snapshot_normalizes_doi_for_zotero_lookup(tmp_path):
     """Regression for Audit Top Finding #4: a URL-wrapped / mixed-case input DOI
     still finds the key stored under the canonical form."""
-    from scripts.api.queries import get_paper_snapshot
-    from scripts.core.state_db import StateDB
-    from scripts.graph import GraphDB
+    from lit_monitor.api.queries import get_paper_snapshot
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.graph import GraphDB
 
     # The graph node is stored under the NON-canonical (mixed-case) DOI so that
     # the raw-DOI graph metadata lookup still resolves when the caller passes the
@@ -544,8 +544,8 @@ def test_snapshot_normalizes_doi_for_zotero_lookup(tmp_path):
 
 def test_snapshot_without_state_db_keeps_keys_none(tmp_path):
     """Backward-compat: 2-arg call (no state_db) still returns the keys as None."""
-    from scripts.api.queries import get_paper_snapshot
-    from scripts.graph import GraphDB
+    from lit_monitor.api.queries import get_paper_snapshot
+    from lit_monitor.graph import GraphDB
 
     graph = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
     graph.add_paper(

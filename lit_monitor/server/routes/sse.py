@@ -46,7 +46,7 @@ def _resolve_logs_dir() -> Path:
     co-locates logs, and both fall back to ``~/.config/lit-monitor/logs``.
     """
     try:
-        from scripts.core.config import get_config
+        from lit_monitor.core.config import get_config
         cfg = get_config()
         state_path = getattr(getattr(cfg, "state_db", None), "path", None)
         if state_path:

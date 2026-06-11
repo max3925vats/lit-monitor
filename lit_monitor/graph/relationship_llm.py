@@ -26,9 +26,9 @@ import os
 import re
 from typing import Any
 
-from scripts.graph.relationship_extractor import RelationshipTuple
-from scripts.graph.relationship_validator import VALID_PREDICATES
-from scripts.llm.prompt_safety import sanitize_for_prompt
+from lit_monitor.graph.relationship_extractor import RelationshipTuple
+from lit_monitor.graph.relationship_validator import VALID_PREDICATES
+from lit_monitor.llm.prompt_safety import sanitize_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -301,10 +301,10 @@ def _maybe_construct_client(cfg: Any = None) -> Any | None:
     if not os.environ.get("OLLAMA_API_KEY"):
         return None
     try:
-        from scripts.llm.llm_client import OllamaClient  # noqa: PLC0415
+        from lit_monitor.llm.llm_client import OllamaClient  # noqa: PLC0415
 
         if cfg is None:
-            from scripts.core.config import load_config  # noqa: PLC0415
+            from lit_monitor.core.config import load_config  # noqa: PLC0415
             cfg = load_config()
         # Prefer graph.relationships.cloud_model if the user set one;
         # otherwise reuse the NER cloud model so a single env tuning
@@ -387,7 +387,7 @@ def extract_llm_relationships(
     # Load the prompt (registry or override).
     if prompt is None:
         try:
-            from scripts.llm.prompt_registry import load_prompt  # noqa: PLC0415
+            from lit_monitor.llm.prompt_registry import load_prompt  # noqa: PLC0415
 
             prompt = load_prompt("relationship_extraction")
         except Exception as exc:  # noqa: BLE001 — defensive perimeter

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from scripts.cli import main
+from lit_monitor.cli import main
 
 
 class TestGraphBackfillCLI:

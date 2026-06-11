@@ -15,11 +15,11 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 
-from scripts.api.queries import get_entity_neighborhood, list_entities
-from scripts.core.config import get_config  # noqa: F401 — kept for future cfg use
+from lit_monitor.api.queries import get_entity_neighborhood, list_entities
+from lit_monitor.core.config import get_config  # noqa: F401 — kept for future cfg use
 
 # Module-level name so tests can monkeypatch without reaching the original module.
-from scripts.graph.import_citations import safe_graph_db
+from lit_monitor.graph.import_citations import safe_graph_db
 
 router = APIRouter(tags=["entities"])
 

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.output.embeddings import EmbeddingsDB
+from lit_monitor.output.embeddings import EmbeddingsDB
 
 
 @pytest.mark.unit

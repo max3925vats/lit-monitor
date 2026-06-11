@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from scripts.core.doi_resolver import resolve_doi
+from lit_monitor.core.doi_resolver import resolve_doi
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
-from scripts.server.runtime import get_runtime
+from lit_monitor.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ def _safe_db() -> Any | None:
 
 def _get_templates():
     """Lazy import to avoid circular dependency at module load."""
-    from scripts.server.app import templates
+    from lit_monitor.server.app import templates
     return templates
 
 
@@ -200,10 +200,10 @@ def write_back_cluster(
 
     try:
         if mode == "tags":
-            from scripts.clustering.write_back import push_tags_to_zotero
+            from lit_monitor.clustering.write_back import push_tags_to_zotero
             report = push_tags_to_zotero(db, zot, dry_run=dry_run)
         else:
-            from scripts.clustering.write_back import push_collections_to_zotero
+            from lit_monitor.clustering.write_back import push_collections_to_zotero
             report = push_collections_to_zotero(db, zot, dry_run=dry_run)
     except Exception as exc:
         # A3-5 info-leak guard: log the full exception (with traceback) server-
@@ -263,7 +263,7 @@ def themes_detail(request: Request, cluster_id: int) -> HTMLResponse:
     # `show_feedback_buttons = false` in extraction config still turns it off.
     show_feedback_buttons = True
     try:
-        from scripts.server.config_io import load_config
+        from lit_monitor.server.config_io import load_config
         cfg = load_config("extraction")
         show_feedback_buttons = bool(
             cfg.get("web_ui", {}).get("show_feedback_buttons", True)

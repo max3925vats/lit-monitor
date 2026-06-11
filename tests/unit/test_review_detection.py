@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.core.item_router import detect_review
+from lit_monitor.core.item_router import detect_review
 
 # ---------------------------------------------------------------------------
 # Priority 1 — S2 publicationTypes

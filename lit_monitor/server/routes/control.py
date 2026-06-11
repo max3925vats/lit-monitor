@@ -16,8 +16,8 @@ from pathlib import Path
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from scripts.server.app import templates
-from scripts.server.runtime import get_runtime
+from lit_monitor.server.app import templates
+from lit_monitor.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["control"])

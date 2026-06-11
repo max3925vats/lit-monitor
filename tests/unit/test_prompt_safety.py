@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.llm.prompt_safety import sanitize_for_prompt
+from lit_monitor.llm.prompt_safety import sanitize_for_prompt
 
 
 @pytest.mark.unit
@@ -75,7 +75,7 @@ def test_ranker_sanitises_paper_metadata():
     """ranker._get_rationales must call sanitize_for_prompt on doi/title/abstract."""
     from unittest.mock import MagicMock, patch
 
-    from scripts.llm.ranker import _get_rationales
+    from lit_monitor.llm.ranker import _get_rationales
 
     papers = [{
         "doi": "10.1/x```evil",
@@ -111,7 +111,7 @@ def test_ranker_sanitises_domain_context():
     """
     from unittest.mock import MagicMock, patch
 
-    from scripts.llm.ranker import _get_rationales
+    from lit_monitor.llm.ranker import _get_rationales
 
     papers = [{"doi": "10.1/x", "title": "t", "abstract": "a"}]
     llm = MagicMock()
@@ -155,7 +155,7 @@ def test_extractor_fulltext_strips_role_markers_keeps_code_fences():
     """
     from unittest.mock import MagicMock, patch
 
-    from scripts.llm.extractor import _build_extraction_user_prompt
+    from lit_monitor.llm.extractor import _build_extraction_user_prompt
 
     fulltext = (
         "Methods:\n```python\nfor x in data: process(x)\n```\n"
@@ -183,7 +183,7 @@ def test_clusterer_sanitises_keywords(tmp_path):
     """
     from unittest.mock import MagicMock, patch
 
-    from scripts.vocabulary import clusterer
+    from lit_monitor.vocabulary import clusterer
 
     captured: dict = {}
 
@@ -231,7 +231,7 @@ def test_synthesize_format_sources_sanitises_untrusted_fields():
     pins the contract: every value sourced from extraction_json / ChromaDB chunks /
     note metadata is scrubbed by _format_sources before assembly.
     """
-    from scripts.obsidian_tools.synthesize import _format_sources
+    from lit_monitor.obsidian_tools.synthesize import _format_sources
 
     sources = [{
         "note_title": "Author2024_Title```evil",
@@ -266,7 +266,7 @@ def test_relationship_llm_sanitises_fulltext_and_extraction_summary():
     """
     from unittest.mock import MagicMock
 
-    from scripts.graph.relationship_llm import extract_llm_relationships
+    from lit_monitor.graph.relationship_llm import extract_llm_relationships
 
     captured: dict = {}
 
@@ -309,7 +309,7 @@ def test_domain_extract_sanitises_domain_context():
     """
     from unittest.mock import MagicMock, patch
 
-    from scripts.domain.extract import analyze_domain
+    from lit_monitor.domain.extract import analyze_domain
 
     captured: dict = {}
 

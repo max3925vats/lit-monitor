@@ -19,7 +19,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from scripts.graph.relationship_validator import RelationshipValidator
+from lit_monitor.graph.relationship_validator import RelationshipValidator
 
 logger = logging.getLogger(__name__)
 

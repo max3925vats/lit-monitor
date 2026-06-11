@@ -6,9 +6,9 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.server.app import create_app
-from scripts.server.runtime import reset_runtime
-from scripts.server.scheduler import ScheduleSpec
+from lit_monitor.server.app import create_app
+from lit_monitor.server.runtime import reset_runtime
+from lit_monitor.server.scheduler import ScheduleSpec
 
 
 @pytest.fixture(autouse=True)

@@ -30,7 +30,7 @@ def check_vault(*, cfg: Any = None) -> dict[str, tuple[bool, str]]:
     # the health-check route catches the result and falls back to "unconfigured".
     try:
         if cfg is None:
-            from scripts.core.config import get_config
+            from lit_monitor.core.config import get_config
             cfg = get_config()
         vault_path = Path(cfg.obsidian.vault_path).expanduser()
     except FileNotFoundError:

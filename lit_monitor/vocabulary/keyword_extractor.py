@@ -10,7 +10,7 @@ import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from scripts.core.zotero_client import ZoteroClient
+    from lit_monitor.core.zotero_client import ZoteroClient
 logger = logging.getLogger(__name__)
 
 

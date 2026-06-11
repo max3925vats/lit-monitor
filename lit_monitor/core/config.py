@@ -13,8 +13,8 @@ from typing import Any
 
 import yaml
 
-from scripts.core.config_schema import ExtractionConfig, PathsConfig
-from scripts.core.strict_mode import strict_fallback
+from lit_monitor.core.config_schema import ExtractionConfig, PathsConfig
+from lit_monitor.core.strict_mode import strict_fallback
 
 # ---------------------------------------------------------------------------
 # Paths

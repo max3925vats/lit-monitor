@@ -22,13 +22,13 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
-from scripts.graph.import_citations import safe_graph_db  # patched in tests
-from scripts.obsidian_tools.relink import _focused_embed_query  # graph-free query
-from scripts.server.runtime import get_runtime
+from lit_monitor.graph.import_citations import safe_graph_db  # patched in tests
+from lit_monitor.obsidian_tools.relink import _focused_embed_query  # graph-free query
+from lit_monitor.server.runtime import get_runtime
 
 if TYPE_CHECKING:  # import-cost-free: only seen by the type checker
-    from scripts.core.state_db import StateDB
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ def _get_templates():
     Mirrors the accessor used by ask.py / themes.py: the ``templates`` object is
     created in app.py, which imports this router inside create_app().
     """
-    from scripts.server.app import templates  # noqa: PLC0415
+    from lit_monitor.server.app import templates  # noqa: PLC0415
 
     return templates
 
@@ -74,7 +74,7 @@ def _list_themes() -> list[dict]:
     first brain-build clustering pass. Single patch point for the route tests.
     """
     try:
-        from scripts.server.routes.themes import list_themes  # noqa: PLC0415
+        from lit_monitor.server.routes.themes import list_themes  # noqa: PLC0415
 
         return list_themes()
     except Exception:  # noqa: BLE001 — missing clusters table / db error → no filter
@@ -162,7 +162,7 @@ def _vault_path() -> str | None:
     access used by ``discovery_notify._get_vault_name``.
     """
     try:
-        from scripts.core.config import get_config  # noqa: PLC0415
+        from lit_monitor.core.config import get_config  # noqa: PLC0415
 
         cfg = get_config()
         vault_path = getattr(getattr(cfg, "obsidian", None), "vault_path", None)
@@ -400,7 +400,7 @@ def _get_related_graph(doi: str, mode: str, k: int) -> list[dict] | None:
     Returns ``None`` (the graph-not-built sentinel) when ``safe_graph_db`` hands
     back no handle. The GraphDB handle we acquire is always closed.
     """
-    from scripts.api.queries import get_related_papers  # noqa: PLC0415
+    from lit_monitor.api.queries import get_related_papers  # noqa: PLC0415
 
     db = safe_graph_db()
     if db is None:
@@ -426,7 +426,7 @@ def _get_paper_snapshot(doi: str) -> dict | None:
 
     Module-level patch point for the graph-fragment route tests.
     """
-    from scripts.api.queries import get_paper_snapshot  # noqa: PLC0415
+    from lit_monitor.api.queries import get_paper_snapshot  # noqa: PLC0415
 
     db = safe_graph_db()
     if db is None:

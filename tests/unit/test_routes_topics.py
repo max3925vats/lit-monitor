@@ -21,8 +21,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.server.app import create_app
-from scripts.server.runtime import ServerRuntime
+from lit_monitor.server.app import create_app
+from lit_monitor.server.runtime import ServerRuntime
 
 # ---------------------------------------------------------------------------
 # Helpers

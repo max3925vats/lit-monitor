@@ -66,7 +66,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 
-from scripts.server.runtime import get_runtime
+from lit_monitor.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -232,11 +232,11 @@ def _process_paper(
     """
     # Local imports: keep module import cheap and avoid importing the full
     # brain_build stack (LLM, S2, graph) at server boot.
-    from scripts.graph import safe_graph_db
-    from scripts.llm.extractor import extract_paper
-    from scripts.llm.llm_client import get_clients_for_passes
-    from scripts.output.obsidian_writer import write_paper_note
-    from scripts.pipelines.brain_build import _process_paper as brain_process_paper
+    from lit_monitor.graph import safe_graph_db
+    from lit_monitor.llm.extractor import extract_paper
+    from lit_monitor.llm.llm_client import get_clients_for_passes
+    from lit_monitor.output.obsidian_writer import write_paper_note
+    from lit_monitor.pipelines.brain_build import _process_paper as brain_process_paper
 
     runtime = get_runtime()
     config = runtime.config

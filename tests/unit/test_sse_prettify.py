@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.server.routes.sse import _prettify_jsonl_line
+from lit_monitor.server.routes.sse import _prettify_jsonl_line
 
 
 @pytest.mark.unit

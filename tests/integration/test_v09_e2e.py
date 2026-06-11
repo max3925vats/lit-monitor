@@ -169,7 +169,7 @@ def real_embeddings_db(real_embed_host, tmp_chroma_dir, five_papers):
     Each ``add_paper`` issues a real embedding call to mxbai-embed-large and
     persists the vector into a throwaway ChromaDB under ``tmp_chroma_dir``.
     """
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
 
     db = EmbeddingsDB(str(tmp_chroma_dir), ollama_host=real_embed_host)
     for paper in five_papers:
@@ -195,7 +195,7 @@ def real_clusters(real_embeddings_db, real_config, tmp_state_db, five_papers):
 
     Returns the list of persisted active clusters (Bundle C row dicts).
     """
-    from scripts.clustering.recompute import recompute_clusters
+    from lit_monitor.clustering.recompute import recompute_clusters
 
     # Seed state_db with the paper rows so cluster naming / title sampling has
     # something to read (name_cluster falls back to "Cluster N" with llm=None).
@@ -238,7 +238,7 @@ def real_graph_db(tmp_path, five_papers):
     Skips/fails (instead of erroring) when the [graph] extra (kuzu) is not
     installed, mirroring production's ``safe_graph_db`` tolerance.
     """
-    from scripts.graph.import_citations import safe_graph_db
+    from lit_monitor.graph.import_citations import safe_graph_db
 
     graph_db = safe_graph_db(persist_dir=str(tmp_path / "graph.kuzu"))
     if graph_db is None:
@@ -247,7 +247,7 @@ def real_graph_db(tmp_path, five_papers):
             "Install with: uv sync --extra graph"
         )
 
-    from scripts.graph.entity_extractor import EntityTuple
+    from lit_monitor.graph.entity_extractor import EntityTuple
 
     shared = EntityTuple(
         canonical_id="protein a",
@@ -322,7 +322,7 @@ def test_ranking_real_full_breakdown(real_embeddings_db, real_embed_host, real_l
     """rank_papers over real embeddings (real cosine), a real domain-context
     embedding, and the real ingestion LLM for rationales must emit all six
     score_breakdown signal keys, preserve all 5 papers, and sort descending."""
-    from scripts.llm.ranker import rank_papers
+    from lit_monitor.llm.ranker import rank_papers
 
     candidates = [
         {"doi": p["doi"], "title": p["title"], "abstract": p["abstract"]}
@@ -386,7 +386,7 @@ def test_graph_ask_real_pipeline(real_graph_db, real_llm):
     local Ollama calls. This is the test that previously HUNG (it half-mocked
     its way into an unguarded real call) — it now only runs behind real_llm.
     """
-    from scripts.graph.ask import AskResult, run_pipeline
+    from lit_monitor.graph.ask import AskResult, run_pipeline
 
     with patch(
         "scripts.graph.ask._maybe_construct_client",
@@ -416,7 +416,7 @@ def test_cluster_aware_ask_real(real_clusters, real_embeddings_db, tmp_state_db)
     """_identify_relevant_cluster over the REAL persisted clusters returns the
     dominant cluster for a capture-aligned query, using a real question
     embedding and real cosine similarity."""
-    from scripts.graph.ask import _identify_relevant_cluster
+    from lit_monitor.graph.ask import _identify_relevant_cluster
 
     result = _identify_relevant_cluster(
         "best methods for monoclonal antibody affinity capture",

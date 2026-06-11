@@ -22,8 +22,8 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, nodes
 from jinja2.ext import Extension
 
-from scripts.core.atomic_write import atomic_write_text
-from scripts.llm.extractor import compute_confidence_score
+from lit_monitor.core.atomic_write import atomic_write_text
+from lit_monitor.llm.extractor import compute_confidence_score
 
 
 class _PersistExtension(Extension):
@@ -221,7 +221,7 @@ def update_note_preserve_persist_zones(path: str | Path, new_content: str) -> No
 
     Creates parent directories if needed.
     """
-    from scripts.core.strict_mode import strict_fallback
+    from lit_monitor.core.strict_mode import strict_fallback
 
     path = Path(path)
     if path.exists():

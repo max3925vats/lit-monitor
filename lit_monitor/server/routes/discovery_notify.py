@@ -19,8 +19,8 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
-from scripts.server.app import templates
-from scripts.server.config_io import safe_save_preference
+from lit_monitor.server.app import templates
+from lit_monitor.server.config_io import safe_save_preference
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["discovery_notify"])
@@ -34,7 +34,7 @@ def _get_preferred_viewer() -> str:
     to the chooser page rather than silently breaking.
     """
     try:
-        from scripts.server.config_io import load_config
+        from lit_monitor.server.config_io import load_config
 
         data = load_config("extraction")
         viewer = (
@@ -55,7 +55,7 @@ def _get_vault_name() -> str:
     well-formed even when paths.yaml is not yet configured.
     """
     try:
-        from scripts.core.config import get_config
+        from lit_monitor.core.config import get_config
 
         cfg = get_config()
         vault_path = getattr(getattr(cfg, "obsidian", None), "vault_path", None)

@@ -21,7 +21,7 @@ import pytest
 @pytest.mark.unit
 def test_h3_enrich_paper_returns_s2_publication_types():
     """enrich_paper() includes s2_publication_types list in return dict when available."""
-    from scripts.search.semantic_scholar import enrich_paper
+    from lit_monitor.search.semantic_scholar import enrich_paper
 
     mock_paper = MagicMock()
     mock_paper.paperId = "abc123"
@@ -43,7 +43,7 @@ def test_h3_enrich_paper_returns_s2_publication_types():
 @pytest.mark.unit
 def test_h3_enrich_paper_returns_review_publication_type():
     """enrich_paper() returns ['Review'] for review articles — used by H4 detect_review()."""
-    from scripts.search.semantic_scholar import enrich_paper
+    from lit_monitor.search.semantic_scholar import enrich_paper
 
     mock_paper = MagicMock()
     mock_paper.paperId = "rev456"
@@ -64,7 +64,7 @@ def test_h3_enrich_paper_returns_review_publication_type():
 @pytest.mark.unit
 def test_h3_enrich_paper_handles_none_publication_types():
     """enrich_paper() omits s2_publication_types key when publicationTypes is None."""
-    from scripts.search.semantic_scholar import enrich_paper
+    from lit_monitor.search.semantic_scholar import enrich_paper
 
     mock_paper = MagicMock()
     mock_paper.paperId = "xyz"
@@ -86,7 +86,7 @@ def test_h3_enrich_paper_handles_none_publication_types():
 @pytest.mark.unit
 def test_h3_enrich_paper_handles_empty_publication_types():
     """enrich_paper() returns an empty list when publicationTypes is [] (not omitted)."""
-    from scripts.search.semantic_scholar import enrich_paper
+    from lit_monitor.search.semantic_scholar import enrich_paper
 
     mock_paper = MagicMock()
     mock_paper.paperId = "empty"
@@ -108,7 +108,7 @@ def test_h3_enrich_paper_handles_empty_publication_types():
 @pytest.mark.unit
 def test_h3_enrich_paper_includes_existing_s2_fields_alongside_pub_types():
     """publicationTypes is returned alongside the existing s2_* fields, not instead of them."""
-    from scripts.search.semantic_scholar import enrich_paper
+    from lit_monitor.search.semantic_scholar import enrich_paper
 
     mock_paper = MagicMock()
     mock_paper.paperId = "full"
@@ -133,7 +133,7 @@ def test_h3_enrich_paper_includes_existing_s2_fields_alongside_pub_types():
 @pytest.mark.unit
 def test_h3_enrich_paper_coerces_pub_types_to_strings():
     """s2_publication_types entries are coerced to str — handles non-string API values."""
-    from scripts.search.semantic_scholar import enrich_paper
+    from lit_monitor.search.semantic_scholar import enrich_paper
 
     mock_paper = MagicMock()
     mock_paper.paperId = "coerce"
@@ -160,7 +160,7 @@ def test_h3_enrich_paper_coerces_pub_types_to_strings():
 @pytest.mark.unit
 def test_h3_build_summary_crossref_resolved_default_empty():
     """BuildSummary.crossref_resolved is an empty list on construction."""
-    from scripts.pipelines.brain_build import BuildSummary
+    from lit_monitor.pipelines.brain_build import BuildSummary
 
     summary = BuildSummary()
     assert hasattr(summary, "crossref_resolved")
@@ -170,7 +170,7 @@ def test_h3_build_summary_crossref_resolved_default_empty():
 @pytest.mark.unit
 def test_h3_build_summary_crossref_resolved_is_list():
     """BuildSummary.crossref_resolved is a mutable list (not a tuple or None)."""
-    from scripts.pipelines.brain_build import BuildSummary
+    from lit_monitor.pipelines.brain_build import BuildSummary
 
     summary = BuildSummary()
     summary.crossref_resolved.append("10.1234/test-doi")
@@ -180,7 +180,7 @@ def test_h3_build_summary_crossref_resolved_is_list():
 @pytest.mark.unit
 def test_h3_build_summary_crossref_resolved_independent_across_instances():
     """Two BuildSummary instances have independent crossref_resolved lists."""
-    from scripts.pipelines.brain_build import BuildSummary
+    from lit_monitor.pipelines.brain_build import BuildSummary
 
     s1 = BuildSummary()
     s2 = BuildSummary()

@@ -28,7 +28,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from scripts.graph.normalizer import EntityNormalizer
+from lit_monitor.graph.normalizer import EntityNormalizer
 
 logger = logging.getLogger(__name__)
 

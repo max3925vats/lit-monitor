@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from scripts.cli import main
+from lit_monitor.cli import main
 
 
 # ---------------------------------------------------------------------------
@@ -26,13 +26,13 @@ def runner():
 # ---------------------------------------------------------------------------
 class TestCheckConfigured:
     def test_missing_secrets_file(self, tmp_path):
-        from scripts.setup.check_configured import check_configured
+        from lit_monitor.setup.check_configured import check_configured
         with patch("scripts.setup.check_configured._SECRETS_PATH", tmp_path / "no.toml"):
             results = check_configured()
         assert results["secrets_file"][0] is False
         assert "Missing" in results["secrets_file"][1]
     def test_valid_secrets_file(self, tmp_path):
-        from scripts.setup.check_configured import check_configured
+        from lit_monitor.setup.check_configured import check_configured
         secrets = tmp_path / "config.toml"
         secrets.write_text(
             '[zotero]\napi_key = "abc123"\nlibrary_id = "99999"\n'
@@ -44,14 +44,14 @@ class TestCheckConfigured:
         assert results["zotero.api_key"][0] is True
         assert results["zotero.library_id"][0] is True
     def test_missing_required_key(self, tmp_path):
-        from scripts.setup.check_configured import check_configured
+        from lit_monitor.setup.check_configured import check_configured
         secrets = tmp_path / "config.toml"
         secrets.write_text('[zotero]\nlibrary_id = "99999"\n')  # no api_key
         with patch("scripts.setup.check_configured._SECRETS_PATH", secrets):
             results = check_configured()
         assert results["zotero.api_key"][0] is False
     def test_optional_key_missing_still_passes(self, tmp_path):
-        from scripts.setup.check_configured import check_configured
+        from lit_monitor.setup.check_configured import check_configured
         secrets = tmp_path / "config.toml"
         secrets.write_text('[zotero]\napi_key = "x"\nlibrary_id = "1"\n')
         with patch("scripts.setup.check_configured._SECRETS_PATH", secrets):
@@ -68,7 +68,7 @@ class TestCheckConfigured:
         boolean alone couldn't distinguish "configured" from "skipped". Now
         the severity attr surfaces it as yellow ⚠.
         """
-        from scripts.setup.check_configured import check_configured
+        from lit_monitor.setup.check_configured import check_configured
         secrets = tmp_path / "config.toml"
         secrets.write_text(
             '[zotero]\napi_key = "x"\nlibrary_id = "1"\n'
@@ -88,14 +88,14 @@ class TestCheckOllama:
     def test_ollama_not_running(self):
         import requests
 
-        from scripts.setup.check_ollama import check_ollama
+        from lit_monitor.setup.check_ollama import check_ollama
         with patch("scripts.setup.check_ollama.requests.get") as mock_get:
             mock_get.side_effect = requests.exceptions.ConnectionError("refused")
             results = check_ollama()
         assert results["ollama_running"][0] is False
         assert "ollama serve" in results["ollama_running"][1]
     def test_ollama_running_no_model_check(self):
-        from scripts.setup.check_ollama import check_ollama
+        from lit_monitor.setup.check_ollama import check_ollama
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"models": [{"name": "mistral:7b"}]}
         mock_resp.raise_for_status.return_value = None
@@ -104,7 +104,7 @@ class TestCheckOllama:
         assert results["ollama_running"][0] is True
         assert "model_available" not in results
     def test_model_found(self):
-        from scripts.setup.check_ollama import check_ollama
+        from lit_monitor.setup.check_ollama import check_ollama
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"models": [{"name": "mistral:7b"}]}
         mock_resp.raise_for_status.return_value = None
@@ -112,7 +112,7 @@ class TestCheckOllama:
             results = check_ollama(model="mistral:7b")
         assert results["model_available"][0] is True
     def test_model_not_found(self):
-        from scripts.setup.check_ollama import check_ollama
+        from lit_monitor.setup.check_ollama import check_ollama
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"models": [{"name": "phi3:mini"}]}
         mock_resp.raise_for_status.return_value = None
@@ -127,7 +127,7 @@ class TestCheckOllama:
         The old startswith(f"{model}:") rule matched too broadly; the exact
         base-name rule (split(':')[0] == model) keeps families distinct.
         """
-        from scripts.setup.check_ollama import check_ollama
+        from lit_monitor.setup.check_ollama import check_ollama
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"models": [{"name": "mistral-nemo:latest"}]}
         mock_resp.raise_for_status.return_value = None
@@ -137,7 +137,7 @@ class TestCheckOllama:
 
     def test_p52_bare_name_matches_tagged_variant(self):
         """P5.2: asking for 'mistral' matches 'mistral:latest' / 'mistral:7b'."""
-        from scripts.setup.check_ollama import check_ollama
+        from lit_monitor.setup.check_ollama import check_ollama
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"models": [{"name": "mistral:latest"}]}
         mock_resp.raise_for_status.return_value = None
@@ -147,7 +147,7 @@ class TestCheckOllama:
 
     def test_p51_probe_targets_configured_host(self):
         """P5.1: probe targets the configured Ollama host, not hardcoded localhost."""
-        from scripts.setup.check_ollama import check_ollama
+        from lit_monitor.setup.check_ollama import check_ollama
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"models": []}
         mock_resp.raise_for_status.return_value = None
@@ -167,7 +167,7 @@ class TestCheckOllama:
 
     def test_p51_falls_back_to_localhost_when_config_absent(self):
         """P5.1: with no/failed config, the probe falls back to localhost."""
-        from scripts.setup import check_ollama as mod
+        from lit_monitor.setup import check_ollama as mod
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"models": []}
         mock_resp.raise_for_status.return_value = None
@@ -188,12 +188,12 @@ class TestCheckOllama:
 # ---------------------------------------------------------------------------
 class TestCheckZotero:
     def test_missing_secrets(self, tmp_path):
-        from scripts.setup.check_zotero import check_zotero
+        from lit_monitor.setup.check_zotero import check_zotero
         with patch("scripts.setup.check_zotero._SECRETS_PATH", tmp_path / "no.toml"):
             results = check_zotero()
         assert results["zotero_credentials"][0] is False
     def test_api_success(self, tmp_path):
-        from scripts.setup.check_zotero import check_zotero
+        from lit_monitor.setup.check_zotero import check_zotero
         secrets = tmp_path / "config.toml"
         secrets.write_text('[zotero]\napi_key = "abc"\nlibrary_id = "123"\n')
         mock_resp = MagicMock()
@@ -207,7 +207,7 @@ class TestCheckZotero:
         assert results["zotero_credentials"][0] is True
         assert results["zotero_api"][0] is True
     def test_api_forbidden(self, tmp_path):
-        from scripts.setup.check_zotero import check_zotero
+        from lit_monitor.setup.check_zotero import check_zotero
         secrets = tmp_path / "config.toml"
         secrets.write_text('[zotero]\napi_key = "bad"\nlibrary_id = "123"\n')
         mock_resp = MagicMock()
@@ -309,7 +309,7 @@ class TestCliStatus:
 
 class TestCliCheck:
     def test_check_all_pass(self, runner):
-        from scripts.setup.check_configured import CheckResult
+        from lit_monitor.setup.check_configured import CheckResult
         all_ok = {"key": CheckResult(True, "all good", "ok")}
         with (
             patch("scripts.cli._make_config", return_value=MagicMock()),
@@ -322,7 +322,7 @@ class TestCliCheck:
         assert result.exit_code == 0
         assert "Tesseract" not in result.output
     def test_check_fails_on_bad_config(self, runner):
-        from scripts.setup.check_configured import CheckResult
+        from lit_monitor.setup.check_configured import CheckResult
         bad = {"zotero.api_key": CheckResult(False, "Missing", "fail")}
         ok = {"x": CheckResult(True, "ok", "ok")}
         with (
@@ -335,7 +335,7 @@ class TestCliCheck:
             result = runner.invoke(main, ["check"])
         assert result.exit_code == 1
     def test_check_shows_api_key_from_config_toml(self, runner):
-        from scripts.setup.check_configured import CheckResult
+        from lit_monitor.setup.check_configured import CheckResult
         all_ok = {"key": CheckResult(True, "all good", "ok")}
         mock_cfg = MagicMock()
         mock_cfg.brain_build.ollama_host = "https://ollama.com"
@@ -352,7 +352,7 @@ class TestCliCheck:
             result = runner.invoke(main, ["check"])
         assert "config.toml" in result.output
     def test_check_shows_api_key_from_env_var(self, runner):
-        from scripts.setup.check_configured import CheckResult
+        from lit_monitor.setup.check_configured import CheckResult
         all_ok = {"key": CheckResult(True, "all good", "ok")}
         mock_cfg = MagicMock()
         mock_cfg.brain_build.ollama_host = "https://ollama.com"
@@ -368,7 +368,7 @@ class TestCliCheck:
             result = runner.invoke(main, ["check"])
         assert "env var" in result.output
     def test_check_local_ollama_no_key_is_ok(self, runner):
-        from scripts.setup.check_configured import CheckResult
+        from lit_monitor.setup.check_configured import CheckResult
         all_ok = {"key": CheckResult(True, "all good", "ok")}
         mock_cfg = MagicMock()
         mock_cfg.brain_build.ollama_host = "http://localhost:11434"
@@ -386,7 +386,7 @@ class TestCliCheck:
         assert result.exit_code == 0
 class TestCliBrainBuild:
     def test_brain_build_invokes_pipeline(self, runner):
-        from scripts.core.state_db import CURRENT_SCHEMA_VERSION
+        from lit_monitor.core.state_db import CURRENT_SCHEMA_VERSION
         mock_summary = MagicMock()
         mock_summary.papers_processed = 3
         mock_summary.papers_skipped = 1
@@ -416,8 +416,8 @@ class TestCliBrainBuild:
         """P4.5: the CLI catches RateLimitExhausted (raised by run_brain_build)
         and maps it to exit code 2, preserving the historical exit-code-2
         behaviour now that the library no longer raises SystemExit."""
-        from scripts.core.state_db import CURRENT_SCHEMA_VERSION
-        from scripts.pipelines.brain_build import RateLimitExhausted
+        from lit_monitor.core.state_db import CURRENT_SCHEMA_VERSION
+        from lit_monitor.pipelines.brain_build import RateLimitExhausted
         mock_state_db = MagicMock()
         mock_state_db.get_schema_version.return_value = CURRENT_SCHEMA_VERSION
         with (
@@ -442,7 +442,7 @@ class TestCliBrainBuild:
         """N22: ``brain-build --all-library`` must reach run_brain_build with
         ``all_library=True``.  Closes the CLI-plumbing gap surfaced in Audit R27.
         """
-        from scripts.core.state_db import CURRENT_SCHEMA_VERSION
+        from lit_monitor.core.state_db import CURRENT_SCHEMA_VERSION
         mock_summary = MagicMock()
         mock_summary.papers_processed = 0
         mock_summary.papers_skipped = 0
@@ -475,7 +475,7 @@ class TestCliBrainBuild:
         """N22 inverse: without --all-library, run_brain_build is called with
         ``all_library=False`` (or the default).
         """
-        from scripts.core.state_db import CURRENT_SCHEMA_VERSION
+        from lit_monitor.core.state_db import CURRENT_SCHEMA_VERSION
         mock_summary = MagicMock()
         mock_summary.papers_processed = 0
         mock_summary.papers_skipped = 0
@@ -533,7 +533,7 @@ class TestCliRun:
         """P5.5: the discovery CLI catches RateLimitExhausted (raised by
         run_discovery) and maps it to exit code 2, mirroring brain-build P4.5.
         """
-        from scripts.pipelines.brain_build import RateLimitExhausted
+        from lit_monitor.pipelines.brain_build import RateLimitExhausted
         with (
             patch("scripts.cli._make_config", return_value=MagicMock()),
             patch("scripts.cli._make_state_db", return_value=MagicMock()),
@@ -611,8 +611,8 @@ class TestCliResolvNoDoi:
         When --resolve-no-doi is passed and summary.no_doi_items is non-empty,
         the CLI must call _process_paper() with the user-supplied DOI.
         """
-        from scripts.core.state_db import CURRENT_SCHEMA_VERSION
-        from scripts.pipelines.brain_build import BuildSummary
+        from lit_monitor.core.state_db import CURRENT_SCHEMA_VERSION
+        from lit_monitor.pipelines.brain_build import BuildSummary
 
         # A summary where one item has no DOI
         mock_summary = BuildSummary()
@@ -992,7 +992,7 @@ class TestMaybeSetOllamaKey:
     """Unit tests for _maybe_set_ollama_key (N2 — credential unification)."""
 
     def test_sets_key_from_config_when_env_absent(self):
-        from scripts.cli import _maybe_set_ollama_key
+        from lit_monitor.cli import _maybe_set_ollama_key
         secrets = {"ollama": {"api_key": "toml-key-123"}}
         with patch.dict("os.environ", {}, clear=False):
             os.environ.pop("OLLAMA_API_KEY", None)
@@ -1001,14 +1001,14 @@ class TestMaybeSetOllamaKey:
         os.environ.pop("OLLAMA_API_KEY", None)
 
     def test_env_var_wins_over_config(self):
-        from scripts.cli import _maybe_set_ollama_key
+        from lit_monitor.cli import _maybe_set_ollama_key
         secrets = {"ollama": {"api_key": "toml-key"}}
         with patch.dict("os.environ", {"OLLAMA_API_KEY": "env-key"}, clear=False):
             _maybe_set_ollama_key(secrets)
             assert os.environ["OLLAMA_API_KEY"] == "env-key"
 
     def test_no_key_no_side_effect(self):
-        from scripts.cli import _maybe_set_ollama_key
+        from lit_monitor.cli import _maybe_set_ollama_key
         with patch.dict("os.environ", {}, clear=False):
             os.environ.pop("OLLAMA_API_KEY", None)
             _maybe_set_ollama_key({})
@@ -1019,7 +1019,7 @@ class TestMaybeSetS2Key:
     """Unit tests for _maybe_set_s2_key (M3 — S2 credential parity with OLLAMA)."""
 
     def test_sets_key_from_config_when_env_absent(self):
-        from scripts.cli import _maybe_set_s2_key
+        from lit_monitor.cli import _maybe_set_s2_key
         secrets = {"semantic_scholar": {"api_key": "toml-s2-key-123"}}
         with patch.dict("os.environ", {}, clear=False):
             os.environ.pop("S2_API_KEY", None)
@@ -1028,14 +1028,14 @@ class TestMaybeSetS2Key:
         os.environ.pop("S2_API_KEY", None)
 
     def test_env_var_wins_over_config(self):
-        from scripts.cli import _maybe_set_s2_key
+        from lit_monitor.cli import _maybe_set_s2_key
         secrets = {"semantic_scholar": {"api_key": "toml-key"}}
         with patch.dict("os.environ", {"S2_API_KEY": "env-key"}, clear=False):
             _maybe_set_s2_key(secrets)
             assert os.environ["S2_API_KEY"] == "env-key"
 
     def test_no_key_no_side_effect(self):
-        from scripts.cli import _maybe_set_s2_key
+        from lit_monitor.cli import _maybe_set_s2_key
         with patch.dict("os.environ", {}, clear=False):
             os.environ.pop("S2_API_KEY", None)
             _maybe_set_s2_key({})
@@ -1043,7 +1043,7 @@ class TestMaybeSetS2Key:
 
     def test_missing_section_no_crash(self):
         """Helper must tolerate config.toml without a [semantic_scholar] section."""
-        from scripts.cli import _maybe_set_s2_key
+        from lit_monitor.cli import _maybe_set_s2_key
         with patch.dict("os.environ", {}, clear=False):
             os.environ.pop("S2_API_KEY", None)
             # Realistic config.toml has zotero/pubmed/ollama but no semantic_scholar.
@@ -1076,7 +1076,7 @@ class TestCliSetupLogging:
     def test_jsonl_handler_emits_valid_json(self, tmp_path):
         import logging
 
-        from scripts.cli import _JsonlFileHandler
+        from lit_monitor.cli import _JsonlFileHandler
         log_file = tmp_path / "test.jsonl"
         handler = _JsonlFileHandler(str(log_file))
         logger = logging.getLogger("test_jsonl")
@@ -1098,7 +1098,7 @@ class TestCliSetupLogging:
         """
         from pathlib import Path as _P
 
-        from scripts import cli
+        from lit_monitor import cli
         fake_cfg = MagicMock()
         fake_cfg.state_db.path = "/Users/someone/.config/lit-monitor/state.db"
         with patch("scripts.cli._make_config", return_value=fake_cfg):
@@ -1112,7 +1112,7 @@ class TestCliSetupLogging:
         """P5.3: when config can't load, fall back to ~/.config/lit-monitor/logs."""
         from pathlib import Path as _P
 
-        from scripts import cli
+        from lit_monitor import cli
         with patch(
             "scripts.cli._make_config", side_effect=RuntimeError("no config")
         ):
@@ -1124,7 +1124,7 @@ class TestCliSetupLogging:
         exactly one _JsonlFileHandler on the root logger, not two."""
         import logging
 
-        from scripts.cli import _JsonlFileHandler, _setup_logging
+        from lit_monitor.cli import _JsonlFileHandler, _setup_logging
         root = logging.getLogger()
         # Remove any _JsonlFileHandler that may exist from prior test runs.
         for h in list(root.handlers):
@@ -1150,7 +1150,7 @@ class TestCliSetupLogging:
         import json as _json
         import logging
 
-        from scripts.cli import _JsonlFileHandler, _setup_logging
+        from lit_monitor.cli import _JsonlFileHandler, _setup_logging
         root = logging.getLogger()
         _setup_logging("test_tz", log_dir=tmp_path, verbose=True)
         test_logger = logging.getLogger("_test_tz_emit")
@@ -1178,7 +1178,7 @@ class TestCliSetupLogging:
 class TestN20Reminder:
     def test_reminder_printed_when_papers_processed(self, runner):
         """N20: brain-build prints next-steps reminder when >= 1 paper was processed."""
-        from scripts.core.state_db import CURRENT_SCHEMA_VERSION
+        from lit_monitor.core.state_db import CURRENT_SCHEMA_VERSION
         mock_summary = MagicMock()
         mock_summary.papers_processed = 2
         mock_summary.papers_skipped = 0
@@ -1203,7 +1203,7 @@ class TestN20Reminder:
 
     def test_reminder_suppressed_when_no_papers_processed(self, runner):
         """N20: reminder block is suppressed for no-op runs (papers_processed == 0)."""
-        from scripts.core.state_db import CURRENT_SCHEMA_VERSION
+        from lit_monitor.core.state_db import CURRENT_SCHEMA_VERSION
         mock_summary = MagicMock()
         mock_summary.papers_processed = 0
         mock_summary.papers_skipped = 5
@@ -1383,8 +1383,8 @@ class TestStrictModeFlag:
 
     def test_strict_flag_sets_strict_mode(self, runner) -> None:
         """--strict must activate is_strict() during the subcommand run."""
-        import scripts.core.strict_mode as _sm
-        from scripts.setup.check_configured import CheckResult
+        import lit_monitor.core.strict_mode as _sm
+        from lit_monitor.setup.check_configured import CheckResult
 
         captured: list[bool] = []
 
@@ -1413,7 +1413,7 @@ class TestStrictModeFlag:
 
     def test_verbose_and_strict_combine(self, runner) -> None:
         """--verbose --strict together must not conflict."""
-        from scripts.setup.check_configured import CheckResult
+        from lit_monitor.setup.check_configured import CheckResult
         cfg_ok = {"key": CheckResult(True, "all good", "ok")}
         svc_ok = {"key": (True, "all good")}
         with (
@@ -1426,7 +1426,7 @@ class TestStrictModeFlag:
             result = runner.invoke(main, ["--strict", "--verbose", "check"])
         assert result.exit_code == 0, result.output
 
-        import scripts.core.strict_mode as _sm
+        import lit_monitor.core.strict_mode as _sm
         _sm.set_strict(False)
 
 
@@ -1442,8 +1442,8 @@ class TestLoadSecretsStrictMode:
         not RuntimeError. Both are acceptable to callers — we assert on the
         base Exception plus the cause-chain message.
         """
-        import scripts.core.strict_mode as _sm
-        from scripts.cli import _load_secrets
+        import lit_monitor.core.strict_mode as _sm
+        from lit_monitor.cli import _load_secrets
 
         bad_toml = tmp_path / "config.toml"
         bad_toml.write_text("this is not valid toml !!!\n")
@@ -1460,8 +1460,8 @@ class TestLoadSecretsStrictMode:
         """With strict off, a malformed TOML file logs a WARNING and returns {}."""
         import logging
 
-        import scripts.core.strict_mode as _sm
-        from scripts.cli import _load_secrets
+        import lit_monitor.core.strict_mode as _sm
+        from lit_monitor.cli import _load_secrets
 
         bad_toml = tmp_path / "config.toml"
         bad_toml.write_text("this is not valid toml !!!\n")

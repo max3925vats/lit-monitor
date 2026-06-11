@@ -60,7 +60,7 @@ def _make_extraction_yaml(tmp_path: Path) -> Path:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 def test_config_loads_successfully(tmp_path):
-    from scripts.core.config import Config
+    from lit_monitor.core.config import Config
     paths = _make_paths_yaml(tmp_path)
     extraction = _make_extraction_yaml(tmp_path)
     cfg = Config(paths_yaml=paths, extraction_yaml=extraction)
@@ -69,21 +69,21 @@ def test_config_loads_successfully(tmp_path):
     assert cfg.ingestion.model == "qwen2.5:3b"
 @pytest.mark.unit
 def test_config_rejects_tilde_vault_path(tmp_path):
-    from scripts.core.config import Config
+    from lit_monitor.core.config import Config
     paths = _make_paths_yaml(tmp_path, vault_path="~/MyVault")
     extraction = _make_extraction_yaml(tmp_path)
     with pytest.raises(ValueError, match="full absolute path"):
         Config(paths_yaml=paths, extraction_yaml=extraction)
 @pytest.mark.unit
 def test_config_rejects_empty_vault_path(tmp_path):
-    from scripts.core.config import Config
+    from lit_monitor.core.config import Config
     paths = _make_paths_yaml(tmp_path, vault_path="")
     extraction = _make_extraction_yaml(tmp_path)
     with pytest.raises(ValueError, match="not set"):
         Config(paths_yaml=paths, extraction_yaml=extraction)
 @pytest.mark.unit
 def test_config_expands_tilde_in_storage_path(tmp_path):
-    from scripts.core.config import Config
+    from lit_monitor.core.config import Config
     p = tmp_path / "paths.yaml"
     _write_yaml(p, {
         "zotero": {
@@ -104,7 +104,7 @@ def test_config_expands_tilde_in_storage_path(tmp_path):
 @pytest.mark.unit
 def test_state_db_upsert_and_retrieve(tmp_path):
 
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     db = StateDB(tmp_path / "test.db")
     db.upsert_paper({
         "doi": "10.1000/test",
@@ -120,7 +120,7 @@ def test_state_db_upsert_and_retrieve(tmp_path):
     assert row["status"] == "pending"
 @pytest.mark.unit
 def test_state_db_mark_status(tmp_path):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     db = StateDB(tmp_path / "test.db")
     db.upsert_paper({"doi": "10.1/x", "status": "pending", "source_type": "paper"})
     db.mark_status("10.1/x", "extraction_complete")
@@ -128,7 +128,7 @@ def test_state_db_mark_status(tmp_path):
     assert row["status"] == "extraction_complete"
 @pytest.mark.unit
 def test_state_db_get_all_by_source_type(tmp_path):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     db = StateDB(tmp_path / "test.db")
     db.upsert_paper({"doi": "10.1/paper1", "source_type": "paper"})
     db.upsert_paper({"doi": "10.1/paper2", "source_type": "paper"})
@@ -139,7 +139,7 @@ def test_state_db_get_all_by_source_type(tmp_path):
     assert len(books) == 1
 @pytest.mark.unit
 def test_state_db_known_dois(tmp_path):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     db = StateDB(tmp_path / "test.db")
     db.upsert_paper({"doi": "10.1/a", "source_type": "paper"})
@@ -150,7 +150,7 @@ def test_state_db_known_dois(tmp_path):
     assert "10.1/c" not in known
 @pytest.mark.unit
 def test_state_db_brain_build_pass_tracking(tmp_path):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     db = StateDB(tmp_path / "test.db")
     db.upsert_brain_build_progress("ZKEY1", "10.1/test")
     db.mark_brain_build_pass("ZKEY1", 1)
@@ -170,7 +170,7 @@ def test_state_db_brain_build_pass_tracking(tmp_path):
 @pytest.mark.unit
 def test_mark_brain_build_pass_paper_flips_fully_complete_at_pass_3(tmp_path):
     """Paper schema (3 passes): fully_complete must not fire after pass 2."""
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     db = StateDB(tmp_path / "test.db")
     db.upsert_brain_build_progress("ZKEY_I4A", "10.1/paper")
     db.mark_brain_build_pass("ZKEY_I4A", 1, content_type="paper")
@@ -193,7 +193,7 @@ def test_mark_brain_build_pass_rejects_invalid_pass_num(tmp_path):
     the static `_PASS_COMPLETE_COLUMNS` lookup must still refuse unknown
     pass numbers instead of building a column name from the integer.
     """
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     db = StateDB(tmp_path / "test.db")
     db.upsert_brain_build_progress("ZKEY_M4", "10.1/m4")
     with pytest.raises(ValueError):
@@ -208,7 +208,7 @@ def test_state_db_init_is_idempotent(tmp_path):
     already exist on a second init, replacing the older catch-and-suppress
     pattern that relied on SQLite error-message string-matching.
     """
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     db_path = tmp_path / "test.db"
     StateDB(db_path)
     # Second init on the same file — would previously have hit ALTER TABLE
@@ -223,7 +223,7 @@ def test_zotero_path_construction(tmp_path):
     ZoteroClient.get_attachment_local_path() should build the correct path
     without making any API calls.
     """
-    from scripts.core.zotero_client import ZoteroClient
+    from lit_monitor.core.zotero_client import ZoteroClient
     # Patch pyzotero.Zotero so no real API call is made
     with patch("pyzotero.zotero.Zotero.__init__", return_value=None):
         client = ZoteroClient(
@@ -235,7 +235,7 @@ def test_zotero_path_construction(tmp_path):
     assert path == tmp_path / "storage" / "ABCDEF12" / "paper.pdf"
 @pytest.mark.unit
 def test_zotero_extract_authors():
-    from scripts.core.zotero_client import ZoteroClient
+    from lit_monitor.core.zotero_client import ZoteroClient
 
     data = {
         "creators": [
@@ -254,7 +254,7 @@ def test_zotero_get_current_version(tmp_path):
     Regression test for G6: in pyzotero ≥1.11, last_modified_version is a method.
     The old code called int() on the unbound method object, raising TypeError.
     """
-    from scripts.core.zotero_client import ZoteroClient
+    from lit_monitor.core.zotero_client import ZoteroClient
 
     with patch("pyzotero.zotero.Zotero.__init__", return_value=None):
         client = ZoteroClient(
@@ -275,7 +275,7 @@ def test_zotero_get_current_version_raises_on_non_int(tmp_path):
     Ensures future pyzotero API changes surface with a clear error message
     rather than a cryptic downstream TypeError.
     """
-    from scripts.core.zotero_client import ZoteroClient
+    from lit_monitor.core.zotero_client import ZoteroClient
 
     with patch("pyzotero.zotero.Zotero.__init__", return_value=None):
         client = ZoteroClient(
@@ -297,7 +297,7 @@ def test_zotero_paginate_early_exit(tmp_path):
     wanted, say, 10 items. The fix plumbs ``limit`` into ``_paginate`` so
     pagination breaks early.
     """
-    from scripts.core.zotero_client import ZoteroClient
+    from lit_monitor.core.zotero_client import ZoteroClient
 
     with patch("pyzotero.zotero.Zotero.__init__", return_value=None):
         client = ZoteroClient(library_id="12345", api_key="fake_key")
@@ -326,7 +326,7 @@ def test_zotero_create_note_reads_first_successful_value(tmp_path):
     string. Hardcoding "0" is fragile if pyzotero ever changes the keying
     scheme; reading the first value is robust.
     """
-    from scripts.core.zotero_client import ZoteroClient
+    from lit_monitor.core.zotero_client import ZoteroClient
 
     with patch("pyzotero.zotero.Zotero.__init__", return_value=None):
         client = ZoteroClient(library_id="12345", api_key="fake_key")
@@ -353,7 +353,7 @@ def test_zotero_create_note_raises_on_empty_successful(tmp_path):
     ``next(iter(...))`` would raise StopIteration, which surfaces as a
     confusing error for the caller.
     """
-    from scripts.core.zotero_client import ZoteroClient
+    from lit_monitor.core.zotero_client import ZoteroClient
 
     with patch("pyzotero.zotero.Zotero.__init__", return_value=None):
         client = ZoteroClient(library_id="12345", api_key="fake_key")
@@ -379,7 +379,7 @@ def test_zotero_init_rejects_old_pyzotero(tmp_path):
     pyzotero <1.11 installed, we want a loud upgrade prompt at construction
     time rather than a cryptic AttributeError deep in the polling loop.
     """
-    from scripts.core.zotero_client import ZoteroClient
+    from lit_monitor.core.zotero_client import ZoteroClient
 
     class FakeOldZotero:
         def __init__(self, *_args, **_kwargs):
@@ -395,7 +395,7 @@ def test_zotero_init_rejects_old_pyzotero(tmp_path):
 @pytest.mark.unit
 def test_strip_references_section_markdown_heading():
     """Standard markdown '## References' heading is stripped."""
-    from scripts.core.markdown_processor import strip_references_section
+    from lit_monitor.core.markdown_processor import strip_references_section
     body = "Introduction text.\n\nMethods text.\n\nDiscussion.\n" * 5  # >70% of doc
     refs = "\n## References\n\nSmith 2020. Journal of X.\nJones 2018. Nature.\n"
     result = strip_references_section(body + refs)
@@ -405,7 +405,7 @@ def test_strip_references_section_markdown_heading():
 @pytest.mark.unit
 def test_strip_references_section_allcaps_heading():
     """REFERENCES (all-caps, no markdown) is stripped."""
-    from scripts.core.markdown_processor import strip_references_section
+    from lit_monitor.core.markdown_processor import strip_references_section
     body = "Some paper content.\n" * 20
     refs = "\nREFERENCES\n\n1. Author A. Title. 2019.\n"
     result = strip_references_section(body + refs)
@@ -415,7 +415,7 @@ def test_strip_references_section_allcaps_heading():
 @pytest.mark.unit
 def test_strip_references_section_bibliography_heading():
     """'Bibliography' heading variant is stripped."""
-    from scripts.core.markdown_processor import strip_references_section
+    from lit_monitor.core.markdown_processor import strip_references_section
     body = "Paper body.\n" * 20
     refs = "\n# Bibliography\n\nDoe 2021. Some Journal.\n"
     result = strip_references_section(body + refs)
@@ -424,7 +424,7 @@ def test_strip_references_section_bibliography_heading():
 @pytest.mark.unit
 def test_strip_references_section_works_cited():
     """'Works Cited' heading is stripped."""
-    from scripts.core.markdown_processor import strip_references_section
+    from lit_monitor.core.markdown_processor import strip_references_section
     body = "Paper body.\n" * 20
     refs = "\nWorks Cited\n\nAuthor X. Title. 2020.\n"
     result = strip_references_section(body + refs)
@@ -433,7 +433,7 @@ def test_strip_references_section_works_cited():
 @pytest.mark.unit
 def test_strip_references_section_no_heading_unchanged():
     """Text without a reference heading is returned unchanged."""
-    from scripts.core.markdown_processor import strip_references_section
+    from lit_monitor.core.markdown_processor import strip_references_section
     text = "This paper has no bibliography section.\nJust body text.\n" * 10
     result = strip_references_section(text)
     assert result == text
@@ -441,7 +441,7 @@ def test_strip_references_section_no_heading_unchanged():
 @pytest.mark.unit
 def test_strip_references_section_early_heading_not_stripped():
     """A 'References' heading in the first 70% of the document must NOT be stripped."""
-    from scripts.core.markdown_processor import strip_references_section
+    from lit_monitor.core.markdown_processor import strip_references_section
     # Put the heading at the very start — well within the first 70%
     early = "## References\n\nEarly inline references section.\n"
     body = "Main paper body text.\n" * 30  # large enough to push early heading < 70%
@@ -452,13 +452,13 @@ def test_strip_references_section_early_heading_not_stripped():
 @pytest.mark.unit
 def test_strip_references_section_empty_string():
     """Empty string returns empty string without error."""
-    from scripts.core.markdown_processor import strip_references_section
+    from lit_monitor.core.markdown_processor import strip_references_section
     assert strip_references_section("") == ""
 
 @pytest.mark.unit
 def test_strip_references_section_heading_with_colon():
     """'References:' (trailing colon) is stripped."""
-    from scripts.core.markdown_processor import strip_references_section
+    from lit_monitor.core.markdown_processor import strip_references_section
     body = "Body text.\n" * 20
     refs = "\nReferences:\n\nSmith 2019.\n"
     result = strip_references_section(body + refs)
@@ -471,7 +471,7 @@ def test_strip_references_section_heading_with_colon():
 @pytest.mark.unit
 def test_strip_end_matter_acknowledgements():
     """'Acknowledgements' heading in last 30% is stripped."""
-    from scripts.core.markdown_processor import strip_end_matter
+    from lit_monitor.core.markdown_processor import strip_end_matter
     body = "Paper body content.\n" * 20
     tail = "\n## Acknowledgements\n\nWe thank the funding agency.\n"
     result = strip_end_matter(body + tail)
@@ -481,7 +481,7 @@ def test_strip_end_matter_acknowledgements():
 @pytest.mark.unit
 def test_strip_end_matter_acknowledgments_alternate_spelling():
     """'Acknowledgments' (US spelling, no 'e') is stripped."""
-    from scripts.core.markdown_processor import strip_end_matter
+    from lit_monitor.core.markdown_processor import strip_end_matter
     body = "Paper body content.\n" * 20
     tail = "\nAcknowledgments\n\nThe authors acknowledge NIH support.\n"
     result = strip_end_matter(body + tail)
@@ -490,7 +490,7 @@ def test_strip_end_matter_acknowledgments_alternate_spelling():
 @pytest.mark.unit
 def test_strip_end_matter_funding():
     """'Funding' heading is stripped."""
-    from scripts.core.markdown_processor import strip_end_matter
+    from lit_monitor.core.markdown_processor import strip_end_matter
     body = "Main results are described here.\n" * 20
     tail = "\n# Funding\n\nThis work was funded by Grant 12345.\n"
     result = strip_end_matter(body + tail)
@@ -500,7 +500,7 @@ def test_strip_end_matter_funding():
 @pytest.mark.unit
 def test_strip_end_matter_conflict_of_interest():
     """'Conflict of Interest' heading is stripped."""
-    from scripts.core.markdown_processor import strip_end_matter
+    from lit_monitor.core.markdown_processor import strip_end_matter
     body = "Study design and methods.\n" * 20
     tail = "\n## Conflict of Interest\n\nThe authors declare no conflict.\n"
     result = strip_end_matter(body + tail)
@@ -509,7 +509,7 @@ def test_strip_end_matter_conflict_of_interest():
 @pytest.mark.unit
 def test_strip_end_matter_author_contributions():
     """'Author Contributions' heading is stripped."""
-    from scripts.core.markdown_processor import strip_end_matter
+    from lit_monitor.core.markdown_processor import strip_end_matter
     body = "Experimental results follow.\n" * 20
     tail = "\n## Author Contributions\n\nJ.S. designed the experiments.\n"
     result = strip_end_matter(body + tail)
@@ -518,7 +518,7 @@ def test_strip_end_matter_author_contributions():
 @pytest.mark.unit
 def test_strip_end_matter_data_availability():
     """'Data Availability Statement' heading is stripped."""
-    from scripts.core.markdown_processor import strip_end_matter
+    from lit_monitor.core.markdown_processor import strip_end_matter
     body = "Discussion of findings.\n" * 20
     tail = "\n### Data Availability Statement\n\nData available on request.\n"
     result = strip_end_matter(body + tail)
@@ -527,7 +527,7 @@ def test_strip_end_matter_data_availability():
 @pytest.mark.unit
 def test_strip_end_matter_code_availability():
     """'Code Availability' heading is stripped."""
-    from scripts.core.markdown_processor import strip_end_matter
+    from lit_monitor.core.markdown_processor import strip_end_matter
     body = "Conclusions are drawn here.\n" * 20
     tail = "\n## Code Availability\n\nCode at https://github.com/example.\n"
     result = strip_end_matter(body + tail)
@@ -536,7 +536,7 @@ def test_strip_end_matter_code_availability():
 @pytest.mark.unit
 def test_strip_end_matter_supplementary_information():
     """'Supplementary Information' heading is stripped."""
-    from scripts.core.markdown_processor import strip_end_matter
+    from lit_monitor.core.markdown_processor import strip_end_matter
     body = "The paper presents novel findings.\n" * 20
     tail = "\n# Supplementary Information\n\nFigure S1 shows the control data.\n"
     result = strip_end_matter(body + tail)
@@ -545,7 +545,7 @@ def test_strip_end_matter_supplementary_information():
 @pytest.mark.unit
 def test_strip_end_matter_also_strips_references():
     """strip_end_matter is a superset of strip_references_section — references stripped too."""
-    from scripts.core.markdown_processor import strip_end_matter
+    from lit_monitor.core.markdown_processor import strip_end_matter
     body = "Paper body.\n" * 20
     tail = "\n## References\n\nSmith 2020. Journal of X.\n"
     result = strip_end_matter(body + tail)
@@ -555,7 +555,7 @@ def test_strip_end_matter_also_strips_references():
 @pytest.mark.unit
 def test_strip_end_matter_early_heading_not_stripped():
     """A heading in the first 70% of the document must NOT trigger stripping."""
-    from scripts.core.markdown_processor import strip_end_matter
+    from lit_monitor.core.markdown_processor import strip_end_matter
     early = "## Acknowledgements\n\nSome inline thank-you.\n"
     body = "Main results section.\n" * 30
     result = strip_end_matter(early + body)
@@ -564,13 +564,13 @@ def test_strip_end_matter_early_heading_not_stripped():
 @pytest.mark.unit
 def test_strip_end_matter_empty_string():
     """Empty string is returned unchanged."""
-    from scripts.core.markdown_processor import strip_end_matter
+    from lit_monitor.core.markdown_processor import strip_end_matter
     assert strip_end_matter("") == ""
 
 @pytest.mark.unit
 def test_strip_end_matter_no_end_matter_unchanged():
     """Text with no end-matter headings is returned unchanged."""
-    from scripts.core.markdown_processor import strip_end_matter
+    from lit_monitor.core.markdown_processor import strip_end_matter
     text = "Introduction.\nMethods.\nResults.\nConclusion.\n" * 5
     assert strip_end_matter(text) == text
 
@@ -587,8 +587,8 @@ def test_strip_end_matter_long_review_window_constant(monkeypatch):
     threshold is the single knob controlling this behaviour and that the
     long-review end-matter path still works when widened.
     """
-    from scripts.core import markdown_processor
-    from scripts.core.markdown_processor import strip_end_matter
+    from lit_monitor.core import markdown_processor
+    from lit_monitor.core.markdown_processor import strip_end_matter
 
     # Build a long doc: 60% body, then the end-matter heading + tail, then
     # 40% of trailing references-like junk. Heading position ≈ 60% of total.
@@ -628,7 +628,7 @@ def test_state_db_n7_cleanup_logs_warning_on_failure(tmp_path, caplog):
     import logging
     import sqlite3
 
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     db_path = tmp_path / "test.db"
     # First init — sets up schema and marks r10_cleanup_done.

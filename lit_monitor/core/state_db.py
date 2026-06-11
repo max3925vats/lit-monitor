@@ -23,7 +23,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from scripts.core.strict_mode import strict_fallback
+from lit_monitor.core.strict_mode import strict_fallback
 
 if TYPE_CHECKING:
     import numpy as np  # type-only: numpy is imported lazily inside helpers
@@ -63,7 +63,7 @@ _PASS_COMPLETE_COLUMNS: dict[int, str] = {
 # Imported lazily inside methods to avoid circular import issues at module load.
 # schema_max_pass(content_type) → int: paper/review=3 (only live schemas after R-10).
 def _schema_max_pass(content_type: str) -> int:
-    from scripts.llm.extraction_schema import schema_max_pass
+    from lit_monitor.llm.extraction_schema import schema_max_pass
     return schema_max_pass(content_type)
 # ---------------------------------------------------------------------------
 # Schema DDL

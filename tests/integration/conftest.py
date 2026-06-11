@@ -57,7 +57,7 @@ def real_config(secrets):
     Loaded Config object.
     Skips if vault_path doesn't exist (vault not mounted / path not set).
     """
-    from scripts.core.config import get_config
+    from lit_monitor.core.config import get_config
     try:
         cfg = get_config(force_reload=True)
     except Exception as exc:
@@ -84,7 +84,7 @@ def real_llm(real_config):
     """
     import requests as _requests
 
-    from scripts.llm.llm_client import get_client
+    from lit_monitor.llm.llm_client import get_client
 
     host = getattr(real_config.ingestion, "ollama_host", "http://localhost:11434")
     try:
@@ -112,7 +112,7 @@ def real_llm(real_config):
 @pytest.fixture(scope="session")
 def real_zotero(real_config, secrets):
     """ZoteroClient authenticated with real credentials."""
-    from scripts.core.zotero_client import ZoteroClient
+    from lit_monitor.core.zotero_client import ZoteroClient
     try:
         zot = ZoteroClient(
             library_id=str(secrets["zotero"]["library_id"]),
@@ -140,5 +140,5 @@ def tmp_chroma_dir(tmp_path):
 @pytest.fixture
 def tmp_state_db(tmp_path):
     """StateDB backed by a real SQLite file in a temp directory."""
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     return StateDB(tmp_path / "state.db")

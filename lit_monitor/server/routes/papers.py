@@ -26,11 +26,11 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from scripts.api.queries import get_paper_snapshot, get_related_papers
+from lit_monitor.api.queries import get_paper_snapshot, get_related_papers
 
 # Module-level names so tests can monkeypatch them without reaching into
 # the original modules (patch the binding at the route's own namespace).
-from scripts.graph.import_citations import safe_graph_db
+from lit_monitor.graph.import_citations import safe_graph_db
 
 _DOI_RE = re.compile(r"^10\.\d{4,9}/\S+$")
 
@@ -110,7 +110,7 @@ def _get_score_breakdown_db():
     Thin lazy-import wrapper so tests can monkeypatch this name to inject a
     temporary StateDB without touching the full server runtime.
     """
-    from scripts.server.runtime import get_runtime
+    from lit_monitor.server.runtime import get_runtime
 
     return get_runtime().state_db
 
@@ -121,7 +121,7 @@ def _snapshot_state_db():
     Module-level so tests can monkeypatch it without standing up the full
     server runtime (mirrors _get_score_breakdown_db).
     """
-    from scripts.server.runtime import get_runtime  # noqa: PLC0415
+    from lit_monitor.server.runtime import get_runtime  # noqa: PLC0415
 
     return get_runtime().state_db
 
@@ -240,7 +240,7 @@ def _doi_exists(doi: str) -> bool:
     Uses the public StateDB.get_paper() helper (which opens its own
     connection) so we don't need _connect() directly.
     """
-    from scripts.server.runtime import get_runtime
+    from lit_monitor.server.runtime import get_runtime
 
     runtime = get_runtime()
     return runtime.state_db.get_paper(doi) is not None
@@ -255,8 +255,8 @@ def _invoke_relink(doi: str) -> dict:
     Note: DOI normalization (case, whitespace) is the caller's
     responsibility; this function passes *doi* verbatim to the tool.
     """
-    from scripts.obsidian_tools.relink import relink_note
-    from scripts.server.runtime import get_runtime
+    from lit_monitor.obsidian_tools.relink import relink_note
+    from lit_monitor.server.runtime import get_runtime
 
     runtime = get_runtime()
     record = runtime.state_db.get_paper(doi)
@@ -278,9 +278,9 @@ def _invoke_re_extract(doi: str) -> dict:
 
     Thin lazy-import wrapper — monkeypatched in tests.
     """
-    from scripts.llm.llm_client import get_client
-    from scripts.obsidian_tools.re_extract import re_extract
-    from scripts.server.runtime import get_runtime
+    from lit_monitor.llm.llm_client import get_client
+    from lit_monitor.obsidian_tools.re_extract import re_extract
+    from lit_monitor.server.runtime import get_runtime
 
     runtime = get_runtime()
     cfg = runtime.config

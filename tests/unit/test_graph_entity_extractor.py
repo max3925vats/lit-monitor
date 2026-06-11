@@ -13,7 +13,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from scripts.graph.entity_extractor import (
+from lit_monitor.graph.entity_extractor import (
     EntityTuple,
     MentionEdge,
     extract_entities,
@@ -21,8 +21,8 @@ from scripts.graph.entity_extractor import (
     from_llm_cloud,
     merge_mentions,
 )
-from scripts.graph.ner import NerSpan
-from scripts.graph.normalizer import EntityNormalizer
+from lit_monitor.graph.ner import NerSpan
+from lit_monitor.graph.normalizer import EntityNormalizer
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -398,7 +398,7 @@ class TestParseAuthorsDictShape:
 
     def test_dict_shape_with_lastName_and_firstName(self):
         """Zotero canonical shape: dicts with 'lastName' and 'firstName'."""
-        from scripts.graph.entity_extractor import _parse_authors
+        from lit_monitor.graph.entity_extractor import _parse_authors
         raw = json.dumps([
             {"lastName": "Smith", "firstName": "Jane"},
             {"lastName": "Jones", "firstName": "Bob"},
@@ -424,19 +424,19 @@ class TestParseAuthorsDictShape:
 
     def test_dict_shape_with_only_last_name(self):
         """Dict with only lastName (no firstName) still produces an author."""
-        from scripts.graph.entity_extractor import _parse_authors
+        from lit_monitor.graph.entity_extractor import _parse_authors
         raw = json.dumps([{"lastName": "Smith"}])
         assert _parse_authors(raw) == ["Smith"]
 
     def test_dict_shape_with_first_last_alias_fields(self):
         """Some legacy fixtures use 'first'/'last' instead of 'firstName'/'lastName'."""
-        from scripts.graph.entity_extractor import _parse_authors
+        from lit_monitor.graph.entity_extractor import _parse_authors
         raw = json.dumps([{"first": "Jane", "last": "Smith"}])
         assert _parse_authors(raw) == ["Smith, Jane"]
 
     def test_dict_without_name_fields_is_skipped(self):
         """Garbage dict (no name keys) is silently skipped."""
-        from scripts.graph.entity_extractor import _parse_authors
+        from lit_monitor.graph.entity_extractor import _parse_authors
         raw = json.dumps([{"affiliation": "X"}, {"firstName": "Bob"}])
         # First dict has no name field → skipped; second has only firstName → kept
         assert _parse_authors(raw) == ["Bob"]

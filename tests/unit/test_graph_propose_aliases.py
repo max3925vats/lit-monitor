@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import yaml
 
-from scripts.graph import GraphDB
-from scripts.graph.entity_extractor import EntityTuple
-from scripts.graph.propose_aliases import propose_aliases
+from lit_monitor.graph import GraphDB
+from lit_monitor.graph.entity_extractor import EntityTuple
+from lit_monitor.graph.propose_aliases import propose_aliases
 
 
 def _seed(db: GraphDB):
@@ -58,7 +58,7 @@ class TestProposeAliases:
 
     def test_existing_aliases_are_skipped(self, tmp_path, monkeypatch):
         """G11: surfaces already aliased in entity_aliases.yaml are not re-proposed."""
-        import scripts.graph.propose_aliases as _mod  # ensure submodule is bound on scripts.graph
+        import lit_monitor.graph.propose_aliases as _mod  # ensure submodule is bound on scripts.graph
 
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         _seed(db)
@@ -105,7 +105,7 @@ class TestProposeAliases:
         import ast
         import inspect
 
-        import scripts.graph.propose_aliases as mod
+        import lit_monitor.graph.propose_aliases as mod
 
         tree = ast.parse(inspect.getsource(mod))
         forbidden_modules = {
@@ -127,7 +127,7 @@ class TestProposeAliases:
 class TestProposeAliasesWriteFile:
     def test_writes_yaml_with_header(self, tmp_path, monkeypatch):
         """G11: writes config/entity_aliases.suggested.yaml with date header."""
-        from scripts.graph.propose_aliases import write_proposal_file
+        from lit_monitor.graph.propose_aliases import write_proposal_file
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         _seed(db)
 
@@ -165,7 +165,7 @@ class TestN6LLMAccept:
         db.add_paper(doi="10.0/a", entities=entities, relationships=[],
                      paper_metadata={"title": "A", "year": 2024, "journal": "X"})
 
-        import scripts.graph.propose_aliases as _mod  # ensure submodule is bound on scripts.graph
+        import lit_monitor.graph.propose_aliases as _mod  # ensure submodule is bound on scripts.graph
 
         # Mock _consult_llm to accept the only cluster, with explicit canonical.
         def fake_consult_llm(clusters_by_type, **kwargs):
@@ -203,7 +203,7 @@ class TestN6LLMReject:
         db.add_paper(doi="10.0/a", entities=entities, relationships=[],
                      paper_metadata={"title": "A", "year": 2024, "journal": "X"})
 
-        import scripts.graph.propose_aliases as _mod  # ensure submodule is bound on scripts.graph
+        import lit_monitor.graph.propose_aliases as _mod  # ensure submodule is bound on scripts.graph
 
         def reject_llm(clusters_by_type, **kwargs):
             verdicts = {}
@@ -224,7 +224,7 @@ class TestN6LLMReject:
 
     def test_llm_missing_verdict_drops_cluster(self, tmp_path, monkeypatch):
         """N6: a cluster_id absent from verdicts is treated as accept=false."""
-        import scripts.graph.propose_aliases as _mod  # ensure submodule is bound on scripts.graph
+        import lit_monitor.graph.propose_aliases as _mod  # ensure submodule is bound on scripts.graph
 
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         entities = [
@@ -257,7 +257,7 @@ class TestN6LLMFallback:
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         _seed(db)
 
-        import scripts.graph.propose_aliases as _mod  # ensure submodule is bound on scripts.graph
+        import lit_monitor.graph.propose_aliases as _mod  # ensure submodule is bound on scripts.graph
 
         # Fuzzy-only baseline.
         fuzzy_only = propose_aliases(db, min_ratio=80, with_llm=False)
@@ -287,7 +287,7 @@ class TestN6ConsultLLM:
         """N6: zero clusters short-circuits to {} (success, not failure)."""
         from unittest.mock import MagicMock
 
-        from scripts.graph.propose_aliases import _consult_llm
+        from lit_monitor.graph.propose_aliases import _consult_llm
         client = MagicMock()
         result = _consult_llm(
             {},
@@ -302,7 +302,7 @@ class TestN6ConsultLLM:
         """N6: malformed JSON response -> None (caller falls back)."""
         from unittest.mock import MagicMock
 
-        from scripts.graph.propose_aliases import _consult_llm
+        from lit_monitor.graph.propose_aliases import _consult_llm
         client = MagicMock()
         client.complete.return_value = "not json at all"
         result = _consult_llm(
@@ -315,7 +315,7 @@ class TestN6ConsultLLM:
     def test_consult_llm_no_api_key_returns_none(self, monkeypatch):
         """N6: when client construction needed and no key, returns None."""
         monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
-        from scripts.graph.propose_aliases import _consult_llm
+        from lit_monitor.graph.propose_aliases import _consult_llm
         # No client injected -> internal construction path -> no key path.
         result = _consult_llm({"material": [["a", "b"]]})
         assert result is None
@@ -325,7 +325,7 @@ class TestN6ConsultLLM:
         import json
         from unittest.mock import MagicMock
 
-        from scripts.graph.propose_aliases import _consult_llm
+        from lit_monitor.graph.propose_aliases import _consult_llm
         client = MagicMock()
         # Mix of good + bad entries.
         client.complete.return_value = json.dumps({
@@ -356,7 +356,7 @@ class TestN6ConsultLLM:
         import json
         from unittest.mock import MagicMock
 
-        from scripts.graph.propose_aliases import _consult_llm
+        from lit_monitor.graph.propose_aliases import _consult_llm
         marker = "<|im_start|>"
         client = MagicMock()
         client.complete.return_value = json.dumps({})
@@ -376,7 +376,7 @@ class TestN6ConsultLLM:
         import json
         from unittest.mock import MagicMock
 
-        from scripts.graph.propose_aliases import _consult_llm
+        from lit_monitor.graph.propose_aliases import _consult_llm
         client = MagicMock()
         client.complete.return_value = (
             "```json\n"
@@ -401,7 +401,7 @@ class TestN6ConsultLLM:
 class TestN6PromptRegistry:
     def test_alias_consensus_prompt_loads(self):
         """N6: the prompt registers and renders the required placeholder."""
-        from scripts.llm.prompt_registry import (
+        from lit_monitor.llm.prompt_registry import (
             _reset_prompt_cache,
             load_prompt,
             required_placeholders,

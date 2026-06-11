@@ -10,7 +10,7 @@ from datetime import datetime
 
 import pytest
 
-from scripts.core.state_db import StateDB
+from lit_monitor.core.state_db import StateDB
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -868,7 +868,7 @@ class TestUpsertPaperUnknownKeys:
 
 import logging  # noqa: E402
 
-from scripts.core.strict_mode import set_strict  # noqa: E402
+from lit_monitor.core.strict_mode import set_strict  # noqa: E402
 
 
 def _fail_execute_on(monkeypatch, fragment: str, message: str):
@@ -879,7 +879,7 @@ def _fail_execute_on(monkeypatch, fragment: str, message: str):
     directly.  Instead we install a Connection subclass as the connection
     ``factory`` via a patched ``sqlite3.connect`` inside the state_db module.
     """
-    import scripts.core.state_db as _sdb
+    import lit_monitor.core.state_db as _sdb
 
     class _FailingConn(sqlite3.Connection):
         def execute(self, sql, *args, **kwargs):  # type: ignore[override]
@@ -988,7 +988,7 @@ class TestInitSchemaSilentStragglers:
 #      columns), so a NEW schema column trips a clear assertion.
 # ---------------------------------------------------------------------------
 
-from scripts.core.state_db import (  # noqa: E402
+from lit_monitor.core.state_db import (  # noqa: E402
     assert_upsert_columns_consistent,
     upsert_writable_columns,
 )
@@ -1145,7 +1145,7 @@ class TestInterestVectors:
 
 
 def test_get_zotero_key_returns_key_for_linked_paper(tmp_path):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     db = StateDB(tmp_path / "state.db")
     db.upsert_paper({"doi": "10.1/abc", "title": "T", "zotero_key": "ZKEY123"})
@@ -1153,7 +1153,7 @@ def test_get_zotero_key_returns_key_for_linked_paper(tmp_path):
 
 
 def test_get_zotero_key_none_for_unknown_doi(tmp_path):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     db = StateDB(tmp_path / "state.db")
     # Unknown DOI must NOT raise — mirrors the "unknown id is not an error" convention.
@@ -1161,7 +1161,7 @@ def test_get_zotero_key_none_for_unknown_doi(tmp_path):
 
 
 def test_get_zotero_key_none_for_unlinked_paper(tmp_path):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     db = StateDB(tmp_path / "state.db")
     db.upsert_paper({"doi": "10.1/nolink", "title": "T"})  # no zotero_key

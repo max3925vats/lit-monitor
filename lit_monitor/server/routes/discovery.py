@@ -24,14 +24,14 @@ from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
-from scripts.api.queries import (
+from lit_monitor.api.queries import (
     get_discovery_run,
     get_discovery_run_papers,
     get_discovery_runs,
 )
-from scripts.server.app import templates
-from scripts.server.routes.sse import stream_log
-from scripts.server.runtime import get_runtime
+from lit_monitor.server.app import templates
+from lit_monitor.server.routes.sse import stream_log
+from lit_monitor.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["discovery"])
@@ -256,7 +256,7 @@ def discovery_run_detail(request: Request, run_id: int) -> HTMLResponse:
     # `show_feedback_buttons = false` in extraction config still turns it off.
     show_feedback_buttons = True
     try:
-        from scripts.server.config_io import load_config
+        from lit_monitor.server.config_io import load_config
         cfg = load_config("extraction")
         show_feedback_buttons = bool(
             cfg.get("web_ui", {}).get("show_feedback_buttons", True)

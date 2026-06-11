@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.llm.extraction_schema import (
+from lit_monitor.llm.extraction_schema import (
     _reset_schema_cache,
     confidence_values,
     domain_context,
@@ -387,7 +387,7 @@ def test_all_fields_for_schema_per_content_type(content_type, expected_count):
     all_fields_for_schema(ct) returns the union of all fields for the schema.
     The field count must match the expected value per content type.
     """
-    from scripts.llm.extraction_schema import all_fields_for_schema
+    from lit_monitor.llm.extraction_schema import all_fields_for_schema
 
     fields = all_fields_for_schema(content_type)
     assert isinstance(fields, list)
@@ -413,7 +413,7 @@ def test_schema_max_pass_is_derived_from_schema(monkeypatch):
     """
     from types import SimpleNamespace
 
-    import scripts.llm.extraction_schema as es
+    import lit_monitor.llm.extraction_schema as es
 
     # Fake schema whose fields span passes 1..4 (the real _validate_passes
     # requires 1/2/3 present; 4 is an allowed extra).
@@ -431,7 +431,7 @@ def test_schema_max_pass_is_derived_from_schema(monkeypatch):
 # ---------------------------------------------------------------------------
 def _make_schema(pass_nums, pass_labels):
     """Build an _ExtractionSchema with one field per pass number."""
-    from scripts.llm.extraction_schema import _ExtractionSchema
+    from lit_monitor.llm.extraction_schema import _ExtractionSchema
 
     fields = [
         {

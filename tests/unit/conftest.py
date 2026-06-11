@@ -30,7 +30,7 @@ def _reset_strict_mode():
     TestLoadSecretsStrictMode) would leak into subsequent tests and turn
     expected-warning sites into unexpected RuntimeErrors.
     """
-    import scripts.core.strict_mode as _sm
+    import lit_monitor.core.strict_mode as _sm
     _sm._strict_override = None
     yield
     _sm._strict_override = None
@@ -47,7 +47,7 @@ def _reset_config_cache():
     expects a fresh build) would silently see the stale cached object. Verified
     safe: no unit test populates the cache except via monkeypatch.
     """
-    import scripts.core.config as _cfg
+    import lit_monitor.core.config as _cfg
     _cfg._config_cache = None
     yield
     _cfg._config_cache = None
@@ -85,7 +85,7 @@ def _reset_chromadb_shared_system_cache():
 # N1 (Phase 2): BioBERT NER stub — no transformers / torch dependency.
 # ---------------------------------------------------------------------------
 
-from scripts.graph.ner import NerSpan  # noqa: E402  (after imports block is fine)
+from lit_monitor.graph.ner import NerSpan  # noqa: E402  (after imports block is fine)
 
 
 class BiobertNERStub:

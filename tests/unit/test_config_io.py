@@ -18,8 +18,8 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
-from scripts.core import atomic_write as _atomic_write_mod
-from scripts.server import config_io
+from lit_monitor.core import atomic_write as _atomic_write_mod
+from lit_monitor.server import config_io
 
 
 def _tmp_resolver(tmp_path: Path):

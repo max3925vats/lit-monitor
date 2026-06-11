@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts.setup import diagnose as _diag
+from lit_monitor.setup import diagnose as _diag
 
 
 @pytest.mark.unit

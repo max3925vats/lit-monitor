@@ -23,7 +23,7 @@ from fastapi.testclient import TestClient
 def _make_dev_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """Return a TestClient against a freshly-created app with /dev mounted."""
     monkeypatch.setenv("LIT_MONITOR_DEV", "1")
-    from scripts.server.app import create_app
+    from lit_monitor.server.app import create_app
 
     return TestClient(create_app())
 
@@ -55,7 +55,7 @@ def test_sandbox_dois_lists_rows(
     client = _make_dev_client(monkeypatch)
 
     # Build a real sqlite file so the endpoint's _connect path works end-to-end.
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     fake_db_path = tmp_path / "state_dev.db"
     db = StateDB(fake_db_path)

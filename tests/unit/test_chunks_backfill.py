@@ -11,7 +11,7 @@ import pytest
 class TestSchemaMigration:
     def test_chunks_indexed_column_present(self, tmp_path):
         """CB1: StateDB schema includes chunks_indexed column."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
@@ -31,7 +31,7 @@ class TestSchemaMigration:
         conn.commit()
         conn.close()
 
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(legacy)
         with db._connect() as conn:
@@ -48,7 +48,7 @@ class TestSchemaMigration:
 class TestSetChunksIndexed:
     def test_method_updates_value(self, tmp_path):
         """CB1: set_chunks_indexed flips the flag to 1."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "s.db")
         with db._connect() as conn:
@@ -65,7 +65,7 @@ class TestSetChunksIndexed:
 
     def test_method_resets_to_zero(self, tmp_path):
         """CB1: set_chunks_indexed can clear the flag back to 0."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "s.db")
         with db._connect() as conn:
@@ -84,7 +84,7 @@ class TestSetChunksIndexed:
 
     def test_missing_doi_is_silent(self, tmp_path):
         """CB1: set_chunks_indexed on a non-existent DOI does not raise."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "s.db")
         # Should not raise even when doi is absent.
@@ -103,7 +103,7 @@ class TestBackfillCore:
         Uses upsert_paper to go through the real schema, then direct SQL
         to set test-specific column values.
         """
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "seeded.db")
 
@@ -143,7 +143,7 @@ class TestBackfillCore:
 
     def test_backfill_picks_only_complete_and_unindexed(self, seeded_db, monkeypatch):
         """CB1: only papers with embeddings_indexed=1 AND chunks_indexed=0 are processed."""
-        from scripts.pipelines.chunks_backfill import backfill_chunks
+        from lit_monitor.pipelines.chunks_backfill import backfill_chunks
 
         edb = MagicMock()
         edb.add_chunks.return_value = None
@@ -161,7 +161,7 @@ class TestBackfillCore:
 
     def test_backfill_marks_chunks_indexed_on_success(self, seeded_db):
         """CB1: chunks_indexed=1 is set after successful add_chunks."""
-        from scripts.pipelines.chunks_backfill import backfill_chunks
+        from lit_monitor.pipelines.chunks_backfill import backfill_chunks
 
         edb = MagicMock()
         edb.add_chunks.return_value = None
@@ -175,7 +175,7 @@ class TestBackfillCore:
 
     def test_backfill_per_paper_failure_continues(self, seeded_db):
         """CB1: per-paper failure is WARN-and-skip; flag stays 0."""
-        from scripts.pipelines.chunks_backfill import backfill_chunks
+        from lit_monitor.pipelines.chunks_backfill import backfill_chunks
 
         edb = MagicMock()
         edb.add_chunks.side_effect = RuntimeError("chroma down")
@@ -193,7 +193,7 @@ class TestBackfillCore:
 
     def test_backfill_doi_filter(self, seeded_db):
         """CB1: --doi filters to the specified paper; already-indexed DOI yields 0 processed."""
-        from scripts.pipelines.chunks_backfill import backfill_chunks
+        from lit_monitor.pipelines.chunks_backfill import backfill_chunks
 
         edb = MagicMock()
         # Paper B already has chunks_indexed=1 — should be skipped.
@@ -219,7 +219,7 @@ class TestBackfillCore:
                 )
                 conn.commit()
 
-        from scripts.pipelines.chunks_backfill import backfill_chunks
+        from lit_monitor.pipelines.chunks_backfill import backfill_chunks
 
         edb = MagicMock()
         edb.add_chunks.return_value = None
@@ -228,7 +228,7 @@ class TestBackfillCore:
 
     def test_backfill_missing_fulltext_counts_as_failure(self, seeded_db):
         """CB1: missing fulltext_path on disk is a per-paper failure, not a crash."""
-        from scripts.pipelines.chunks_backfill import backfill_chunks
+        from lit_monitor.pipelines.chunks_backfill import backfill_chunks
 
         # Overwrite paper A's extraction_json so fulltext_path points nowhere.
         with seeded_db._connect() as conn:

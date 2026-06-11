@@ -13,8 +13,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from scripts.cli import main
-from scripts.server import config_io
+from lit_monitor.cli import main
+from lit_monitor.server import config_io
 
 
 @pytest.fixture()
@@ -50,7 +50,7 @@ def test_first_run_writes_server_block_and_spawns_serve(
     )
     monkeypatch.setattr(config_io, "SECRETS_PATH", secrets_path)
     # cli.py imports SECRETS_PATH lazily inside first_run() — patch at source.
-    from scripts.setup import _paths as setup_paths
+    from lit_monitor.setup import _paths as setup_paths
     monkeypatch.setattr(setup_paths, "SECRETS_PATH", secrets_path)
 
     popen_mock = MagicMock()
@@ -96,7 +96,7 @@ def test_first_run_idempotency_mixed(
         encoding="utf-8",
     )
     monkeypatch.setattr(config_io, "SECRETS_PATH", secrets_path)
-    from scripts.setup import _paths as setup_paths
+    from lit_monitor.setup import _paths as setup_paths
     monkeypatch.setattr(setup_paths, "SECRETS_PATH", secrets_path)
 
     popen_mock = MagicMock()

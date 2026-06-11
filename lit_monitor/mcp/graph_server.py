@@ -66,8 +66,8 @@ def _build_tool_schemas() -> dict[str, dict[str, Any]]:
     """
     # Closed vocabularies — imported from their single source of truth so the
     # advertised enums stay in lock-step with the handlers' runtime validation.
-    from scripts.graph.relationship_validator import VALID_PREDICATES  # noqa: PLC0415
-    from scripts.mcp.tools import _ALLOWED_GRANULARITY, _ENTITY_TYPES  # noqa: PLC0415
+    from lit_monitor.graph.relationship_validator import VALID_PREDICATES  # noqa: PLC0415
+    from lit_monitor.mcp.tools import _ALLOWED_GRANULARITY, _ENTITY_TYPES  # noqa: PLC0415
 
     predicate_enum = sorted(VALID_PREDICATES)
     entity_type_enum = sorted(_ENTITY_TYPES)
@@ -321,7 +321,7 @@ def _build_server():
 
     # B2 tool implementations; imported lazily so the module can be
     # imported without triggering GraphDB I/O.
-    from scripts.mcp import tools as _tools  # noqa: PLC0415
+    from lit_monitor.mcp import tools as _tools  # noqa: PLC0415
 
     # Dispatch table: maps MCP tool name → callable.
     _DISPATCH = {
@@ -396,7 +396,7 @@ def _install_signal_handlers() -> None:
             _graph_db = None
         # B6: drop the EmbeddingsDB handle so ChromaDB cleans itself up.
         try:
-            from scripts.mcp.tools import close_embeddings_db  # noqa: PLC0415
+            from lit_monitor.mcp.tools import close_embeddings_db  # noqa: PLC0415
             close_embeddings_db()
         except Exception as exc:  # noqa: BLE001
             logger.warning("EmbeddingsDB close failed: %s", exc)
@@ -430,8 +430,8 @@ def main() -> None:
     # Lazy-construct the GraphDB so import-only tests don't trigger I/O.
     global _graph_db
     try:
-        from scripts.core.config import get_config
-        from scripts.graph import GraphDB, safe_graph_db  # noqa: F401
+        from lit_monitor.core.config import get_config
+        from lit_monitor.graph import GraphDB, safe_graph_db  # noqa: F401
 
         cfg = get_config()
         _graph_db = safe_graph_db(cfg)

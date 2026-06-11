@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.retrieval import reciprocal_rank_fusion as rrf
+from lit_monitor.retrieval import reciprocal_rank_fusion as rrf
 
 
 class TestRRFBasic:

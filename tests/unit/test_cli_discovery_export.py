@@ -9,7 +9,7 @@ from click.testing import CliRunner
 
 class TestRenderDigest:
     def test_contains_title_doi_rationale(self):
-        from scripts.output.digest_renderer import render_digest
+        from lit_monitor.output.digest_renderer import render_digest
 
         run = {"id": 1, "started_at": "2026-01-01T10:00:00", "total_ingested": 2}
         papers = [
@@ -26,7 +26,7 @@ class TestRenderDigest:
         assert "Highly relevant" in md
 
     def test_heading_present(self):
-        from scripts.output.digest_renderer import render_digest
+        from lit_monitor.output.digest_renderer import render_digest
 
         md = render_digest({"id": 2, "started_at": "2026-05-01T09:00:00"}, [])
         # DR1: format now starts with YAML frontmatter (---), heading follows.
@@ -34,14 +34,14 @@ class TestRenderDigest:
         assert "Discovery" in md
 
     def test_empty_papers_no_traceback(self):
-        from scripts.output.digest_renderer import render_digest
+        from lit_monitor.output.digest_renderer import render_digest
 
         md = render_digest({"id": 3, "started_at": "2026-05-01"}, [])
         # DR1: empty-paper placeholder is "*No results.*" in the new unified format.
         assert "No results" in md or "no new papers" in md.lower()
 
     def test_score_formatted_to_3_decimals(self):
-        from scripts.output.digest_renderer import render_digest
+        from lit_monitor.output.digest_renderer import render_digest
 
         md = render_digest(
             {"id": 1, "started_at": "2026-01-01"},
@@ -53,7 +53,7 @@ class TestRenderDigest:
 class TestExportMdCommand:
     @pytest.fixture
     def seeded_db(self, tmp_path, monkeypatch):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         run_id = db.start_discovery_run({})
@@ -77,7 +77,7 @@ class TestExportMdCommand:
         tmp_path, run_id = seeded_db
         out = tmp_path / "out.md"
         runner = CliRunner()
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         result = runner.invoke(main, ["discovery", "export-md", "--to", str(out)])
         assert result.exit_code == 0, result.output
@@ -90,7 +90,7 @@ class TestExportMdCommand:
         tmp_path, _ = seeded_db
         monkeypatch.chdir(tmp_path)
         runner = CliRunner()
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         result = runner.invoke(main, ["discovery", "export-md"])
         assert result.exit_code == 0, result.output
@@ -100,7 +100,7 @@ class TestExportMdCommand:
 
     def test_unknown_run_id_exits_nonzero(self, seeded_db):
         runner = CliRunner()
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         result = runner.invoke(main, ["discovery", "export-md", "--run-id", "99999"])
         assert result.exit_code != 0

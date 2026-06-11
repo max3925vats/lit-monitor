@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.mcp import tools
+from lit_monitor.mcp import tools
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -243,7 +243,7 @@ class TestFindPapersByRelationship:
 
     def test_all_valid_predicates_accepted(self, fake_db):
         """Every predicate in VALID_PREDICATES should pass validation."""
-        from scripts.graph.relationship_validator import VALID_PREDICATES
+        from lit_monitor.graph.relationship_validator import VALID_PREDICATES
 
         for pred in VALID_PREDICATES:
             cursor = _make_cursor(["10.0/a", "Test Paper", 2024, "Nature"])
@@ -742,8 +742,8 @@ class TestDiscoveryMcpTools:
     def test_get_recent_discovery_runs_returns_list(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from scripts.core.state_db import StateDB
-        from scripts.mcp import tools
+        from lit_monitor.core.state_db import StateDB
+        from lit_monitor.mcp import tools
 
         db = StateDB(tmp_path / "state.db")
         run_id = db.start_discovery_run({})
@@ -759,8 +759,8 @@ class TestDiscoveryMcpTools:
     def test_get_recent_discovery_runs_limit(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from scripts.core.state_db import StateDB
-        from scripts.mcp import tools
+        from lit_monitor.core.state_db import StateDB
+        from lit_monitor.mcp import tools
 
         db = StateDB(tmp_path / "state.db")
         for _ in range(3):
@@ -773,8 +773,8 @@ class TestDiscoveryMcpTools:
     def test_get_discovery_run_papers_sorted_by_score(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from scripts.core.state_db import StateDB
-        from scripts.mcp import tools
+        from lit_monitor.core.state_db import StateDB
+        from lit_monitor.mcp import tools
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({})
@@ -792,8 +792,8 @@ class TestDiscoveryMcpTools:
         """P9: results must be json.dumps-safe."""
         import json
 
-        from scripts.core.state_db import StateDB
-        from scripts.mcp import tools
+        from lit_monitor.core.state_db import StateDB
+        from lit_monitor.mcp import tools
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({})
@@ -806,9 +806,9 @@ class TestDiscoveryMcpTools:
 
 
 def test_get_paper_details_includes_zotero_key(monkeypatch, tmp_path):
-    from scripts.core.state_db import StateDB
-    from scripts.graph import GraphDB
-    from scripts.mcp import tools as tools_mod
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.graph import GraphDB
+    from lit_monitor.mcp import tools as tools_mod
 
     graph = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
     graph.add_paper(

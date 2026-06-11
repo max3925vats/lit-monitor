@@ -21,8 +21,8 @@ from typing import Any
 
 import numpy as np  # Bundle I: cosine similarity for cluster-aware ask
 
-from scripts.llm.llm_client import strip_markdown_fences
-from scripts.mcp.cypher_guard import CypherSafetyError, guard
+from lit_monitor.llm.llm_client import strip_markdown_fences
+from lit_monitor.mcp.cypher_guard import CypherSafetyError, guard
 
 logger = logging.getLogger(__name__)
 
@@ -77,10 +77,10 @@ def _maybe_construct_client(cfg: Any = None) -> Any | None:
     if not os.environ.get("OLLAMA_API_KEY"):
         return None
     try:
-        from scripts.llm.llm_client import OllamaClient  # noqa: PLC0415
+        from lit_monitor.llm.llm_client import OllamaClient  # noqa: PLC0415
 
         if cfg is None:
-            from scripts.core.config import load_config  # noqa: PLC0415
+            from lit_monitor.core.config import load_config  # noqa: PLC0415
             cfg = load_config()
         # Resolution order for the model:
         #   1. graph.ask.model (explicit ask-pipeline override)
@@ -167,7 +167,7 @@ def generate_cypher(
     # Load the prompt (registry or override).
     if prompt is None:
         try:
-            from scripts.llm.prompt_registry import load_prompt  # noqa: PLC0415
+            from lit_monitor.llm.prompt_registry import load_prompt  # noqa: PLC0415
 
             prompt = load_prompt("ask_cypher")
         except Exception as exc:  # noqa: BLE001 — defensive perimeter
@@ -612,7 +612,7 @@ def summarize_results(
     # Load the prompt (registry or override).
     if prompt is None:
         try:
-            from scripts.llm.prompt_registry import load_prompt  # noqa: PLC0415
+            from lit_monitor.llm.prompt_registry import load_prompt  # noqa: PLC0415
 
             prompt = load_prompt("ask_summarize")
         except Exception as exc:  # noqa: BLE001 — defensive perimeter
@@ -748,7 +748,7 @@ def run_pipeline(
     # --- config / graph_db acquisition ----------------------------------------
     if cfg is None:
         try:
-            from scripts.core.config import get_config  # noqa: PLC0415
+            from lit_monitor.core.config import get_config  # noqa: PLC0415
 
             cfg = get_config()
         except Exception as exc:  # noqa: BLE001 — defensive perimeter
@@ -757,7 +757,7 @@ def run_pipeline(
 
     if graph_db is None:
         try:
-            from scripts.graph import safe_graph_db  # noqa: PLC0415
+            from lit_monitor.graph import safe_graph_db  # noqa: PLC0415
 
             graph_db = safe_graph_db()
         except Exception as exc:  # noqa: BLE001 — defensive perimeter
@@ -774,7 +774,7 @@ def run_pipeline(
 
     # --- schema introspection --------------------------------------------------
     try:
-        from scripts.graph.schema_describer import describe_schema  # noqa: PLC0415
+        from lit_monitor.graph.schema_describer import describe_schema  # noqa: PLC0415
 
         schema_text = describe_schema(graph_db)
     except Exception as exc:  # noqa: BLE001 — defensive perimeter

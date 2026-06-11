@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.server.app import create_app
+from lit_monitor.server.app import create_app
 
 # ---------------------------------------------------------------------------
 # Fixtures

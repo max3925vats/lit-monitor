@@ -17,8 +17,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.server.app import create_app
-from scripts.server.runtime import reset_runtime
+from lit_monitor.server.app import create_app
+from lit_monitor.server.runtime import reset_runtime
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -42,7 +42,7 @@ def _make_fake_runtime(state_db) -> MagicMock:
 @pytest.fixture
 def empty_db(tmp_path):
     """Real StateDB with no data."""
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     return StateDB(tmp_path / "state.db")
 
@@ -53,7 +53,7 @@ def seeded_db(tmp_path):
 
     Returns (db, run_id) so callers can reference the run id.
     """
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     db = StateDB(tmp_path / "state.db")
     run_id = db.start_discovery_run({"topics": ["x"]})
@@ -245,16 +245,16 @@ class TestRunPapers:
 
 class TestQueriesShared:
     def test_get_discovery_runs_empty(self, tmp_path):
-        from scripts.api.queries import get_discovery_runs
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_runs
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         result = get_discovery_runs(db, limit=20, offset=0)
         assert result == {"runs": [], "total": 0}
 
     def test_get_discovery_runs_returns_expected_keys(self, tmp_path):
-        from scripts.api.queries import get_discovery_runs
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_runs
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({})
@@ -266,8 +266,8 @@ class TestQueriesShared:
             assert key in run, f"missing key {key!r}"
 
     def test_get_discovery_runs_with_data(self, tmp_path):
-        from scripts.api.queries import get_discovery_runs
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_runs
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({})
@@ -277,15 +277,15 @@ class TestQueriesShared:
         assert result["runs"][0]["total_ingested"] == 2
 
     def test_get_discovery_run_not_found(self, tmp_path):
-        from scripts.api.queries import get_discovery_run
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_run
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         assert get_discovery_run(db, 99999) is None
 
     def test_get_discovery_run_found(self, tmp_path):
-        from scripts.api.queries import get_discovery_run
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_run
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({"topics": ["x"]})
@@ -296,8 +296,8 @@ class TestQueriesShared:
         assert run["status"] == "success"
 
     def test_get_discovery_run_papers_sorted(self, tmp_path):
-        from scripts.api.queries import get_discovery_run_papers
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_run_papers
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({})
@@ -307,8 +307,8 @@ class TestQueriesShared:
         assert [p["doi"] for p in papers] == ["10/hi", "10/lo"]
 
     def test_get_discovery_run_papers_top_k(self, tmp_path):
-        from scripts.api.queries import get_discovery_run_papers
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_run_papers
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({})
@@ -326,8 +326,8 @@ class TestQueriesShared:
         """All values in paper dicts must be JSON-native (no Row tuples)."""
         import json
 
-        from scripts.api.queries import get_discovery_run_papers
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_run_papers
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({})
@@ -523,7 +523,7 @@ class TestDiscoveryLastRunKvSemantics:
 @pytest.fixture
 def seeded_many_runs_db(tmp_path):
     """Real StateDB with 25 discovery_runs so the runs table spans >1 page (20)."""
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     db = StateDB(tmp_path / "state.db")
     ids = []

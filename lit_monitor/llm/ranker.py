@@ -23,10 +23,10 @@ except ImportError:  # chromadb optional in some test envs
     # Do NOT change to `Exception` — that would re-mask backend outages.
     ChromaError = ()  # type: ignore[assignment,misc]
 
-from scripts.core.strict_mode import strict_fallback
-from scripts.learning.rocchio import soft_gate
-from scripts.llm.prompt_registry import load_prompt
-from scripts.llm.prompt_safety import sanitize_for_prompt
+from lit_monitor.core.strict_mode import strict_fallback
+from lit_monitor.learning.rocchio import soft_gate
+from lit_monitor.llm.prompt_registry import load_prompt
+from lit_monitor.llm.prompt_safety import sanitize_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -442,7 +442,7 @@ def _get_rationales(
 
     try:
         raw = llm.complete(system, user_prompt, max_tokens=prompt.max_tokens)
-        from scripts.llm.llm_client import parse_llm_json
+        from lit_monitor.llm.llm_client import parse_llm_json
         return parse_llm_json(raw)
     except Exception as exc:
         # P4.2: escalate in --strict (raises) so a rationale-LLM failure is not

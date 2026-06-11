@@ -12,9 +12,9 @@ import subprocess
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
-from scripts.server.app import templates
-from scripts.server.runtime import get_runtime
-from scripts.server.scheduler import (
+from lit_monitor.server.app import templates
+from lit_monitor.server.runtime import get_runtime
+from lit_monitor.server.scheduler import (
     ScheduleSpec,
     detect_platform,
     read_schedule,

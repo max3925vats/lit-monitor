@@ -99,7 +99,7 @@ dependencies = [
 ]
 
 [project.scripts]
-lit-monitor = "scripts.cli:main"
+lit-monitor = "lit_monitor.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/max3925vats/lit-monitor"
@@ -148,7 +148,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["scripts*"]
+include = ["lit_monitor*"]
 
 # ─── uv-specific resolver overrides ──────────────────────────────────────────
 # findpapers 0.6.7 strict-pins typer<0.4.0, which in turn forces click<7.2,

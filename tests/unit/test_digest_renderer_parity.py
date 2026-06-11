@@ -78,7 +78,7 @@ def test_render_digest_matches_golden() -> None:
             f"Golden file missing at {GOLDEN_PATH}. "
             "Generate it once (see DR1 notes), then this test guards it."
         )
-    from scripts.output.digest_renderer import render_digest
+    from lit_monitor.output.digest_renderer import render_digest
 
     actual = render_digest(
         {},
@@ -109,8 +109,8 @@ def test_pipeline_write_digest_delegates_to_render_digest(
     render_digest.  The test guards against future accidental divergence where
     someone adds logic in _write_digest that isn't reflected in render_digest.
     """
-    import scripts.pipelines.discovery as _disc_mod
-    from scripts.output.digest_renderer import render_digest
+    import lit_monitor.pipelines.discovery as _disc_mod
+    from lit_monitor.output.digest_renderer import render_digest
 
     # Build a minimal config so _write_digest can resolve the vault path.
     vault = tmp_path / "vault"

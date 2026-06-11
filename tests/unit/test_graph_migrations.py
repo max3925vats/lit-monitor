@@ -10,7 +10,7 @@ import sqlite3
 
 import pytest
 
-from scripts.core.state_db import StateDB
+from lit_monitor.core.state_db import StateDB
 
 
 def _column_info(db_path: str, table: str) -> dict[str, dict]:
@@ -110,7 +110,7 @@ def _build_v1_kuzu_db(db_path: str) -> tuple:  # type: ignore[type-arg]
     """
     import kuzu
 
-    from scripts.graph.migrations import _DDL_V1_STATEMENTS
+    from lit_monitor.graph.migrations import _DDL_V1_STATEMENTS
 
     db = kuzu.Database(db_path)
     conn = kuzu.Connection(db)
@@ -125,7 +125,7 @@ class TestKuzuSchemaMigrationV1ToV2:
 
     def test_migration_adds_provenance_columns_to_mentions(self, tmp_path):
         """After migrate_v1_to_v2, MENTIONS edges have the three new columns populated."""
-        from scripts.graph.migrations import migrate_v1_to_v2
+        from lit_monitor.graph.migrations import migrate_v1_to_v2
 
         db_path = str(tmp_path / "v1.kuzu")
         db, conn = _build_v1_kuzu_db(db_path)
@@ -171,7 +171,7 @@ class TestKuzuSchemaMigrationV1ToV2:
 
     def test_migration_preserves_existing_edges(self, tmp_path):
         """Old MENTIONS edges survive v1→v2 migration with original field values intact."""
-        from scripts.graph.migrations import migrate_v1_to_v2
+        from lit_monitor.graph.migrations import migrate_v1_to_v2
 
         db_path = str(tmp_path / "v1_preserve.kuzu")
         db, conn = _build_v1_kuzu_db(db_path)
@@ -205,7 +205,7 @@ class TestKuzuSchemaMigrationV1ToV2:
 
     def test_migration_idempotent_second_run(self, tmp_path):
         """Running migrate_v1_to_v2 twice on the same DB does not raise."""
-        from scripts.graph.migrations import migrate_v1_to_v2
+        from lit_monitor.graph.migrations import migrate_v1_to_v2
 
         db_path = str(tmp_path / "v1_idem.kuzu")
         db, conn = _build_v1_kuzu_db(db_path)
@@ -216,7 +216,7 @@ class TestKuzuSchemaMigrationV1ToV2:
 
     def test_apply_migrations_dispatcher_v1_to_current(self, tmp_path):
         """apply_migrations transitions a v1 DB to SCHEMA_VERSION and returns it."""
-        from scripts.graph.migrations import SCHEMA_VERSION, apply_migrations
+        from lit_monitor.graph.migrations import SCHEMA_VERSION, apply_migrations
 
         db_path = str(tmp_path / "v1_dispatch.kuzu")
         db, conn = _build_v1_kuzu_db(db_path)
@@ -228,8 +228,8 @@ class TestKuzuSchemaMigrationV1ToV2:
 
     def test_apply_migrations_no_op_at_current_version(self, tmp_path):
         """apply_migrations is a no-op and returns the same version when already current."""
-        from scripts.graph import GraphDB
-        from scripts.graph.migrations import SCHEMA_VERSION, apply_migrations
+        from lit_monitor.graph import GraphDB
+        from lit_monitor.graph.migrations import SCHEMA_VERSION, apply_migrations
 
         db_path = str(tmp_path / "current.kuzu")
         GraphDB(persist_dir=db_path)  # fresh init at v2
@@ -264,7 +264,7 @@ class TestExtendsContradictsTablesV3:
 
     def test_apply_schema_creates_both_new_rel_tables(self, tmp_path):
         """R1: fresh GraphDB has EXTENDS and CONTRADICTS as Paper→Paper REL tables."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
 
         db = GraphDB(persist_dir=str(tmp_path / "r1.kuzu"))
         names = _table_names(db._conn)
@@ -273,8 +273,8 @@ class TestExtendsContradictsTablesV3:
 
     def test_apply_schema_idempotent_with_new_tables(self, tmp_path):
         """R1: re-running apply_schema on a v3-fresh DB doesn't raise."""
-        from scripts.graph import GraphDB
-        from scripts.graph.migrations import apply_schema
+        from lit_monitor.graph import GraphDB
+        from lit_monitor.graph.migrations import apply_schema
 
         db = GraphDB(persist_dir=str(tmp_path / "r1_idem.kuzu"))
         # Re-apply schema (already applied in __init__) — must not raise.
@@ -286,7 +286,7 @@ class TestExtendsContradictsTablesV3:
 
     def test_extends_edge_can_be_created_with_provenance(self, tmp_path):
         """R1: EXTENDS edge accepts confidence + extracted_at + prompt_version per G14."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
 
         db = GraphDB(persist_dir=str(tmp_path / "r1_ext.kuzu"))
         conn = db._conn
@@ -312,7 +312,7 @@ class TestExtendsContradictsTablesV3:
 
     def test_contradicts_edge_can_be_created(self, tmp_path):
         """R1: CONTRADICTS edge is insertable and queryable with count check."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
 
         db = GraphDB(persist_dir=str(tmp_path / "r1_con.kuzu"))
         conn = db._conn
@@ -344,7 +344,7 @@ class TestSchemaVersionV3:
         stays at 4 to encode 'Phase 4 CITES fix is permanently in', while
         the assertion now matches the test name's 'at_least_4' wording.
         """
-        from scripts.graph.migrations import SCHEMA_VERSION
+        from lit_monitor.graph.migrations import SCHEMA_VERSION
 
         assert SCHEMA_VERSION >= 4, (
             f"Expected SCHEMA_VERSION >= 4 (Phase 4 CITES fix), got {SCHEMA_VERSION}"
@@ -352,8 +352,8 @@ class TestSchemaVersionV3:
 
     def test_migrate_v2_to_v3_adds_new_tables(self, tmp_path):
         """R1: migrate_v2_to_v3 on a v2-shaped DB adds EXTENDS + CONTRADICTS."""
-        from scripts.graph import GraphDB
-        from scripts.graph.migrations import migrate_v2_to_v3
+        from lit_monitor.graph import GraphDB
+        from lit_monitor.graph.migrations import migrate_v2_to_v3
 
         db = GraphDB(persist_dir=str(tmp_path / "r1_mig.kuzu"))
         conn = db._conn
@@ -379,7 +379,7 @@ class TestSchemaVersionV3:
 
     def test_apply_migrations_v1_reaches_current_version(self, tmp_path):
         """apply_migrations from v1 chains all steps and returns SCHEMA_VERSION."""
-        from scripts.graph.migrations import SCHEMA_VERSION, apply_migrations
+        from lit_monitor.graph.migrations import SCHEMA_VERSION, apply_migrations
 
         _, conn = _build_v1_kuzu_db(str(tmp_path / "v1_to_current.kuzu"))
         new_version = apply_migrations(conn, current_version=1)
@@ -389,8 +389,8 @@ class TestSchemaVersionV3:
         """apply_migrations from v2 chains v2→v3→v4 and returns SCHEMA_VERSION."""
         import kuzu
 
-        from scripts.graph import GraphDB
-        from scripts.graph.migrations import (  # noqa: F401
+        from lit_monitor.graph import GraphDB
+        from lit_monitor.graph.migrations import (  # noqa: F401
             SCHEMA_VERSION,
             apply_migrations,
             migrate_v2_to_v3,

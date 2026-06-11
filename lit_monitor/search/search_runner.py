@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover
     _fp_load = None  # type: ignore[assignment]
 
 try:
-    from scripts.search.semantic_scholar import (
+    from lit_monitor.search.semantic_scholar import (
         _S2_AVAILABLE,
         search_semantic_scholar,
     )
@@ -34,9 +34,9 @@ except ImportError:  # pragma: no cover
     _S2_AVAILABLE = False  # type: ignore[assignment]
     search_semantic_scholar = None  # type: ignore[assignment]
 
-from scripts.core.doi import normalize_doi
-from scripts.core.strict_mode import strict_fallback
-from scripts.search._constants import FINDPAPERS_TIMEOUT_SECONDS
+from lit_monitor.core.doi import normalize_doi
+from lit_monitor.core.strict_mode import strict_fallback
+from lit_monitor.search._constants import FINDPAPERS_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 

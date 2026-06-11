@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from scripts.api.queries import (
+from lit_monitor.api.queries import (
     get_entity_counts_by_source,
     get_entity_counts_by_type,
 )

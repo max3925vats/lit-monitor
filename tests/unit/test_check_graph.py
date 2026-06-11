@@ -1,7 +1,7 @@
 """Tests for scripts.setup.check_graph (FG-2 graph-health check)."""
 from __future__ import annotations
 
-from scripts.setup.check_graph import check_graph
+from lit_monitor.setup.check_graph import check_graph
 
 
 def test_check_graph_warn_when_graph_absent(monkeypatch) -> None:
@@ -39,7 +39,7 @@ def test_check_graph_partial_is_not_fail(monkeypatch) -> None:
 
 def test_run_health_check_includes_graph_section(monkeypatch) -> None:
     """The graph section appears in the aggregated health-check dict."""
-    from scripts.setup.health_check import run_health_check
+    from lit_monitor.setup.health_check import run_health_check
 
     monkeypatch.setattr(
         "scripts.setup.check_graph.safe_graph_db", lambda *a, **k: None

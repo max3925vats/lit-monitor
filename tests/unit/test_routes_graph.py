@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("LIT_MONITOR_STATE_DB", str(tmp_path / "state.db"))
-    from scripts.server.app import create_app  # noqa: PLC0415
+    from lit_monitor.server.app import create_app  # noqa: PLC0415
 
     return TestClient(create_app())
 

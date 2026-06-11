@@ -234,8 +234,8 @@ def _real_embed_fn() -> EmbedFn:
     from config. Only constructed for the live Tier-4 path — unit tests inject
     a fake instead.
     """
-    from scripts.core.config import get_config
-    from scripts.llm.embedding_client import embed_via_ollama
+    from lit_monitor.core.config import get_config
+    from lit_monitor.llm.embedding_client import embed_via_ollama
 
     cfg = get_config()
     model = cfg.embedding.ollama.model
@@ -282,7 +282,7 @@ def _emit_report(ref_yaml: str) -> None:
     state.db, malformed YAML); ``main`` catches and swallows so the gate is
     never failed by the advisory check.
     """
-    from scripts.core.config import get_config
+    from lit_monitor.core.config import get_config
 
     db_path = str(get_config().state_db.path)
     papers = _load_references(ref_yaml)

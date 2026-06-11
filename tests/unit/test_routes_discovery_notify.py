@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def client():
-    from scripts.server.app import create_app
+    from lit_monitor.server.app import create_app
 
     return TestClient(create_app(), follow_redirects=False)
 

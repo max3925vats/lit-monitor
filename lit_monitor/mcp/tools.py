@@ -31,21 +31,21 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from scripts.api.queries import (
+from lit_monitor.api.queries import (
     _coerce_jsonable,
     _validate_doi,
     get_paper_snapshot,
 )
-from scripts.api.queries import (
+from lit_monitor.api.queries import (
     get_corpus_stats as _q_corpus_stats,
 )
-from scripts.api.queries import (
+from lit_monitor.api.queries import (
     get_schema_text as _get_schema_text_impl,
 )
-from scripts.api.queries import (
+from lit_monitor.api.queries import (
     list_entities as _q_list_entities,
 )
-from scripts.graph.relationship_validator import VALID_PREDICATES
+from lit_monitor.graph.relationship_validator import VALID_PREDICATES
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ def _get_graph_db() -> Any:
     Returns None if the [graph] extra is not installed or the DB is
     unavailable, which callers must handle gracefully.
     """
-    from scripts.graph.import_citations import safe_graph_db  # noqa: PLC0415
+    from lit_monitor.graph.import_citations import safe_graph_db  # noqa: PLC0415
     return safe_graph_db()
 
 
@@ -84,8 +84,8 @@ def _get_state_db() -> Any:
     """
     from pathlib import Path  # noqa: PLC0415
 
-    from scripts.core.config import get_config  # noqa: PLC0415
-    from scripts.core.state_db import StateDB  # noqa: PLC0415
+    from lit_monitor.core.config import get_config  # noqa: PLC0415
+    from lit_monitor.core.state_db import StateDB  # noqa: PLC0415
 
     cfg = get_config()
     return StateDB(Path(cfg.state_db.path).expanduser())
@@ -416,7 +416,7 @@ def find_papers_by_query(query: str, k: int = 20) -> list[dict[str, Any]]:
 
     # Try H1's get_papers_by_query first (may not exist pre-H10).
     try:
-        from scripts.api.queries import get_papers_by_query as _gpbq  # noqa: PLC0415
+        from lit_monitor.api.queries import get_papers_by_query as _gpbq  # noqa: PLC0415
         return _gpbq(query, mode="graph", k=k, graph_db=db)
     except (ImportError, AttributeError):
         pass
@@ -467,7 +467,7 @@ def find_papers_by_query_hybrid(query: str, k: int = 20) -> list[dict[str, Any]]
 
     # Try H1's get_papers_by_query first (may not exist pre-H10).
     try:
-        from scripts.api.queries import get_papers_by_query as _gpbq  # noqa: PLC0415
+        from lit_monitor.api.queries import get_papers_by_query as _gpbq  # noqa: PLC0415
         return _gpbq(query, mode="hybrid", k=k, graph_db=db)
     except (ImportError, AttributeError):
         pass
@@ -486,7 +486,7 @@ def find_papers_by_query_hybrid(query: str, k: int = 20) -> list[dict[str, Any]]
 
     # Graph leg using RRF — single ranking, so RRF is identity; still use it
     # so the code path is exercised and H10 can slot the vector leg in.
-    from scripts.retrieval.rrf import reciprocal_rank_fusion  # noqa: PLC0415
+    from lit_monitor.retrieval.rrf import reciprocal_rank_fusion  # noqa: PLC0415
 
     doi_scores = db.find_papers_by_entities([canonical_id], k=k)
     doi_list = [d for d, _ in doi_scores]
@@ -533,7 +533,7 @@ def run_cypher(query: str, limit: int = 100) -> list[dict[str, Any]]:
     """
     # Late import keeps the module importable even when cypher_guard isn't
     # installed yet (e.g. in certain unit-test stubs).
-    from scripts.mcp.cypher_guard import guard  # noqa: PLC0415
+    from lit_monitor.mcp.cypher_guard import guard  # noqa: PLC0415
 
     # guard() raises CypherSafetyError (ValueError subclass) if unsafe.
     safe_query = guard(query, hard_limit=limit)
@@ -579,7 +579,7 @@ def _resolve_persist_dir() -> str:
     """
     from pathlib import Path  # noqa: PLC0415
 
-    from scripts.core.config import get_config  # noqa: PLC0415
+    from lit_monitor.core.config import get_config  # noqa: PLC0415
 
     cfg = get_config()
     return str(Path(cfg.state_db.path).parent / "chroma")
@@ -609,8 +609,8 @@ def _get_embeddings_db() -> Any:
         return None
 
     # Lazy import — EmbeddingsDB triggers chromadb import which is expensive.
-    from scripts.core.config import get_config  # noqa: PLC0415
-    from scripts.output.embeddings import EmbeddingsDB  # noqa: PLC0415
+    from lit_monitor.core.config import get_config  # noqa: PLC0415
+    from lit_monitor.output.embeddings import EmbeddingsDB  # noqa: PLC0415
 
     cfg = get_config()
     ollama_host = getattr(cfg.embeddings, "ollama_host", "http://localhost:11434")
@@ -748,7 +748,7 @@ def get_recent_discovery_runs(limit: int = 5) -> list[dict]:
     """
     if not isinstance(limit, int) or limit < 1 or limit > 100:
         raise ValueError("limit must be int in [1, 100]")
-    from scripts.api.queries import get_discovery_runs  # noqa: PLC0415
+    from lit_monitor.api.queries import get_discovery_runs  # noqa: PLC0415
 
     result = get_discovery_runs(_get_state_db(), limit=limit, offset=0)
     return result.get("runs", [])
@@ -774,6 +774,6 @@ def get_discovery_run_papers(run_id: int, top_k: int = 20) -> list[dict]:
         raise ValueError("run_id must be positive int")
     if not isinstance(top_k, int) or top_k < 1 or top_k > 100:
         raise ValueError("top_k must be int in [1, 100]")
-    from scripts.api.queries import get_discovery_run_papers as _qpapers  # noqa: PLC0415
+    from lit_monitor.api.queries import get_discovery_run_papers as _qpapers  # noqa: PLC0415
 
     return _qpapers(_get_state_db(), run_id, top_k=top_k)
