@@ -78,7 +78,7 @@ def test_save_config_atomic_replace(monkeypatch, tmp_path: Path) -> None:
     (tmp_path / "config").mkdir()
 
     replace_mock = MagicMock()
-    # os.replace now fires from scripts.core.atomic_write (config_io delegates
+    # os.replace now fires from lit_monitor.core.atomic_write (config_io delegates
     # to atomic_write_text), so patch the helper module's os, not config_io's.
     monkeypatch.setattr(_atomic_write_mod.os, "replace", replace_mock)
 

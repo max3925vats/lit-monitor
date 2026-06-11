@@ -333,7 +333,7 @@ class TestDisabledPathsSkipLLMConstruction:
             called["hit"] = True
             raise RuntimeError("OllamaClient should not be constructed when disabled")
 
-        monkeypatch.setattr("scripts.llm.llm_client.OllamaClient", _boom)
+        monkeypatch.setattr("lit_monitor.llm.llm_client.OllamaClient", _boom)
 
         result = extract_long_tail_and_validate(
             text="paper text",

@@ -528,7 +528,7 @@ def serve(
         timer.start()
 
     uvicorn.run(
-        "scripts.server.app:create_app",
+        "lit_monitor.server.app:create_app",
         factory=True,
         host=final_host,
         port=final_port,
@@ -626,7 +626,7 @@ def first_run(ctx: click.Context) -> None:
     # into the user's shell after first-run exits. Structured JSONL logs from
     # _setup_logging("serve", ...) still get written to disk under logs/.
     subprocess.Popen(
-        [sys.executable, "-m", "scripts.cli", "serve"],
+        [sys.executable, "-m", "lit_monitor.cli", "serve"],
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

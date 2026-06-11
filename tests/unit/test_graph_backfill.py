@@ -170,8 +170,8 @@ class TestRebuildAll:
         # Stub out schema re-apply and the follow-up backfill so the test stays
         # focused on the guard + drop behaviour (all I/O mocked).
         with (
-            patch("scripts.graph.backfill.apply_schema"),
-            patch("scripts.graph.backfill.backfill_papers", return_value=0),
+            patch("lit_monitor.graph.backfill.apply_schema"),
+            patch("lit_monitor.graph.backfill.backfill_papers", return_value=0),
         ):
             rebuild_all(state_db, graph_db, confirm=True)
 
@@ -242,7 +242,7 @@ class TestBackfillNer:
         def fake_build(*, paper_id: str, **_kwargs):
             return [fake_edge(paper_id)]
 
-        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", fake_build)
+        monkeypatch.setattr("lit_monitor.graph.backfill.build_mention_edges", fake_build)
 
         summary = backfill_ner(state_db, graph_db, with_llm=False)
         assert summary["papers_processed"] == 2
@@ -258,7 +258,7 @@ class TestBackfillNer:
             state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
 
-        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", lambda **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.build_mention_edges", lambda **kw: [])
 
         first = backfill_ner(state_db, graph_db, with_llm=False)
         assert first["papers_processed"] == 2
@@ -276,7 +276,7 @@ class TestBackfillNer:
             state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
 
-        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", lambda **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.build_mention_edges", lambda **kw: [])
 
         summary = backfill_ner(state_db, graph_db, with_llm=False, limit=2)
         assert summary["papers_processed"] == 2
@@ -297,7 +297,7 @@ class TestBackfillNer:
             conn.commit()
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
 
-        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", lambda **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.build_mention_edges", lambda **kw: [])
 
         summary = backfill_ner(state_db, graph_db, with_llm=False, since=datetime(2023, 1, 1))
         # Only the "new" paper (with current timestamp) should be processed.
@@ -317,7 +317,7 @@ class TestBackfillNer:
             captured["use_cloud_llm"] = use_cloud_llm
             return []
 
-        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", fake_build)
+        monkeypatch.setattr("lit_monitor.graph.backfill.build_mention_edges", fake_build)
 
         backfill_ner(state_db, graph_db, with_llm=True)
         assert captured["use_cloud_llm"] is True
@@ -336,7 +336,7 @@ class TestBackfillNer:
             captured["use_cloud_llm"] = use_cloud_llm
             return []
 
-        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", fake_build)
+        monkeypatch.setattr("lit_monitor.graph.backfill.build_mention_edges", fake_build)
 
         backfill_ner(state_db, graph_db)  # with_llm defaults to False
         assert captured["use_cloud_llm"] is False
@@ -358,7 +358,7 @@ class TestBackfillNer:
                 raise RuntimeError("simulated NER failure")
             return []
 
-        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", flaky_build)
+        monkeypatch.setattr("lit_monitor.graph.backfill.build_mention_edges", flaky_build)
 
         summary = backfill_ner(state_db, graph_db, with_llm=False)
         assert summary["failures"] == 1
@@ -373,7 +373,7 @@ class TestBackfillNer:
             state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
 
-        monkeypatch.setattr("scripts.graph.backfill.build_mention_edges", lambda **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.build_mention_edges", lambda **kw: [])
 
         calls: list[tuple[str, int, int]] = []
         backfill_ner(
@@ -405,10 +405,10 @@ class TestBackfillRelationships:
 
         state_db, graph_db = self._setup(tmp_path)
 
-        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
-        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", lambda *a, **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_relationships", lambda *a, **kw: [])
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.maybe_extract_llm_relationships",
             lambda **kw: [],
         )
 
@@ -422,10 +422,10 @@ class TestBackfillRelationships:
 
         state_db, graph_db = self._setup(tmp_path)
 
-        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
-        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", lambda *a, **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_relationships", lambda *a, **kw: [])
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.maybe_extract_llm_relationships",
             lambda **kw: [],
         )
 
@@ -442,10 +442,10 @@ class TestBackfillRelationships:
 
         state_db, graph_db = self._setup(tmp_path, dois=("10.0/a", "10.0/b", "10.0/c"))
 
-        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
-        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", lambda *a, **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_relationships", lambda *a, **kw: [])
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.maybe_extract_llm_relationships",
             lambda **kw: [],
         )
 
@@ -468,10 +468,10 @@ class TestBackfillRelationships:
                 captured["llm_enabled"] = None
             return []
 
-        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
-        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", lambda *a, **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_relationships", lambda *a, **kw: [])
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.maybe_extract_llm_relationships",
             fake_maybe_llm,
         )
 
@@ -493,10 +493,10 @@ class TestBackfillRelationships:
                 captured["llm_enabled"] = None
             return []
 
-        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
-        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", lambda *a, **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_relationships", lambda *a, **kw: [])
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.maybe_extract_llm_relationships",
             fake_maybe_llm,
         )
 
@@ -517,10 +517,10 @@ class TestBackfillRelationships:
                 raise RuntimeError("simulated extraction failure")
             return []
 
-        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
-        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", flaky_extract)
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_relationships", flaky_extract)
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.maybe_extract_llm_relationships",
             lambda **kw: [],
         )
 
@@ -548,10 +548,10 @@ class TestBackfillRelationships:
             )
 
         monkeypatch.setattr(graph_db, "add_paper", spy_add_paper)
-        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
-        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", lambda *a, **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_relationships", lambda *a, **kw: [])
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.maybe_extract_llm_relationships",
             lambda **kw: [],
         )
 
@@ -564,10 +564,10 @@ class TestBackfillRelationships:
 
         state_db, graph_db = self._setup(tmp_path)
 
-        monkeypatch.setattr("scripts.graph.backfill.extract_entities", lambda *a, **kw: [])
-        monkeypatch.setattr("scripts.graph.backfill.extract_relationships", lambda *a, **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_entities", lambda *a, **kw: [])
+        monkeypatch.setattr("lit_monitor.graph.backfill.extract_relationships", lambda *a, **kw: [])
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.maybe_extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.maybe_extract_llm_relationships",
             lambda **kw: [],
         )
 

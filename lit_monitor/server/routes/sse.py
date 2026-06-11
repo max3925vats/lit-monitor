@@ -115,9 +115,9 @@ def _prettify_jsonl_line(stripped: str) -> str:
     level = (rec.get("level") or "INFO").upper() if isinstance(rec, dict) else "INFO"
 
     lg = rec.get("logger", "") if isinstance(rec, dict) else ""
-    # Drop the "scripts." prefix so the logger column stays narrow.
-    if lg.startswith("scripts."):
-        lg = lg[len("scripts."):]
+    # Drop the "lit_monitor." prefix so the logger column stays narrow.
+    if lg.startswith("lit_monitor."):
+        lg = lg[len("lit_monitor."):]
 
     msg = rec.get("msg", "") if isinstance(rec, dict) else ""
 

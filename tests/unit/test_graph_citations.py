@@ -217,7 +217,7 @@ class TestGraphPathResolution:
         cfg = SimpleNamespace(
             retrieval=SimpleNamespace(graph_db={"persist_dir": "/tmp/custom.kuzu"})
         )
-        monkeypatch.setattr("scripts.core.config.get_config", lambda: cfg)
+        monkeypatch.setattr("lit_monitor.core.config.get_config", lambda: cfg)
         assert ic._configured_graph_path() == "/tmp/custom.kuzu"
 
     def test_configured_graph_path_with_production_namespace_shape(self, monkeypatch):
@@ -233,7 +233,7 @@ class TestGraphPathResolution:
                 graph_db=_Namespace({"persist_dir": "/ns/graph.kuzu"})
             )
         )
-        monkeypatch.setattr("scripts.core.config.get_config", lambda: cfg)
+        monkeypatch.setattr("lit_monitor.core.config.get_config", lambda: cfg)
         assert ic._configured_graph_path() == "/ns/graph.kuzu"
 
     def test_configured_graph_path_none_when_block_absent(self, monkeypatch):
@@ -243,7 +243,7 @@ class TestGraphPathResolution:
         import lit_monitor.graph.import_citations as ic
 
         cfg = SimpleNamespace(retrieval=SimpleNamespace(graph_db=None))
-        monkeypatch.setattr("scripts.core.config.get_config", lambda: cfg)
+        monkeypatch.setattr("lit_monitor.core.config.get_config", lambda: cfg)
         assert ic._configured_graph_path() is None
 
     def test_configured_graph_path_none_on_config_error(self, monkeypatch):
@@ -253,7 +253,7 @@ class TestGraphPathResolution:
         def boom():
             raise RuntimeError("config unavailable")
 
-        monkeypatch.setattr("scripts.core.config.get_config", boom)
+        monkeypatch.setattr("lit_monitor.core.config.get_config", boom)
         assert ic._configured_graph_path() is None
 
     def test_safe_graph_db_path_precedence(self, monkeypatch):
@@ -266,7 +266,7 @@ class TestGraphPathResolution:
             def __init__(self, persist_dir: str) -> None:
                 captured["dir"] = persist_dir
 
-        monkeypatch.setattr("scripts.graph.GraphDB", _FakeGraphDB)
+        monkeypatch.setattr("lit_monitor.graph.GraphDB", _FakeGraphDB)
         monkeypatch.setattr(ic, "_configured_graph_path", lambda: "/from/config.kuzu")
 
         ic.safe_graph_db(persist_dir="/explicit.kuzu")

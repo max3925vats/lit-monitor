@@ -32,7 +32,7 @@ def app(tmp_path):
     app.include_router(trending_router)
 
     # Provide templates at app-level so route handlers can access request.app.state
-    templates_dir = Path(__file__).parents[2] / "scripts" / "server" / "templates"
+    templates_dir = Path(__file__).parents[2] / "lit_monitor" / "server" / "templates"
     app.state.templates = Jinja2Templates(directory=str(templates_dir))
     app.state.dev_mode = False
     app.state.version = "test"
@@ -66,7 +66,7 @@ class TestGetTrending:
     def test_returns_pending_list(self, client):
         pending = [_make_row(1), _make_row(2, "distillation")]
         with (
-            patch("scripts.server.routes.trending._safe_db") as mock_db_fn,
+            patch("lit_monitor.server.routes.trending._safe_db") as mock_db_fn,
         ):
             mock_db = MagicMock()
             mock_db.get_pending_trending_suggestions.return_value = pending
@@ -79,7 +79,7 @@ class TestGetTrending:
         assert data[0]["concept_text"] == "biorefinery"
 
     def test_returns_empty_when_no_db(self, client):
-        with patch("scripts.server.routes.trending._safe_db", return_value=None):
+        with patch("lit_monitor.server.routes.trending._safe_db", return_value=None):
             resp = client.get("/api/trending")
         assert resp.status_code == 200
         assert resp.json() == []
@@ -89,8 +89,8 @@ class TestAcceptTrending:
     def test_accept_marks_accepted(self, client):
         row = _make_row(1)
         with (
-            patch("scripts.server.routes.trending._safe_db") as mock_db_fn,
-            patch("scripts.server.routes.trending.safe_save_topics") as mock_save,
+            patch("lit_monitor.server.routes.trending._safe_db") as mock_db_fn,
+            patch("lit_monitor.server.routes.trending.safe_save_topics") as mock_save,
         ):
             mock_db = MagicMock()
             mock_db.get_trending_suggestion_by_id.return_value = row
@@ -104,7 +104,7 @@ class TestAcceptTrending:
         mock_db.update_trending_action.assert_called_once_with(1, "accepted")
 
     def test_accept_returns_404_for_unknown_id(self, client):
-        with patch("scripts.server.routes.trending._safe_db") as mock_db_fn:
+        with patch("lit_monitor.server.routes.trending._safe_db") as mock_db_fn:
             mock_db = MagicMock()
             mock_db.get_trending_suggestion_by_id.return_value = None
             mock_db_fn.return_value = mock_db
@@ -116,7 +116,7 @@ class TestAcceptTrending:
 class TestDismissTrending:
     def test_dismiss_marks_dismissed(self, client):
         row = _make_row(1)
-        with patch("scripts.server.routes.trending._safe_db") as mock_db_fn:
+        with patch("lit_monitor.server.routes.trending._safe_db") as mock_db_fn:
             mock_db = MagicMock()
             mock_db.get_trending_suggestion_by_id.return_value = row
             mock_db.update_trending_action.return_value = None
@@ -128,7 +128,7 @@ class TestDismissTrending:
         mock_db.update_trending_action.assert_called_once_with(1, "dismissed")
 
     def test_dismiss_returns_404_for_unknown_id(self, client):
-        with patch("scripts.server.routes.trending._safe_db") as mock_db_fn:
+        with patch("lit_monitor.server.routes.trending._safe_db") as mock_db_fn:
             mock_db = MagicMock()
             mock_db.get_trending_suggestion_by_id.return_value = None
             mock_db_fn.return_value = mock_db
@@ -149,7 +149,7 @@ class TestTrendingPageRender:
 
     def test_get_trending_renders_page_200(self, client):
         pending = [_make_row(1), _make_row(2, "distillation")]
-        with patch("scripts.server.routes.trending._safe_db") as mock_db_fn:
+        with patch("lit_monitor.server.routes.trending._safe_db") as mock_db_fn:
             mock_db = MagicMock()
             mock_db.get_pending_trending_suggestions.return_value = pending
             mock_db_fn.return_value = mock_db
@@ -163,7 +163,7 @@ class TestTrendingPageRender:
 
     def test_get_trending_renders_with_no_db(self, client):
         """Even with no DB (empty suggestions), the page must render 200, not 500."""
-        with patch("scripts.server.routes.trending._safe_db", return_value=None):
+        with patch("lit_monitor.server.routes.trending._safe_db", return_value=None):
             resp = client.get("/trending")
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
@@ -180,7 +180,7 @@ class TestTrendingPageCopy:
     def _render_content(self) -> str:
         import jinja2
 
-        templates_dir = Path(__file__).parents[2] / "scripts" / "server" / "templates"
+        templates_dir = Path(__file__).parents[2] / "lit_monitor" / "server" / "templates"
         env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(templates_dir)))
         # Isolate the content block so we don't need base.html's app.state context.
         template = env.get_template("trending/index.html")

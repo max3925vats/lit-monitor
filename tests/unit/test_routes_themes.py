@@ -27,7 +27,7 @@ from fastapi.testclient import TestClient
 from lit_monitor.server.routes.themes import router as themes_router
 from lit_monitor.server.runtime import reset_runtime
 
-TEMPLATES_DIR = Path(__file__).parents[2] / "scripts" / "server" / "templates"
+TEMPLATES_DIR = Path(__file__).parents[2] / "lit_monitor" / "server" / "templates"
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ def _make_api_client(db, monkeypatch) -> TestClient:
     """Minimal app with themes router, runtime patched to use db."""
     rt = MagicMock()
     rt.state_db = db
-    monkeypatch.setattr("scripts.server.routes.themes.get_runtime", lambda: rt)
+    monkeypatch.setattr("lit_monitor.server.routes.themes.get_runtime", lambda: rt)
     app = FastAPI()
     app.include_router(themes_router)
     app.state.dev_mode = False
@@ -102,8 +102,8 @@ def _make_html_client(db, monkeypatch) -> TestClient:
 
     rt = MagicMock()
     rt.state_db = db
-    monkeypatch.setattr("scripts.server.routes.themes.get_runtime", lambda: rt)
-    monkeypatch.setattr("scripts.server.config_io.load_config", lambda name: {})
+    monkeypatch.setattr("lit_monitor.server.routes.themes.get_runtime", lambda: rt)
+    monkeypatch.setattr("lit_monitor.server.config_io.load_config", lambda name: {})
 
     app = FastAPI()
     app.include_router(themes_router)
@@ -182,11 +182,11 @@ class TestWriteBack:
         rt = MagicMock()
         rt.state_db = db
         rt.zotero_client = MagicMock()
-        monkeypatch.setattr("scripts.server.routes.themes.get_runtime", lambda: rt)
+        monkeypatch.setattr("lit_monitor.server.routes.themes.get_runtime", lambda: rt)
 
         fake_report = [{"doi": "10.1/test1", "tag": "lm/topic-a"}]
         with patch(
-            "scripts.clustering.write_back.push_tags_to_zotero",
+            "lit_monitor.clustering.write_back.push_tags_to_zotero",
             return_value=fake_report,
         ):
             app = FastAPI()
@@ -203,11 +203,11 @@ class TestWriteBack:
         rt = MagicMock()
         rt.state_db = db
         rt.zotero_client = MagicMock()
-        monkeypatch.setattr("scripts.server.routes.themes.get_runtime", lambda: rt)
+        monkeypatch.setattr("lit_monitor.server.routes.themes.get_runtime", lambda: rt)
 
         fake_report = [{"doi": "10.1/test1", "tag": "lm/topic-a"}]
         with patch(
-            "scripts.clustering.write_back.push_tags_to_zotero",
+            "lit_monitor.clustering.write_back.push_tags_to_zotero",
             return_value=fake_report,
         ) as mock_push:
             app = FastAPI()
@@ -243,13 +243,13 @@ class TestWriteBack:
         rt = MagicMock()
         rt.state_db = db
         rt.zotero_client = MagicMock()
-        monkeypatch.setattr("scripts.server.routes.themes.get_runtime", lambda: rt)
+        monkeypatch.setattr("lit_monitor.server.routes.themes.get_runtime", lambda: rt)
 
         # A path-shaped secret the raw str(exc) would leak to the client.
         secret = "/Users/secret/zotero/storage/ABCD1234/leak.sqlite"
-        with caplog.at_level(logging.ERROR, logger="scripts.server.routes.themes"):
+        with caplog.at_level(logging.ERROR, logger="lit_monitor.server.routes.themes"):
             with patch(
-                "scripts.clustering.write_back.push_tags_to_zotero",
+                "lit_monitor.clustering.write_back.push_tags_to_zotero",
                 side_effect=FileNotFoundError(secret),
             ):
                 app = FastAPI()

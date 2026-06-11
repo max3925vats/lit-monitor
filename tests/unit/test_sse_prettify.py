@@ -8,7 +8,7 @@ log panels rendering raw JSON in the browser.
 Pins:
 1. A typical {ts, level, logger, msg} record produces a single-line HTML
    fragment with the expected grid spans.
-2. The "scripts." prefix is stripped from the logger name.
+2. The "lit_monitor." prefix is stripped from the logger name.
 3. Malformed JSON falls back to ``<div class="log-line log-raw">…</div>``.
 4. All interpolated fields are HTML-escaped (XSS-safe).
 """
@@ -23,7 +23,7 @@ from lit_monitor.server.routes.sse import _prettify_jsonl_line
 def test_prettify_typical_jsonl_record_renders_columns() -> None:
     raw = (
         '{"ts": "2026-05-27T03:00:00+00:00", "level": "INFO", '
-        '"logger": "scripts.search.search_runner", '
+        '"logger": "lit_monitor.search.search_runner", '
         '"msg": "Searching topic: \'force field\'"}'
     )
     html = _prettify_jsonl_line(raw)
@@ -33,9 +33,9 @@ def test_prettify_typical_jsonl_record_renders_columns() -> None:
     # All four columns present.
     assert '<span class="log-ts">03:00:00</span>' in html
     assert '<span class="log-level">INFO</span>' in html
-    # "scripts." prefix is stripped from the logger.
+    # "lit_monitor." prefix is stripped from the logger.
     assert '<span class="log-logger">search.search_runner</span>' in html
-    assert "scripts.search.search_runner" not in html
+    assert "lit_monitor.search.search_runner" not in html
     # The message field survives the round-trip (apostrophes escaped).
     assert "Searching topic" in html
     # Exactly one line (no embedded newlines — SSE data: can't carry them).
@@ -44,7 +44,7 @@ def test_prettify_typical_jsonl_record_renders_columns() -> None:
 
 @pytest.mark.unit
 def test_prettify_strips_scripts_prefix_from_logger() -> None:
-    raw = '{"ts": "2026-05-27T03:00:00+00:00", "level": "WARNING", "logger": "scripts.pipelines.discovery", "msg": "rate limit"}'
+    raw = '{"ts": "2026-05-27T03:00:00+00:00", "level": "WARNING", "logger": "lit_monitor.pipelines.discovery", "msg": "rate limit"}'
     html = _prettify_jsonl_line(raw)
     assert "log-WARNING" in html
     assert '<span class="log-logger">pipelines.discovery</span>' in html

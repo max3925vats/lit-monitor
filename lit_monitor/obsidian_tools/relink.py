@@ -355,7 +355,7 @@ def _doi_pairs_to_similar(
             "metadata": {"note_title": note_title, "doi": doi_val},
         })
     # C1: rerank using the same private helper the vector path uses. This is
-    # the actual API — the previous ``from scripts.output.reranker import rerank``
+    # the actual API — the previous ``from lit_monitor.output.reranker import rerank``
     # was a phantom symbol that raised ImportError on every call (silently
     # swallowed by except Exception).
     if reranker_cfg is not None and reranker_query and results:

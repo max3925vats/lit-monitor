@@ -1,7 +1,7 @@
 """
 Self Security Audit (B12 / bundle E6)
 -------------------------------------
-This module audits lit-monitor's OWN source tree under ``scripts/`` for a set
+This module audits lit-monitor's OWN source tree under ``lit_monitor/`` for a set
 of concrete security anti-patterns. Unlike ``test_audit.py`` (which audits the
 five EXTERNAL cloned repos and is gated behind LIT_MONITOR_LIVE), this file:
 
@@ -33,11 +33,11 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 _TEST_DIR = Path(__file__).parent
 _PROJECT_ROOT = _TEST_DIR.parent.parent  # lit-monitor/
-_SCRIPTS_ROOT = _PROJECT_ROOT / "scripts"
+_SCRIPTS_ROOT = _PROJECT_ROOT / "lit_monitor"
 
 
 def _source_files() -> list[Path]:
-    """All Python source files under scripts/, excluding bytecode caches."""
+    """All Python source files under lit_monitor/, excluding bytecode caches."""
     return [
         p
         for p in sorted(_SCRIPTS_ROOT.rglob("*.py"))
@@ -70,13 +70,13 @@ def _parse(p: Path, source: str) -> ast.Module | None:
 def test_scripts_tree_is_present() -> None:
     """Sanity guard: the audit only means something if it finds source files.
 
-    Protects against a refactor that moves scripts/ and silently turns every
+    Protects against a refactor that moves lit_monitor/ and silently turns every
     other check into a vacuous pass over an empty file list.
     """
     files = _source_files()
-    assert _SCRIPTS_ROOT.is_dir(), f"scripts/ not found at {_SCRIPTS_ROOT}"
+    assert _SCRIPTS_ROOT.is_dir(), f"lit_monitor/ not found at {_SCRIPTS_ROOT}"
     assert len(files) > 50, (
-        f"Expected the scripts/ tree to contain many source files, found "
+        f"Expected the lit_monitor/ tree to contain many source files, found "
         f"{len(files)}. Did the source layout move?"
     )
 
@@ -166,7 +166,7 @@ def _looks_like_placeholder(value: str) -> bool:
 
 
 def test_no_hardcoded_secrets() -> None:
-    """No live API-key/token shapes or long secret-named literals in scripts/."""
+    """No live API-key/token shapes or long secret-named literals in lit_monitor/."""
     violations: list[str] = []
     for path in _source_files():
         source = _read(path)
@@ -183,7 +183,7 @@ def test_no_hardcoded_secrets() -> None:
                     f"{_rel(path)}:{lineno}: secret-named literal "
                     f"{m2.group('name')!r} = <{len(m2.group('value'))}-char literal>"
                 )
-    assert not violations, "Possible hardcoded secrets in scripts/:\n" + "\n".join(
+    assert not violations, "Possible hardcoded secrets in lit_monitor/:\n" + "\n".join(
         violations
     )
 
@@ -215,10 +215,10 @@ def test_placeholder_markers_are_anchored_not_substring() -> None:
 # AST-based: only direct calls to the builtins eval()/exec() count, so
 # identifiers that merely contain "eval"/"exec" as a substring (e.g.
 # AbstractRetrieval, _exec_plan) do not trip the check.
-# No allowlist entry is needed today — scripts/ contains zero such calls.
+# No allowlist entry is needed today — lit_monitor/ contains zero such calls.
 # ---------------------------------------------------------------------------
 def test_no_eval_or_exec() -> None:
-    """scripts/ must not call the eval()/exec() builtins."""
+    """lit_monitor/ must not call the eval()/exec() builtins."""
     violations: list[str] = []
     for path in _source_files():
         source = _read(path)
@@ -237,7 +237,7 @@ def test_no_eval_or_exec() -> None:
                     f"{_rel(path)}:{node.lineno}: {node.func.id}() call"
                 )
     assert not violations, (
-        "Dynamic-code execution (eval/exec) found in scripts/:\n"
+        "Dynamic-code execution (eval/exec) found in lit_monitor/:\n"
         + "\n".join(violations)
     )
 
@@ -257,7 +257,7 @@ _TLS_PATTERNS: list[re.Pattern[str]] = [
 
 
 def test_no_disabled_tls() -> None:
-    """No source under scripts/ disables TLS certificate verification."""
+    """No source under lit_monitor/ disables TLS certificate verification."""
     violations: list[str] = []
     for path in _source_files():
         source = _read(path)
@@ -266,7 +266,7 @@ def test_no_disabled_tls() -> None:
             for pat in _TLS_PATTERNS:
                 if pat.search(code):
                     violations.append(f"{_rel(path)}:{lineno}: {line.strip()}")
-    assert not violations, "Disabled TLS verification in scripts/:\n" + "\n".join(
+    assert not violations, "Disabled TLS verification in lit_monitor/:\n" + "\n".join(
         violations
     )
 
@@ -358,7 +358,7 @@ def _sql_interpolation_violations(tree: ast.AST, label: str) -> list[str]:
 
     ``label`` is a human-readable prefix (e.g. ``file:line`` source) used in the
     violation message. Extracted so the detector can be driven directly on a
-    synthetic snippet in addition to the real scripts/ tree.
+    synthetic snippet in addition to the real lit_monitor/ tree.
     """
     violations: list[str] = []
     for node in ast.walk(tree):
@@ -421,7 +421,7 @@ def test_sql_is_parameterized() -> None:
             continue
         violations.extend(_sql_interpolation_violations(tree, _rel(path)))
     assert not violations, (
-        "Possible SQL-injection (f-string SQL) in scripts/:\n" + "\n".join(violations)
+        "Possible SQL-injection (f-string SQL) in lit_monitor/:\n" + "\n".join(violations)
     )
 
 
@@ -459,7 +459,7 @@ def test_sql_detector_flags_multi_slot_ddl_value_smuggling() -> None:
 # needed today.
 # ---------------------------------------------------------------------------
 def test_no_shell_true() -> None:
-    """No subprocess call in scripts/ uses shell=True."""
+    """No subprocess call in lit_monitor/ uses shell=True."""
     violations: list[str] = []
     for path in _source_files():
         source = _read(path)
@@ -479,7 +479,7 @@ def test_no_shell_true() -> None:
                     violations.append(
                         f"{_rel(path)}:{node.lineno}: subprocess call with shell=True"
                     )
-    assert not violations, "shell=True usage in scripts/:\n" + "\n".join(violations)
+    assert not violations, "shell=True usage in lit_monitor/:\n" + "\n".join(violations)
 
 
 # ---------------------------------------------------------------------------
@@ -490,22 +490,22 @@ def test_no_shell_true() -> None:
 # reading it directly is the anti-pattern this catches.
 #
 # Allowlist (verified to legitimately load credentials, 2026-06):
-#   scripts/setup/check_configured.py  — presence/parse check the project
+#   lit_monitor/setup/check_configured.py  — presence/parse check the project
 #                                        CLAUDE.md designates as THE reader.
-#   scripts/server/config_io.py        — load_secrets (setup wizard).
-#   scripts/cli.py                     — _load_secrets (env-key hydration).
-#   scripts/server/runtime.py          — _load_secrets (server boot).
-#   scripts/search/search_runner.py    — _load_api_secrets (Scopus/IEEE/email).
+#   lit_monitor/server/config_io.py        — load_secrets (setup wizard).
+#   lit_monitor/cli.py                     — _load_secrets (env-key hydration).
+#   lit_monitor/server/runtime.py          — _load_secrets (server boot).
+#   lit_monitor/search/search_runner.py    — _load_api_secrets (Scopus/IEEE/email).
 # Every other module either passes the already-loaded dict around (e.g.
 # routes/ingest.py reads runtime.secrets) or only mentions the path in
 # docstrings — neither opens the file, so neither is on the allowlist.
 # ---------------------------------------------------------------------------
 _SECRETS_READ_ALLOWLIST = {
-    "scripts/setup/check_configured.py",
-    "scripts/server/config_io.py",
-    "scripts/cli.py",
-    "scripts/server/runtime.py",
-    "scripts/search/search_runner.py",
+    "lit_monitor/setup/check_configured.py",
+    "lit_monitor/server/config_io.py",
+    "lit_monitor/cli.py",
+    "lit_monitor/server/runtime.py",
+    "lit_monitor/search/search_runner.py",
 }
 
 # A module "reads the secrets file directly" if it both references the

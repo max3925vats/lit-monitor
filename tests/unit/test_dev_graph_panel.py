@@ -69,7 +69,7 @@ def test_backfill_kind_ner_with_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     spawn_mock = _spawn_mock_for(77777)
 
     with patch(
-        "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+        "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
     ):
         resp = client.post(
             "/api/dev/graph/backfill/start",
@@ -95,7 +95,7 @@ def test_backfill_kind_relationships_plain(monkeypatch: pytest.MonkeyPatch) -> N
     spawn_mock = _spawn_mock_for(88888)
 
     with patch(
-        "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+        "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
     ):
         resp = client.post(
             "/api/dev/graph/backfill/start",
@@ -116,7 +116,7 @@ def test_backfill_kind_schema_only(monkeypatch: pytest.MonkeyPatch) -> None:
     spawn_mock = _spawn_mock_for(99999)
 
     with patch(
-        "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+        "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
     ):
         resp = client.post(
             "/api/dev/graph/backfill/start",
@@ -138,7 +138,7 @@ def test_backfill_kind_schema_no_scope_defaults_to_all(
     spawn_mock = _spawn_mock_for(11111)
 
     with patch(
-        "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+        "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
     ):
         resp = client.post(
             "/api/dev/graph/backfill/start",
@@ -168,7 +168,7 @@ def test_dev_graph_backfill_blocks_if_already_running(
 
     spawn_mock = AsyncMock()
     with patch(
-        "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+        "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
     ):
         resp = client.post("/api/dev/graph/backfill/start", data={"all": "on"})
 

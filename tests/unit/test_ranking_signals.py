@@ -273,7 +273,7 @@ class TestDomainContextSignal:
             "_embedding": np.zeros(3, dtype=np.float32),
         }]
 
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -314,7 +314,7 @@ class TestDomainContextSignal:
             "_embedding": np.full(3, np.nan, dtype=np.float32),
         }]
 
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -365,7 +365,7 @@ class TestDomainContextSignal:
             "_embedding": np.full(3, np.nan, dtype=np.float32),
         }]
 
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -409,7 +409,7 @@ class TestDomainContextSignal:
             "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),
         }]
 
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -462,7 +462,7 @@ class TestDomainContextSignal:
             "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),
         }]
 
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -677,7 +677,7 @@ class TestClusterCentroidGolden:
             for i in range(3)
         ]
 
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates, self._make_db(0.5), self._make_llm(),
                 domain_context_emb=domain_emb,
@@ -825,7 +825,7 @@ class TestInterestVectorSignal:
             "doi": "10.1/a", "title": "A", "abstract": "",
             "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),
         }]
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -855,7 +855,7 @@ class TestInterestVectorSignal:
             "doi": "10.1/a", "title": "A", "abstract": "",
             "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),
         }]
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -886,7 +886,7 @@ class TestInterestVectorSignal:
             "abstract": "",
             "_embedding": np.full(3, np.nan, dtype=np.float32),
         }]
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -1056,8 +1056,8 @@ class TestS2Cap:
         mock_paper.fieldsOfStudy = []
         mock_paper.abstract = "Abstract"
 
-        with patch("scripts.search.semantic_scholar._S2_AVAILABLE", True), \
-             patch("scripts.search.semantic_scholar._SemanticScholar") as mock_s2_cls:
+        with patch("lit_monitor.search.semantic_scholar._S2_AVAILABLE", True), \
+             patch("lit_monitor.search.semantic_scholar._SemanticScholar") as mock_s2_cls:
             mock_s2 = MagicMock()
             mock_s2_cls.return_value = mock_s2
             # Two papers with no relevance_score key (default behavior)
@@ -1085,8 +1085,8 @@ class TestS2Cap:
         high = _make_mock_paper("10.1/high", 0.8)
         low = _make_mock_paper("10.1/low", 0.2)
 
-        with patch("scripts.search.semantic_scholar._S2_AVAILABLE", True), \
-             patch("scripts.search.semantic_scholar._SemanticScholar") as mock_s2_cls:
+        with patch("lit_monitor.search.semantic_scholar._S2_AVAILABLE", True), \
+             patch("lit_monitor.search.semantic_scholar._SemanticScholar") as mock_s2_cls:
             mock_s2 = MagicMock()
             mock_s2_cls.return_value = mock_s2
             mock_s2.search_paper.return_value = [high, low]
@@ -1117,12 +1117,12 @@ class TestS2Cap:
 
         papers = [_make_mock_paper(f"10.1/{i}", 0.1 * i) for i in range(5)]
 
-        with patch("scripts.search.semantic_scholar._S2_AVAILABLE", True), \
-             patch("scripts.search.semantic_scholar._SemanticScholar") as mock_s2_cls:
+        with patch("lit_monitor.search.semantic_scholar._S2_AVAILABLE", True), \
+             patch("lit_monitor.search.semantic_scholar._SemanticScholar") as mock_s2_cls:
             mock_s2 = MagicMock()
             mock_s2_cls.return_value = mock_s2
             mock_s2.search_paper.return_value = papers
-            with caplog.at_level(logging.INFO, logger="scripts.search.semantic_scholar"):
+            with caplog.at_level(logging.INFO, logger="lit_monitor.search.semantic_scholar"):
                 search_semantic_scholar(
                     "test query", since_days=7, limit=10, min_relevance=0.35
                 )

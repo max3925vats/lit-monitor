@@ -135,7 +135,7 @@ class TestEmbeddingsDBProviderDispatch:
         pytest.importorskip("litellm")
         from lit_monitor.output.embeddings import EmbeddingsDB
         fake_vec = np.ones(3072, dtype=np.float32)
-        with patch("scripts.llm.embedding_client.embed_via_litellm", return_value=fake_vec) as mock:
+        with patch("lit_monitor.llm.embedding_client.embed_via_litellm", return_value=fake_vec) as mock:
             db = EmbeddingsDB(
                 persist_dir=str(tmp_path / "chroma"),
                 provider="litellm",
@@ -192,7 +192,7 @@ class TestProvenanceOverridesConstructor:
         )
 
         fake_ollama_vec = np.ones(1024, dtype=np.float32)
-        with patch("scripts.llm.embedding_client.embed_via_ollama", return_value=fake_ollama_vec):
+        with patch("lit_monitor.llm.embedding_client.embed_via_ollama", return_value=fake_ollama_vec):
             # Construct with litellm — provenance should override
             from lit_monitor.output.embeddings import EmbeddingsDB
             db = EmbeddingsDB(

@@ -280,7 +280,7 @@ def test_sandbox_embeddings_db_is_singleton(
             construction_count["n"] += 1
 
     monkeypatch.setattr(
-        "scripts.output.embeddings.EmbeddingsDB", _FakeEmbDB
+        "lit_monitor.output.embeddings.EmbeddingsDB", _FakeEmbDB
     )
 
     first = dev_sandbox.sandbox_embeddings_db()
@@ -320,7 +320,7 @@ def test_clear_sandbox_invalidates_embeddings_cache(
             self.kwargs = kwargs
 
     monkeypatch.setattr(
-        "scripts.output.embeddings.EmbeddingsDB", _FakeEmbDB
+        "lit_monitor.output.embeddings.EmbeddingsDB", _FakeEmbDB
     )
 
     first = dev_sandbox.sandbox_embeddings_db()
@@ -420,7 +420,7 @@ def test_sandbox_graph_db_returns_graphdb_instance(
         def __init__(self, persist_dir: str) -> None:
             self.persist_dir = persist_dir
 
-    monkeypatch.setattr("scripts.graph.db.GraphDB", _FakeGraphDB)
+    monkeypatch.setattr("lit_monitor.graph.db.GraphDB", _FakeGraphDB)
     # Also patch the import inside dev_sandbox so the module-level import resolves
     import lit_monitor.graph as graph_mod
     monkeypatch.setattr(graph_mod, "GraphDB", _FakeGraphDB)

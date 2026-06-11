@@ -405,14 +405,14 @@ class TestListEntitiesByType:
 class TestGetSchema:
     def test_returns_string(self, fake_db):
         with patch.object(tools, "_get_graph_db", return_value=fake_db):
-            with patch("scripts.mcp.tools._get_schema_text_impl", return_value="# Schema"):
+            with patch("lit_monitor.mcp.tools._get_schema_text_impl", return_value="# Schema"):
                 result = tools.get_schema()
         assert isinstance(result, str)
 
     def test_delegates_to_schema_impl(self, fake_db):
         """get_schema must call the underlying schema describer."""
         with patch.object(tools, "_get_graph_db", return_value=fake_db):
-            with patch("scripts.mcp.tools._get_schema_text_impl", return_value="ok") as mock_impl:
+            with patch("lit_monitor.mcp.tools._get_schema_text_impl", return_value="ok") as mock_impl:
                 tools.get_schema()
         mock_impl.assert_called_once_with(fake_db)
 
@@ -538,7 +538,7 @@ class TestSemanticSearch:
         tools._EMBEDDINGS_DB = None
         tools._EMPTY_WARNED = False
         with patch.object(tools, "_resolve_persist_dir", return_value=nonexistent):
-            with caplog.at_level(logging.WARNING, logger="scripts.mcp.tools"):
+            with caplog.at_level(logging.WARNING, logger="lit_monitor.mcp.tools"):
                 result = tools.semantic_search("query")
         assert result == []
         assert any("empty embeddings index" in r.message for r in caplog.records)
@@ -555,7 +555,7 @@ class TestSemanticSearch:
         tools._EMBEDDINGS_DB = None
         tools._EMPTY_WARNED = False
         with patch.object(tools, "_resolve_persist_dir", return_value=nonexistent):
-            with caplog.at_level(logging.WARNING, logger="scripts.mcp.tools"):
+            with caplog.at_level(logging.WARNING, logger="lit_monitor.mcp.tools"):
                 tools.semantic_search("query1")
                 tools.semantic_search("query2")
         warning_count = sum(

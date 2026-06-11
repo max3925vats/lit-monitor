@@ -950,7 +950,7 @@ def test_ollama_client_warns_on_neg1_max_tokens_for_cloud_host(caplog):
     with patch("requests.post") as mock_post:
         mock_post.return_value = MagicMock(status_code=200, json=lambda: ok_response)
         mock_post.return_value.raise_for_status = MagicMock()
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.llm_client"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.llm_client"):
             client.complete("sys", "usr", max_tokens=-1)
 
     assert any("num_predict=-1" in r.message for r in caplog.records), (
@@ -975,7 +975,7 @@ def test_ollama_client_no_warn_on_neg1_max_tokens_for_localhost(caplog):
     with patch("requests.post") as mock_post:
         mock_post.return_value = MagicMock(status_code=200, json=lambda: ok_response)
         mock_post.return_value.raise_for_status = MagicMock()
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.llm_client"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.llm_client"):
             client.complete("sys", "usr", max_tokens=-1)
 
     assert not any("num_predict=-1" in r.message for r in caplog.records), (
@@ -1002,7 +1002,7 @@ def test_ollama_client_no_warn_on_neg1_max_tokens_for_custom_local_host(caplog):
     with patch("requests.post") as mock_post:
         mock_post.return_value = MagicMock(status_code=200, json=lambda: ok_response)
         mock_post.return_value.raise_for_status = MagicMock()
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.llm_client"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.llm_client"):
             client.complete("sys", "usr", max_tokens=-1)
 
     assert not any("num_predict=-1" in r.message for r in caplog.records), (

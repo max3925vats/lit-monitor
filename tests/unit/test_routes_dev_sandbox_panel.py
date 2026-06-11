@@ -36,7 +36,7 @@ def test_sandbox_status_panel_renders_counts(monkeypatch: pytest.MonkeyPatch) ->
     }
     # Patch where the route function imports it from (the sandbox module).
     with patch(
-        "scripts.server.dev_sandbox.sandbox_status", return_value=fake_status
+        "lit_monitor.server.dev_sandbox.sandbox_status", return_value=fake_status
     ):
         resp = client.get("/api/dev/sandbox/status")
 
@@ -62,7 +62,7 @@ def test_sandbox_clear_without_confirm_returns_warning(
     """POST without confirm=yes yields the warning pill + safety message."""
     client = _make_dev_client(monkeypatch)
     # Confirm field present but empty/wrong — must NOT call clear_sandbox.
-    with patch("scripts.server.dev_sandbox.clear_sandbox") as mock_clear:
+    with patch("lit_monitor.server.dev_sandbox.clear_sandbox") as mock_clear:
         resp = client.post("/api/dev/sandbox/clear", data={"confirm": ""})
 
     assert resp.status_code == 200
@@ -83,7 +83,7 @@ def test_sandbox_clear_with_confirm_calls_clear_sandbox(
         "actions": "unlinked state_dev.db;deleted dev-papers",
     }
     with patch(
-        "scripts.server.dev_sandbox.clear_sandbox", return_value=fake_result
+        "lit_monitor.server.dev_sandbox.clear_sandbox", return_value=fake_result
     ) as mock_clear:
         resp = client.post("/api/dev/sandbox/clear", data={"confirm": "yes"})
 
@@ -108,7 +108,7 @@ def test_sandbox_clear_partial_renders_warning_pill(
         "actions": "FAILED chroma cleanup: X",
     }
     with patch(
-        "scripts.server.dev_sandbox.clear_sandbox", return_value=fake_result
+        "lit_monitor.server.dev_sandbox.clear_sandbox", return_value=fake_result
     ):
         resp = client.post("/api/dev/sandbox/clear", data={"confirm": "yes"})
 

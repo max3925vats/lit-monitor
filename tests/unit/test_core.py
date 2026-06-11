@@ -386,7 +386,7 @@ def test_zotero_init_rejects_old_pyzotero(tmp_path):
             # Intentionally no last_modified_version attribute.
             pass
 
-    with patch("scripts.core.zotero_client.zotero.Zotero", FakeOldZotero):
+    with patch("lit_monitor.core.zotero_client.zotero.Zotero", FakeOldZotero):
         with pytest.raises(RuntimeError, match="pyzotero too old"):
             ZoteroClient(library_id="12345", api_key="fake_key")
 # ---------------------------------------------------------------------------
@@ -650,7 +650,7 @@ def test_state_db_n7_cleanup_logs_warning_on_failure(tmp_path, caplog):
     conn.commit()
     conn.close()
 
-    with caplog.at_level(logging.WARNING, logger="scripts.core.state_db"):
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.core.state_db"):
         StateDB(db_path)  # _init_schema fires the N7 cleanup → trigger raises → WARNING
 
     assert any("N7 stale-row cleanup failed" in r.message for r in caplog.records), (

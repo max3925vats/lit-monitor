@@ -83,10 +83,10 @@ class TestVectorModeUnchanged:
 
         with (
             patch(
-                "scripts.obsidian_tools.re_extract.extract_paper",
+                "lit_monitor.obsidian_tools.re_extract.extract_paper",
                 return_value=_MOCK_EXTRACTION,
             ) as mock_extract,
-            patch("scripts.obsidian_tools.re_extract.rerender_note"),
+            patch("lit_monitor.obsidian_tools.re_extract.rerender_note"),
         ):
             result = re_extract(
                 doi=doi,
@@ -113,12 +113,12 @@ class TestVectorModeUnchanged:
 
         with (
             patch(
-                "scripts.obsidian_tools.re_extract.extract_paper",
+                "lit_monitor.obsidian_tools.re_extract.extract_paper",
                 return_value=_MOCK_EXTRACTION,
             ),
-            patch("scripts.obsidian_tools.re_extract.rerender_note"),
+            patch("lit_monitor.obsidian_tools.re_extract.rerender_note"),
             patch(
-                "scripts.obsidian_tools.re_extract._open_graph_db_safe"
+                "lit_monitor.obsidian_tools.re_extract._open_graph_db_safe"
             ) as mock_open,
         ):
             re_extract(
@@ -192,10 +192,10 @@ class TestGraphModeInjectsContext:
 
         with (
             patch(
-                "scripts.obsidian_tools.re_extract._open_graph_db_safe",
+                "lit_monitor.obsidian_tools.re_extract._open_graph_db_safe",
                 return_value=mock_graph_db,
             ),
-            patch("scripts.obsidian_tools.re_extract.rerender_note"),
+            patch("lit_monitor.obsidian_tools.re_extract.rerender_note"),
         ):
             result = re_extract(
                 doi=doi,
@@ -239,10 +239,10 @@ class TestGraphModeInjectsContext:
 
         with (
             patch(
-                "scripts.obsidian_tools.re_extract._open_graph_db_safe",
+                "lit_monitor.obsidian_tools.re_extract._open_graph_db_safe",
                 return_value=mock_graph_db,
             ),
-            patch("scripts.obsidian_tools.re_extract.rerender_note"),
+            patch("lit_monitor.obsidian_tools.re_extract.rerender_note"),
         ):
             re_extract(
                 doi=doi,
@@ -275,15 +275,15 @@ class TestGraphModeFallback:
 
         with (
             patch(
-                "scripts.obsidian_tools.re_extract._open_graph_db_safe",
+                "lit_monitor.obsidian_tools.re_extract._open_graph_db_safe",
                 return_value=None,
             ),
             patch(
-                "scripts.obsidian_tools.re_extract.extract_paper",
+                "lit_monitor.obsidian_tools.re_extract.extract_paper",
                 return_value=_MOCK_EXTRACTION,
             ) as mock_extract,
-            patch("scripts.obsidian_tools.re_extract.rerender_note"),
-            caplog.at_level(logging.WARNING, logger="scripts.obsidian_tools.re_extract"),
+            patch("lit_monitor.obsidian_tools.re_extract.rerender_note"),
+            caplog.at_level(logging.WARNING, logger="lit_monitor.obsidian_tools.re_extract"),
         ):
             result = re_extract(
                 doi=doi,
@@ -316,7 +316,7 @@ class TestGraphModeFallback:
         from lit_monitor.obsidian_tools.re_extract import _open_graph_db_safe
 
         with patch(
-            "scripts.graph.import_citations.safe_graph_db",
+            "lit_monitor.graph.import_citations.safe_graph_db",
             side_effect=RuntimeError("kuzu database locked"),
         ):
             result = _open_graph_db_safe()

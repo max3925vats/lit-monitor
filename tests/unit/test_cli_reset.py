@@ -102,9 +102,9 @@ def _invoke(runner: CliRunner, tmp_env: dict, argv: list[str], stdin: str):
     config dir resolver so all reset paths land inside tmp_env. Logging
     setup is also stubbed to avoid creating a real logs directory.
     """
-    with patch("scripts.cli._make_config", return_value=tmp_env["fake_cfg"]), patch.object(
+    with patch("lit_monitor.cli._make_config", return_value=tmp_env["fake_cfg"]), patch.object(
         reset_mod, "_project_config_dir", return_value=tmp_env["config_dir"]
-    ), patch("scripts.cli._setup_logging"):
+    ), patch("lit_monitor.cli._setup_logging"):
         return runner.invoke(main, argv, input=stdin)
 
 

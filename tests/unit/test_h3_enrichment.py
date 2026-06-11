@@ -33,7 +33,7 @@ def test_h3_enrich_paper_returns_s2_publication_types():
     mock_sch = MagicMock()
     mock_sch.get_paper.return_value = mock_paper
 
-    with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+    with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
         result = enrich_paper("10.1234/test")
 
     assert "s2_publication_types" in result
@@ -55,7 +55,7 @@ def test_h3_enrich_paper_returns_review_publication_type():
     mock_sch = MagicMock()
     mock_sch.get_paper.return_value = mock_paper
 
-    with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+    with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
         result = enrich_paper("10.9999/review")
 
     assert result["s2_publication_types"] == ["Review"]
@@ -76,7 +76,7 @@ def test_h3_enrich_paper_handles_none_publication_types():
     mock_sch = MagicMock()
     mock_sch.get_paper.return_value = mock_paper
 
-    with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+    with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
         result = enrich_paper("10.1111/none")
 
     # Key must be absent when the field is None — don't write null to DB
@@ -98,7 +98,7 @@ def test_h3_enrich_paper_handles_empty_publication_types():
     mock_sch = MagicMock()
     mock_sch.get_paper.return_value = mock_paper
 
-    with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+    with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
         result = enrich_paper("10.2222/empty")
 
     assert "s2_publication_types" in result
@@ -120,7 +120,7 @@ def test_h3_enrich_paper_includes_existing_s2_fields_alongside_pub_types():
     mock_sch = MagicMock()
     mock_sch.get_paper.return_value = mock_paper
 
-    with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+    with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
         result = enrich_paper("10.3333/full")
 
     assert result["s2_paper_id"] == "full"
@@ -146,7 +146,7 @@ def test_h3_enrich_paper_coerces_pub_types_to_strings():
     mock_sch = MagicMock()
     mock_sch.get_paper.return_value = mock_paper
 
-    with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+    with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
         result = enrich_paper("10.4444/coerce")
 
     assert isinstance(result["s2_publication_types"], list)

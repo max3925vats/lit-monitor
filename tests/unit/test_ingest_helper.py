@@ -466,7 +466,7 @@ class TestMaybeExtractLlmRelationships:
             return [self._make_rel()]
 
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.extract_llm_relationships",
             fake_extract,
         )
 
@@ -494,7 +494,7 @@ class TestMaybeExtractLlmRelationships:
             return canned
 
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.extract_llm_relationships",
             fake_extract,
         )
 
@@ -518,7 +518,7 @@ class TestMaybeExtractLlmRelationships:
             raise RuntimeError("network exploded")
 
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.extract_llm_relationships",
             failing,
         )
 
@@ -550,7 +550,7 @@ class TestMaybeExtractLlmRelationships:
             raise RuntimeError("network exploded")
 
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.extract_llm_relationships",
             failing,
         )
         cfg = MagicMock()
@@ -575,7 +575,7 @@ class TestMaybeExtractLlmRelationships:
             return [self._make_rel()]
 
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.extract_llm_relationships",
             fake_extract,
         )
 

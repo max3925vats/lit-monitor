@@ -25,7 +25,7 @@ def test_serve_emits_boot_lines(runner: CliRunner) -> None:
     """`serve --no-browser` emits the two `>>` banner lines before uvicorn.run."""
     with (
         patch("uvicorn.run") as mock_run,
-        patch("scripts.server.config_io.load_server_config", return_value={}),
+        patch("lit_monitor.server.config_io.load_server_config", return_value={}),
     ):
         result = runner.invoke(
             main,
@@ -42,7 +42,7 @@ def test_serve_no_browser_flag_suppresses_open(runner: CliRunner) -> None:
     """`--no-browser` must skip threading.Timer construction entirely."""
     with (
         patch("uvicorn.run"),
-        patch("scripts.server.config_io.load_server_config",
+        patch("lit_monitor.server.config_io.load_server_config",
               return_value={"open_browser": True}),
         patch("threading.Timer") as mock_timer,
     ):
@@ -60,7 +60,7 @@ def test_serve_opens_browser_by_default(runner: CliRunner) -> None:
     fake_timer = MagicMock()
     with (
         patch("uvicorn.run"),
-        patch("scripts.server.config_io.load_server_config", return_value={}),
+        patch("lit_monitor.server.config_io.load_server_config", return_value={}),
         patch("threading.Timer", return_value=fake_timer) as mock_timer_ctor,
     ):
         result = runner.invoke(

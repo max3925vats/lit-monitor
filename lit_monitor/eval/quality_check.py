@@ -14,7 +14,7 @@ field PASS / WARN / FAIL. Two kinds of check:
 Everything here is pure and side-effect free except for logging. The embedding
 function is injected (``embed_fn``) so unit tests can pass a deterministic fake
 and the live Tier-4 path can pass a real Ollama embed call. The thin CLI at the
-bottom (``python -m scripts.eval.quality_check``) wires in the real embedder and
+bottom (``python -m lit_monitor.eval.quality_check``) wires in the real embedder and
 prints an augmented status table; it is ADVISORY and never exits non-zero on a
 regression.
 """

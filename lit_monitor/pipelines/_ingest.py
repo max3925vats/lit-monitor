@@ -375,7 +375,7 @@ def maybe_extract_llm_relationships(
     try:
         if extract_llm_relationships is None:
             raise ImportError(
-                "scripts.graph.relationship_llm not available "
+                "lit_monitor.graph.relationship_llm not available "
                 "(install the [graph] extra)"
             )
         return extract_llm_relationships(

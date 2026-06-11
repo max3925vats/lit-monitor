@@ -49,8 +49,8 @@ class TestEntityNeighborhood:
             "co_entities": [],
         }
         with (
-            patch("scripts.server.routes.entities.safe_graph_db", return_value=_FAKE_GRAPH_DB),
-            patch("scripts.server.routes.entities.get_entity_neighborhood", return_value=hood),
+            patch("lit_monitor.server.routes.entities.safe_graph_db", return_value=_FAKE_GRAPH_DB),
+            patch("lit_monitor.server.routes.entities.get_entity_neighborhood", return_value=hood),
         ):
             r = client.get("/api/entities/crispr")
 
@@ -66,8 +66,8 @@ class TestEntityNeighborhood:
             "co_entities": [{"canonical_id": "rna", "type": "material", "co_count": 3}],
         }
         with (
-            patch("scripts.server.routes.entities.safe_graph_db", return_value=_FAKE_GRAPH_DB),
-            patch("scripts.server.routes.entities.get_entity_neighborhood", return_value=hood),
+            patch("lit_monitor.server.routes.entities.safe_graph_db", return_value=_FAKE_GRAPH_DB),
+            patch("lit_monitor.server.routes.entities.get_entity_neighborhood", return_value=hood),
         ):
             r = client.get("/api/entities/author/smith-j")
 
@@ -77,8 +77,8 @@ class TestEntityNeighborhood:
         """H6: empty papers AND co_entities → 404."""
         empty = {"canonical_id": "none", "papers": [], "co_entities": []}
         with (
-            patch("scripts.server.routes.entities.safe_graph_db", return_value=_FAKE_GRAPH_DB),
-            patch("scripts.server.routes.entities.get_entity_neighborhood", return_value=empty),
+            patch("lit_monitor.server.routes.entities.safe_graph_db", return_value=_FAKE_GRAPH_DB),
+            patch("lit_monitor.server.routes.entities.get_entity_neighborhood", return_value=empty),
         ):
             r = client.get("/api/entities/none")
 
@@ -86,7 +86,7 @@ class TestEntityNeighborhood:
 
     def test_graph_unavailable_503(self, client):
         """H6: safe_graph_db returns None → 503."""
-        with patch("scripts.server.routes.entities.safe_graph_db", return_value=None):
+        with patch("lit_monitor.server.routes.entities.safe_graph_db", return_value=None):
             r = client.get("/api/entities/crispr")
 
         assert r.status_code == 503
@@ -102,8 +102,8 @@ class TestEntityListing:
     def test_list_200(self, client):
         """H6: valid type + top_k → 200 with list response."""
         with (
-            patch("scripts.server.routes.entities.safe_graph_db", return_value=_FAKE_GRAPH_DB),
-            patch("scripts.server.routes.entities.list_entities", return_value=[]),
+            patch("lit_monitor.server.routes.entities.safe_graph_db", return_value=_FAKE_GRAPH_DB),
+            patch("lit_monitor.server.routes.entities.list_entities", return_value=[]),
         ):
             r = client.get("/api/entities?type=method&top_k=5")
 
@@ -113,8 +113,8 @@ class TestEntityListing:
     def test_list_passes_type_and_top_k(self, client):
         """H6: type and top_k are forwarded as kwargs to list_entities."""
         with (
-            patch("scripts.server.routes.entities.safe_graph_db", return_value=_FAKE_GRAPH_DB),
-            patch("scripts.server.routes.entities.list_entities", return_value=[]) as m,
+            patch("lit_monitor.server.routes.entities.safe_graph_db", return_value=_FAKE_GRAPH_DB),
+            patch("lit_monitor.server.routes.entities.list_entities", return_value=[]) as m,
         ):
             client.get("/api/entities?type=topic&top_k=10")
 
@@ -151,7 +151,7 @@ class TestEntityListing:
 
     def test_graph_unavailable_503(self, client):
         """H6: safe_graph_db returns None → 503 for listing route."""
-        with patch("scripts.server.routes.entities.safe_graph_db", return_value=None):
+        with patch("lit_monitor.server.routes.entities.safe_graph_db", return_value=None):
             r = client.get("/api/entities?type=method")
 
         assert r.status_code == 503

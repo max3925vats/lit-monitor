@@ -190,7 +190,7 @@ class TestGetSchemaText:
     def test_fallback_when_a1_not_built(self, monkeypatch, populated_graph):
         """H1: when scripts.graph.schema_describer doesn't exist, get_schema_text falls back."""
         # Block the import by setting the module key to None in sys.modules
-        monkeypatch.setitem(sys.modules, "scripts.graph.schema_describer", None)
+        monkeypatch.setitem(sys.modules, "lit_monitor.graph.schema_describer", None)
         result = get_schema_text(populated_graph)
         assert isinstance(result, str)
         assert (
@@ -399,7 +399,7 @@ class TestGetPapersByQuery:
         mock_gdb._conn.execute.return_value = mock_result
 
         # safe_graph_db() is imported INSIDE get_papers_by_query via
-        # `from scripts.graph.import_citations import safe_graph_db`, which reads
+        # `from lit_monitor.graph.import_citations import safe_graph_db`, which reads
         # sys.modules directly. Patch the attribute on the LIVE sys.modules entry
         # so we hit exactly the object the function imports — robust even if an
         # earlier test purged/re-imported scripts.graph.* (a known isolation
@@ -407,7 +407,7 @@ class TestGetPapersByQuery:
         import sys
 
         import lit_monitor.graph.import_citations  # noqa: F401 — ensure in sys.modules
-        ic_mod = sys.modules["scripts.graph.import_citations"]
+        ic_mod = sys.modules["lit_monitor.graph.import_citations"]
         monkeypatch.setattr(ic_mod, "safe_graph_db", lambda *a, **k: mock_gdb)
 
         # graph_db not injected → function lazily acquires (and owns) mock_gdb.
@@ -433,7 +433,7 @@ class TestGetPapersByQuery:
         import sys
 
         import lit_monitor.graph.import_citations  # noqa: F401 — ensure in sys.modules
-        ic_mod = sys.modules["scripts.graph.import_citations"]
+        ic_mod = sys.modules["lit_monitor.graph.import_citations"]
         monkeypatch.setattr(ic_mod, "safe_graph_db", lambda *a, **k: mock_gdb)
 
         with pytest.raises(BaseException):

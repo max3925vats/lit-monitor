@@ -60,7 +60,7 @@ def _build_tool_schemas() -> dict[str, dict[str, Any]]:
     """Return {tool_name: {description, inputSchema}} for all 12 tools.
 
     Built lazily inside a function (not at import time) so importing the
-    closed-vocabulary constants from scripts.mcp.tools / the validator does
+    closed-vocabulary constants from lit_monitor.mcp.tools / the validator does
     not run at module import — keeps import-only tests cheap and avoids
     pulling heavy deps before they are needed.
     """
@@ -420,7 +420,7 @@ async def _run_stdio() -> None:
 
 
 def main() -> None:
-    """Entry point: ``python -m scripts.mcp.graph_server``."""
+    """Entry point: ``python -m lit_monitor.mcp.graph_server``."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [mcp] %(message)s",

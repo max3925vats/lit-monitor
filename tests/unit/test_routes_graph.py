@@ -27,7 +27,7 @@ def test_get_graph_page_renders(client):
 
 def test_graph_overview_fragment_renders_stats(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.graph._get_graph_overview",
+        "lit_monitor.server.routes.graph._get_graph_overview",
         lambda: {
             "available": True,
             "paper_count": 10,
@@ -52,7 +52,7 @@ def test_graph_overview_fragment_renders_stats(client, monkeypatch):
 
 def test_graph_overview_no_graph_notice(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.graph._get_graph_overview",
+        "lit_monitor.server.routes.graph._get_graph_overview",
         lambda: {"available": False},
     )
     r = client.get("/graph/overview")
@@ -65,9 +65,9 @@ def test_graph_overview_no_leak(client, monkeypatch, caplog):
         raise RuntimeError("kuzu://secret/path")
 
     monkeypatch.setattr(
-        "scripts.server.routes.graph._get_graph_overview", _boom
+        "lit_monitor.server.routes.graph._get_graph_overview", _boom
     )
-    with caplog.at_level(logging.ERROR, logger="scripts.server.routes.graph"):
+    with caplog.at_level(logging.ERROR, logger="lit_monitor.server.routes.graph"):
         r = client.get("/graph/overview")
     assert r.status_code == 200 and "kuzu://secret" not in r.text
     assert any(

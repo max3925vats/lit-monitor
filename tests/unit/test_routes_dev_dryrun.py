@@ -44,13 +44,13 @@ def test_dryrun_start_spawns_subprocess(
     # Stub the signature snapshot so the route doesn't depend on a real config.
     with (
         patch(
-            "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+            "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
         ),
         patch(
-            "scripts.server.routes.dev._snapshot_state_db_signature",
+            "lit_monitor.server.routes.dev._snapshot_state_db_signature",
             return_value={"state.db": (12345, 4096)},
         ),
-        patch("scripts.server.routes.dev._newest_digest_path", return_value=None),
+        patch("lit_monitor.server.routes.dev._newest_digest_path", return_value=None),
     ):
         resp = client.post("/api/dev/dryrun/start")
 
@@ -79,7 +79,7 @@ def test_dryrun_start_blocks_if_already_running(
 
     spawn_mock = AsyncMock()
     with patch(
-        "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+        "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
     ):
         resp = client.post("/api/dev/dryrun/start")
 
@@ -110,10 +110,10 @@ def test_dryrun_result_detects_no_state_db_change(
 
     with (
         patch(
-            "scripts.server.routes.dev._snapshot_state_db_signature",
+            "lit_monitor.server.routes.dev._snapshot_state_db_signature",
             return_value=dict(sig),
         ),
-        patch("scripts.server.routes.dev._newest_digest_path", return_value=None),
+        patch("lit_monitor.server.routes.dev._newest_digest_path", return_value=None),
     ):
         resp = client.get("/api/dev/dryrun/result")
 
@@ -145,10 +145,10 @@ def test_dryrun_result_detects_state_db_change(
 
     with (
         patch(
-            "scripts.server.routes.dev._snapshot_state_db_signature",
+            "lit_monitor.server.routes.dev._snapshot_state_db_signature",
             return_value=after,
         ),
-        patch("scripts.server.routes.dev._newest_digest_path", return_value=None),
+        patch("lit_monitor.server.routes.dev._newest_digest_path", return_value=None),
     ):
         resp = client.get("/api/dev/dryrun/result")
 
@@ -175,7 +175,7 @@ def test_dryrun_refuses_when_discovery_running(
 
     spawn_mock = AsyncMock()
     with patch(
-        "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+        "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
     ):
         resp = client.post("/api/dev/dryrun/start")
 
@@ -208,10 +208,10 @@ def test_dryrun_result_detects_wal_change(
 
     with (
         patch(
-            "scripts.server.routes.dev._snapshot_state_db_signature",
+            "lit_monitor.server.routes.dev._snapshot_state_db_signature",
             return_value=after,
         ),
-        patch("scripts.server.routes.dev._newest_digest_path", return_value=None),
+        patch("lit_monitor.server.routes.dev._newest_digest_path", return_value=None),
     ):
         resp = client.get("/api/dev/dryrun/result")
 

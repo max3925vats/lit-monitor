@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 from lit_monitor.server.routes.feedback import router as feedback_router
 from lit_monitor.server.runtime import reset_runtime
 
-TEMPLATES_DIR = Path(__file__).parents[2] / "scripts" / "server" / "templates"
+TEMPLATES_DIR = Path(__file__).parents[2] / "lit_monitor" / "server" / "templates"
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ def client(real_db, monkeypatch):
     rt.state_db = real_db
 
     monkeypatch.setattr(
-        "scripts.server.routes.feedback.get_runtime", lambda: rt
+        "lit_monitor.server.routes.feedback.get_runtime", lambda: rt
     )
 
     app = FastAPI()

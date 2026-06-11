@@ -51,7 +51,7 @@ def _no_real_spawn(monkeypatch):
         return fake
 
     monkeypatch.setattr(
-        "scripts.server.routes.discovery._spawn_discovery", _fake_spawn
+        "lit_monitor.server.routes.discovery._spawn_discovery", _fake_spawn
     )
     return captured
 
@@ -84,7 +84,7 @@ def test_discovery_start_threads_rag_mode_into_spawn(client, monkeypatch):
 
     # graph extra present in this env, so hybrid is allowed to start.
     monkeypatch.setattr(
-        "scripts.server.routes.discovery.asyncio.create_subprocess_exec",
+        "lit_monitor.server.routes.discovery.asyncio.create_subprocess_exec",
         _fake_exec,
     )
     r = client.post("/api/discovery/start", data={"rag_mode": "hybrid"})
@@ -108,11 +108,11 @@ def test_discovery_start_invalid_mode_falls_back_to_config_default(
         return fake
 
     monkeypatch.setattr(
-        "scripts.server.routes.discovery.asyncio.create_subprocess_exec",
+        "lit_monitor.server.routes.discovery.asyncio.create_subprocess_exec",
         _fake_exec,
     )
     monkeypatch.setattr(
-        "scripts.server.routes.discovery._default_rag_mode",
+        "lit_monitor.server.routes.discovery._default_rag_mode",
         lambda: "vector",
     )
     r = client.post("/api/discovery/start", data={"rag_mode": "nonsense"})
@@ -125,7 +125,7 @@ def test_discovery_start_invalid_mode_falls_back_to_config_default(
 def test_discovery_default_mode_from_config(client, monkeypatch):
     """The graph option is pre-selected when config default_mode is 'graph'."""
     monkeypatch.setattr(
-        "scripts.server.routes.discovery._default_rag_mode",
+        "lit_monitor.server.routes.discovery._default_rag_mode",
         lambda: "graph",
     )
     r = client.get("/api/discovery/controls")
@@ -143,7 +143,7 @@ def test_graph_mode_without_extra_refuses_with_warning(client, monkeypatch):
     """
     # Simulate missing [graph] extra.
     monkeypatch.setattr(
-        "scripts.server.routes.discovery._graph_extra_available",
+        "lit_monitor.server.routes.discovery._graph_extra_available",
         lambda: False,
     )
     # Ensure spawn would NOT be reached; if it is, fail loudly.
@@ -151,7 +151,7 @@ def test_graph_mode_without_extra_refuses_with_warning(client, monkeypatch):
         raise AssertionError("spawn must not run when [graph] extra is missing")
 
     monkeypatch.setattr(
-        "scripts.server.routes.discovery._spawn_discovery", _boom
+        "lit_monitor.server.routes.discovery._spawn_discovery", _boom
     )
     r = client.post("/api/discovery/start", data={"rag_mode": "graph"})
     assert r.status_code == 400, r.text

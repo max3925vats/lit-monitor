@@ -200,7 +200,7 @@ class TestNameCluster:
         mock_llm = MagicMock()
         mock_llm.complete.return_value = "Cation Exchange Chromatography"
 
-        with patch("scripts.clustering.naming.load_prompt") as mock_load:
+        with patch("lit_monitor.clustering.naming.load_prompt") as mock_load:
             mock_prompt = MagicMock()
             mock_prompt.system = "You are a librarian."
             mock_prompt.user_template = "Papers:\n{paper_samples}\n\nName:"
@@ -221,7 +221,7 @@ class TestNameCluster:
         mock_llm = MagicMock()
         mock_llm.complete.return_value = "Very Long Name That Exceeds The Word Limit"
 
-        with patch("scripts.clustering.naming.load_prompt") as mock_load:
+        with patch("lit_monitor.clustering.naming.load_prompt") as mock_load:
             mock_prompt = MagicMock()
             mock_prompt.system = "sys"
             mock_prompt.user_template = "{paper_samples}"
@@ -243,7 +243,7 @@ class TestNameCluster:
         mock_llm = MagicMock()
         mock_llm.complete.side_effect = RuntimeError("LLM unreachable")
 
-        with patch("scripts.clustering.naming.load_prompt") as mock_load:
+        with patch("lit_monitor.clustering.naming.load_prompt") as mock_load:
             mock_prompt = MagicMock()
             mock_prompt.system = "sys"
             mock_prompt.user_template = "{paper_samples}"
@@ -269,7 +269,7 @@ class TestNameCluster:
         mock_llm = MagicMock()
         mock_llm.complete.return_value = ""
 
-        with patch("scripts.clustering.naming.load_prompt") as mock_load:
+        with patch("lit_monitor.clustering.naming.load_prompt") as mock_load:
             mock_prompt = MagicMock()
             mock_prompt.system = "sys"
             mock_prompt.user_template = "{paper_samples}"
@@ -287,7 +287,7 @@ class TestNameCluster:
         """If prompt registry raises, name_cluster returns None (not raises)."""
         from lit_monitor.clustering.naming import name_cluster
 
-        with patch("scripts.clustering.naming.load_prompt",
+        with patch("lit_monitor.clustering.naming.load_prompt",
                    side_effect=FileNotFoundError("prompt not found")):
             result = name_cluster(
                 sample_dois=["10.1000/a"],
@@ -607,8 +607,8 @@ class TestRecomputeAtomicity:
         edb = self._make_embeddings_db()
         cfg = self._make_cfg()
 
-        with patch("scripts.clustering.recompute.name_cluster", return_value=None), \
-             patch("scripts.clustering.recompute.assign_papers_to_clusters"):
+        with patch("lit_monitor.clustering.recompute.name_cluster", return_value=None), \
+             patch("lit_monitor.clustering.recompute.assign_papers_to_clusters"):
             created = recompute_clusters(db, edb, cfg)
 
         assert created > 0
@@ -644,8 +644,8 @@ class TestRecomputeAtomicity:
 
         monkeypatch.setattr(StateDB, "_insert_cluster_conn", boom_helper)
 
-        with patch("scripts.clustering.recompute.name_cluster", return_value=None), \
-             patch("scripts.clustering.recompute.assign_papers_to_clusters"):
+        with patch("lit_monitor.clustering.recompute.name_cluster", return_value=None), \
+             patch("lit_monitor.clustering.recompute.assign_papers_to_clusters"):
             import pytest as _pytest
             with _pytest.raises(RuntimeError):
                 recompute_clusters(db, edb, cfg)
@@ -676,9 +676,9 @@ class TestRecomputeAtomicity:
         edb = self._make_embeddings_db()  # dim=8
         cfg = self._make_cfg()
 
-        with caplog.at_level(logging.WARNING, logger="scripts.clustering.recompute"), \
-             patch("scripts.clustering.recompute.name_cluster", return_value=None), \
-             patch("scripts.clustering.recompute.assign_papers_to_clusters"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.clustering.recompute"), \
+             patch("lit_monitor.clustering.recompute.name_cluster", return_value=None), \
+             patch("lit_monitor.clustering.recompute.assign_papers_to_clusters"):
             created = recompute_clusters(db, edb, cfg)
 
         # Recompute still produced clusters (the bad centroid did not break it).
@@ -753,8 +753,8 @@ class TestThresholdGating:
         cfg.clustering.k_min = 2
         cfg.clustering.k_max = 5
 
-        with patch("scripts.clustering.recompute.name_cluster", return_value=None), \
-             patch("scripts.clustering.recompute.assign_papers_to_clusters"):
+        with patch("lit_monitor.clustering.recompute.name_cluster", return_value=None), \
+             patch("lit_monitor.clustering.recompute.assign_papers_to_clusters"):
             result = recompute_clusters(state_db, embeddings_db, cfg)
 
         assert result > 0
@@ -780,7 +780,7 @@ class TestBrainBuildHook:
         cfg.clustering.enabled = True
         cfg.clustering.min_papers_threshold = 100
 
-        with patch("scripts.clustering.recompute.recompute_clusters") as mock_recompute:
+        with patch("lit_monitor.clustering.recompute.recompute_clusters") as mock_recompute:
             _maybe_trigger_initial_clustering(state_db, embeddings_db, cfg)
             mock_recompute.assert_not_called()
 
@@ -799,7 +799,7 @@ class TestBrainBuildHook:
         cfg.clustering.min_papers_threshold = 100
 
         with patch(
-            "scripts.pipelines.brain_build.recompute_clusters"
+            "lit_monitor.pipelines.brain_build.recompute_clusters"
         ) as mock_recompute:
             mock_recompute.return_value = 5
             _maybe_trigger_initial_clustering(state_db, embeddings_db, cfg)
@@ -817,7 +817,7 @@ class TestBrainBuildHook:
         cfg.clustering.enabled = False
 
         with patch(
-            "scripts.pipelines.brain_build.recompute_clusters"
+            "lit_monitor.pipelines.brain_build.recompute_clusters"
         ) as mock_recompute:
             _maybe_trigger_initial_clustering(state_db, embeddings_db, cfg)
             mock_recompute.assert_not_called()
@@ -847,7 +847,7 @@ class TestRankPapersClusterSignal:
         mock_llm = MagicMock()
         mock_llm.complete.return_value = "{}"
 
-        with patch("scripts.llm.ranker.load_prompt") as mock_load:
+        with patch("lit_monitor.llm.ranker.load_prompt") as mock_load:
             mock_prompt = MagicMock()
             mock_prompt.render_user.return_value = "user"
             mock_prompt.system = "sys"
@@ -898,7 +898,7 @@ class TestRankPapersClusterSignal:
         mock_llm = MagicMock()
         mock_llm.complete.return_value = "{}"
 
-        with patch("scripts.llm.ranker.load_prompt") as mock_load:
+        with patch("lit_monitor.llm.ranker.load_prompt") as mock_load:
             mock_prompt = MagicMock()
             mock_prompt.render_user.return_value = "user"
             mock_prompt.system = "sys"
@@ -944,7 +944,7 @@ class TestRankPapersClusterSignal:
         mock_llm = MagicMock()
         mock_llm.complete.return_value = "{}"
 
-        with patch("scripts.llm.ranker.load_prompt") as mock_load:
+        with patch("lit_monitor.llm.ranker.load_prompt") as mock_load:
             mock_prompt = MagicMock()
             mock_prompt.render_user.return_value = "user"
             mock_prompt.system = "sys"

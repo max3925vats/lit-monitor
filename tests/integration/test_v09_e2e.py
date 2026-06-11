@@ -389,7 +389,7 @@ def test_graph_ask_real_pipeline(real_graph_db, real_llm):
     from lit_monitor.graph.ask import AskResult, run_pipeline
 
     with patch(
-        "scripts.graph.ask._maybe_construct_client",
+        "lit_monitor.graph.ask._maybe_construct_client",
         return_value=real_llm,
     ):
         result = run_pipeline(

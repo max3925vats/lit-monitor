@@ -68,9 +68,9 @@ class TestExportMdCommand:
         db.finish_discovery_run(run_id, "success", 1, 1)
         fake_cfg = MagicMock()
         fake_cfg.state_db.path = str(tmp_path / "state.db")
-        # Patch the source symbol only; "scripts.cli.get_config" is never bound
+        # Patch the source symbol only; "lit_monitor.cli.get_config" is never bound
         # (the old raising=False patch there was a silent no-op).
-        monkeypatch.setattr("scripts.core.config.get_config", lambda: fake_cfg)
+        monkeypatch.setattr("lit_monitor.core.config.get_config", lambda: fake_cfg)
         return tmp_path, run_id
 
     def test_writes_file(self, seeded_db):

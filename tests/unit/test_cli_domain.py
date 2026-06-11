@@ -23,7 +23,7 @@ def fake_cfg_and_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     fake_cfg = MagicMock()
     fake_cfg.state_db.path = str(db_path)
-    monkeypatch.setattr("scripts.core.config.get_config", lambda: fake_cfg)
+    monkeypatch.setattr("lit_monitor.core.config.get_config", lambda: fake_cfg)
     return db, db_path, tmp_path
 
 
@@ -98,7 +98,7 @@ class TestDomainAnalyze:
             "exclusions": [],
         }
         monkeypatch.setattr(
-            "scripts.domain.extract.analyze_domain",
+            "lit_monitor.domain.extract.analyze_domain",
             lambda text: fake_extraction,
         )
 
@@ -122,7 +122,7 @@ class TestDomainAnalyze:
         from lit_monitor.cli import main
 
         monkeypatch.setattr(
-            "scripts.domain.extract.analyze_domain",
+            "lit_monitor.domain.extract.analyze_domain",
             lambda text: None,
         )
         with runner.isolated_filesystem():

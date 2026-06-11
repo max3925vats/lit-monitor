@@ -1119,7 +1119,7 @@ def test_themes_assigned_during_brain_build(tmp_path):
     zotero_client = MagicMock()
     zotero_client.get_markdown_attachment.return_value = "Filtration paper text in markdown."
 
-    with patch("scripts.vocabulary.normalizer._VOCAB_CANDIDATES", [vocab_file]):
+    with patch("lit_monitor.vocabulary.normalizer._VOCAB_CANDIDATES", [vocab_file]):
         llm = MagicMock()
         llm.provider = "ollama"
         llm.model = "qwen2.5:3b"
@@ -1276,7 +1276,7 @@ def test_assign_themes_warns_when_vocab_has_dict_keywords(tmp_path, caplog):
         "      - antibody\n"
         "      - {name: 'corrupted-as-dict', keywords: ['x']}\n"  # the bug shape
     )
-    with caplog.at_level(logging.WARNING, logger="scripts.vocabulary.normalizer"):
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.vocabulary.normalizer"):
         result = assign_themes(["antibody"], vocab_path=vocab)
 
     # The valid keyword still produced a match — the malformed entry didn't poison the run.
@@ -1307,7 +1307,7 @@ def test_assign_themes_warning_is_one_shot_per_process(tmp_path, caplog):
         "      - {name: 'corrupted', keywords: ['x']}\n"
         "      - antibody\n"
     )
-    with caplog.at_level(logging.WARNING, logger="scripts.vocabulary.normalizer"):
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.vocabulary.normalizer"):
         for _ in range(3):
             assign_themes(["antibody"], vocab_path=vocab)
     warnings = [

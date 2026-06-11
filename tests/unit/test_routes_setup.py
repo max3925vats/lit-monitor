@@ -268,7 +268,7 @@ def test_build_step_descriptors_step2_ok_when_vault_exists(tmp_path):
         "zotero.library_id": (True, ""),
         "pubmed.email": (True, ""),
     }
-    with patch("scripts.server.routes.setup.load_config", return_value=fake_paths):
+    with patch("lit_monitor.server.routes.setup.load_config", return_value=fake_paths):
         steps = _build_step_descriptors(checks)
     step2 = next(s for s in steps if s["num"] == 2)
     assert step2["status"] == "ok"
@@ -284,7 +284,7 @@ def test_build_step_descriptors_step2_missing_when_paths_yaml_absent():
         "zotero.library_id": (True, ""),
         "pubmed.email": (True, ""),
     }
-    with patch("scripts.server.routes.setup.load_config", side_effect=FileNotFoundError):
+    with patch("lit_monitor.server.routes.setup.load_config", side_effect=FileNotFoundError):
         steps = _build_step_descriptors(checks)
     step2 = next(s for s in steps if s["num"] == 2)
     assert step2["status"] == "missing"
@@ -435,8 +435,8 @@ def test_update_collection_writes_back():
         saved_with["name"] = name
         saved_with["data"] = data
 
-    with patch("scripts.server.routes.setup.load_config", return_value=fake_paths), \
-         patch("scripts.server.routes.setup.save_config", side_effect=fake_save):
+    with patch("lit_monitor.server.routes.setup.load_config", return_value=fake_paths), \
+         patch("lit_monitor.server.routes.setup.save_config", side_effect=fake_save):
         resp = client.post(
             "/setup/api/paths/collection", data={"collection_name": "NEW"}
         )
@@ -476,7 +476,7 @@ def test_update_collection_returns_400_when_paths_missing():
     reset_runtime()
     client = TestClient(create_app())
     with patch(
-        "scripts.server.routes.setup.load_config", side_effect=FileNotFoundError
+        "lit_monitor.server.routes.setup.load_config", side_effect=FileNotFoundError
     ):
         resp = client.post(
             "/setup/api/paths/collection", data={"collection_name": "X"}
@@ -650,7 +650,7 @@ class TestSetupCompleteNotifyPanel:
                 }
             }
         }
-        with patch("scripts.server.routes.setup.load_config", return_value=fake_extraction):
+        with patch("lit_monitor.server.routes.setup.load_config", return_value=fake_extraction):
             r = client.get("/setup/complete")
         assert r.status_code == 200
         # The selected viewer value should appear somewhere in the rendered page
@@ -661,8 +661,8 @@ class TestSetupCompleteNotifyPanel:
         client = self._make_client()
         # Both writers must be patched — the route calls safe_save_digest_auto_write
         # too, and an unpatched call would write to the real config/extraction.yaml.
-        with patch("scripts.server.routes.setup.safe_save_preference") as m, \
-             patch("scripts.server.routes.setup.safe_save_digest_auto_write"):
+        with patch("lit_monitor.server.routes.setup.safe_save_preference") as m, \
+             patch("lit_monitor.server.routes.setup.safe_save_digest_auto_write"):
             r = client.post(
                 "/setup/complete/notify",
                 data={"viewer": "browser", "enabled": "on"},
@@ -678,8 +678,8 @@ class TestSetupCompleteNotifyPanel:
     def test_post_without_enabled_flag(self):
         """P4: POST /setup/complete/notify without enabled=on sets enabled=False."""
         client = self._make_client()
-        with patch("scripts.server.routes.setup.safe_save_preference") as m, \
-             patch("scripts.server.routes.setup.safe_save_digest_auto_write"):
+        with patch("lit_monitor.server.routes.setup.safe_save_preference") as m, \
+             patch("lit_monitor.server.routes.setup.safe_save_digest_auto_write"):
             r = client.post(
                 "/setup/complete/notify",
                 data={"viewer": "obsidian"},
@@ -748,8 +748,8 @@ class TestDigestAutoWriteCheckbox:
     def test_post_persists_checkbox_value(self):
         """P10b: POST /setup/complete/notify persists digest_auto_write=True when 'on'."""
         client = self._make_client()
-        with patch("scripts.server.routes.setup.safe_save_digest_auto_write") as m, \
-             patch("scripts.server.routes.setup.safe_save_preference"):
+        with patch("lit_monitor.server.routes.setup.safe_save_digest_auto_write") as m, \
+             patch("lit_monitor.server.routes.setup.safe_save_preference"):
             r = client.post(
                 "/setup/complete/notify",
                 data={"viewer": "browser", "enabled": "on", "digest_auto_write": "on"},
@@ -766,8 +766,8 @@ class TestDigestAutoWriteCheckbox:
     def test_post_without_digest_flag_passes_false(self):
         """P10b: POST without digest_auto_write field passes False (unchecked checkbox)."""
         client = self._make_client()
-        with patch("scripts.server.routes.setup.safe_save_digest_auto_write") as m, \
-             patch("scripts.server.routes.setup.safe_save_preference"):
+        with patch("lit_monitor.server.routes.setup.safe_save_digest_auto_write") as m, \
+             patch("lit_monitor.server.routes.setup.safe_save_preference"):
             r = client.post(
                 "/setup/complete/notify",
                 data={"viewer": "browser"},

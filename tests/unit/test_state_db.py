@@ -907,7 +907,7 @@ class TestInitSchemaSilentStragglers:
             "simple_complete = CASE WHEN pass1_complete",
             "boom-m3-backfill",
         )
-        with caplog.at_level(logging.WARNING, logger="scripts.core.state_db"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.core.state_db"):
             db = StateDB(tmp_path / "state.db")  # must NOT raise in default mode
         assert db is not None
         assert any(
@@ -932,7 +932,7 @@ class TestInitSchemaSilentStragglers:
             "DELETE FROM papers ",
             "boom-n7-cleanup",
         )
-        with caplog.at_level(logging.WARNING, logger="scripts.core.state_db"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.core.state_db"):
             db = StateDB(tmp_path / "state.db")
         assert db is not None
         assert any(
@@ -957,7 +957,7 @@ class TestInitSchemaSilentStragglers:
             "UPDATE run_log SET run_type = 'discovery'",
             "boom-rename",
         )
-        with caplog.at_level(logging.WARNING, logger="scripts.core.state_db"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.core.state_db"):
             db = StateDB(tmp_path / "state.db")
         assert db is not None
         assert any(

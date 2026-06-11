@@ -44,7 +44,7 @@ class TestAsk:
             rendered="| doi |\n| --- |\n| 10.1/a |",
             prose="One paper found.",
         )
-        with patch("scripts.graph.ask.run_pipeline", return_value=fake):
+        with patch("lit_monitor.graph.ask.run_pipeline", return_value=fake):
             r = client.post("/api/ask", json={"question": "what is X?"})
 
         assert r.status_code == 200
@@ -75,7 +75,7 @@ class TestAsk:
             captured.update(kw)
             return AskResult(cypher="MATCH", rows=[], rendered="_(no results)_", prose=None)
 
-        with patch("scripts.graph.ask.run_pipeline", side_effect=fake_run):
+        with patch("lit_monitor.graph.ask.run_pipeline", side_effect=fake_run):
             client.post("/api/ask", json={"question": "q", "model": "gemma2:9b"})
 
         assert captured.get("model") == "gemma2:9b"
@@ -92,7 +92,7 @@ class TestAsk:
             rendered="_(no results)_",
             prose="I couldn't translate your question.",
         )
-        with patch("scripts.graph.ask.run_pipeline", return_value=fake):
+        with patch("lit_monitor.graph.ask.run_pipeline", return_value=fake):
             r = client.post("/api/ask", json={"question": "some question"})
 
         assert r.status_code == 200
@@ -113,7 +113,7 @@ class TestCypher:
         from unittest.mock import patch
 
         with patch(
-            "scripts.server.routes.query._execute_cypher", return_value=[{"n": 1}]
+            "lit_monitor.server.routes.query._execute_cypher", return_value=[{"n": 1}]
         ):
             r = client.post(
                 "/api/cypher", json={"query": "MATCH (p) RETURN count(p) AS n"}
@@ -143,7 +143,7 @@ class TestCypher:
             captured["q"] = q
             return []
 
-        with patch("scripts.server.routes.query._execute_cypher", side_effect=cap):
+        with patch("lit_monitor.server.routes.query._execute_cypher", side_effect=cap):
             r = client.post(
                 "/api/cypher", json={"query": "MATCH (p) RETURN p"}
             )
@@ -161,7 +161,7 @@ class TestCypher:
             captured["q"] = q
             return []
 
-        with patch("scripts.server.routes.query._execute_cypher", side_effect=cap):
+        with patch("lit_monitor.server.routes.query._execute_cypher", side_effect=cap):
             r = client.post(
                 "/api/cypher", json={"query": "MATCH (p) RETURN p LIMIT 5"}
             )

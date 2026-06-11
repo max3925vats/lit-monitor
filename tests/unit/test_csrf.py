@@ -69,7 +69,7 @@ def test_cross_origin_form_post_rejected(client):
 def test_same_origin_post_allowed(client, monkeypatch):
     """A localhost Origin passes the gate (spawn mocked → nothing real runs)."""
     monkeypatch.setattr(
-        "scripts.server.routes.discovery.asyncio.create_subprocess_exec",
+        "lit_monitor.server.routes.discovery.asyncio.create_subprocess_exec",
         _dummy_proc_factory(),
     )
     r = client.post(
@@ -83,7 +83,7 @@ def test_same_origin_post_allowed(client, monkeypatch):
 def test_no_origin_post_allowed(client, monkeypatch):
     """A POST with no Origin header (curl / CLI tools) must not be blocked."""
     monkeypatch.setattr(
-        "scripts.server.routes.discovery.asyncio.create_subprocess_exec",
+        "lit_monitor.server.routes.discovery.asyncio.create_subprocess_exec",
         _dummy_proc_factory(),
     )
     r = client.post("/api/discovery/start", data={"dry_run": "true"})
@@ -109,7 +109,7 @@ def test_dns_rebinding_nonlocal_host_rejected(client):
 def test_testserver_host_allowed(client, monkeypatch):
     """TestClient's default ``Host: testserver`` must pass so the suite stays green."""
     monkeypatch.setattr(
-        "scripts.server.routes.discovery.asyncio.create_subprocess_exec",
+        "lit_monitor.server.routes.discovery.asyncio.create_subprocess_exec",
         _dummy_proc_factory(),
     )
     # No Host override → TestClient sends Host: testserver, Origin absent.
@@ -127,7 +127,7 @@ def test_wildcard_bind_host_not_allowlisted(tmp_path, monkeypatch):
     monkeypatch.setenv("LIT_MONITOR_STATE_DB", str(tmp_path / "state.db"))
     # Simulate a persisted ``[server].host = "0.0.0.0"`` in the secrets TOML.
     monkeypatch.setattr(
-        "scripts.server.config_io.load_server_config",
+        "lit_monitor.server.config_io.load_server_config",
         lambda: {"host": "0.0.0.0"},
     )
     client = TestClient(create_app())

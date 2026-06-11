@@ -165,7 +165,7 @@ def create_app() -> FastAPI:
     app.include_router(fs_router)
     app.include_router(zotero_router)
 
-    # Imported lazily so the setup module can safely `from scripts.server.app
+    # Imported lazily so the setup module can safely `from lit_monitor.server.app
     # import templates` — by the time create_app() runs, `templates` is bound.
     from lit_monitor.server.routes.brain_build import router as brain_build_router
     from lit_monitor.server.routes.control import router as control_router

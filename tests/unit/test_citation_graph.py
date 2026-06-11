@@ -299,8 +299,8 @@ def test_fetch_s2_references_rate_limit_retry_then_success():
                 raise RuntimeError("429 Too many requests")
             return _FakePaper()
 
-    with patch("scripts.search.citation_graph._SemanticScholar", return_value=_FakeS2()), \
-         patch("scripts.search.citation_graph._S2_AVAILABLE", True), \
+    with patch("lit_monitor.search.citation_graph._SemanticScholar", return_value=_FakeS2()), \
+         patch("lit_monitor.search.citation_graph._S2_AVAILABLE", True), \
          patch("time.sleep"):
         refs = _fetch_s2_references("10.1/test", max_retries=2)
 
@@ -330,8 +330,8 @@ def test_fetch_s2_references_connection_refused_treated_as_rate_limit():
                 raise ConnectionRefusedError("Too busy right now.")
             return _FakePaper()
 
-    with patch("scripts.search.citation_graph._SemanticScholar", return_value=_FakeS2()), \
-         patch("scripts.search.citation_graph._S2_AVAILABLE", True), \
+    with patch("lit_monitor.search.citation_graph._SemanticScholar", return_value=_FakeS2()), \
+         patch("lit_monitor.search.citation_graph._S2_AVAILABLE", True), \
          patch("time.sleep"):
         refs = _fetch_s2_references("10.1/test", max_retries=2)
 
@@ -345,9 +345,9 @@ def test_fetch_s2_references_passes_timeout_to_constructor():
     mock_sch = MagicMock()
     mock_sch.get_paper.return_value = None
     with patch(
-        "scripts.search.citation_graph._SemanticScholar", return_value=mock_sch
+        "lit_monitor.search.citation_graph._SemanticScholar", return_value=mock_sch
     ) as mock_cls, \
-         patch("scripts.search.citation_graph._S2_AVAILABLE", True):
+         patch("lit_monitor.search.citation_graph._S2_AVAILABLE", True):
         _fetch_s2_references("10.1/test", api_key="my-s2-key")
     mock_cls.assert_called_once_with(api_key="my-s2-key", timeout=30)
 
@@ -360,8 +360,8 @@ def test_fetch_s2_references_exhausted_retries():
         def get_paper(self, *a, **kw):
             raise RuntimeError("429 rate limit exceeded")
 
-    with patch("scripts.search.citation_graph._SemanticScholar", return_value=_FakeS2()), \
-         patch("scripts.search.citation_graph._S2_AVAILABLE", True), \
+    with patch("lit_monitor.search.citation_graph._SemanticScholar", return_value=_FakeS2()), \
+         patch("lit_monitor.search.citation_graph._S2_AVAILABLE", True), \
          patch("time.sleep"):
         refs = _fetch_s2_references("10.1/test", max_retries=2)
 
@@ -388,8 +388,8 @@ def test_fetch_s2_references_default_retry_count_and_backoff_sequence():
 
     sleeps: list[float] = []
 
-    with patch("scripts.search.citation_graph._SemanticScholar", return_value=_FakeS2()), \
-         patch("scripts.search.citation_graph._S2_AVAILABLE", True), \
+    with patch("lit_monitor.search.citation_graph._SemanticScholar", return_value=_FakeS2()), \
+         patch("lit_monitor.search.citation_graph._S2_AVAILABLE", True), \
          patch("time.sleep", side_effect=lambda s: sleeps.append(s)):
         # No max_retries override → exercise the default policy.
         refs = _fetch_s2_references("10.1/test")
@@ -410,8 +410,8 @@ def test_fetch_s2_references_non_rate_limit_error():
             call_count += 1
             raise ConnectionError("Network failure")
 
-    with patch("scripts.search.citation_graph._SemanticScholar", return_value=_FakeS2()), \
-         patch("scripts.search.citation_graph._S2_AVAILABLE", True), \
+    with patch("lit_monitor.search.citation_graph._SemanticScholar", return_value=_FakeS2()), \
+         patch("lit_monitor.search.citation_graph._S2_AVAILABLE", True), \
          patch("time.sleep"):
         refs = _fetch_s2_references("10.1/test", max_retries=4)
 
@@ -457,9 +457,9 @@ def test_build_citation_graph_numeric_resolved():
 
     mock_ref = _make_s2_ref(paper_id="tgt_s2", doi="10.1/tgt", title="Target")
 
-    with patch("scripts.search.citation_graph._S2_AVAILABLE", True), \
+    with patch("lit_monitor.search.citation_graph._S2_AVAILABLE", True), \
          patch(
-             "scripts.search.citation_graph._fetch_s2_references",
+             "lit_monitor.search.citation_graph._fetch_s2_references",
              return_value=[mock_ref],
          ):
         result = build_citation_graph("10.1/src", db)
@@ -486,8 +486,8 @@ def test_build_citation_graph_unresolved_stored():
         "extraction_json": json.dumps({"key_citations": kc}),
     })
 
-    with patch("scripts.search.citation_graph._S2_AVAILABLE", True), \
-         patch("scripts.search.citation_graph._fetch_s2_references", return_value=[]):
+    with patch("lit_monitor.search.citation_graph._S2_AVAILABLE", True), \
+         patch("lit_monitor.search.citation_graph._fetch_s2_references", return_value=[]):
         result = build_citation_graph("10.1/src", db)
 
     assert result.n_unresolved == 1
@@ -513,9 +513,9 @@ def test_build_citation_graph_mixed_resolved_unresolved():
 
     mock_ref = _make_s2_ref(paper_id="p1", doi="10.1/ref1")
 
-    with patch("scripts.search.citation_graph._S2_AVAILABLE", True), \
+    with patch("lit_monitor.search.citation_graph._S2_AVAILABLE", True), \
          patch(
-             "scripts.search.citation_graph._fetch_s2_references",
+             "lit_monitor.search.citation_graph._fetch_s2_references",
              return_value=[mock_ref],
          ):
         result = build_citation_graph("10.1/src", db)

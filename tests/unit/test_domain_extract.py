@@ -84,7 +84,7 @@ class TestAnalyzeDomain:
 
         mock_llm = MagicMock()
         mock_llm.complete.return_value = "not actually JSON {broken"
-        with caplog.at_level(logging.INFO, logger="scripts.domain.extract"):
+        with caplog.at_level(logging.INFO, logger="lit_monitor.domain.extract"):
             result = analyze_domain("real input", llm=mock_llm)
         assert result is None
         assert any("JSON parse failed" in rec.message for rec in caplog.records)

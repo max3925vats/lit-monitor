@@ -281,7 +281,7 @@ def test_config_load_yaml_logs_error_on_parse_fail(tmp_path, caplog, monkeypatch
     # Unterminated mapping value → yaml.YAMLError on parse.
     bad.write_text("key: : :\n  - [unterminated\n", encoding="utf-8")
 
-    with caplog.at_level(logging.ERROR, logger="scripts.core.config"):
+    with caplog.at_level(logging.ERROR, logger="lit_monitor.core.config"):
         result = _load_yaml(bad)
 
     assert result == {}

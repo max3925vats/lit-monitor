@@ -1080,7 +1080,7 @@ def _run_ingestion(
             title = data.get("title", "")
             if not doi:
                 # D2: try CrossRef before giving up — ZoteroClient is already
-                # imported at the top of this function (line: from scripts.core…).
+                # imported at the top of this function (line: from lit_monitor.core…).
                 _authors = ZoteroClient.extract_authors(data)
                 doi = resolve_doi(
                     title, _authors, _parse_year(data.get("date", ""))

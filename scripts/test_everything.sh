@@ -292,7 +292,7 @@ tier_3() {
 
     info "lit-monitor run --dry-run"
     local state_db_path
-    state_db_path="$(uv run python -c 'from scripts.core.config import get_config; print(get_config().state_db.path)' 2>/dev/null || echo '')"
+    state_db_path="$(uv run python -c 'from lit_monitor.core.config import get_config; print(get_config().state_db.path)' 2>/dev/null || echo '')"
     local state_mtime_before=0
     if [[ -n "$state_db_path" && -f "${state_db_path/#\~/$HOME}" ]]; then
         state_mtime_before="$(stat -f %m "${state_db_path/#\~/$HOME}" 2>/dev/null || echo 0)"
@@ -365,7 +365,7 @@ tier_4() {
     info "{domain_focus} rendering regression (A6 guard)"
     local rendered_ok
     rendered_ok="$(uv run python -c "
-from scripts.llm.prompt_registry import load_prompt
+from lit_monitor.llm.prompt_registry import load_prompt
 p = load_prompt('rationale')
 print('OK' if '{domain_focus}' not in p.system else 'FAIL')
 " 2>/dev/null)" || rendered_ok="ERROR"
@@ -399,7 +399,7 @@ print('OK' if '{domain_focus}' not in p.system else 'FAIL')
             uv run python -c "
 import sqlite3, yaml, json
 from pathlib import Path
-from scripts.core.config import get_config
+from lit_monitor.core.config import get_config
 
 db_path = Path(get_config().state_db.path).expanduser()
 with open('$ref_yaml') as fh:
@@ -439,7 +439,7 @@ else:
             echo
             echo "## Reference-paper auto-regression (advisory)"
             echo
-            uv run python -m scripts.eval.quality_check "$ref_yaml" 2>&1 || true
+            uv run python -m lit_monitor.eval.quality_check "$ref_yaml" 2>&1 || true
         } >> "$REPORT_PATH"
         pass "auto-regression table written (advisory — exit code unaffected)"
     fi

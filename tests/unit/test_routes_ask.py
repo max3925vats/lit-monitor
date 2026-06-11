@@ -27,14 +27,14 @@ def client(tmp_path, monkeypatch):
 
 class TestAskPage:
     def test_get_ask_renders_form_when_graph_available(self, client):
-        with patch("scripts.server.routes.ask.safe_graph_db", return_value=object()):
+        with patch("lit_monitor.server.routes.ask.safe_graph_db", return_value=object()):
             r = client.get("/ask")
         assert r.status_code == 200
         assert 'name="question"' in r.text  # the form is present
         assert "/ask/answer" in r.text  # hx-post target
 
     def test_get_ask_shows_no_graph_notice_when_absent(self, client):
-        with patch("scripts.server.routes.ask.safe_graph_db", return_value=None):
+        with patch("lit_monitor.server.routes.ask.safe_graph_db", return_value=None):
             r = client.get("/ask")
         assert r.status_code == 200
         assert "graph backfill" in r.text  # the build-graph-first hint
@@ -55,7 +55,7 @@ class TestAskHistory:
     """
 
     def test_ask_page_includes_history_container(self, client):
-        with patch("scripts.server.routes.ask.safe_graph_db", return_value=object()):
+        with patch("lit_monitor.server.routes.ask.safe_graph_db", return_value=object()):
             r = client.get("/ask")
         assert r.status_code == 200
         assert 'id="ask-history"' in r.text  # history mount point
@@ -63,7 +63,7 @@ class TestAskHistory:
         assert "/static/site.js" in r.text  # the module that drives it (base.html)
 
     def test_history_container_absent_without_graph(self, client):
-        with patch("scripts.server.routes.ask.safe_graph_db", return_value=None):
+        with patch("lit_monitor.server.routes.ask.safe_graph_db", return_value=None):
             r = client.get("/ask")
         assert r.status_code == 200
         assert 'id="ask-history"' not in r.text  # only shown when form is shown
@@ -83,7 +83,7 @@ class TestAskAnswer:
 
     def test_answer_renders_prose_table_and_cypher(self, client):
         with patch(
-            "scripts.server.routes.ask.run_pipeline", return_value=self._result()
+            "lit_monitor.server.routes.ask.run_pipeline", return_value=self._result()
         ):
             r = client.post("/ask/answer", data={"question": "key paper?"})
         assert r.status_code == 200
@@ -105,15 +105,15 @@ class TestAskAnswer:
             rendered="_(no results)_",
             prose="No data.",
         )
-        with patch("scripts.server.routes.ask.run_pipeline", return_value=res):
+        with patch("lit_monitor.server.routes.ask.run_pipeline", return_value=res):
             r = client.post("/ask/answer", data={"question": "x"})
         assert "no matches" in r.text.lower()
 
     def test_answer_pipeline_error_is_generic_no_leak(self, client, caplog):
         secret = "kuzu://secret/path/db"
-        with caplog.at_level(logging.ERROR, logger="scripts.server.routes.ask"):
+        with caplog.at_level(logging.ERROR, logger="lit_monitor.server.routes.ask"):
             with patch(
-                "scripts.server.routes.ask.run_pipeline",
+                "lit_monitor.server.routes.ask.run_pipeline",
                 side_effect=RuntimeError(secret),
             ):
                 r = client.post("/ask/answer", data={"question": "x"})
@@ -132,7 +132,7 @@ class TestAskCypher:
     def test_cypher_rerun_renders_table(self, client):
         rows = [{"name": "Smith"}]
         with patch(
-            "scripts.server.routes.ask._execute_guarded_cypher", return_value=rows
+            "lit_monitor.server.routes.ask._execute_guarded_cypher", return_value=rows
         ):
             r = client.post("/ask/cypher", data={"cypher": "MATCH (p) RETURN p"})
         assert r.status_code == 200
@@ -146,7 +146,7 @@ class TestAskCypher:
             return []
 
         with patch(
-            "scripts.server.routes.ask._execute_guarded_cypher", side_effect=_spy
+            "lit_monitor.server.routes.ask._execute_guarded_cypher", side_effect=_spy
         ):
             r = client.post(
                 "/ask/cypher", data={"cypher": "MATCH (p) DETACH DELETE p"}
@@ -178,7 +178,7 @@ class TestAskSave:
         from pathlib import Path  # noqa: PLC0415
 
         monkeypatch.setattr(
-            "scripts.server.routes.ask.get_config",
+            "lit_monitor.server.routes.ask.get_config",
             lambda: self._cfg(tmp_path),
         )
         payload = json.dumps(
@@ -201,7 +201,7 @@ class TestAskSave:
     def test_ask_save_bad_payload_is_generic_error(self, client, monkeypatch):
         # Even with a valid config, a malformed payload must not 500-leak.
         monkeypatch.setattr(
-            "scripts.server.routes.ask.get_config",
+            "lit_monitor.server.routes.ask.get_config",
             lambda: None,
         )
         r = client.post("/ask/save", data={"payload": "{not json"})

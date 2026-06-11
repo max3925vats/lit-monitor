@@ -27,7 +27,7 @@ def runner():
 class TestCheckConfigured:
     def test_missing_secrets_file(self, tmp_path):
         from lit_monitor.setup.check_configured import check_configured
-        with patch("scripts.setup.check_configured._SECRETS_PATH", tmp_path / "no.toml"):
+        with patch("lit_monitor.setup.check_configured._SECRETS_PATH", tmp_path / "no.toml"):
             results = check_configured()
         assert results["secrets_file"][0] is False
         assert "Missing" in results["secrets_file"][1]
@@ -38,7 +38,7 @@ class TestCheckConfigured:
             '[zotero]\napi_key = "abc123"\nlibrary_id = "99999"\n'
             '[wos]\napi_key = "woskey"\n'
         )
-        with patch("scripts.setup.check_configured._SECRETS_PATH", secrets):
+        with patch("lit_monitor.setup.check_configured._SECRETS_PATH", secrets):
             results = check_configured()
         assert results["secrets_file"][0] is True
         assert results["zotero.api_key"][0] is True
@@ -47,14 +47,14 @@ class TestCheckConfigured:
         from lit_monitor.setup.check_configured import check_configured
         secrets = tmp_path / "config.toml"
         secrets.write_text('[zotero]\nlibrary_id = "99999"\n')  # no api_key
-        with patch("scripts.setup.check_configured._SECRETS_PATH", secrets):
+        with patch("lit_monitor.setup.check_configured._SECRETS_PATH", secrets):
             results = check_configured()
         assert results["zotero.api_key"][0] is False
     def test_optional_key_missing_still_passes(self, tmp_path):
         from lit_monitor.setup.check_configured import check_configured
         secrets = tmp_path / "config.toml"
         secrets.write_text('[zotero]\napi_key = "x"\nlibrary_id = "1"\n')
-        with patch("scripts.setup.check_configured._SECRETS_PATH", secrets):
+        with patch("lit_monitor.setup.check_configured._SECRETS_PATH", secrets):
             results = check_configured()
 
         # wos.api_key removed (WoS not supported by findpapers 0.6.x); only scopus remains optional
@@ -74,7 +74,7 @@ class TestCheckConfigured:
             '[zotero]\napi_key = "x"\nlibrary_id = "1"\n'
             '[pubmed]\nemail = "a@b.com"\n'
         )
-        with patch("scripts.setup.check_configured._SECRETS_PATH", secrets):
+        with patch("lit_monitor.setup.check_configured._SECRETS_PATH", secrets):
             results = check_configured()
         scopus = results["scopus.api_key"]
         assert scopus.ok is True
@@ -89,7 +89,7 @@ class TestCheckOllama:
         import requests
 
         from lit_monitor.setup.check_ollama import check_ollama
-        with patch("scripts.setup.check_ollama.requests.get") as mock_get:
+        with patch("lit_monitor.setup.check_ollama.requests.get") as mock_get:
             mock_get.side_effect = requests.exceptions.ConnectionError("refused")
             results = check_ollama()
         assert results["ollama_running"][0] is False
@@ -99,7 +99,7 @@ class TestCheckOllama:
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"models": [{"name": "mistral:7b"}]}
         mock_resp.raise_for_status.return_value = None
-        with patch("scripts.setup.check_ollama.requests.get", return_value=mock_resp):
+        with patch("lit_monitor.setup.check_ollama.requests.get", return_value=mock_resp):
             results = check_ollama()
         assert results["ollama_running"][0] is True
         assert "model_available" not in results
@@ -108,7 +108,7 @@ class TestCheckOllama:
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"models": [{"name": "mistral:7b"}]}
         mock_resp.raise_for_status.return_value = None
-        with patch("scripts.setup.check_ollama.requests.get", return_value=mock_resp):
+        with patch("lit_monitor.setup.check_ollama.requests.get", return_value=mock_resp):
             results = check_ollama(model="mistral:7b")
         assert results["model_available"][0] is True
     def test_model_not_found(self):
@@ -116,7 +116,7 @@ class TestCheckOllama:
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"models": [{"name": "phi3:mini"}]}
         mock_resp.raise_for_status.return_value = None
-        with patch("scripts.setup.check_ollama.requests.get", return_value=mock_resp):
+        with patch("lit_monitor.setup.check_ollama.requests.get", return_value=mock_resp):
             results = check_ollama(model="mistral:7b")
         assert results["model_available"][0] is False
         assert "ollama pull" in results["model_available"][1]
@@ -131,7 +131,7 @@ class TestCheckOllama:
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"models": [{"name": "mistral-nemo:latest"}]}
         mock_resp.raise_for_status.return_value = None
-        with patch("scripts.setup.check_ollama.requests.get", return_value=mock_resp):
+        with patch("lit_monitor.setup.check_ollama.requests.get", return_value=mock_resp):
             results = check_ollama(model="mistral")
         assert results["model_available"][0] is False
 
@@ -141,7 +141,7 @@ class TestCheckOllama:
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"models": [{"name": "mistral:latest"}]}
         mock_resp.raise_for_status.return_value = None
-        with patch("scripts.setup.check_ollama.requests.get", return_value=mock_resp):
+        with patch("lit_monitor.setup.check_ollama.requests.get", return_value=mock_resp):
             results = check_ollama(model="mistral")
         assert results["model_available"][0] is True
 
@@ -154,11 +154,11 @@ class TestCheckOllama:
         configured = "http://ollama.internal:9999"
         with (
             patch(
-                "scripts.setup.check_ollama._resolve_ollama_host",
+                "lit_monitor.setup.check_ollama._resolve_ollama_host",
                 return_value=configured,
             ),
             patch(
-                "scripts.setup.check_ollama.requests.get", return_value=mock_resp
+                "lit_monitor.setup.check_ollama.requests.get", return_value=mock_resp
             ) as mock_get,
         ):
             results = check_ollama()
@@ -174,11 +174,11 @@ class TestCheckOllama:
         # Simulate config being unavailable: get_config raises on import/use.
         with (
             patch(
-                "scripts.core.config.get_config",
+                "lit_monitor.core.config.get_config",
                 side_effect=RuntimeError("no config"),
             ),
             patch(
-                "scripts.setup.check_ollama.requests.get", return_value=mock_resp
+                "lit_monitor.setup.check_ollama.requests.get", return_value=mock_resp
             ) as mock_get,
         ):
             mod.check_ollama()
@@ -189,7 +189,7 @@ class TestCheckOllama:
 class TestCheckZotero:
     def test_missing_secrets(self, tmp_path):
         from lit_monitor.setup.check_zotero import check_zotero
-        with patch("scripts.setup.check_zotero._SECRETS_PATH", tmp_path / "no.toml"):
+        with patch("lit_monitor.setup.check_zotero._SECRETS_PATH", tmp_path / "no.toml"):
             results = check_zotero()
         assert results["zotero_credentials"][0] is False
     def test_api_success(self, tmp_path):
@@ -200,8 +200,8 @@ class TestCheckZotero:
         mock_resp.status_code = 200
 
         with (
-            patch("scripts.setup.check_zotero._SECRETS_PATH", secrets),
-            patch("scripts.setup.check_zotero.requests.get", return_value=mock_resp),
+            patch("lit_monitor.setup.check_zotero._SECRETS_PATH", secrets),
+            patch("lit_monitor.setup.check_zotero.requests.get", return_value=mock_resp),
         ):
             results = check_zotero()
         assert results["zotero_credentials"][0] is True
@@ -213,8 +213,8 @@ class TestCheckZotero:
         mock_resp = MagicMock()
         mock_resp.status_code = 403
         with (
-            patch("scripts.setup.check_zotero._SECRETS_PATH", secrets),
-            patch("scripts.setup.check_zotero.requests.get", return_value=mock_resp),
+            patch("lit_monitor.setup.check_zotero._SECRETS_PATH", secrets),
+            patch("lit_monitor.setup.check_zotero.requests.get", return_value=mock_resp),
         ):
             results = check_zotero()
         assert results["zotero_api"][0] is False
@@ -233,8 +233,8 @@ class TestCliStatus:
             else []
         )
         with (
-            patch("scripts.cli._make_config", return_value=mock_config),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.cli._make_config", return_value=mock_config),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
         ):
             result = runner.invoke(main, ["status"])
         assert result.exit_code == 0
@@ -277,9 +277,9 @@ class TestCliStatus:
         mock_state_db._connect.return_value.__exit__ = MagicMock(return_value=False)
 
         with (
-            patch("scripts.cli._make_config", return_value=mock_config),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("lit_monitor.cli._make_config", return_value=mock_config),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.graph.safe_graph_db", return_value=mock_graph_db),
         ):
             result = runner.invoke(main, ["status"])
 
@@ -297,9 +297,9 @@ class TestCliStatus:
         mock_state_db.get_all_by_source_type.return_value = []
 
         with (
-            patch("scripts.cli._make_config", return_value=mock_config),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.graph.safe_graph_db", side_effect=ImportError("no graph")),
+            patch("lit_monitor.cli._make_config", return_value=mock_config),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.graph.safe_graph_db", side_effect=ImportError("no graph")),
         ):
             result = runner.invoke(main, ["status"])
 
@@ -312,11 +312,11 @@ class TestCliCheck:
         from lit_monitor.setup.check_configured import CheckResult
         all_ok = {"key": CheckResult(True, "all good", "ok")}
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.setup.check_configured.check_configured", return_value=all_ok),
-            patch("scripts.setup.check_ollama.check_ollama", return_value=all_ok),
-            patch("scripts.setup.check_zotero.check_zotero", return_value=all_ok),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.setup.check_configured.check_configured", return_value=all_ok),
+            patch("lit_monitor.setup.check_ollama.check_ollama", return_value=all_ok),
+            patch("lit_monitor.setup.check_zotero.check_zotero", return_value=all_ok),
         ):
             result = runner.invoke(main, ["check"])
         assert result.exit_code == 0
@@ -326,11 +326,11 @@ class TestCliCheck:
         bad = {"zotero.api_key": CheckResult(False, "Missing", "fail")}
         ok = {"x": CheckResult(True, "ok", "ok")}
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.setup.check_configured.check_configured", return_value=bad),
-            patch("scripts.setup.check_ollama.check_ollama", return_value=ok),
-            patch("scripts.setup.check_zotero.check_zotero", return_value=ok),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.setup.check_configured.check_configured", return_value=bad),
+            patch("lit_monitor.setup.check_ollama.check_ollama", return_value=ok),
+            patch("lit_monitor.setup.check_zotero.check_zotero", return_value=ok),
         ):
             result = runner.invoke(main, ["check"])
         assert result.exit_code == 1
@@ -342,11 +342,11 @@ class TestCliCheck:
         secrets = {"ollama": {"api_key": "secret-from-toml"}}
         env = {"OLLAMA_API_KEY": ""}  # env var absent
         with (
-            patch("scripts.cli._make_config", return_value=mock_cfg),
-            patch("scripts.cli._load_secrets", return_value=secrets),
-            patch("scripts.setup.check_configured.check_configured", return_value=all_ok),
-            patch("scripts.setup.check_ollama.check_ollama", return_value=all_ok),
-            patch("scripts.setup.check_zotero.check_zotero", return_value=all_ok),
+            patch("lit_monitor.cli._make_config", return_value=mock_cfg),
+            patch("lit_monitor.cli._load_secrets", return_value=secrets),
+            patch("lit_monitor.setup.check_configured.check_configured", return_value=all_ok),
+            patch("lit_monitor.setup.check_ollama.check_ollama", return_value=all_ok),
+            patch("lit_monitor.setup.check_zotero.check_zotero", return_value=all_ok),
             patch.dict("os.environ", env, clear=False),
         ):
             result = runner.invoke(main, ["check"])
@@ -358,11 +358,11 @@ class TestCliCheck:
         mock_cfg.brain_build.ollama_host = "https://ollama.com"
         env = {"OLLAMA_API_KEY": "env-key-value"}
         with (
-            patch("scripts.cli._make_config", return_value=mock_cfg),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.setup.check_configured.check_configured", return_value=all_ok),
-            patch("scripts.setup.check_ollama.check_ollama", return_value=all_ok),
-            patch("scripts.setup.check_zotero.check_zotero", return_value=all_ok),
+            patch("lit_monitor.cli._make_config", return_value=mock_cfg),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.setup.check_configured.check_configured", return_value=all_ok),
+            patch("lit_monitor.setup.check_ollama.check_ollama", return_value=all_ok),
+            patch("lit_monitor.setup.check_zotero.check_zotero", return_value=all_ok),
             patch.dict("os.environ", env, clear=False),
         ):
             result = runner.invoke(main, ["check"])
@@ -374,11 +374,11 @@ class TestCliCheck:
         mock_cfg.brain_build.ollama_host = "http://localhost:11434"
         env = {}
         with (
-            patch("scripts.cli._make_config", return_value=mock_cfg),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.setup.check_configured.check_configured", return_value=all_ok),
-            patch("scripts.setup.check_ollama.check_ollama", return_value=all_ok),
-            patch("scripts.setup.check_zotero.check_zotero", return_value=all_ok),
+            patch("lit_monitor.cli._make_config", return_value=mock_cfg),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.setup.check_configured.check_configured", return_value=all_ok),
+            patch("lit_monitor.setup.check_ollama.check_ollama", return_value=all_ok),
+            patch("lit_monitor.setup.check_zotero.check_zotero", return_value=all_ok),
             patch.dict("os.environ", env, clear=False),
         ):
             result = runner.invoke(main, ["check"])
@@ -395,15 +395,15 @@ class TestCliBrainBuild:
         mock_state_db = MagicMock()
         mock_state_db.get_schema_version.return_value = CURRENT_SCHEMA_VERSION
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.output.embeddings.check_embed_model_change"),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.output.embeddings.check_embed_model_change"),
             patch(
-                "scripts.pipelines.brain_build.run_brain_build",
+                "lit_monitor.pipelines.brain_build.run_brain_build",
                 return_value=mock_summary,
             ),
         ):
@@ -421,15 +421,15 @@ class TestCliBrainBuild:
         mock_state_db = MagicMock()
         mock_state_db.get_schema_version.return_value = CURRENT_SCHEMA_VERSION
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.output.embeddings.check_embed_model_change"),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.output.embeddings.check_embed_model_change"),
             patch(
-                "scripts.pipelines.brain_build.run_brain_build",
+                "lit_monitor.pipelines.brain_build.run_brain_build",
                 side_effect=RateLimitExhausted("rate limit persists"),
             ),
         ):
@@ -452,15 +452,15 @@ class TestCliBrainBuild:
         mock_state_db.get_schema_version.return_value = CURRENT_SCHEMA_VERSION
 
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.output.embeddings.check_embed_model_change"),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.output.embeddings.check_embed_model_change"),
             patch(
-                "scripts.pipelines.brain_build.run_brain_build",
+                "lit_monitor.pipelines.brain_build.run_brain_build",
                 return_value=mock_summary,
             ) as mock_run,
         ):
@@ -485,15 +485,15 @@ class TestCliBrainBuild:
         mock_state_db.get_schema_version.return_value = CURRENT_SCHEMA_VERSION
 
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.output.embeddings.check_embed_model_change"),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.output.embeddings.check_embed_model_change"),
             patch(
-                "scripts.pipelines.brain_build.run_brain_build",
+                "lit_monitor.pipelines.brain_build.run_brain_build",
                 return_value=mock_summary,
             ) as mock_run,
         ):
@@ -513,14 +513,14 @@ class TestCliRun:
         mock_summary.digest_path = "/vault/Digests/Discovery_2026-05-02.md"
         mock_summary.errors = []
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=MagicMock()),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
             patch(
-                "scripts.pipelines.discovery.run_discovery",
+                "lit_monitor.pipelines.discovery.run_discovery",
                 return_value=mock_summary,
             ),
         ):
@@ -535,15 +535,15 @@ class TestCliRun:
         """
         from lit_monitor.pipelines.brain_build import RateLimitExhausted
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=MagicMock()),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.output.embeddings.check_embed_model_change"),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.output.embeddings.check_embed_model_change"),
             patch(
-                "scripts.pipelines.discovery.run_discovery",
+                "lit_monitor.pipelines.discovery.run_discovery",
                 side_effect=RateLimitExhausted("rate limit persists"),
             ),
         ):
@@ -557,18 +557,18 @@ class TestCliObsidian:
         mock_config = MagicMock()
         mock_config.obsidian.vault_path = Path("/vault")
         with (
-            patch("scripts.cli._make_config", return_value=mock_config),
-            patch("scripts.obsidian_tools.retheme.retheme", return_value=mock_stats),
+            patch("lit_monitor.cli._make_config", return_value=mock_config),
+            patch("lit_monitor.obsidian_tools.retheme.retheme", return_value=mock_stats),
         ):
             result = runner.invoke(main, ["obsidian", "retheme", "--old", "Old", "--new", "New"])
         assert result.exit_code == 0
         assert "7" in result.output
     def test_rerender_single_doi(self, runner):
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
             patch(
-                "scripts.obsidian_tools.rerender.rerender_note",
+                "lit_monitor.obsidian_tools.rerender.rerender_note",
                 return_value="/vault/Papers/Smith2020.md",
             ),
         ):
@@ -579,23 +579,23 @@ class TestCliObsidian:
         """Regression: cli.py must call _load_secrets() not _load_api_secrets() (NameError guard)."""
         mock_result = {"core_finding": "flux decline observed"}
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={"zotero": {}}),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.obsidian_tools.re_extract.re_extract", return_value=mock_result),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={"zotero": {}}),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.obsidian_tools.re_extract.re_extract", return_value=mock_result),
         ):
             result = runner.invoke(main, ["obsidian", "re-extract", "--doi", "10.1/test"])
         assert result.exit_code == 0, result.output
 
     def test_synthesize_no_results(self, runner):
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=MagicMock()),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.obsidian_tools.synthesize.synthesize", return_value=""),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.obsidian_tools.synthesize.synthesize", return_value=""),
         ):
             result = runner.invoke(main, ["obsidian", "synthesize", "--topic", "TopicX"])
 
@@ -633,24 +633,24 @@ class TestCliResolvNoDoi:
         mock_state_db.get_schema_version.return_value = CURRENT_SCHEMA_VERSION
 
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.output.embeddings.check_embed_model_change"),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.output.embeddings.check_embed_model_change"),
             patch(
-                "scripts.pipelines.brain_build.run_brain_build",
+                "lit_monitor.pipelines.brain_build.run_brain_build",
                 return_value=mock_summary,
             ),
-            patch("scripts.pipelines.brain_build.write_brain_build_report",
+            patch("lit_monitor.pipelines.brain_build.write_brain_build_report",
                   return_value=None),
             patch(
-                "scripts.pipelines.brain_build._process_paper"
+                "lit_monitor.pipelines.brain_build._process_paper"
             ) as mock_process,
-            patch("scripts.pipelines.brain_build.extract_paper"),
-            patch("scripts.output.obsidian_writer.write_paper_note"),
+            patch("lit_monitor.pipelines.brain_build.extract_paper"),
+            patch("lit_monitor.output.obsidian_writer.write_paper_note"),
         ):
             # Supply DOI via stdin — matches click.prompt(default="")
             result = runner.invoke(
@@ -681,18 +681,18 @@ class TestCliRebuildCitations:
     def test_scope_doi_calls_re_extract_then_graph(self, runner):
         """--scope doi must call re_extract with phases=['complex'], then build_citation_graph."""
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=MagicMock()),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.obsidian_tools.re_extract.re_extract") as mock_re_extract,
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.obsidian_tools.re_extract.re_extract") as mock_re_extract,
             patch(
-                "scripts.search.citation_graph.build_citation_graph",
+                "lit_monitor.search.citation_graph.build_citation_graph",
                 return_value=self._graph_result(),
             ) as mock_graph,
-            patch("scripts.obsidian_tools.relink.relink_note"),
+            patch("lit_monitor.obsidian_tools.relink.relink_note"),
         ):
             result = runner.invoke(
                 main,
@@ -709,12 +709,12 @@ class TestCliRebuildCitations:
     def test_scope_doi_requires_doi_flag(self, runner):
         """--scope doi without --doi must exit non-zero with a usage error."""
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=MagicMock()),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
         ):
             result = runner.invoke(
                 main,
@@ -732,18 +732,18 @@ class TestCliRebuildCitations:
         )
         mock_state_db.get_paper.return_value = {"doi": "10.1/p1", "note_path": None}
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.obsidian_tools.re_extract.re_extract") as mock_re_extract,
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.obsidian_tools.re_extract.re_extract") as mock_re_extract,
             patch(
-                "scripts.search.citation_graph.build_citation_graph",
+                "lit_monitor.search.citation_graph.build_citation_graph",
                 return_value=self._graph_result(),
             ),
-            patch("scripts.obsidian_tools.relink.relink_note"),
+            patch("lit_monitor.obsidian_tools.relink.relink_note"),
         ):
             result = runner.invoke(
                 main,
@@ -782,17 +782,17 @@ class TestCliRebuildCitations:
             return r
 
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
             patch(
-                "scripts.search.citation_graph.build_citation_graph",
+                "lit_monitor.search.citation_graph.build_citation_graph",
                 side_effect=capture_graph,
             ),
-            patch("scripts.obsidian_tools.relink.relink_note"),
+            patch("lit_monitor.obsidian_tools.relink.relink_note"),
         ):
             result = runner.invoke(
                 main,
@@ -819,17 +819,17 @@ class TestCliRebuildCitations:
         mock_state_db.get_citation_edges.return_value = []
 
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
             patch(
-                "scripts.search.citation_graph.build_citation_graph",
+                "lit_monitor.search.citation_graph.build_citation_graph",
                 return_value=self._graph_result(),
             ),
-            patch("scripts.obsidian_tools.relink.relink_note") as mock_relink,
+            patch("lit_monitor.obsidian_tools.relink.relink_note") as mock_relink,
         ):
             result = runner.invoke(
                 main,
@@ -860,27 +860,27 @@ class TestCliRebuildCitations:
         mock_graph_db = MagicMock()
         with (
             patch(
-                "scripts.cli._make_config",
+                "lit_monitor.cli._make_config",
                 return_value=self._config_with_mode("graph"),
             ),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
             # A3 relink graph_db is opened via scripts.graph.safe_graph_db.
             patch(
-                "scripts.graph.safe_graph_db", return_value=mock_graph_db
+                "lit_monitor.graph.safe_graph_db", return_value=mock_graph_db
             ) as mock_safe_graph,
             patch(
-                "scripts.search.citation_graph.build_citation_graph",
+                "lit_monitor.search.citation_graph.build_citation_graph",
                 return_value=self._graph_result(),
             ),
             # G5 Kuzu mirror block opens its own safe_graph_db — stub it out so
             # this test only exercises the A3 relink path.
             patch(
-                "scripts.graph.import_citations.safe_graph_db", return_value=None
+                "lit_monitor.graph.import_citations.safe_graph_db", return_value=None
             ),
-            patch("scripts.obsidian_tools.relink.relink_note") as mock_relink,
+            patch("lit_monitor.obsidian_tools.relink.relink_note") as mock_relink,
         ):
             result = runner.invoke(
                 main,
@@ -910,24 +910,24 @@ class TestCliRebuildCitations:
         mock_state_db.get_citation_edges.return_value = []
         with (
             patch(
-                "scripts.cli._make_config",
+                "lit_monitor.cli._make_config",
                 return_value=self._config_with_mode("vector"),
             ),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
             patch(
-                "scripts.graph.safe_graph_db", return_value=MagicMock()
+                "lit_monitor.graph.safe_graph_db", return_value=MagicMock()
             ) as mock_safe_graph,
             patch(
-                "scripts.search.citation_graph.build_citation_graph",
+                "lit_monitor.search.citation_graph.build_citation_graph",
                 return_value=self._graph_result(),
             ),
             patch(
-                "scripts.graph.import_citations.safe_graph_db", return_value=None
+                "lit_monitor.graph.import_citations.safe_graph_db", return_value=None
             ),
-            patch("scripts.obsidian_tools.relink.relink_note") as mock_relink,
+            patch("lit_monitor.obsidian_tools.relink.relink_note") as mock_relink,
         ):
             result = runner.invoke(
                 main,
@@ -965,12 +965,12 @@ class TestCliCompareModels:
         """compare-models runs with no --mode flag and calls run_model_comparison
         with mode='paper' hardcoded."""
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
             patch(
-                "scripts.pipelines.model_compare.run_model_comparison",
+                "lit_monitor.pipelines.model_compare.run_model_comparison",
                 return_value=self._result(),
             ) as mock_run,
         ):
@@ -1055,11 +1055,11 @@ class TestMaybeSetS2Key:
         mock_state_db = MagicMock()
         mock_state_db.get_all_by_source_type.return_value = []
         with (
-            patch("scripts.cli._load_secrets", return_value={"semantic_scholar": {"api_key": "k"}}),
-            patch("scripts.cli._maybe_set_s2_key") as mock_set_s2,
-            patch("scripts.core.config.Config", return_value=MagicMock()),
-            patch("scripts.core.state_db.StateDB", return_value=mock_state_db),
-            patch("scripts.search.citation_graph.build_citation_graph"),
+            patch("lit_monitor.cli._load_secrets", return_value={"semantic_scholar": {"api_key": "k"}}),
+            patch("lit_monitor.cli._maybe_set_s2_key") as mock_set_s2,
+            patch("lit_monitor.core.config.Config", return_value=MagicMock()),
+            patch("lit_monitor.core.state_db.StateDB", return_value=mock_state_db),
+            patch("lit_monitor.search.citation_graph.build_citation_graph"),
         ):
             result = runner.invoke(
                 main,
@@ -1101,7 +1101,7 @@ class TestCliSetupLogging:
         from lit_monitor import cli
         fake_cfg = MagicMock()
         fake_cfg.state_db.path = "/Users/someone/.config/lit-monitor/state.db"
-        with patch("scripts.cli._make_config", return_value=fake_cfg):
+        with patch("lit_monitor.cli._make_config", return_value=fake_cfg):
             resolved = cli._resolve_log_dir()
         assert resolved == _P("/Users/someone/.config/lit-monitor/logs")
         # Must not be the old repo-relative location.
@@ -1114,7 +1114,7 @@ class TestCliSetupLogging:
 
         from lit_monitor import cli
         with patch(
-            "scripts.cli._make_config", side_effect=RuntimeError("no config")
+            "lit_monitor.cli._make_config", side_effect=RuntimeError("no config")
         ):
             resolved = cli._resolve_log_dir()
         assert resolved == _P("~/.config/lit-monitor/logs").expanduser()
@@ -1187,14 +1187,14 @@ class TestN20Reminder:
         mock_state_db = MagicMock()
         mock_state_db.get_schema_version.return_value = CURRENT_SCHEMA_VERSION
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.output.embeddings.check_embed_model_change"),
-            patch("scripts.pipelines.brain_build.run_brain_build", return_value=mock_summary),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.output.embeddings.check_embed_model_change"),
+            patch("lit_monitor.pipelines.brain_build.run_brain_build", return_value=mock_summary),
         ):
             result = runner.invoke(main, ["brain-build"])
         assert result.exit_code == 0
@@ -1212,14 +1212,14 @@ class TestN20Reminder:
         mock_state_db = MagicMock()
         mock_state_db.get_schema_version.return_value = CURRENT_SCHEMA_VERSION
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.output.embeddings.check_embed_model_change"),
-            patch("scripts.pipelines.brain_build.run_brain_build", return_value=mock_summary),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.output.embeddings.check_embed_model_change"),
+            patch("lit_monitor.pipelines.brain_build.run_brain_build", return_value=mock_summary),
         ):
             result = runner.invoke(main, ["brain-build"])
         assert result.exit_code == 0
@@ -1243,11 +1243,11 @@ class TestN21TopicsFile:
             return f"/vault/Connections/Synthesis_{topic}.md"
 
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=MagicMock()),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
-            patch("scripts.obsidian_tools.synthesize.synthesize", side_effect=_fake_synthesize),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.obsidian_tools.synthesize.synthesize", side_effect=_fake_synthesize),
         ):
             result = runner.invoke(
                 main,
@@ -1263,10 +1263,10 @@ class TestN21TopicsFile:
         topics_file = tmp_path / "topics.yaml"
         topics_file.write_text("topics:\n  - foo\n")
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=MagicMock()),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
         ):
             result = runner.invoke(
                 main,
@@ -1278,10 +1278,10 @@ class TestN21TopicsFile:
     def test_no_topic_no_file_exits_with_error(self, runner):
         """N21: calling synthesize with neither --topic nor --topics-file exits non-zero."""
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=MagicMock()),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
         ):
             result = runner.invoke(main, ["obsidian", "synthesize"])
         assert result.exit_code != 0
@@ -1307,13 +1307,13 @@ class TestRechunkAll:
         mock_embed_db = MagicMock()
 
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.cli._make_embeddings_db", return_value=mock_embed_db),
-            patch("scripts.cli._make_zotero_client", autospec=True) as mock_zfactory,
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.cli._maybe_set_ollama_key"),
-            patch("scripts.core.markdown_processor.strip_end_matter", side_effect=lambda t: t),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=mock_embed_db),
+            patch("lit_monitor.cli._make_zotero_client", autospec=True) as mock_zfactory,
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.cli._maybe_set_ollama_key"),
+            patch("lit_monitor.core.markdown_processor.strip_end_matter", side_effect=lambda t: t),
         ):
             mock_zfactory.return_value = mock_zotero
             result = runner.invoke(main, ["obsidian", "rechunk-all", "--doi", "10.1/x"])
@@ -1344,13 +1344,13 @@ class TestRechunkAll:
         mock_embed_db = MagicMock()
 
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=mock_state_db),
-            patch("scripts.cli._make_embeddings_db", return_value=mock_embed_db),
-            patch("scripts.cli._make_zotero_client", autospec=True) as mock_zfactory,
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.cli._maybe_set_ollama_key"),
-            patch("scripts.core.markdown_processor.strip_end_matter", side_effect=lambda t: t),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=mock_embed_db),
+            patch("lit_monitor.cli._make_zotero_client", autospec=True) as mock_zfactory,
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.cli._maybe_set_ollama_key"),
+            patch("lit_monitor.core.markdown_processor.strip_end_matter", side_effect=lambda t: t),
         ):
             mock_zfactory.return_value = mock_zotero
             result = runner.invoke(main, ["obsidian", "rechunk-all", "--all"])
@@ -1362,12 +1362,12 @@ class TestRechunkAll:
     def test_rechunk_no_flags_exits_nonzero(self, runner):
         """Neither --doi nor --all: must exit with code 1 and an error message."""
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._make_state_db", return_value=MagicMock()),
-            patch("scripts.cli._make_embeddings_db", return_value=MagicMock()),
-            patch("scripts.cli._make_zotero_client", autospec=True),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.cli._maybe_set_ollama_key"),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", autospec=True),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.cli._maybe_set_ollama_key"),
         ):
             result = runner.invoke(main, ["obsidian", "rechunk-all"])
 
@@ -1397,11 +1397,11 @@ class TestStrictModeFlag:
         ollama_ok = {"key": (True, "ok")}
         zotero_ok = {"key": (True, "ok")}
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.setup.check_configured.check_configured", side_effect=_fake_check_configured),
-            patch("scripts.setup.check_ollama.check_ollama", return_value=ollama_ok),
-            patch("scripts.setup.check_zotero.check_zotero", return_value=zotero_ok),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.setup.check_configured.check_configured", side_effect=_fake_check_configured),
+            patch("lit_monitor.setup.check_ollama.check_ollama", return_value=ollama_ok),
+            patch("lit_monitor.setup.check_zotero.check_zotero", return_value=zotero_ok),
         ):
             result = runner.invoke(main, ["--strict", "check"])
 
@@ -1417,11 +1417,11 @@ class TestStrictModeFlag:
         cfg_ok = {"key": CheckResult(True, "all good", "ok")}
         svc_ok = {"key": (True, "all good")}
         with (
-            patch("scripts.cli._make_config", return_value=MagicMock()),
-            patch("scripts.cli._load_secrets", return_value={}),
-            patch("scripts.setup.check_configured.check_configured", return_value=cfg_ok),
-            patch("scripts.setup.check_ollama.check_ollama", return_value=svc_ok),
-            patch("scripts.setup.check_zotero.check_zotero", return_value=svc_ok),
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.setup.check_configured.check_configured", return_value=cfg_ok),
+            patch("lit_monitor.setup.check_ollama.check_ollama", return_value=svc_ok),
+            patch("lit_monitor.setup.check_zotero.check_zotero", return_value=svc_ok),
         ):
             result = runner.invoke(main, ["--strict", "--verbose", "check"])
         assert result.exit_code == 0, result.output
@@ -1450,7 +1450,7 @@ class TestLoadSecretsStrictMode:
 
         _sm.set_strict(True)
         try:
-            with patch("scripts.cli._SECRETS_PATH", bad_toml):
+            with patch("lit_monitor.cli._SECRETS_PATH", bad_toml):
                 with pytest.raises((ValueError, RuntimeError), match="Could not parse secrets file"):
                     _load_secrets()
         finally:
@@ -1467,8 +1467,8 @@ class TestLoadSecretsStrictMode:
         bad_toml.write_text("this is not valid toml !!!\n")
 
         _sm.set_strict(False)
-        with patch("scripts.cli._SECRETS_PATH", bad_toml):
-            with caplog.at_level(logging.WARNING, logger="scripts.cli"):
+        with patch("lit_monitor.cli._SECRETS_PATH", bad_toml):
+            with caplog.at_level(logging.WARNING, logger="lit_monitor.cli"):
                 result = _load_secrets()
 
         assert result == {}
@@ -1483,7 +1483,7 @@ class TestDiagnoseCommand:
         # Write an invalid YAML file for paths.yaml to trigger a FAIL
         (tmp_path / "paths.yaml").write_text("this: is: invalid: yaml: :::\n")
 
-        with patch("scripts.core.config._CONFIG_DIR", tmp_path):
+        with patch("lit_monitor.core.config._CONFIG_DIR", tmp_path):
             result = runner.invoke(main, ["diagnose", "--config-only"])
 
         # Should exit non-zero because paths.yaml is malformed
@@ -1496,9 +1496,9 @@ class TestDiagnoseCommand:
         (tmp_path / "paths.yaml").write_text("key: value\n")
 
         with (
-            patch("scripts.core.config._CONFIG_DIR", tmp_path),
-            patch("scripts.setup.check_ollama.check_ollama") as mock_ollama,
-            patch("scripts.setup.check_zotero.check_zotero") as mock_zotero,
+            patch("lit_monitor.core.config._CONFIG_DIR", tmp_path),
+            patch("lit_monitor.setup.check_ollama.check_ollama") as mock_ollama,
+            patch("lit_monitor.setup.check_zotero.check_zotero") as mock_zotero,
         ):
             runner.invoke(main, ["diagnose", "--config-only"])
 
@@ -1521,7 +1521,7 @@ class TestConfigLoadGuards:
         """
         # get_config is imported lazily inside the command from this module.
         with patch(
-            "scripts.core.config.get_config",
+            "lit_monitor.core.config.get_config",
             side_effect=RuntimeError("boom: bad config"),
         ):
             result = runner.invoke(main, ["trending", "dismiss", "1"])
@@ -1542,7 +1542,7 @@ class TestConfigLoadGuards:
         """
         # get_config is imported lazily inside the command from this module.
         with patch(
-            "scripts.core.config.get_config",
+            "lit_monitor.core.config.get_config",
             side_effect=RuntimeError("boom: bad config"),
         ):
             result = runner.invoke(main, ["trending", "accept", "1"])
@@ -1557,7 +1557,7 @@ class TestConfigLoadGuards:
         """`obsidian sync --all` must exit 1 with a friendly error on config failure."""
         # _make_config is a module-level helper in scripts.cli.
         with patch(
-            "scripts.cli._make_config",
+            "lit_monitor.cli._make_config",
             side_effect=RuntimeError("boom: bad config"),
         ):
             result = runner.invoke(main, ["obsidian", "sync", "--all"])

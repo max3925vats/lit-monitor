@@ -148,7 +148,7 @@ def synthesize(
                 "metadata": {"note_title": record.get("note_title", ""), "doi": d},
             })
         # C1: reranker chain at the END — use the real cross-encoder helper
-        # (``_apply_reranker``); the previous ``from scripts.output.reranker
+        # (``_apply_reranker``); the previous ``from lit_monitor.output.reranker
         # import rerank`` raised ImportError and was silently swallowed.
         if _reranker_cfg and similar:
             from lit_monitor.output.embeddings import _apply_reranker, _reranker_enabled

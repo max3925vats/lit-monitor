@@ -91,7 +91,7 @@ def fake_st():
 def test_reranker_module_imports_without_side_effects():
     """Importing reranker.py must not download or load any model."""
     import importlib
-    mod = importlib.import_module("scripts.output.reranker")
+    mod = importlib.import_module("lit_monitor.output.reranker")
     # Module-level singleton should be None until get_reranker() is called.
     assert mod._reranker_instance is None
 
@@ -231,7 +231,7 @@ def test_find_similar_to_text_calls_reranker_when_enabled(tmp_path):
 
     cfg = _make_reranker_config(enabled=True)
 
-    with patch("scripts.output.embeddings._apply_reranker") as mock_apply:
+    with patch("lit_monitor.output.embeddings._apply_reranker") as mock_apply:
         mock_apply.return_value = [{"id": "doi1", "score": 0.9, "document": "text1", "metadata": {}}]
         result = db.find_similar_to_text(
             "query", top_k=1, rerank_with_query="query", reranker_config=cfg
@@ -252,7 +252,7 @@ def test_find_similar_to_text_skips_reranker_when_disabled(tmp_path):
 
     cfg = _make_reranker_config(enabled=False)
 
-    with patch("scripts.output.embeddings._apply_reranker") as mock_apply:
+    with patch("lit_monitor.output.embeddings._apply_reranker") as mock_apply:
         db.find_similar_to_text("query", top_k=1, rerank_with_query="query", reranker_config=cfg)
 
     mock_apply.assert_not_called()

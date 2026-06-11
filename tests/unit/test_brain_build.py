@@ -93,10 +93,10 @@ def test_brain_build_processes_papers(tmp_path):
     # M1: pipeline reads markdown attachments
     zotero_client.get_markdown_attachment.return_value = "Full paper text."
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Smith2021_Test.md")
-    with patch("scripts.pipelines.brain_build.extract_paper",
+    with patch("lit_monitor.pipelines.brain_build.extract_paper",
                return_value={"core_finding": "Key result.",
                              "core_finding_confidence": "explicit"}):
-        with patch("scripts.pipelines.brain_build.write_paper_note",
+        with patch("lit_monitor.pipelines.brain_build.write_paper_note",
                    return_value=note_path):
             summary = run_brain_build(
                 config, state_db, zotero_client, embeddings_db, llm
@@ -179,9 +179,9 @@ def test_brain_build_single_failure_continues(tmp_path):
         return "Good full text"
     zotero_client.get_markdown_attachment.side_effect = md_side_effect
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Good2021_Test.md")
-    with patch("scripts.pipelines.brain_build.extract_paper",
+    with patch("lit_monitor.pipelines.brain_build.extract_paper",
                return_value={"core_finding": "ok", "core_finding_confidence": "explicit"}):
-        with patch("scripts.pipelines.brain_build.write_paper_note",
+        with patch("lit_monitor.pipelines.brain_build.write_paper_note",
                    return_value=note_path):
             summary = run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
     assert summary.papers_failed == 1
@@ -204,10 +204,10 @@ def test_brain_build_skips_textbook_pipeline_items(tmp_path):
     zotero_client.get_collection_items.return_value = [book_item, paper_item]
     zotero_client.get_markdown_attachment.return_value = "Paper text."
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Smith2021.md")
-    with patch("scripts.pipelines.brain_build.enrich_paper", return_value={}), \
-         patch("scripts.pipelines.brain_build.extract_paper",
+    with patch("lit_monitor.pipelines.brain_build.enrich_paper", return_value={}), \
+         patch("lit_monitor.pipelines.brain_build.extract_paper",
                return_value={"core_finding": "ok", "core_finding_confidence": "explicit"}), \
-         patch("scripts.pipelines.brain_build.write_paper_note", return_value=note_path):
+         patch("lit_monitor.pipelines.brain_build.write_paper_note", return_value=note_path):
         summary = run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
     assert summary.papers_processed == 1   # journalArticle processed
     assert summary.papers_skipped == 1     # book skipped
@@ -258,11 +258,11 @@ def test_brain_build_review_detection_sets_source_type(tmp_path):
     zotero_client.get_collection_items.return_value = [item]
     zotero_client.get_markdown_attachment.return_value = "Review paper text."
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Smith2021_Review.md")
-    with patch("scripts.pipelines.brain_build.enrich_paper",
+    with patch("lit_monitor.pipelines.brain_build.enrich_paper",
                return_value={"s2_publication_types": ["Review"]}), \
-         patch("scripts.pipelines.brain_build.extract_paper",
+         patch("lit_monitor.pipelines.brain_build.extract_paper",
                return_value={"core_finding": "ok", "core_finding_confidence": "explicit"}), \
-         patch("scripts.pipelines.brain_build.write_paper_note", return_value=note_path):
+         patch("lit_monitor.pipelines.brain_build.write_paper_note", return_value=note_path):
         summary = run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
     assert summary.papers_processed == 1
     record = state_db.get_paper("10.1000/review")
@@ -327,9 +327,9 @@ def test_brain_build_partial_resume_only_reruns_incomplete_phases(tmp_path):
             "novelty_statement": "New complex result",
             "novelty_statement_confidence": "explicit",
         }
-    with patch("scripts.pipelines.brain_build.extract_paper",
+    with patch("lit_monitor.pipelines.brain_build.extract_paper",
                side_effect=mock_extract_paper):
-        with patch("scripts.pipelines.brain_build.write_paper_note",
+        with patch("lit_monitor.pipelines.brain_build.write_paper_note",
                    return_value=note_path):
             summary = run_brain_build(
                 config, state_db, zotero_client, embeddings_db, llm,
@@ -364,11 +364,11 @@ def test_pass_strategy_all_calls_extract_fields_not_extract_paper(tmp_path):
 
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "K1_Test.md")
 
-    with patch("scripts.pipelines.brain_build.extract_fields",
+    with patch("lit_monitor.pipelines.brain_build.extract_fields",
                return_value={"core_finding": "k1 result",
                              "core_finding_confidence": "explicit"}) as mock_ef, \
-         patch("scripts.pipelines.brain_build.extract_paper") as mock_ep, \
-         patch("scripts.pipelines.brain_build.write_paper_note", return_value=note_path):
+         patch("lit_monitor.pipelines.brain_build.extract_paper") as mock_ep, \
+         patch("lit_monitor.pipelines.brain_build.write_paper_note", return_value=note_path):
         run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
 
     mock_ef.assert_called_once()
@@ -394,7 +394,7 @@ def test_warning_on_pass_strategy_all_with_pass1_model(tmp_path, caplog):
     zotero_client = MagicMock()
     zotero_client.get_collection_items.return_value = []  # no items — just boot the pipeline
 
-    with caplog.at_level(logging.WARNING, logger="scripts.pipelines.brain_build"):
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.pipelines.brain_build"):
         run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
 
     assert any("pass_strategy='all'" in r.message and "pass1_model" in r.message
@@ -421,7 +421,7 @@ def test_no_doi_items_accumulated_when_crossref_fails(tmp_path):
     zotero_client.get_collection_items.return_value = [no_doi_item]
 
     # CrossRef fallback returns None → item should land in no_doi_items
-    with patch("scripts.pipelines.brain_build.resolve_doi", return_value=None):
+    with patch("lit_monitor.pipelines.brain_build.resolve_doi", return_value=None):
         summary = run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
 
     assert len(summary.no_doi_items) == 1
@@ -450,11 +450,11 @@ def test_crossref_resolved_doi_is_accumulated(tmp_path):
     zotero_client.get_markdown_attachment.return_value = "Full paper text."
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Paper2021.md")
 
-    with patch("scripts.pipelines.brain_build.resolve_doi", return_value="10.1/resolved"), \
-         patch("scripts.pipelines.brain_build.extract_paper",
+    with patch("lit_monitor.pipelines.brain_build.resolve_doi", return_value="10.1/resolved"), \
+         patch("lit_monitor.pipelines.brain_build.extract_paper",
                return_value={"core_finding": "ok",
                              "core_finding_confidence": "explicit"}), \
-         patch("scripts.pipelines.brain_build.write_paper_note", return_value=note_path):
+         patch("lit_monitor.pipelines.brain_build.write_paper_note", return_value=note_path):
         summary = run_brain_build(
             config, state_db, zotero_client, embeddings_db, llm
         )
@@ -490,9 +490,9 @@ def test_extraction_quality_flagged_when_many_chunks(tmp_path):
         "_max_n_chunks": 5,
     }
 
-    with patch("scripts.pipelines.brain_build.extract_paper",
+    with patch("lit_monitor.pipelines.brain_build.extract_paper",
                return_value=high_chunk_extraction), \
-         patch("scripts.pipelines.brain_build.write_paper_note", return_value=note_path):
+         patch("lit_monitor.pipelines.brain_build.write_paper_note", return_value=note_path):
         run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
 
     stored = state_db.get_extraction_json("10.1/chunky")
@@ -523,9 +523,9 @@ def test_extraction_quality_not_flagged_when_few_chunks(tmp_path):
         "_max_n_chunks": 2,
     }
 
-    with patch("scripts.pipelines.brain_build.extract_paper",
+    with patch("lit_monitor.pipelines.brain_build.extract_paper",
                return_value=small_extraction), \
-         patch("scripts.pipelines.brain_build.write_paper_note", return_value=note_path):
+         patch("lit_monitor.pipelines.brain_build.write_paper_note", return_value=note_path):
         run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
 
     stored = state_db.get_extraction_json("10.1/small")
@@ -567,12 +567,12 @@ def test_pass_strategy_all_review_dispatches_with_review_schema(tmp_path):
         captured_kwargs.update(kwargs)
         return {"core_finding": "review result", "core_finding_confidence": "explicit"}
 
-    with patch("scripts.pipelines.brain_build.enrich_paper",
+    with patch("lit_monitor.pipelines.brain_build.enrich_paper",
                return_value={"s2_publication_types": ["Review"]}), \
-         patch("scripts.pipelines.brain_build.detect_review", return_value=True), \
-         patch("scripts.pipelines.brain_build.extract_fields",
+         patch("lit_monitor.pipelines.brain_build.detect_review", return_value=True), \
+         patch("lit_monitor.pipelines.brain_build.extract_fields",
                side_effect=_capture_extract_fields), \
-         patch("scripts.pipelines.brain_build.write_paper_note", return_value=note_path):
+         patch("lit_monitor.pipelines.brain_build.write_paper_note", return_value=note_path):
         run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
 
     assert captured_kwargs.get("content_type") == "review", (
@@ -610,7 +610,7 @@ def test_rate_limit_abort_after_three_consecutive_429s(tmp_path):
 
     # P4.5: a domain exception, not SystemExit — and definitely not SystemExit.
     with pytest.raises(RateLimitExhausted):
-        with patch("scripts.pipelines.brain_build.time.sleep"):  # skip actual sleep
+        with patch("lit_monitor.pipelines.brain_build.time.sleep"):  # skip actual sleep
             run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
     # The run log should record status='rate_limited', not 'error'
     import sqlite3
@@ -657,10 +657,10 @@ def test_brain_build_filters_attachment_and_note_items(tmp_path):
     zotero_client.get_markdown_attachment.return_value = "Paper text."
 
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Smith2021.md")
-    with patch("scripts.pipelines.brain_build.enrich_paper", return_value={}), \
-         patch("scripts.pipelines.brain_build.extract_paper",
+    with patch("lit_monitor.pipelines.brain_build.enrich_paper", return_value={}), \
+         patch("lit_monitor.pipelines.brain_build.extract_paper",
                return_value={"core_finding": "ok", "core_finding_confidence": "explicit"}), \
-         patch("scripts.pipelines.brain_build.write_paper_note", return_value=note_path):
+         patch("lit_monitor.pipelines.brain_build.write_paper_note", return_value=note_path):
         summary = run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
 
     # Only the one parent item should be processed; attachments/notes ignored entirely.
@@ -702,10 +702,10 @@ def test_max_papers_counts_processed_not_attempted(tmp_path):
     zotero_client.get_markdown_attachment.side_effect = md_side_effect
 
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Smith2021.md")
-    with patch("scripts.pipelines.brain_build.enrich_paper", return_value={}), \
-         patch("scripts.pipelines.brain_build.extract_paper",
+    with patch("lit_monitor.pipelines.brain_build.enrich_paper", return_value={}), \
+         patch("lit_monitor.pipelines.brain_build.extract_paper",
                return_value={"core_finding": "ok", "core_finding_confidence": "explicit"}), \
-         patch("scripts.pipelines.brain_build.write_paper_note", return_value=note_path):
+         patch("lit_monitor.pipelines.brain_build.write_paper_note", return_value=note_path):
         summary = run_brain_build(
             config, state_db, zotero_client, embeddings_db, llm, max_papers=1
         )
@@ -761,10 +761,10 @@ def test_brain_build_all_library_uses_full_library_endpoint(tmp_path):
     zotero_client.get_collection_items.return_value = []  # should NOT be called
     zotero_client.get_markdown_attachment.return_value = "Full paper text."
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Smith2021_Test.md")
-    with patch("scripts.pipelines.brain_build.extract_paper",
+    with patch("lit_monitor.pipelines.brain_build.extract_paper",
                return_value={"core_finding": "Key result.",
                              "core_finding_confidence": "explicit"}):
-        with patch("scripts.pipelines.brain_build.write_paper_note",
+        with patch("lit_monitor.pipelines.brain_build.write_paper_note",
                    return_value=note_path):
             summary = run_brain_build(
                 config, state_db, zotero_client, embeddings_db, llm,
@@ -789,9 +789,9 @@ def test_brain_build_default_uses_collection_endpoint(tmp_path):
     zotero_client.get_all_library_items.return_value = []  # should NOT be called
     zotero_client.get_markdown_attachment.return_value = "Full paper text."
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Foo.md")
-    with patch("scripts.pipelines.brain_build.extract_paper",
+    with patch("lit_monitor.pipelines.brain_build.extract_paper",
                return_value={"core_finding": "X", "core_finding_confidence": "explicit"}):
-        with patch("scripts.pipelines.brain_build.write_paper_note",
+        with patch("lit_monitor.pipelines.brain_build.write_paper_note",
                    return_value=note_path):
             run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
 

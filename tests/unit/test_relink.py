@@ -432,7 +432,7 @@ class TestG9C1Reranker:
     """G9 C1+C3: hybrid mode actually invokes the cross-encoder reranker
     with NON-EMPTY documents.
 
-    Pre-fix, ``from scripts.output.reranker import rerank`` raised ImportError
+    Pre-fix, ``from lit_monitor.output.reranker import rerank`` raised ImportError
     on every call (the symbol does not exist) and was silently swallowed by
     ``except Exception``. Even if the import had worked, candidate dicts had
     ``"document": ""`` so the cross-encoder scored (query, "") — pure noise.
@@ -498,7 +498,7 @@ class TestG9C1Reranker:
         mock_reranker.rerank.side_effect = _fake_rerank
 
         note_path = _make_note_g9(tmp_path, "10.0/seed")
-        with patch("scripts.output.reranker.get_reranker", return_value=mock_reranker):
+        with patch("lit_monitor.output.reranker.get_reranker", return_value=mock_reranker):
             relink_note(
                 note_path, embeddings_db, state_db,
                 rag_mode="hybrid", graph_db=graph_db, config=config,
@@ -541,10 +541,10 @@ class TestG9C4W4GraphGating:
         runner = CliRunner()
         # Patch safe_graph_db at its origin module to return None, simulating a
         # missing [graph] extra. The CLI imports it inside the function body.
-        with patch("scripts.graph.safe_graph_db", return_value=None), \
-             patch("scripts.cli._make_config") as mock_cfg, \
-             patch("scripts.cli._make_state_db", return_value=MagicMock()), \
-             patch("scripts.cli._make_embeddings_db", return_value=MagicMock()):
+        with patch("lit_monitor.graph.safe_graph_db", return_value=None), \
+             patch("lit_monitor.cli._make_config") as mock_cfg, \
+             patch("lit_monitor.cli._make_state_db", return_value=MagicMock()), \
+             patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()):
             mock_cfg.return_value = SimpleNamespace(
                 retrieval=SimpleNamespace(default_mode="vector"),
                 reranker=None,

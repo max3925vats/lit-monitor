@@ -193,7 +193,7 @@ class TestPushTagsToZotero:
 
         Migrated here from tests/integration/test_v09_e2e.py, where it was
         permanently skipped by a broken ``pytest.importorskip(
-        "scripts.clustering.writeback")`` (wrong module — the real module
+        "lit_monitor.clustering.writeback")`` (wrong module — the real module
         is ``write_back``) plus a call to a non-existent ``write_back_tags``.
         It is a pure unit test (mocked state_db + zotero_client, no live
         services), so it lives in the unit suite and runs unconditionally.

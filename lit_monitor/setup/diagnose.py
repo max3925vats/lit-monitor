@@ -20,7 +20,7 @@ from typing import Any
 import yaml as _yaml
 
 # Import the source module rather than the attribute so test-suite
-# patches like ``patch("scripts.core.config._config_mod._CONFIG_DIR", tmp_path)``
+# patches like ``patch("lit_monitor.core.config._config_mod._CONFIG_DIR", tmp_path)``
 # affect every read inside the section helpers below. Binding the name
 # at import time would freeze the path before the patch applies.
 from lit_monitor.core import config as _config_mod

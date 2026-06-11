@@ -22,7 +22,7 @@ def client(tmp_path, monkeypatch):
 
 def test_get_corpus_renders_table(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.corpus._list_papers",
+        "lit_monitor.server.routes.corpus._list_papers",
         lambda **k: (
             [
                 {
@@ -53,7 +53,7 @@ def test_corpus_search_passes_through(client, monkeypatch):
         seen.update(k)
         return ([], 0)
 
-    monkeypatch.setattr("scripts.server.routes.corpus._list_papers", _fake)
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._list_papers", _fake)
     client.get("/corpus?search=carta&source_type=review&status_gap=missing_graph")
     assert (
         seen["search"] == "carta"
@@ -64,7 +64,7 @@ def test_corpus_search_passes_through(client, monkeypatch):
 
 def test_corpus_empty_state(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.corpus._list_papers", lambda **k: ([], 0)
+        "lit_monitor.server.routes.corpus._list_papers", lambda **k: ([], 0)
     )
     r = client.get("/corpus")
     assert "brain-build" in r.text.lower()
@@ -79,10 +79,10 @@ def test_nav_explore_has_corpus(client):
 
 
 def test_corpus_list_theme_dropdown_populated(client, monkeypatch):
-    monkeypatch.setattr("scripts.server.routes.corpus._list_themes",
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._list_themes",
         lambda: [{"id": 1, "display_name": "Chromatography"},
                  {"id": 2, "display_name": "Filtration"}])
-    monkeypatch.setattr("scripts.server.routes.corpus._list_papers", lambda **k: ([], 0))
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._list_papers", lambda **k: ([], 0))
     r = client.get("/corpus")
     assert r.status_code == 200
     assert 'name="theme"' in r.text and "Chromatography" in r.text and "Filtration" in r.text
@@ -90,8 +90,8 @@ def test_corpus_list_theme_dropdown_populated(client, monkeypatch):
 
 def test_corpus_list_no_themes_first_run_message_not_broken(client, monkeypatch):
     # FIRST RUN: no clusters → friendly message, NOT an empty <select>, page still renders fully
-    monkeypatch.setattr("scripts.server.routes.corpus._list_themes", lambda: [])
-    monkeypatch.setattr("scripts.server.routes.corpus._list_papers", lambda **k: ([], 0))
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._list_themes", lambda: [])
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._list_papers", lambda **k: ([], 0))
     r = client.get("/corpus")
     assert r.status_code == 200
     # the rest of the filter UI still works (search box present):
@@ -105,8 +105,8 @@ def test_corpus_list_themes_failure_is_graceful(client, monkeypatch):
     def _boom():
         raise RuntimeError("db gone")
 
-    monkeypatch.setattr("scripts.server.routes.corpus._list_themes", _boom)
-    monkeypatch.setattr("scripts.server.routes.corpus._list_papers", lambda **k: ([], 0))
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._list_themes", _boom)
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._list_papers", lambda **k: ([], 0))
     r = client.get("/corpus")
     assert r.status_code == 200  # graceful — page renders without the theme filter
 
@@ -116,7 +116,7 @@ def test_corpus_list_themes_failure_is_graceful(client, monkeypatch):
 
 def test_get_corpus_detail_renders_extraction(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.corpus._get_paper_row",
+        "lit_monitor.server.routes.corpus._get_paper_row",
         lambda doi: {
             "doi": doi,
             "title": "Carta 2009",
@@ -133,7 +133,7 @@ def test_get_corpus_detail_renders_extraction(client, monkeypatch):
         },
     )
     monkeypatch.setattr(
-        "scripts.server.routes.corpus._get_score_breakdown", lambda doi: None
+        "lit_monitor.server.routes.corpus._get_score_breakdown", lambda doi: None
     )
     r = client.get("/corpus/10.1/carta")
     assert r.status_code == 200
@@ -147,7 +147,7 @@ def test_get_corpus_detail_renders_extraction(client, monkeypatch):
 
 def test_corpus_detail_404_when_absent(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.corpus._get_paper_row", lambda doi: None
+        "lit_monitor.server.routes.corpus._get_paper_row", lambda doi: None
     )
     r = client.get("/corpus/10.1/missing")
     assert r.status_code == 404
@@ -155,7 +155,7 @@ def test_corpus_detail_404_when_absent(client, monkeypatch):
 
 def test_corpus_detail_xss_escaped(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.corpus._get_paper_row",
+        "lit_monitor.server.routes.corpus._get_paper_row",
         lambda doi: {
             "doi": doi,
             "title": "<script>alert(1)</script>",
@@ -169,7 +169,7 @@ def test_corpus_detail_xss_escaped(client, monkeypatch):
         },
     )
     monkeypatch.setattr(
-        "scripts.server.routes.corpus._get_score_breakdown", lambda doi: None
+        "lit_monitor.server.routes.corpus._get_score_breakdown", lambda doi: None
     )
     r = client.get("/corpus/10.1/x")
     # Executable forms must NOT appear (real angle brackets = would execute):
@@ -183,12 +183,12 @@ def test_corpus_detail_xss_escaped(client, monkeypatch):
 
 
 def test_corpus_detail_obsidian_deeplink(client, monkeypatch):
-    monkeypatch.setattr("scripts.server.routes.corpus._get_paper_row",
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._get_paper_row",
         lambda doi: {"doi":doi,"title":"X","authors":[],"year":None,"journal":None,
                      "source_type":"paper","zotero_key":None,
                      "note_path":"Literature/Papers/X.md","extraction":{}})
-    monkeypatch.setattr("scripts.server.routes.corpus._get_score_breakdown", lambda d: None)
-    monkeypatch.setattr("scripts.server.routes.corpus._vault_name", lambda: "MyVault")
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._get_score_breakdown", lambda d: None)
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._vault_name", lambda: "MyVault")
     r = client.get("/corpus/10.1/x")
     assert r.status_code == 200
     assert "obsidian://open?vault=MyVault" in r.text
@@ -196,22 +196,22 @@ def test_corpus_detail_obsidian_deeplink(client, monkeypatch):
 
 
 def test_corpus_detail_no_obsidian_link_when_no_note(client, monkeypatch):
-    monkeypatch.setattr("scripts.server.routes.corpus._get_paper_row",
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._get_paper_row",
         lambda doi: {"doi":doi,"title":"X","authors":[],"year":None,"journal":None,
                      "source_type":"paper","zotero_key":None,"note_path":None,"extraction":{}})
-    monkeypatch.setattr("scripts.server.routes.corpus._get_score_breakdown", lambda d: None)
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._get_score_breakdown", lambda d: None)
     r = client.get("/corpus/10.1/x")
     assert r.status_code == 200 and "obsidian://open" not in r.text  # no note → no link, no crash
 
 
 def test_corpus_detail_absolute_note_path_made_relative(client, monkeypatch):
-    monkeypatch.setattr("scripts.server.routes.corpus._get_paper_row",
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._get_paper_row",
         lambda doi: {"doi":doi,"title":"X","authors":[],"year":None,"journal":None,
                      "source_type":"paper","zotero_key":None,
                      "note_path":"/Users/me/MyVault/Literature/Papers/X.md","extraction":{}})
-    monkeypatch.setattr("scripts.server.routes.corpus._get_score_breakdown", lambda d: None)
-    monkeypatch.setattr("scripts.server.routes.corpus._vault_path", lambda: "/Users/me/MyVault")
-    monkeypatch.setattr("scripts.server.routes.corpus._vault_name", lambda: "MyVault")
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._get_score_breakdown", lambda d: None)
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._vault_path", lambda: "/Users/me/MyVault")
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._vault_name", lambda: "MyVault")
     r = client.get("/corpus/10.1/x")
     # absolute path under the vault → file param is vault-relative, not the absolute path
     assert "file=Literature%2FPapers%2FX.md" in r.text or "file=Literature/Papers/X.md" in r.text
@@ -223,7 +223,7 @@ def test_corpus_detail_absolute_note_path_made_relative(client, monkeypatch):
 def test_corpus_related_fragment_renders(client, monkeypatch):
     # _get_related returns the H1 shape: list of {doi, score} (no title field).
     monkeypatch.setattr(
-        "scripts.server.routes.corpus._get_related",
+        "lit_monitor.server.routes.corpus._get_related",
         lambda doi, mode, k: [{"doi": "10.2/b", "title": "Related paper", "score": 0.9}],
     )
     r = client.get("/corpus/10.1/a/related")
@@ -238,7 +238,7 @@ def test_corpus_related_fragment_renders(client, monkeypatch):
 
 def test_corpus_graph_fragment_renders(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.corpus._get_paper_snapshot",
+        "lit_monitor.server.routes.corpus._get_paper_snapshot",
         lambda doi: {
             "metadata": {"doi": doi, "title": "Seed", "year": 2009, "journal": "J"},
             "entities_by_type": {
@@ -270,7 +270,7 @@ def test_corpus_fragments_graceful_when_graph_absent(client, monkeypatch):
     # safe_graph_db, so they return None → graph-backfill notice. (Vector mode
     # no longer touches the graph — see PF-1 tests below.)
     monkeypatch.setattr(
-        "scripts.server.routes.corpus.safe_graph_db", lambda: None
+        "lit_monitor.server.routes.corpus.safe_graph_db", lambda: None
     )
     r_rel = client.get("/corpus/10.1/a/related?mode=graph")
     r_graph = client.get("/corpus/10.1/a/graph")
@@ -287,8 +287,8 @@ def test_corpus_related_error_is_generic_no_leak(client, monkeypatch, caplog):
     def _boom(doi, mode, k):
         raise RuntimeError(secret)
 
-    monkeypatch.setattr("scripts.server.routes.corpus._get_related", _boom)
-    with caplog.at_level(logging.ERROR, logger="scripts.server.routes.corpus"):
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._get_related", _boom)
+    with caplog.at_level(logging.ERROR, logger="lit_monitor.server.routes.corpus"):
         r = client.get("/corpus/10.1/a/related")
     assert r.status_code == 200  # fragment, not a 500 page
     assert secret not in r.text  # no leak to the browser
@@ -303,7 +303,7 @@ def test_related_vector_mode_labels_vector_source(client, monkeypatch):
     # template must LABEL the provenance so a vector hit is never mistaken for a
     # graph relationship ("no lies" requirement).
     monkeypatch.setattr(
-        "scripts.server.routes.corpus._get_related",
+        "lit_monitor.server.routes.corpus._get_related",
         lambda doi, mode, k: (
             [{"doi": "10.2/b", "title": "Sim paper", "score": 0.91, "source": "vector"}]
             if mode == "vector"
@@ -318,7 +318,7 @@ def test_related_vector_mode_labels_vector_source(client, monkeypatch):
 
 def test_related_graph_mode_labels_graph_source(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.corpus._get_related",
+        "lit_monitor.server.routes.corpus._get_related",
         lambda doi, mode, k: [
             {"doi": "10.3/c", "title": "G", "score": 0.8, "source": "graph"}
         ],
@@ -330,7 +330,7 @@ def test_related_graph_mode_labels_graph_source(client, monkeypatch):
 
 def test_related_graph_mode_without_graph_notice(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.corpus._get_related", lambda d, m, k: None
+        "lit_monitor.server.routes.corpus._get_related", lambda d, m, k: None
     )
     r = client.get("/corpus/10.1/a/related?mode=graph")
     assert r.status_code == 200
@@ -341,7 +341,7 @@ def test_related_vector_no_embeddings_shows_neighbour_notice(client, monkeypatch
     # Vector mode with no embeddings available → distinct empty-state notice,
     # NOT the graph-backfill notice (vector path never touches the graph).
     monkeypatch.setattr(
-        "scripts.server.routes.corpus._get_related", lambda d, m, k: None
+        "lit_monitor.server.routes.corpus._get_related", lambda d, m, k: None
     )
     r = client.get("/corpus/10.1/a/related?mode=vector")
     assert r.status_code == 200

@@ -24,12 +24,12 @@ def client_with_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Test
 
     fake_cfg = MagicMock()
     fake_cfg.state_db.path = str(db_path)
-    monkeypatch.setattr("scripts.core.config.get_config", lambda: fake_cfg)
+    monkeypatch.setattr("lit_monitor.core.config.get_config", lambda: fake_cfg)
 
     fake_runtime = MagicMock()
     fake_runtime.state_db = db
     monkeypatch.setattr(
-        "scripts.server.routes.domain.get_runtime",
+        "lit_monitor.server.routes.domain.get_runtime",
         lambda: fake_runtime,
     )
 
@@ -104,7 +104,7 @@ class TestPostAnalyze:
         )
         # Patch the symbol AS IMPORTED IN routes/domain.py
         monkeypatch.setattr(
-            "scripts.server.routes.domain.analyze_domain",
+            "lit_monitor.server.routes.domain.analyze_domain",
             lambda text: None,
         )
         r = client_with_runtime.post("/api/domain/analyze")
@@ -131,7 +131,7 @@ class TestPostAnalyze:
             "exclusions": [],
         }
         monkeypatch.setattr(
-            "scripts.server.routes.domain.analyze_domain",
+            "lit_monitor.server.routes.domain.analyze_domain",
             lambda text: fake_extraction,
         )
         r = client_with_runtime.post("/api/domain/analyze")
@@ -183,7 +183,7 @@ class TestConfigDirResolution:
             }
 
         monkeypatch.setattr(
-            "scripts.server.routes.domain.analyze_domain", _capture
+            "lit_monitor.server.routes.domain.analyze_domain", _capture
         )
 
         r = client_with_runtime.post("/api/domain/analyze")

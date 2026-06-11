@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from typing import Any
 
 # Import the modules (not the functions) so monkeypatching at the source
-# module path — e.g. ``patch("scripts.setup.check_configured.check_configured")``
+# module path — e.g. ``patch("lit_monitor.setup.check_configured.check_configured")``
 # in the existing CLI test suite — continues to work transparently.
 from lit_monitor.setup import check_configured as _check_configured_mod
 from lit_monitor.setup import check_graph as _check_graph_mod

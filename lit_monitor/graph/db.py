@@ -24,7 +24,7 @@ On ``__init__``:
    migrations run and the new version is returned.
 4. The sentinel file is written back with the current SCHEMA_VERSION.
 
-The kuzu import is deferred so that ``import scripts.graph`` succeeds even
+The kuzu import is deferred so that ``import lit_monitor.graph`` succeeds even
 when kuzu is not installed.  Only calling ``GraphDB(...)`` will raise an
 ``ImportError`` in that case — non-graph users see no disruption.
 """

@@ -38,7 +38,7 @@ def test_sandbox_dois_empty(
     # takes its short-circuit empty path.
     fake_path = tmp_path / "state_dev.db"
     monkeypatch.setattr(
-        "scripts.server.dev_sandbox.SANDBOX_STATE_DB_PATH", fake_path
+        "lit_monitor.server.dev_sandbox.SANDBOX_STATE_DB_PATH", fake_path
     )
     resp = client.get("/api/dev/sandbox-dois")
     assert resp.status_code == 200
@@ -67,7 +67,7 @@ def test_sandbox_dois_lists_rows(
     )
 
     monkeypatch.setattr(
-        "scripts.server.dev_sandbox.SANDBOX_STATE_DB_PATH", fake_db_path
+        "lit_monitor.server.dev_sandbox.SANDBOX_STATE_DB_PATH", fake_db_path
     )
     resp = client.get("/api/dev/sandbox-dois")
     assert resp.status_code == 200
@@ -110,13 +110,13 @@ def test_relink_endpoint_happy_path(
     fake_edb = MagicMock()
 
     with patch(
-        "scripts.server.dev_sandbox.sandbox_state_db", return_value=fake_sdb
+        "lit_monitor.server.dev_sandbox.sandbox_state_db", return_value=fake_sdb
     ), patch(
-        "scripts.server.dev_sandbox.sandbox_embeddings_db", return_value=fake_edb
+        "lit_monitor.server.dev_sandbox.sandbox_embeddings_db", return_value=fake_edb
     ), patch(
-        "scripts.obsidian_tools.relink.relink_note"
+        "lit_monitor.obsidian_tools.relink.relink_note"
     ) as mock_relink, patch(
-        "scripts.core.config.get_config", return_value=MagicMock()
+        "lit_monitor.core.config.get_config", return_value=MagicMock()
     ):
         resp = client.post("/api/dev/relink", data={"doi": "10.0/test"})
 
@@ -145,13 +145,13 @@ def test_re_extract_phases_parsed_correctly(
     }
 
     with patch(
-        "scripts.server.dev_sandbox.sandbox_state_db", return_value=fake_sdb
+        "lit_monitor.server.dev_sandbox.sandbox_state_db", return_value=fake_sdb
     ), patch(
-        "scripts.obsidian_tools.re_extract.re_extract"
+        "lit_monitor.obsidian_tools.re_extract.re_extract"
     ) as mock_re_extract, patch(
-        "scripts.llm.llm_client.get_client", return_value=MagicMock()
+        "lit_monitor.llm.llm_client.get_client", return_value=MagicMock()
     ), patch(
-        "scripts.core.config.get_config", return_value=MagicMock()
+        "lit_monitor.core.config.get_config", return_value=MagicMock()
     ):
         mock_re_extract.return_value = {
             "title": "x",
@@ -184,16 +184,16 @@ def test_synthesize_with_topic(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_edb = MagicMock()
 
     with patch(
-        "scripts.server.dev_sandbox.sandbox_state_db", return_value=fake_sdb
+        "lit_monitor.server.dev_sandbox.sandbox_state_db", return_value=fake_sdb
     ), patch(
-        "scripts.server.dev_sandbox.sandbox_embeddings_db", return_value=fake_edb
+        "lit_monitor.server.dev_sandbox.sandbox_embeddings_db", return_value=fake_edb
     ), patch(
-        "scripts.obsidian_tools.synthesize.synthesize",
+        "lit_monitor.obsidian_tools.synthesize.synthesize",
         return_value="/tmp/vault/Literature/Connections/Synthesis_UFDF.md",
     ) as mock_syn, patch(
-        "scripts.llm.llm_client.get_client", return_value=MagicMock()
+        "lit_monitor.llm.llm_client.get_client", return_value=MagicMock()
     ), patch(
-        "scripts.core.config.get_config", return_value=MagicMock()
+        "lit_monitor.core.config.get_config", return_value=MagicMock()
     ):
         resp = client.post("/api/dev/synthesize", data={"topic": "UFDF"})
 

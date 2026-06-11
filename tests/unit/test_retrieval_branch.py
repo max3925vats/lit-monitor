@@ -217,7 +217,7 @@ def test_expand_query_falls_back_to_topic_on_llm_failure():
     llm.complete.side_effect = RuntimeError("LLM offline")
 
     # Patch load_prompt to avoid file-system dependency in unit tests.
-    with patch("scripts.obsidian_tools.synthesize.load_prompt") as mock_lp:
+    with patch("lit_monitor.obsidian_tools.synthesize.load_prompt") as mock_lp:
         mock_lp.return_value.system = "You are a helper."
         mock_lp.return_value.render_user.return_value = "Expand: topic"
         mock_lp.return_value.max_tokens = 256
@@ -239,7 +239,7 @@ def test_expand_query_raises_under_strict():
     llm.complete.side_effect = RuntimeError("LLM offline")
 
     _sm.set_strict(True)
-    with patch("scripts.obsidian_tools.synthesize.load_prompt") as mock_lp:
+    with patch("lit_monitor.obsidian_tools.synthesize.load_prompt") as mock_lp:
         mock_lp.return_value.system = "You are a helper."
         mock_lp.return_value.render_user.return_value = "Expand: topic"
         mock_lp.return_value.max_tokens = 256
@@ -256,7 +256,7 @@ def test_expand_query_returns_list_on_success():
     expanded_json = '["membrane fouling", "biofouling", "flux decline"]'
     llm.complete.return_value = expanded_json
 
-    with patch("scripts.obsidian_tools.synthesize.load_prompt") as mock_lp:
+    with patch("lit_monitor.obsidian_tools.synthesize.load_prompt") as mock_lp:
         mock_lp.return_value.system = "system text"
         mock_lp.return_value.render_user.return_value = "user text"
         mock_lp.return_value.max_tokens = 256
@@ -283,7 +283,7 @@ def test_expand_query_bad_json_falls_back():
     llm = MagicMock()
     llm.complete.return_value = "Sorry, I cannot help with that."
 
-    with patch("scripts.obsidian_tools.synthesize.load_prompt") as mock_lp:
+    with patch("lit_monitor.obsidian_tools.synthesize.load_prompt") as mock_lp:
         mock_lp.return_value.system = "system text"
         mock_lp.return_value.render_user.return_value = "user text"
         mock_lp.return_value.max_tokens = 256
@@ -390,8 +390,8 @@ def test_synthesize_graph_mode_calls_expand_query(tmp_path):
         expand_calls.append(topic)
         return [topic]
 
-    with patch("scripts.obsidian_tools.synthesize._expand_query", side_effect=fake_expand), \
-         patch("scripts.retrieval.branch.retrieve_doi_candidates",
+    with patch("lit_monitor.obsidian_tools.synthesize._expand_query", side_effect=fake_expand), \
+         patch("lit_monitor.retrieval.branch.retrieve_doi_candidates",
                return_value=[("10.1/related", 0.8)]):
         synthesize(
             "protein filtration", config, state_db, embeddings_db, llm,
@@ -426,7 +426,7 @@ def test_synthesize_vector_mode_unchanged(tmp_path):
         {"id": "10.1/r", "score": 0.88, "document": "", "metadata": {}}
     ]
 
-    with patch("scripts.obsidian_tools.synthesize._expand_query") as mock_expand:
+    with patch("lit_monitor.obsidian_tools.synthesize._expand_query") as mock_expand:
         note_path = synthesize(
             "ultrafiltration", config, state_db, embeddings_db, llm,
             rag_mode="vector",

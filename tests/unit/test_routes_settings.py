@@ -23,7 +23,7 @@ from fastapi.testclient import TestClient
 from lit_monitor.server.routes.settings import router as settings_router
 from lit_monitor.server.runtime import reset_runtime
 
-TEMPLATES_DIR = Path(__file__).parents[2] / "scripts" / "server" / "templates"
+TEMPLATES_DIR = Path(__file__).parents[2] / "lit_monitor" / "server" / "templates"
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +74,7 @@ def _make_client(config_path=None) -> TestClient:
 class TestSettingsPage:
     def test_renders_200(self):
         with patch(
-            "scripts.server.routes.settings._load_extraction_config",
+            "lit_monitor.server.routes.settings._load_extraction_config",
             return_value={"ranking": {"semantic_weight": 0.5}},
         ):
             client = _make_client()
@@ -86,7 +86,7 @@ class TestSettingsPage:
         import re
 
         with patch(
-            "scripts.server.routes.settings._load_extraction_config",
+            "lit_monitor.server.routes.settings._load_extraction_config",
             return_value={
                 "web_ui": {"show_feedback_buttons": True},
             },
@@ -110,7 +110,7 @@ class TestSettingsPage:
         import re
 
         with patch(
-            "scripts.server.routes.settings._load_extraction_config",
+            "lit_monitor.server.routes.settings._load_extraction_config",
             return_value={
                 "web_ui": {"show_feedback_buttons": False},
             },
@@ -137,7 +137,7 @@ class TestSettingsPost:
         config_path.write_text("ranking:\n  semantic_weight: 0.4\n", encoding="utf-8")
 
         with patch(
-            "scripts.server.routes.settings.safe_save_settings_section"
+            "lit_monitor.server.routes.settings.safe_save_settings_section"
         ) as mock_save:
             client = _make_client()
             r = client.post(
@@ -152,7 +152,7 @@ class TestSettingsPost:
 
     def test_unknown_section_400(self):
         with patch(
-            "scripts.server.routes.settings.safe_save_settings_section",
+            "lit_monitor.server.routes.settings.safe_save_settings_section",
             side_effect=ValueError("unknown section: 'bad_section'"),
         ):
             client = _make_client()
@@ -200,10 +200,10 @@ class TestSettingsPost:
 
         secret = "/Users/secret/config/extraction.yaml"
         with caplog.at_level(
-            logging.ERROR, logger="scripts.server.routes.settings"
+            logging.ERROR, logger="lit_monitor.server.routes.settings"
         ):
             with patch(
-                "scripts.server.routes.settings.safe_save_settings_section",
+                "lit_monitor.server.routes.settings.safe_save_settings_section",
                 side_effect=OSError(f"[Errno 13] Permission denied: '{secret}'"),
             ):
                 client = _make_client()

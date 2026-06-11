@@ -480,7 +480,7 @@ class TestWebUIPanel:
         rt = MagicMock()
         rt.state_db = db
 
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             client = TestClient(create_app())
             r = client.get(f"/discovery/{run_id}")
 
@@ -499,7 +499,7 @@ class TestWebUIPanel:
         rt = MagicMock()
         rt.state_db = db
 
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             client = TestClient(create_app())
             r = client.get(f"/discovery/{run_id}")
 
@@ -532,7 +532,7 @@ class TestWebUIPanel:
         rt = MagicMock()
         rt.state_db = db
 
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             client = TestClient(create_app())
             r = client.get(f"/discovery/{run_id}")
 

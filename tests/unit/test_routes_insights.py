@@ -28,7 +28,7 @@ from fastapi.testclient import TestClient
 from lit_monitor.server.routes.feedback import router as feedback_router
 from lit_monitor.server.runtime import reset_runtime
 
-TEMPLATES_DIR = Path(__file__).parents[2] / "scripts" / "server" / "templates"
+TEMPLATES_DIR = Path(__file__).parents[2] / "lit_monitor" / "server" / "templates"
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +61,7 @@ def client(real_db, monkeypatch):
     rt = MagicMock()
     rt.state_db = real_db
     monkeypatch.setattr(
-        "scripts.server.routes.feedback.get_runtime", lambda: rt
+        "lit_monitor.server.routes.feedback.get_runtime", lambda: rt
     )
 
     app = FastAPI()
@@ -119,7 +119,7 @@ def test_recent_event_empty_rating_renders_em_dash(client):
 
 def test_insights_learning_state_card(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._learning_state",
+        "lit_monitor.server.routes.feedback._learning_state",
         lambda: {
             "available": True,
             "n_events": 42,
@@ -138,7 +138,7 @@ def test_insights_learning_state_uses_definition_list(client, monkeypatch):
     # AR-7: the learning-state key/value block is a <dl class="kv"> with <dt>/<dd>,
     # not a <th>-in-<tbody> table. The labels must survive verbatim.
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._learning_state",
+        "lit_monitor.server.routes.feedback._learning_state",
         lambda: {
             "available": True,
             "n_events": 7,
@@ -162,7 +162,7 @@ def test_insights_learning_state_uses_definition_list(client, monkeypatch):
 
 def test_insights_first_run_no_vector(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._learning_state",
+        "lit_monitor.server.routes.feedback._learning_state",
         lambda: {"available": False},
     )
     r = client.get("/insights")
@@ -177,7 +177,7 @@ def test_insights_first_run_no_vector(client, monkeypatch):
 
 def test_insights_cluster_weights_table(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._cluster_weights",
+        "lit_monitor.server.routes.feedback._cluster_weights",
         lambda: {
             "floor": 0.1,
             "clusters": [
@@ -191,7 +191,7 @@ def test_insights_cluster_weights_table(client, monkeypatch):
 
 def test_insights_cluster_weights_empty_first_run(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._cluster_weights",
+        "lit_monitor.server.routes.feedback._cluster_weights",
         lambda: {"floor": 0.1, "clusters": []},
     )
     r = client.get("/insights")
@@ -216,14 +216,14 @@ def test_insights_loads_chartjs(client, monkeypatch):
     # notably a stacked timeline — so the contract is now that Chart.js IS present
     # on /insights. The data tables remain as the graceful-degradation fallback.
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._learning_state", lambda: {"available": False}
+        "lit_monitor.server.routes.feedback._learning_state", lambda: {"available": False}
     )
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._cluster_weights",
+        "lit_monitor.server.routes.feedback._cluster_weights",
         lambda: {"floor": 0.1, "clusters": []},
     )
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._summary_by_source", lambda: {}
+        "lit_monitor.server.routes.feedback._summary_by_source", lambda: {}
     )
     r = client.get("/insights")
     assert ("chart.js" in r.text.lower()) or ("chart.umd" in r.text.lower())  # CDN script
@@ -234,14 +234,14 @@ def test_insights_signal_mix_canvas_and_data(client, monkeypatch):
     # by-source table (the seam we control via _summary_by_source — feedback_summary
     # for signal-mix would need the real db). KEEP the table: graceful degradation.
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._summary_by_source",
+        "lit_monitor.server.routes.feedback._summary_by_source",
         lambda: {"discovery": 7, "themes": 3},
     )
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._learning_state", lambda: {"available": False}
+        "lit_monitor.server.routes.feedback._learning_state", lambda: {"available": False}
     )
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._cluster_weights",
+        "lit_monitor.server.routes.feedback._cluster_weights",
         lambda: {"floor": 0.1, "clusters": []},
     )
     r = client.get("/insights")
@@ -257,7 +257,7 @@ def test_insights_signal_mix_canvas_and_data(client, monkeypatch):
 
 def test_insights_timeline_fragment(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._timeline",
+        "lit_monitor.server.routes.feedback._timeline",
         lambda granularity, weeks, dimension: [
             {"period": "2026-W22", "signal_type": "saved", "count": 5},
             {"period": "2026-W22", "signal_type": "dismissed", "count": 2},
@@ -269,7 +269,7 @@ def test_insights_timeline_fragment(client, monkeypatch):
 
 def test_insights_timeline_empty_notice(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._timeline",
+        "lit_monitor.server.routes.feedback._timeline",
         lambda granularity, weeks, dimension: [],
     )
     r = client.get("/insights/timeline")
@@ -279,7 +279,7 @@ def test_insights_timeline_empty_notice(client, monkeypatch):
 def test_insights_timeline_granularity_toggle(client, monkeypatch):
     seen = {}
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._timeline",
+        "lit_monitor.server.routes.feedback._timeline",
         lambda granularity, weeks, dimension: seen.update(g=granularity, w=weeks) or [],
     )
     client.get("/insights/timeline?granularity=day")
@@ -292,8 +292,8 @@ def test_insights_timeline_no_leak(client, monkeypatch, caplog):
     def _boom(granularity, weeks, dimension):
         raise RuntimeError("db://secret/path")
 
-    monkeypatch.setattr("scripts.server.routes.feedback._timeline", _boom)
-    with caplog.at_level(logging.ERROR, logger="scripts.server.routes.feedback"):
+    monkeypatch.setattr("lit_monitor.server.routes.feedback._timeline", _boom)
+    with caplog.at_level(logging.ERROR, logger="lit_monitor.server.routes.feedback"):
         r = client.get("/insights/timeline")
     assert r.status_code == 200 and "db://secret" not in r.text
     assert any("db://secret" in rec.getMessage() for rec in caplog.records)
@@ -305,7 +305,7 @@ def test_insights_timeline_no_leak(client, monkeypatch, caplog):
 
 def test_insights_top_papers_fragment(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._learning_state",
+        "lit_monitor.server.routes.feedback._learning_state",
         lambda: {
             "available": True,
             "n_events": 12,
@@ -322,7 +322,7 @@ def test_insights_top_papers_fragment(client, monkeypatch):
 
 def test_insights_top_papers_empty_notice(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._learning_state",
+        "lit_monitor.server.routes.feedback._learning_state",
         lambda: {
             "available": True,
             "n_events": 12,
@@ -339,7 +339,7 @@ def test_insights_top_papers_empty_notice(client, monkeypatch):
 
 def test_insights_top_papers_no_vector_notice(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._learning_state",
+        "lit_monitor.server.routes.feedback._learning_state",
         lambda: {"available": False},
     )
     r = client.get("/insights/top-papers")
@@ -352,8 +352,8 @@ def test_insights_top_papers_no_leak(client, monkeypatch, caplog):
     import logging
     def _boom():
         raise RuntimeError("vec://secret/path")
-    monkeypatch.setattr("scripts.server.routes.feedback._learning_state", _boom)
-    with caplog.at_level(logging.ERROR, logger="scripts.server.routes.feedback"):
+    monkeypatch.setattr("lit_monitor.server.routes.feedback._learning_state", _boom)
+    with caplog.at_level(logging.ERROR, logger="lit_monitor.server.routes.feedback"):
         r = client.get("/insights/top-papers")
     assert r.status_code == 200 and "vec://secret" not in r.text
     assert any("vec://secret" in rec.getMessage() for rec in caplog.records)
@@ -365,14 +365,14 @@ def test_insights_top_papers_no_leak(client, monkeypatch, caplog):
 
 def test_insights_by_source_section(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._summary_by_source",
+        "lit_monitor.server.routes.feedback._summary_by_source",
         lambda: {"discovery": 7, "themes": 3, "implicit_zotero_save": 2},
     )
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._learning_state", lambda: {"available": False}
+        "lit_monitor.server.routes.feedback._learning_state", lambda: {"available": False}
     )
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._cluster_weights",
+        "lit_monitor.server.routes.feedback._cluster_weights",
         lambda: {"floor": 0.1, "clusters": []},
     )
     r = client.get("/insights")
@@ -386,13 +386,13 @@ def test_insights_by_source_section(client, monkeypatch):
 
 def test_insights_by_source_empty_first_run(client, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._summary_by_source", lambda: {}
+        "lit_monitor.server.routes.feedback._summary_by_source", lambda: {}
     )
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._learning_state", lambda: {"available": False}
+        "lit_monitor.server.routes.feedback._learning_state", lambda: {"available": False}
     )
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._cluster_weights",
+        "lit_monitor.server.routes.feedback._cluster_weights",
         lambda: {"floor": 0.1, "clusters": []},
     )
     r = client.get("/insights")
@@ -408,7 +408,7 @@ def test_insights_by_source_empty_first_run(client, monkeypatch):
 def test_timeline_dimension_source_passthrough(client, monkeypatch):
     seen = {}
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._timeline",
+        "lit_monitor.server.routes.feedback._timeline",
         lambda granularity, weeks, dimension: seen.update(g=granularity, d=dimension)
         or [{"period": "2026-W22", "source": "discovery", "count": 4}],
     )
@@ -419,7 +419,7 @@ def test_timeline_dimension_source_passthrough(client, monkeypatch):
 def test_timeline_dimension_defaults_to_signal(client, monkeypatch):
     seen = {}
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._timeline",
+        "lit_monitor.server.routes.feedback._timeline",
         lambda granularity, weeks, dimension: seen.update(d=dimension)
         or [{"period": "2026-W22", "signal_type": "saved", "count": 4}],
     )
@@ -430,7 +430,7 @@ def test_timeline_dimension_defaults_to_signal(client, monkeypatch):
 def test_timeline_invalid_dimension_falls_back(client, monkeypatch):
     seen = {}
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._timeline",
+        "lit_monitor.server.routes.feedback._timeline",
         lambda granularity, weeks, dimension: seen.update(d=dimension) or [],
     )
     client.get("/insights/timeline?dimension=bogus")
@@ -452,10 +452,10 @@ def _seed_events(db, n: int) -> None:
 
 def test_recent_events_prev_hidden_at_offset_zero(client, real_db, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._learning_state", lambda: {"available": False}
+        "lit_monitor.server.routes.feedback._learning_state", lambda: {"available": False}
     )
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._cluster_weights",
+        "lit_monitor.server.routes.feedback._cluster_weights",
         lambda: {"floor": 0.1, "clusters": []},
     )
     _seed_events(real_db, 150)
@@ -469,10 +469,10 @@ def test_recent_events_prev_hidden_at_offset_zero(client, real_db, monkeypatch):
 
 def test_recent_events_page_two_renders_next_slice(client, real_db, monkeypatch):
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._learning_state", lambda: {"available": False}
+        "lit_monitor.server.routes.feedback._learning_state", lambda: {"available": False}
     )
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._cluster_weights",
+        "lit_monitor.server.routes.feedback._cluster_weights",
         lambda: {"floor": 0.1, "clusters": []},
     )
     _seed_events(real_db, 150)
@@ -494,10 +494,10 @@ def test_recent_events_over_the_end_offset_keeps_prev(client, real_db, monkeypat
     # AR-7 follow-up: a hand-crafted offset past the end yields an empty slice,
     # but the pager renders whenever any events exist so Prev still navigates back.
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._learning_state", lambda: {"available": False}
+        "lit_monitor.server.routes.feedback._learning_state", lambda: {"available": False}
     )
     monkeypatch.setattr(
-        "scripts.server.routes.feedback._cluster_weights",
+        "lit_monitor.server.routes.feedback._cluster_weights",
         lambda: {"floor": 0.1, "clusters": []},
     )
     _seed_events(real_db, 150)

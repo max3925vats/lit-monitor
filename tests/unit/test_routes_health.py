@@ -46,7 +46,7 @@ def test_health_badge_unconfigured_when_secrets_missing(client: TestClient) -> N
         "vault": {"vault_exists": CheckResult(True, "ok", "ok")},
     }
     with patch(
-        "scripts.setup.health_check.run_health_check", return_value=fake_results
+        "lit_monitor.setup.health_check.run_health_check", return_value=fake_results
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
@@ -59,7 +59,7 @@ def test_health_badge_healthy_when_all_pass(client: TestClient) -> None:
     ok = {"probe": CheckResult(True, "ok", "ok")}
     fake_results = {"config": ok, "ollama": ok, "zotero": ok, "vault": ok}
     with patch(
-        "scripts.setup.health_check.run_health_check", return_value=fake_results
+        "lit_monitor.setup.health_check.run_health_check", return_value=fake_results
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
@@ -79,7 +79,7 @@ def test_health_badge_degraded_when_one_section_fails(client: TestClient) -> Non
     bad = {"probe": CheckResult(False, "down", "fail")}
     fake_results = {"config": ok, "ollama": bad, "zotero": ok, "vault": ok}
     with patch(
-        "scripts.setup.health_check.run_health_check", return_value=fake_results
+        "lit_monitor.setup.health_check.run_health_check", return_value=fake_results
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
@@ -93,7 +93,7 @@ def test_health_badge_misconfigured_when_two_fail(client: TestClient) -> None:
     bad = {"probe": CheckResult(False, "down", "fail")}
     fake_results = {"config": ok, "ollama": bad, "zotero": bad, "vault": ok}
     with patch(
-        "scripts.setup.health_check.run_health_check", return_value=fake_results
+        "lit_monitor.setup.health_check.run_health_check", return_value=fake_results
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
@@ -107,7 +107,7 @@ def test_health_badge_detail_returns_table(client: TestClient) -> None:
     bad = {"probe": CheckResult(False, "down", "fail")}
     fake_results = {"config": ok, "ollama": bad, "zotero": ok, "vault": ok}
     with patch(
-        "scripts.setup.health_check.run_health_check", return_value=fake_results
+        "lit_monitor.setup.health_check.run_health_check", return_value=fake_results
     ):
         r = client.get("/api/health/badge/detail")
     assert r.status_code == 200
@@ -131,7 +131,7 @@ def test_badge_healthy_when_only_warn_severity(client: TestClient) -> None:
     warn = {"scopus.api_key": CheckResult(True, "absent", severity="warn")}
     fake_results = {"config": ok, "ollama": ok, "zotero": ok, "vault": warn}
     with patch(
-        "scripts.setup.health_check.run_health_check", return_value=fake_results
+        "lit_monitor.setup.health_check.run_health_check", return_value=fake_results
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
@@ -162,7 +162,7 @@ def test_badge_healthy_when_optional_scopus_missing_only(client: TestClient) -> 
         },
     }
     with patch(
-        "scripts.setup.health_check.run_health_check", return_value=fake_results
+        "lit_monitor.setup.health_check.run_health_check", return_value=fake_results
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
@@ -184,7 +184,7 @@ def test_badge_degraded_when_single_fail_with_warn(client: TestClient) -> None:
     fail = {"zotero.api_key": CheckResult(False, "missing", severity="fail")}
     fake_results = {"config": ok, "ollama": warn, "zotero": fail, "vault": ok}
     with patch(
-        "scripts.setup.health_check.run_health_check", return_value=fake_results
+        "lit_monitor.setup.health_check.run_health_check", return_value=fake_results
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
@@ -210,7 +210,7 @@ def test_badge_detail_renders_warning_pill_for_warn_severity(
         },
     }
     with patch(
-        "scripts.setup.health_check.run_health_check", return_value=fake_results
+        "lit_monitor.setup.health_check.run_health_check", return_value=fake_results
     ):
         r = client.get("/api/health/badge/detail")
     assert r.status_code == 200
@@ -231,7 +231,7 @@ def test_health_badge_detail_escapes_html_in_messages():
             "zotero": {"zotero": CheckResult(True, "ok & fine", "ok")},
             "vault": {"vault_path_set": CheckResult(True, "ok", "ok")},
         }
-    with patch("scripts.setup.health_check.run_health_check", side_effect=fake_check):
+    with patch("lit_monitor.setup.health_check.run_health_check", side_effect=fake_check):
         client = TestClient(create_app())
         r = client.get("/api/health/badge/detail")
     assert r.status_code == 200
@@ -250,7 +250,7 @@ def test_health_badge_caches_within_ttl(client: TestClient) -> None:
         "vault": {"vault_exists": CheckResult(True, "ok", "ok")},
     }
     with patch(
-        "scripts.setup.health_check.run_health_check", return_value=fake_results
+        "lit_monitor.setup.health_check.run_health_check", return_value=fake_results
     ) as mock_check:
         r1 = client.get("/api/health/badge")
         # Second poll (e.g. another tab) within the TTL — served from cache.
@@ -275,7 +275,7 @@ def test_health_badge_recomputes_after_ttl_expiry(client: TestClient) -> None:
         "vault": {"vault_exists": CheckResult(True, "ok", "ok")},
     }
     with patch(
-        "scripts.setup.health_check.run_health_check", return_value=fake_results
+        "lit_monitor.setup.health_check.run_health_check", return_value=fake_results
     ) as mock_check:
         client.get("/api/health/badge")
         # Force the cache timestamp into the past, beyond the TTL.

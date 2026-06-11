@@ -133,7 +133,7 @@ def test_malformed_marker_aborts_rerender_in_default_mode(tmp_path, caplog, exis
     note.write_text(existing, encoding="utf-8")
     new = '# REWRITTEN\n{% persist "rw" %}\n*(auto)*\n{% endpersist %}\n'
 
-    with caplog.at_level(logging.WARNING, logger="scripts.output.obsidian_writer"):
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.output.obsidian_writer"):
         update_note_preserve_persist_zones(note, new)
 
     # Original file untouched.

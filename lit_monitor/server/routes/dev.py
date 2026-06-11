@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Repo root = parents[3] from scripts/server/routes/dev.py
+# Repo root = parents[3] from lit_monitor/server/routes/dev.py
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 

@@ -98,14 +98,14 @@ def test_compare_models_no_extraction_failures(tmp_path):
     # extract_paper is imported inside run_model_comparison — patch at its definition site.
     with (
         patch(
-            "scripts.pipelines.model_compare._resolve_output_dir",
+            "lit_monitor.pipelines.model_compare._resolve_output_dir",
             return_value=tmp_path / "comparison",
         ),
         patch(
-            "scripts.llm.extractor.extract_paper",
+            "lit_monitor.llm.extractor.extract_paper",
             return_value=mock_extraction,
         ),
-        patch("scripts.llm.llm_client.OllamaClient", return_value=MagicMock()),
+        patch("lit_monitor.llm.llm_client.OllamaClient", return_value=MagicMock()),
     ):
         result = run_model_comparison(
             config=config,
@@ -162,14 +162,14 @@ def test_compare_models_writes_output_json(tmp_path):
 
     with (
         patch(
-            "scripts.pipelines.model_compare._resolve_output_dir",
+            "lit_monitor.pipelines.model_compare._resolve_output_dir",
             return_value=tmp_path / "comparison",
         ),
         patch(
-            "scripts.llm.extractor.extract_paper",
+            "lit_monitor.llm.extractor.extract_paper",
             return_value=mock_extraction,
         ),
-        patch("scripts.llm.llm_client.OllamaClient", return_value=MagicMock()),
+        patch("lit_monitor.llm.llm_client.OllamaClient", return_value=MagicMock()),
     ):
         result = run_model_comparison(
             config=config,

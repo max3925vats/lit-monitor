@@ -14,7 +14,7 @@ safe_graph_db: Factory helper returning a GraphDB instance, or None when the
 """
 from __future__ import annotations
 
-# Re-export GraphDB so callers can write ``from scripts.graph import GraphDB``
+# Re-export GraphDB so callers can write ``from lit_monitor.graph import GraphDB``
 # without knowing the internal module layout.  The import is always available
 # regardless of whether kuzu is installed; the lazy kuzu import inside GraphDB
 # ensures that non-graph users see no errors at import time.

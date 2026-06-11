@@ -118,7 +118,7 @@ class TestSyncNotes:
             )
             conn.commit()
 
-        with patch("scripts.obsidian_tools.sync._rerender_one") as mock:
+        with patch("lit_monitor.obsidian_tools.sync._rerender_one") as mock:
             mock.return_value = None
             from lit_monitor.obsidian_tools.sync import sync_notes
             result = sync_notes(db, MagicMock())
@@ -142,7 +142,7 @@ class TestSyncNotes:
             conn.commit()
 
         with patch(
-            "scripts.obsidian_tools.sync._rerender_one",
+            "lit_monitor.obsidian_tools.sync._rerender_one",
             side_effect=RuntimeError("boom"),
         ):
             from lit_monitor.obsidian_tools.sync import sync_notes
@@ -170,7 +170,7 @@ class TestSyncNotes:
 
         _sm.set_strict(True)
         with patch(
-            "scripts.obsidian_tools.sync._rerender_one",
+            "lit_monitor.obsidian_tools.sync._rerender_one",
             side_effect=RuntimeError("boom"),
         ):
             from lit_monitor.obsidian_tools.sync import sync_notes
@@ -189,7 +189,7 @@ class TestSyncNotes:
             )
             conn.commit()
 
-        with patch("scripts.obsidian_tools.sync._rerender_one"):
+        with patch("lit_monitor.obsidian_tools.sync._rerender_one"):
             from lit_monitor.obsidian_tools.sync import sync_notes
             result = sync_notes(db, MagicMock(), doi="10/a")
 
@@ -205,7 +205,7 @@ class TestSyncNotes:
             )
             conn.commit()
 
-        with patch("scripts.obsidian_tools.sync._rerender_one") as mock:
+        with patch("lit_monitor.obsidian_tools.sync._rerender_one") as mock:
             from lit_monitor.obsidian_tools.sync import sync_notes
             # --all path uses get_notes_pending which filters out notes_synced=1
             result = sync_notes(db, MagicMock())
@@ -224,7 +224,7 @@ class TestSyncNotes:
                 )
             conn.commit()
 
-        with patch("scripts.obsidian_tools.sync._rerender_one"):
+        with patch("lit_monitor.obsidian_tools.sync._rerender_one"):
             from lit_monitor.obsidian_tools.sync import sync_notes
             result = sync_notes(db, MagicMock(), limit=2)
 
@@ -242,7 +242,7 @@ class TestSyncNotes:
             conn.commit()
 
         with patch(
-            "scripts.obsidian_tools.sync._rerender_one",
+            "lit_monitor.obsidian_tools.sync._rerender_one",
             side_effect=RuntimeError("oops"),
         ):
             from lit_monitor.obsidian_tools.sync import sync_notes

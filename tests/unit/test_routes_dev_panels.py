@@ -51,7 +51,7 @@ def test_dev_ruff_endpoint_returns_pill(monkeypatch: pytest.MonkeyPatch) -> None
     fake_result.stdout = "All checks passed!\n"
     fake_result.stderr = ""
 
-    with patch("scripts.server.routes.dev.subprocess.run", return_value=fake_result):
+    with patch("lit_monitor.server.routes.dev.subprocess.run", return_value=fake_result):
         resp = client.post("/api/dev/ruff")
 
     assert resp.status_code == 200
@@ -69,7 +69,7 @@ def test_dev_ruff_endpoint_handles_failure(monkeypatch: pytest.MonkeyPatch) -> N
     fake_result.stdout = "scripts/foo.py:12:5: E501 line too long\n"
     fake_result.stderr = ""
 
-    with patch("scripts.server.routes.dev.subprocess.run", return_value=fake_result):
+    with patch("lit_monitor.server.routes.dev.subprocess.run", return_value=fake_result):
         resp = client.post("/api/dev/ruff")
 
     assert resp.status_code == 200
@@ -88,7 +88,7 @@ def test_dev_diagnose_endpoint_returns_table(monkeypatch: pytest.MonkeyPatch) ->
         "paths.yaml": (True, "/etc/lit/paths.yaml"),
         "extraction.yaml": (False, "not found"),
     }
-    with patch("scripts.setup.diagnose.run_diagnose", return_value=fake_results):
+    with patch("lit_monitor.setup.diagnose.run_diagnose", return_value=fake_results):
         resp = client.post("/api/dev/diagnose")
 
     assert resp.status_code == 200
@@ -108,7 +108,7 @@ def test_dev_check_endpoint_returns_table(monkeypatch: pytest.MonkeyPatch) -> No
         "ollama": {"reachable": (True, "200 OK")},
         "zotero": {"library": (False, "401 unauthorized")},
     }
-    with patch("scripts.setup.health_check.run_health_check", return_value=fake_results):
+    with patch("lit_monitor.setup.health_check.run_health_check", return_value=fake_results):
         resp = client.post("/api/dev/check")
 
     assert resp.status_code == 200
@@ -142,7 +142,7 @@ def test_dev_status_endpoint_returns_counts(monkeypatch: pytest.MonkeyPatch) -> 
     fake_runtime = MagicMock()
     fake_runtime.state_db = fake_db
 
-    with patch("scripts.server.runtime.get_runtime", return_value=fake_runtime):
+    with patch("lit_monitor.server.runtime.get_runtime", return_value=fake_runtime):
         resp = client.get("/api/dev/status")
 
     assert resp.status_code == 200

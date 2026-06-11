@@ -14,8 +14,8 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-# Paths are resolved relative to the project root (one level up from scripts/).
-_HERE = Path(__file__).parent  # scripts/graph/
+# Paths are resolved relative to the project root (one level up from lit_monitor/).
+_HERE = Path(__file__).parent  # lit_monitor/graph/
 _PROJECT_ROOT = _HERE.parent.parent  # lit-monitor/
 
 _DEFAULT_REAL = _PROJECT_ROOT / "config" / "entity_aliases.yaml"

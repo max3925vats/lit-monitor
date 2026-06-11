@@ -110,7 +110,7 @@ class TestProposeAliases:
         tree = ast.parse(inspect.getsource(mod))
         forbidden_modules = {
             "requests", "httpx", "litellm", "openai", "anthropic",
-            "scripts.llm.llm_client", "scripts.llm.prompt_registry",
+            "lit_monitor.llm.llm_client", "lit_monitor.llm.prompt_registry",
         }
         for node in tree.body:  # only the top-level body
             if isinstance(node, ast.Import):

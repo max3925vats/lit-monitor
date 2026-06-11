@@ -680,8 +680,8 @@ def test_re_extract_uses_extract_fields_when_fields_given_without_passes():
     llm = MockLLMClient(mock_response_key="paper_pass1")
     config = MagicMock()
 
-    with patch("scripts.obsidian_tools.re_extract._load_fulltext", return_value="Body text."):
-        with patch("scripts.obsidian_tools.re_extract.extract_fields") as mock_ef:
+    with patch("lit_monitor.obsidian_tools.re_extract._load_fulltext", return_value="Body text."):
+        with patch("lit_monitor.obsidian_tools.re_extract.extract_fields") as mock_ef:
             mock_ef.return_value = {
                 "actionable_insights": "Insight text.",
                 "actionable_insights_confidence": "explicit",
@@ -718,9 +718,9 @@ def test_re_extract_uses_extract_paper_when_phase_and_field_both_given():
     llm = MockLLMClient(mock_response_key="paper_pass1")
     config = MagicMock()
 
-    with patch("scripts.obsidian_tools.re_extract._load_fulltext", return_value="Body text."):
-        with patch("scripts.obsidian_tools.re_extract.extract_fields") as mock_ef:
-            with patch("scripts.obsidian_tools.re_extract.extract_paper") as mock_ep:
+    with patch("lit_monitor.obsidian_tools.re_extract._load_fulltext", return_value="Body text."):
+        with patch("lit_monitor.obsidian_tools.re_extract.extract_fields") as mock_ef:
+            with patch("lit_monitor.obsidian_tools.re_extract.extract_paper") as mock_ep:
                 mock_ep.return_value = {
                     "core_finding": "Finding.",
                     "core_finding_confidence": "explicit",

@@ -581,7 +581,7 @@ def _kuzu_absent():
     originals — so the global module table is left byte-identical.
     """
     # Re-importing scripts.graph.* under a blocked kuzu rebinds two things:
-    #   1. the sys.modules["scripts.graph*"] slots, and
+    #   1. the sys.modules["lit_monitor.graph*"] slots, and
     #   2. the submodule ATTRIBUTE on each parent package object — Python's
     #      import machinery sets ``scripts.graph = <new module>`` on the
     #      ``scripts`` package, ``scripts.graph.db`` on ``scripts.graph``, etc.
@@ -591,11 +591,11 @@ def _kuzu_absent():
     # *attributes*, not sys.modules — so it would patch the wrong object and the
     # real GraphDB would run. Restore both sys.modules and the parent attrs.
     snapshot = dict(sys.modules)
-    keys = ["kuzu"] + [k for k in sys.modules if k.startswith("scripts.graph")]
+    keys = ["kuzu"] + [k for k in sys.modules if k.startswith("lit_monitor.graph")]
     try:
         sys.modules["kuzu"] = None  # type: ignore[assignment]
         for k in keys:
-            if k.startswith("scripts.graph"):
+            if k.startswith("lit_monitor.graph"):
                 sys.modules.pop(k, None)
         yield
     finally:
@@ -624,7 +624,7 @@ class TestGraphDBImportError:
                 FreshGraphDB(persist_dir=str(tmp_path / "graph.kuzu"))
 
     def test_module_import_succeeds_without_kuzu(self):
-        """scripts.graph imports cleanly even when kuzu is absent."""
+        """lit_monitor.graph imports cleanly even when kuzu is absent."""
         with _kuzu_absent():
             # Importing the package must NOT raise — only instantiation does.
             import lit_monitor.graph  # noqa: F401

@@ -251,7 +251,7 @@ def test_render_warns_on_unrendered_placeholder(caplog):
 
     from lit_monitor.llm.prompt_registry import _render
 
-    with caplog.at_level(logging.WARNING, logger="scripts.llm.prompt_registry"):
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.prompt_registry"):
         out = _render(
             "text with {typo_field} and {known}",
             {"known": "value"},
@@ -339,7 +339,7 @@ def test_render_non_strict_warns_not_raises(_restore_strict, caplog):
     from lit_monitor.llm.prompt_registry import _render
 
     _restore_strict(False)
-    with caplog.at_level(logging.WARNING, logger="scripts.llm.prompt_registry"):
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.prompt_registry"):
         out = _render(
             "text with {typo_field}",
             {"known": "value"},
@@ -377,7 +377,7 @@ def test_load_prompt_emits_no_false_positive_warnings(caplog):
     import logging
 
     _reset_prompt_cache()
-    with caplog.at_level(logging.WARNING, logger="scripts.llm.prompt_registry"):
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.prompt_registry"):
         load_prompt("rationale")
         load_extraction_prompts()
 

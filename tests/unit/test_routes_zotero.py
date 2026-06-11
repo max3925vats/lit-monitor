@@ -22,7 +22,7 @@ def client() -> TestClient:
 @pytest.mark.unit
 def test_collections_503_when_creds_missing(client, monkeypatch):
     """No api_key in secrets → 503 with a wizard-friendly detail."""
-    monkeypatch.setattr("scripts.server.routes.zotero.load_secrets", lambda: {})
+    monkeypatch.setattr("lit_monitor.server.routes.zotero.load_secrets", lambda: {})
     resp = client.get("/api/zotero/collections")
     assert resp.status_code == 503
     assert "not configured" in resp.json()["detail"].lower()
@@ -32,7 +32,7 @@ def test_collections_503_when_creds_missing(client, monkeypatch):
 def test_collections_returns_rows_from_zotero_client(client, monkeypatch):
     """Mock ZoteroClient.get_all_collections — endpoint returns flat key/name list."""
     monkeypatch.setattr(
-        "scripts.server.routes.zotero.load_secrets",
+        "lit_monitor.server.routes.zotero.load_secrets",
         lambda: {"zotero": {"api_key": "k", "library_id": "12345"}},
     )
     mock_client = MagicMock()
@@ -41,7 +41,7 @@ def test_collections_returns_rows_from_zotero_client(client, monkeypatch):
         {"key": "DEF", "name": "Filtration", "parent_collection_key": "ABC"},
     ]
     monkeypatch.setattr(
-        "scripts.server.routes.zotero._build_client",
+        "lit_monitor.server.routes.zotero._build_client",
         lambda: mock_client,
     )
     resp = client.get("/api/zotero/collections")
@@ -58,13 +58,13 @@ def test_collections_returns_rows_from_zotero_client(client, monkeypatch):
 def test_test_endpoint_handles_api_error(client, monkeypatch):
     """If the ZoteroClient probe raises, ``/test`` returns ``{ok: False, message}``."""
     monkeypatch.setattr(
-        "scripts.server.routes.zotero.load_secrets",
+        "lit_monitor.server.routes.zotero.load_secrets",
         lambda: {"zotero": {"api_key": "k", "library_id": "12345"}},
     )
     mock_client = MagicMock()
     mock_client._zot.collections.side_effect = RuntimeError("401 Unauthorized")
     monkeypatch.setattr(
-        "scripts.server.routes.zotero._build_client",
+        "lit_monitor.server.routes.zotero._build_client",
         lambda: mock_client,
     )
     resp = client.get("/api/zotero/test")

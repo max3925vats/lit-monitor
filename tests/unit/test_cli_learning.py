@@ -44,9 +44,9 @@ def _feedback_event(doi: str, signal_type: str, weight: float) -> dict:
 def _patches(state_db: MagicMock, embeddings_db: MagicMock):
     """Patch the three CLI factory helpers used by the learning commands."""
     return (
-        patch("scripts.cli._make_config", return_value=_mock_config()),
-        patch("scripts.cli._make_state_db", return_value=state_db),
-        patch("scripts.cli._make_embeddings_db", return_value=embeddings_db),
+        patch("lit_monitor.cli._make_config", return_value=_mock_config()),
+        patch("lit_monitor.cli._make_state_db", return_value=state_db),
+        patch("lit_monitor.cli._make_embeddings_db", return_value=embeddings_db),
     )
 
 
@@ -264,10 +264,10 @@ class TestLearningViewPerCluster:
 
         embeddings_db = MagicMock()
 
-        with patch("scripts.cli._make_config",
+        with patch("lit_monitor.cli._make_config",
                    return_value=_mock_config_with_floor(0.1)), \
-                patch("scripts.cli._make_state_db", return_value=state_db), \
-                patch("scripts.cli._make_embeddings_db", return_value=embeddings_db):
+                patch("lit_monitor.cli._make_state_db", return_value=state_db), \
+                patch("lit_monitor.cli._make_embeddings_db", return_value=embeddings_db):
             result = CliRunner().invoke(main, ["learning", "view", "--per-cluster"])
 
         assert result.exit_code == 0, result.output
@@ -285,10 +285,10 @@ class TestLearningViewPerCluster:
         state_db.list_active_clusters.return_value = []
         embeddings_db = MagicMock()
 
-        with patch("scripts.cli._make_config",
+        with patch("lit_monitor.cli._make_config",
                    return_value=_mock_config_with_floor(0.1)), \
-                patch("scripts.cli._make_state_db", return_value=state_db), \
-                patch("scripts.cli._make_embeddings_db", return_value=embeddings_db):
+                patch("lit_monitor.cli._make_state_db", return_value=state_db), \
+                patch("lit_monitor.cli._make_embeddings_db", return_value=embeddings_db):
             result = CliRunner().invoke(main, ["learning", "view", "--per-cluster"])
 
         assert result.exit_code == 0, result.output
