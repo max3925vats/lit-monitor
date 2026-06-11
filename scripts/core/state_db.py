@@ -1719,7 +1719,11 @@ class StateDB:
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
         if limit is not None:
-            sql += f" LIMIT {int(limit)}"
+            # AR-5 Fix 3 (Finding 10a): parameterize the LIMIT (mirror
+            # `list_papers`) instead of f-string interpolation. `int()` coerces
+            # any non-int caller value to a safe bound.
+            sql += " LIMIT ?"
+            params.append(int(limit))
 
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
@@ -1788,7 +1792,11 @@ class StateDB:
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
         if limit is not None:
-            sql += f" LIMIT {int(limit)}"
+            # AR-5 Fix 3 (Finding 10a): parameterize the LIMIT (mirror
+            # `list_papers`) instead of f-string interpolation. `int()` coerces
+            # any non-int caller value to a safe bound.
+            sql += " LIMIT ?"
+            params.append(int(limit))
 
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()

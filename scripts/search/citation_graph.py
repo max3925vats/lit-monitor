@@ -84,7 +84,7 @@ def build_citation_graph(
     state_db: StateDB,
     *,
     api_key: str | None = _DEFAULT_S2_API_KEY,
-    max_retries: int = 4,
+    max_retries: int = 3,
 ) -> CitationGraphResult:
     """Resolve ``key_citations`` for a paper and write ``citation_edges`` rows.
 
@@ -168,12 +168,14 @@ def _fetch_s2_references(
     doi: str,
     *,
     api_key: str | None = None,
-    max_retries: int = 4,
+    max_retries: int = 3,
 ) -> list[Any]:
     """Fetch the ordered reference list for a paper via S2.
 
-    Retries on rate-limit responses with exponential backoff.
-    Returns ``[]`` on permanent failures (logged as WARNING).
+    Retries on rate-limit responses with exponential backoff: with the default
+    ``max_retries=3`` a persistently rate-limited DOI makes 1 initial attempt
+    plus 3 backoff retries (4 HTTP calls total), sleeping 1s, 2s, 4s between
+    them. Returns ``[]`` on permanent failures (logged as WARNING).
     """
     if not _S2_AVAILABLE:
         logger.debug("semanticscholar not available — citation graph disabled")
