@@ -194,9 +194,18 @@ def paper_snapshot(doi: str) -> dict:
     if graph_db is None:
         raise HTTPException(status_code=503, detail="graph backend unavailable")
 
+    # Best-effort Zotero linkage: if the runtime/config is unavailable (e.g. no
+    # config/paths.yaml yet, as in a fresh checkout or CI), degrade to no
+    # state_db so the snapshot still returns — zotero_key falls back to None
+    # rather than failing the whole request.
+    try:
+        state_db = _snapshot_state_db()
+    except Exception:  # noqa: BLE001 — linkage is best-effort, never fatal
+        state_db = None
+
     # AR-2: same leak class as /related — always release the KuzuDB handle.
     try:
-        snapshot = get_paper_snapshot(doi, graph_db, _snapshot_state_db())
+        snapshot = get_paper_snapshot(doi, graph_db, state_db)
     finally:
         try:
             graph_db.close()

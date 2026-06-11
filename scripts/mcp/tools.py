@@ -275,7 +275,14 @@ def get_paper_details(doi: str) -> dict[str, Any]:
             "relationships_out": [],
         }
 
-    return get_paper_snapshot(doi, db, _get_state_db())
+    # Best-effort Zotero linkage: if config/state.db is unavailable (e.g. a
+    # fresh checkout or CI with no config/paths.yaml), degrade to no state_db so
+    # the snapshot still returns — zotero_key falls back to None.
+    try:
+        state_db = _get_state_db()
+    except Exception:  # noqa: BLE001 — linkage is best-effort, never fatal
+        state_db = None
+    return get_paper_snapshot(doi, db, state_db)
 
 
 # ---------------------------------------------------------------------------
