@@ -164,6 +164,11 @@ def rank_papers(
                 "skipping domain-context scoring for this run."
             )
         else:
+            # AR-6 (log hygiene): a corpus with many bad stored vectors used to
+            # flood the logs with one WARNING per degenerate candidate. Tally the
+            # skips and emit ONE summary WARNING after the loop instead — the skip
+            # behavior (which candidates are excluded, the scores) is unchanged.
+            _degenerate_skips = 0
             for paper in scored:
                 cand_emb = paper.get("_embedding")
                 if cand_emb is None:
@@ -175,18 +180,21 @@ def rank_papers(
                     # Degenerate candidate embedding: all-zero (norm≈0) or
                     # non-finite (NaN/inf — a NaN norm slips past the zero-norm
                     # check since `nan < 1e-9` is False and would corrupt the
-                    # score via np.dot). Numerically skipped, but log it so a bad
-                    # stored vector is observable rather than silently dropped.
-                    logger.warning(
-                        "Candidate %s has a degenerate embedding (norm≈0 or "
-                        "non-finite); skipping domain-context score for it.",
-                        paper.get("doi", "?"),
-                    )
+                    # score via np.dot). Numerically skipped exactly as before;
+                    # just counted here and reported once below instead of per-row.
+                    _degenerate_skips += 1
                     continue
                 domain_score = float(np.dot(cand_arr, domain_context_emb) / (_cand_norm * _domain_norm))
                 # Store raw domain cosine for Bundle B's score decomposition / explainability.
                 paper["_domain_score"] = domain_score
                 paper["similarity_score"] = paper["similarity_score"] + domain_context_weight * domain_score
+
+            if _degenerate_skips > 0:
+                # One summary line instead of one-per-candidate (AR-6 log hygiene).
+                logger.warning(
+                    "ranker: skipped %d candidate(s) with degenerate embeddings",
+                    _degenerate_skips,
+                )
 
     # 2b. Bundle C: optional cluster-centroid additive score.
     #     Runs only when both cluster_centroids AND non-zero weight are provided.

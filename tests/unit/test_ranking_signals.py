@@ -256,9 +256,10 @@ class TestDomainContextSignal:
         assert ranked[0]["similarity_score"] == pytest.approx(0.5)
 
     def test_degenerate_candidate_embedding_logs_warning(self, caplog):
-        """Q3.8: an all-zero candidate embedding is numerically skipped (correct)
-        AND now logs a warning, so a bad stored vector is observable instead of
-        silently dropped from domain-context scoring. The score is unchanged."""
+        """Q3.8 / AR-6: an all-zero candidate embedding is numerically skipped
+        (correct) AND the skip is observable. After AR-6 the per-candidate WARN
+        was collapsed into ONE post-loop summary carrying the skip count, so a
+        single bad vector still surfaces exactly one warning. Score unchanged."""
         import logging
 
         from scripts.llm.ranker import rank_papers
@@ -283,11 +284,16 @@ class TestDomainContextSignal:
 
         # Score unchanged (degenerate candidate skipped, not corrupted).
         assert ranked[0]["similarity_score"] == pytest.approx(0.5)
-        # And the skip was surfaced as a warning naming the candidate.
-        assert any(
-            "degenerate embedding" in rec.message and "10.1/zero" in rec.message
-            for rec in caplog.records
-        ), f"expected a degenerate-embedding warning, got: {[r.message for r in caplog.records]}"
+        # AR-6: one collapsed summary warning carrying the count (here 1).
+        degenerate_warnings = [
+            rec for rec in caplog.records
+            if "degenerate embeddings" in rec.message
+        ]
+        assert len(degenerate_warnings) == 1, (
+            f"expected one collapsed degenerate-embedding warning, got: "
+            f"{[r.message for r in caplog.records]}"
+        )
+        assert "1" in degenerate_warnings[0].message
 
     def test_nan_candidate_embedding_skipped_not_corrupting_score(self, caplog):
         """Q3b follow-up: a NaN candidate embedding has a non-finite norm
@@ -322,11 +328,16 @@ class TestDomainContextSignal:
             f"NaN embedding corrupted the score: {ranked[0]['similarity_score']}"
         )
         assert ranked[0]["similarity_score"] == pytest.approx(0.5)
-        # And the skip was surfaced as a warning naming the candidate.
-        assert any(
-            "degenerate embedding" in rec.message and "10.1/nan" in rec.message
-            for rec in caplog.records
-        ), f"expected a degenerate-embedding warning, got: {[r.message for r in caplog.records]}"
+        # AR-6: the skip surfaces as one collapsed summary warning with count 1.
+        degenerate_warnings = [
+            rec for rec in caplog.records
+            if "degenerate embeddings" in rec.message
+        ]
+        assert len(degenerate_warnings) == 1, (
+            f"expected one collapsed degenerate-embedding warning, got: "
+            f"{[r.message for r in caplog.records]}"
+        )
+        assert "1" in degenerate_warnings[0].message
 
     def test_nan_candidate_embedding_skipped_in_cluster_scoring(self, caplog):
         """Q3b follow-up: the cluster-centroid block (Bundle C) had the same
@@ -536,6 +547,160 @@ class TestDomainContextSignal:
         )
         assert "_domain_score" in ranked[0]
         assert ranked[0]["_domain_score"] == pytest.approx(1.0, abs=1e-4)
+
+
+# ===========================================================================
+# TestClusterCentroidGolden (AR-6: hoist + log-hygiene, score-IDENTICAL)
+# ===========================================================================
+
+class TestClusterCentroidGolden:
+    """AR-6 golden + log-hygiene tests for the cluster-centroid scoring block.
+
+    The hoist (centroid norms computed once, not per-candidate) must be
+    score-IDENTICAL. These golden values were captured from the ranker BEFORE
+    the hoist; they pin the exact floats so the refactor cannot drift the math.
+    """
+
+    def _make_db(self, score: float = 0.5) -> MagicMock:
+        db = MagicMock()
+        db.find_similar_to_text.return_value = [
+            {"score": score, "id": "y", "document": "", "metadata": {}}
+        ]
+        return db
+
+    def _make_llm(self) -> MagicMock:
+        llm = MagicMock()
+        llm.complete.return_value = "{}"
+        return llm
+
+    def _fixture(self):
+        from scripts.clustering.kmeans import Cluster
+
+        clusters = [
+            Cluster(
+                id=1, display_name="C1",
+                centroid_vec=np.array([1.0, 0.0, 0.0], dtype=np.float32),
+                members=["x"], cohesion_score=0.5,
+            ),
+            Cluster(
+                id=2, display_name="C2",
+                centroid_vec=np.array([0.0, 1.0, 0.0], dtype=np.float32),
+                members=["y"], cohesion_score=0.5,
+            ),
+        ]
+        candidates = [
+            {"doi": "10.1/a", "title": "A", "abstract": "",
+             "_embedding": np.array([1.0, 0.2, 0.0], dtype=np.float32)},
+            {"doi": "10.1/b", "title": "B", "abstract": "",
+             "_embedding": np.array([0.1, 1.0, 0.0], dtype=np.float32)},
+            {"doi": "10.1/c", "title": "C", "abstract": "",
+             "_embedding": np.array([0.6, 0.6, 0.5], dtype=np.float32)},
+        ]
+        return clusters, candidates
+
+    def test_cluster_scores_match_golden_exactly(self):
+        """The cluster-centroid path produces the exact pre-hoist scores/order.
+
+        Two centroids → the hoisted ``_cen_norms`` is actually exercised (the
+        norm vector has length K=2 and is reused across all 3 candidates). The
+        floats below are the captured baseline; the hoist must not change them.
+        """
+        from scripts.llm.ranker import rank_papers
+
+        clusters, candidates = self._fixture()
+        ranked = rank_papers(
+            candidates, self._make_db(0.5), self._make_llm(),
+            cluster_centroids=clusters, cluster_centroid_weight=0.4,
+        )
+
+        # Order is score-descending; pin DOI order + the exact floats.
+        golden = [
+            ("10.1/b", 0.8980148553848266, 0.9950371384620667, 1),
+            ("10.1/a", 0.8922322750091554, 0.9805806875228882, 0),
+            ("10.1/c", 0.7436830759048462, 0.6092076897621155, 0),
+        ]
+        assert [p["doi"] for p in ranked] == [g[0] for g in golden]
+        for paper, (doi, sim, cluster, idx) in zip(ranked, golden):
+            assert paper["doi"] == doi
+            # Exact float equality — a pure refactor must reproduce these bits.
+            assert paper["similarity_score"] == sim
+            assert paper["_cluster_score"] == cluster
+            assert paper["_cluster_matched_idx"] == idx
+
+    def test_centroid_norm_computed_once_not_per_candidate(self):
+        """Hoist proof: ``np.linalg.norm(..., axis=1)`` on the (K, dim) centroid
+        matrix is computed ONCE for the whole loop, not once per candidate.
+
+        We spy on ``np.linalg.norm`` and count only the calls whose argument is
+        the 2-D centroid matrix (``ndim == 2``); per-candidate scalar-norm calls
+        (``ndim == 1``) are ignored. Pre-hoist this count equals N (one per
+        candidate); post-hoist it must be exactly 1.
+        """
+        from scripts.llm import ranker
+
+        clusters, candidates = self._fixture()
+        real_norm = np.linalg.norm
+        matrix_norm_calls = 0
+
+        def _counting_norm(arr, *args, **kwargs):
+            nonlocal matrix_norm_calls
+            a = np.asarray(arr)
+            # The centroid-matrix norm is the only 2-D-input call with axis=1.
+            if a.ndim == 2 and (kwargs.get("axis") == 1 or (len(args) >= 1 and args[0] == 1)):
+                matrix_norm_calls += 1
+            return real_norm(arr, *args, **kwargs)
+
+        with patch.object(ranker.np.linalg, "norm", side_effect=_counting_norm):
+            ranker.rank_papers(
+                candidates, self._make_db(0.5), self._make_llm(),
+                cluster_centroids=clusters, cluster_centroid_weight=0.4,
+            )
+
+        # Exactly one centroid-matrix norm for the whole 3-candidate loop.
+        assert matrix_norm_calls == 1, (
+            f"centroid-matrix norm computed {matrix_norm_calls}× — expected 1 "
+            f"(per-candidate recomputation regressed)"
+        )
+
+    def test_degenerate_candidates_logged_once_with_count(self, caplog):
+        """AR-6 log hygiene: 3 candidates with degenerate (zero-norm) embeddings
+        in the DOMAIN-context leg emit EXACTLY ONE summary warning carrying the
+        count '3' — not one warning per candidate."""
+        import logging
+
+        from scripts.llm.ranker import rank_papers
+
+        domain_emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        candidates = [
+            {"doi": f"10.1/zero-{i}", "title": f"Z{i}", "abstract": "",
+             "_embedding": np.zeros(3, dtype=np.float32)}
+            for i in range(3)
+        ]
+
+        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+            ranked = rank_papers(
+                candidates, self._make_db(0.5), self._make_llm(),
+                domain_context_emb=domain_emb,
+                domain_context_weight=1.0,  # non-zero → domain leg runs
+            )
+
+        # Skip behavior unchanged: every degenerate candidate keeps its base score.
+        for p in ranked:
+            assert p["similarity_score"] == pytest.approx(0.5)
+
+        # Exactly ONE degenerate-embedding warning, and it names the count "3".
+        degenerate_warnings = [
+            rec for rec in caplog.records
+            if "degenerate embeddings" in rec.message
+        ]
+        assert len(degenerate_warnings) == 1, (
+            f"expected exactly 1 collapsed warning, got "
+            f"{[r.message for r in degenerate_warnings]}"
+        )
+        assert "3" in degenerate_warnings[0].message, (
+            f"summary warning should carry the count 3: "
+            f"{degenerate_warnings[0].message!r}"
+        )
 
 
 # ===========================================================================
