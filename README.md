@@ -9,7 +9,6 @@ the terminal, or any AI client that speaks the Model Context Protocol (MCP).
 
 [![CI](https://github.com/max3925vats/lit-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/max3925vats/lit-monitor/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/lit-monitor)](https://pypi.org/project/lit-monitor/)
-[![PyPI downloads](https://img.shields.io/pypi/dm/lit-monitor)](https://pypi.org/project/lit-monitor/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Platform: macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#requirements)
