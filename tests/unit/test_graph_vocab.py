@@ -1,10 +1,17 @@
 """Tests for G15: closed-vocabulary loader with alias + deprecated support."""
 import logging
+from importlib.resources import files as _pkg_files
 from pathlib import Path
 
 import yaml
 
 from lit_monitor.graph.vocab import EntityTypeVocab, PredicateVocab
+
+# The vocab example YAMLs ship as package data (relocated from config/ for the
+# PyPI wheel). Resolve via importlib.resources so these guard tests follow them.
+_EXAMPLES = _pkg_files("lit_monitor._data.config_examples")
+_PREDICATES_EXAMPLE = Path(str(_EXAMPLES / "predicates.example.yaml"))
+_ENTITY_TYPES_EXAMPLE = Path(str(_EXAMPLES / "entity_types.example.yaml"))
 
 
 class TestPredicateVocab:
@@ -116,7 +123,7 @@ class TestShippedExampleFiles:
     """Verify the example YAML files ship with the right substrate."""
 
     def test_predicates_example_has_all_phase1_predicates(self):
-        path = Path("config/predicates.example.yaml")
+        path = _PREDICATES_EXAMPLE
         assert path.exists(), f"{path} does not exist"
         data = yaml.safe_load(path.read_text())
         expected = {
@@ -126,7 +133,7 @@ class TestShippedExampleFiles:
         assert expected.issubset(data.keys()), f"missing: {expected - data.keys()}"
 
     def test_predicates_example_has_at_least_one_alias_declared(self):
-        path = Path("config/predicates.example.yaml")
+        path = _PREDICATES_EXAMPLE
         data = yaml.safe_load(path.read_text())
         # At least one predicate must have a non-empty aliases list.
         any_alias = any(
@@ -136,7 +143,7 @@ class TestShippedExampleFiles:
         assert any_alias, "G15: example file must demo at least one alias"
 
     def test_entity_types_example_has_phase1_types(self):
-        path = Path("config/entity_types.example.yaml")
+        path = _ENTITY_TYPES_EXAMPLE
         assert path.exists(), f"{path} does not exist"
         data = yaml.safe_load(path.read_text())
         expected = {"topic", "method", "material", "author", "journal", "keyword"}
@@ -144,8 +151,8 @@ class TestShippedExampleFiles:
 
     def test_example_files_load_cleanly_via_vocab_classes(self):
         """G15: example YAMLs are valid inputs for the vocab classes."""
-        pred_path = Path("config/predicates.example.yaml")
-        type_path = Path("config/entity_types.example.yaml")
+        pred_path = _PREDICATES_EXAMPLE
+        type_path = _ENTITY_TYPES_EXAMPLE
 
         pred_vocab = PredicateVocab.load(pred_path)
         type_vocab = EntityTypeVocab.load(type_path)
@@ -156,7 +163,7 @@ class TestShippedExampleFiles:
 
     def test_predicates_example_compares_to_has_demo_aliases(self):
         """G15: COMPARES_TO carries the demo aliases as spec'd."""
-        path = Path("config/predicates.example.yaml")
+        path = _PREDICATES_EXAMPLE
         data = yaml.safe_load(path.read_text())
         aliases = data["COMPARES_TO"].get("aliases", [])
         assert len(aliases) >= 1, "COMPARES_TO must carry at least one demo alias"

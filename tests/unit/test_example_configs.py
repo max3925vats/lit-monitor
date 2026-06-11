@@ -18,6 +18,7 @@ actually fail on broken input, so a passing example test is meaningful.
 from __future__ import annotations
 
 import tomllib
+from importlib.resources import files as _pkg_files
 from pathlib import Path
 
 import pytest
@@ -30,9 +31,13 @@ from lit_monitor.server.routes.setup import (
 )
 from lit_monitor.vocabulary.normalizer import assign_themes
 
-# config/examples/ lives two levels up from this test file's repo (tests/unit/).
+# The example domain configs ship as package data under
+# lit_monitor/_data/config_examples/examples/ (relocated from config/examples/
+# for the PyPI wheel). Resolve via importlib.resources so the guard tests follow
+# the files wherever they ship.
+_EXAMPLES_DIR = Path(str(_pkg_files("lit_monitor._data.config_examples") / "examples"))
+# pyproject.toml is genuinely repo-root (not package data) — resolved separately.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_EXAMPLES_DIR = _REPO_ROOT / "config" / "examples"
 _DOMAINS = ["bioprocessing", "ml-research", "climate-science"]
 
 

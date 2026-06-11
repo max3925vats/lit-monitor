@@ -1,7 +1,6 @@
 """P10: per-paper note decoupling + obsidian sync tests."""
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -258,7 +257,9 @@ class TestPipelineGate:
 
     def test_flag_default_true_in_example_yaml(self):
         """Confirm extraction.example.yaml default is true."""
-        raw = Path("config/extraction.example.yaml").read_text()
+        from importlib.resources import files
+        example = files("lit_monitor._data.config_examples") / "extraction.example.yaml"
+        raw = example.read_text()
         assert "auto_write_per_paper:" in raw
         for line in raw.splitlines():
             if "auto_write_per_paper" in line:
