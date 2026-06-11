@@ -261,17 +261,24 @@ def _write_synthesis_note(
     config,
     connections_folder: str | None,
 ) -> str:
-    vault_path = Path(config.obsidian.vault_path)
+    vault_path = Path(config.obsidian.vault_path).expanduser().resolve()
     folder_rel = connections_folder or getattr(
         config.obsidian, "connections_folder", "Literature/Connections"
     )
-    folder = vault_path / folder_rel
-    folder.mkdir(parents=True, exist_ok=True)
+    folder = (vault_path / folder_rel).resolve()
     # _slugify already strips most unsafe chars; sanitize_filename_component is
     # the defence-in-depth guard that guarantees no separator / NUL / ".."
     # survives into the filename built from the (tainted) synthesis topic.
     slug = sanitize_filename_component(_slugify(topic), fallback="untitled")
-    note_path = folder / f"Synthesis_{slug}.md"
+    note_path = (folder / f"Synthesis_{slug}.md").resolve()
+    # Containment barrier (recognized): the resolved note path must live inside
+    # the vault. ``is_relative_to`` is the form CodeQL accepts — a crafted topic
+    # (or a misconfigured connections folder) can never make the read/write/mkdir
+    # escape the vault directory. Checked BEFORE mkdir so no dirs are created
+    # outside the vault.
+    if not note_path.is_relative_to(vault_path):
+        raise ValueError("synthesis note path escapes the vault")
+    folder.mkdir(parents=True, exist_ok=True)
     # Preserve user content below the generated section if file exists
     if note_path.exists():
         existing = note_path.read_text(encoding="utf-8")

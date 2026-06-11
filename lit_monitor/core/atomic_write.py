@@ -52,11 +52,19 @@ def atomic_write_text(path: Path, content: str, encoding: str = "utf-8") -> Path
     # (paper title / DOI / topic) must never smuggle a NUL into the syscall.
     if "\x00" in str(path):
         raise ValueError("atomic_write_text: path contains an embedded NUL byte")
-    # Normalise to an absolute path so callers operate on a single canonical
-    # form (collapses redundant separators / "." segments). We do NOT reparent
-    # the path — legitimate callers pass absolute vault/config destinations and
-    # the path-component sanitisation happens at those call sites.
-    path = Path(os.path.abspath(path))
+    # Normalise via realpath: collapse ``..``/``.`` segments AND resolve
+    # symlinks to a single canonical absolute form before any filesystem
+    # operation. realpath is the recognized path normalization (vs. abspath,
+    # which leaves symlinks unresolved). This is a *generic* writer with no
+    # single base directory, so containment is enforced by every caller (the
+    # Obsidian writer / synthesize / dev-sandbox all run an ``is_relative_to``
+    # check against their known base before reaching here); the realpath +
+    # absolute assertion is the strongest barrier available at this layer.
+    path = Path(os.path.realpath(path))
+    if not path.is_absolute():
+        # realpath always returns an absolute path; assert it so a future
+        # refactor can't silently feed a relative path to the sinks below.
+        raise ValueError("atomic_write_text: resolved path is not absolute")
     fd, tmp = tempfile.mkstemp(
         dir=str(path.parent),
         prefix=f".{path.name}.",

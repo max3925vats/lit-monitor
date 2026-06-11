@@ -826,19 +826,32 @@ def ollama_test(request: Request, host: str = "") -> HTMLResponse:
     if not host.strip():
         return HTMLResponse('<span class="pill warning">no host provided</span>')
 
-    from urllib.parse import urlparse
+    from urllib.parse import urlparse, urlunparse
 
     import httpx
 
     base = host.strip().rstrip("/")
-    # SSRF guard: only allow http/https reachability checks. Without this a
-    # caller could coerce the server into requesting file://, ftp://, etc.
-    scheme = urlparse(base).scheme.lower()
+    # SSRF barrier: validate BOTH the scheme AND the host against hardcoded
+    # allowlists before issuing the request, and rebuild the request URL from
+    # only those validated components. Without this a caller could coerce the
+    # server into requesting file://, internal services, or cloud metadata.
+    parsed = urlparse(base)
+    scheme = parsed.scheme.lower()
     if scheme not in ("http", "https"):
         return HTMLResponse(
             '<span class="pill warning">host must start with http:// or https://</span>'
         )
-    url = base + "/api/tags"
+    hostname = (parsed.hostname or "").lower()
+    # Allowed hosts: loopback (the local Ollama default) plus the one public
+    # cloud-Ollama endpoint this tool supports (see CLAUDE.md LLM providers).
+    _ALLOWED_OLLAMA_HOSTS = {"localhost", "127.0.0.1", "::1", "ollama.com"}
+    if hostname not in _ALLOWED_OLLAMA_HOSTS:
+        return HTMLResponse(
+            '<span class="pill warning">host must be localhost or ollama.com</span>'
+        )
+    # Rebuild the URL from validated components only — never pass the raw user
+    # string to the request. netloc preserves an explicit port (e.g. :11434).
+    url = urlunparse((scheme, parsed.netloc, "/api/tags", "", "", ""))
     try:
         r = httpx.get(url, timeout=5.0, headers={"User-Agent": "lit-monitor"})
     except httpx.RequestError as exc:

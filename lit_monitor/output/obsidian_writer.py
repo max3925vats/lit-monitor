@@ -232,7 +232,12 @@ def _apply_persist_zones(new_content: str, zones: dict[str, str]) -> str:
     return _PERSIST_PATTERN.sub(replacer, new_content)
 
 
-def update_note_preserve_persist_zones(path: str | Path, new_content: str) -> None:
+def update_note_preserve_persist_zones(
+    path: str | Path,
+    new_content: str,
+    *,
+    base_dir: str | Path | None = None,
+) -> None:
     """Write new_content to path, preserving any existing persist zone content.
 
     If the existing note contains malformed persist markers (a marker that
@@ -243,10 +248,24 @@ def update_note_preserve_persist_zones(path: str | Path, new_content: str) -> No
     the same condition raises ``RuntimeError``.
 
     Creates parent directories if needed.
+
+    When ``base_dir`` is given, the resolved ``path`` must live inside it or a
+    :class:`ValueError` is raised before any read/write. This containment check
+    (``is_relative_to``) is the recognized path-injection barrier — production
+    callers pass the vault directory so a note path derived from tainted data
+    (paper title / DOI) can never read or write outside the vault.
     """
     from lit_monitor.core.strict_mode import strict_fallback
 
     path = Path(path)
+    if base_dir is not None:
+        base = Path(base_dir).expanduser().resolve()
+        resolved = path.expanduser().resolve()
+        if not resolved.is_relative_to(base):
+            raise ValueError(
+                "update_note_preserve_persist_zones: note path escapes the vault"
+            )
+        path = resolved
     if path.exists():
         existing = path.read_text(encoding="utf-8")
         malformed = _find_malformed_persist_markers(existing)
@@ -367,7 +386,9 @@ def write_paper_note(
             if _fm_end != -1:
                 _insert = _fm_end + 4
                 content = content[:_insert] + _callout + content[_insert:]
-    update_note_preserve_persist_zones(note_path, content)
+    # Containment barrier: the note path is built from tainted data (title /
+    # DOI). Pin the write to inside the vault so a crafted value can't escape.
+    update_note_preserve_persist_zones(note_path, content, base_dir=vault_path)
     logger.info("Wrote paper note: %s", note_path)
     return str(note_path)
 # ---------------------------------------------------------------------------

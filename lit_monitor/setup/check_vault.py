@@ -35,8 +35,12 @@ def check_vault(*, cfg: Any = None) -> dict[str, tuple[bool, str]]:
         vault_path = Path(cfg.obsidian.vault_path).expanduser()
     except FileNotFoundError:
         return {"paths_yaml": (False, "paths.yaml not found")}
-    except Exception as exc:  # noqa: BLE001 — defensive against any config-load failure
-        return {"paths_yaml": (False, f"Failed to load paths.yaml: {exc}")}
+    except Exception:  # noqa: BLE001 — defensive against any config-load failure
+        # Info-leak guard: the exception can embed config paths. Log the detail
+        # server-side; surface only a constant message so nothing tainted
+        # reaches the health detail panel (py/stack-trace-exposure).
+        logger.warning("check_vault: failed to load paths.yaml", exc_info=True)
+        return {"paths_yaml": (False, "Failed to load paths.yaml — see server logs.")}
 
     results: dict[str, tuple[bool, str]] = {}
     is_set = bool(str(vault_path).strip())
@@ -60,8 +64,11 @@ def check_vault(*, cfg: Any = None) -> dict[str, tuple[bool, str]]:
         probe.touch(exist_ok=True)
         probe.unlink(missing_ok=True)
         results["vault_writable"] = (True, "writable")
-    except Exception as exc:  # noqa: BLE001 — surface any OS-level failure as a probe result
-        results["vault_writable"] = (False, f"not writable: {exc}")
+    except Exception:  # noqa: BLE001 — surface any OS-level failure as a probe result
+        # Info-leak guard: log the OS error detail; surface a constant message
+        # so no exception text reaches the response (py/stack-trace-exposure).
+        logger.warning("check_vault: vault not writable", exc_info=True)
+        results["vault_writable"] = (False, "not writable — see server logs")
     return results
 
 

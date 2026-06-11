@@ -297,8 +297,12 @@ def clear_sandbox(*, confirm: bool = False, cfg: Any = None) -> dict[str, str]:
                 )
                 sib.unlink(missing_ok=True)
             actions.append(f"unlinked {SANDBOX_STATE_DB_PATH}")
-        except Exception as exc:
-            actions.append(f"FAILED unlink state_dev.db: {exc}")
+        except Exception:
+            # Info-leak guard: the exception can embed absolute DB paths. Log
+            # the detail; the action log (rendered to the dev panel) stays
+            # generic so no exception text reaches the response.
+            logger.warning("clear_sandbox: failed to unlink state_dev.db", exc_info=True)
+            actions.append("FAILED unlink state_dev.db — see server logs")
             failed = True
 
     # 2) Sandbox chroma persist dir — rmtree the whole thing. We use a fully
@@ -310,8 +314,9 @@ def clear_sandbox(*, confirm: bool = False, cfg: Any = None) -> dict[str, str]:
         try:
             shutil.rmtree(SANDBOX_CHROMA_DIR, ignore_errors=False)
             actions.append(f"removed chroma persist dir {SANDBOX_CHROMA_DIR}")
-        except Exception as exc:
-            actions.append(f"FAILED chroma rmtree: {exc}")
+        except Exception:
+            logger.warning("clear_sandbox: chroma rmtree failed", exc_info=True)
+            actions.append("FAILED chroma rmtree — see server logs")
             failed = True
 
     # Drop the cached EmbeddingsDB so the next caller constructs a fresh client
@@ -332,8 +337,9 @@ def clear_sandbox(*, confirm: bool = False, cfg: Any = None) -> dict[str, str]:
         from chromadb.api.shared_system_client import SharedSystemClient
         SharedSystemClient.clear_system_cache()
         actions.append("cleared chromadb system cache")
-    except Exception as exc:  # noqa: BLE001 — defensive; varies by chromadb version
-        actions.append(f"chromadb system-cache reset skipped: {exc}")
+    except Exception:  # noqa: BLE001 — defensive; varies by chromadb version
+        logger.warning("clear_sandbox: chromadb system-cache reset skipped", exc_info=True)
+        actions.append("chromadb system-cache reset skipped — see server logs")
         # Not flagged as failed — chromadb may not be installed in test env,
         # and on fresh dirs (no prior client) the reset is a no-op anyway.
 
@@ -352,8 +358,9 @@ def clear_sandbox(*, confirm: bool = False, cfg: Any = None) -> dict[str, str]:
         if sentinel.exists():
             sentinel.unlink()
             actions.append(f"removed graph sentinel {sentinel}")
-    except Exception as exc:
-        actions.append(f"FAILED graph sandbox remove: {exc}")
+    except Exception:
+        logger.warning("clear_sandbox: graph sandbox remove failed", exc_info=True)
+        actions.append("FAILED graph sandbox remove — see server logs")
         failed = True
     # Drop the cached GraphDB so the next caller gets a fresh instance against
     # the re-created (empty) sandbox dir — same pattern as sandbox_embeddings_db.
@@ -368,8 +375,9 @@ def clear_sandbox(*, confirm: bool = False, cfg: Any = None) -> dict[str, str]:
         if vault_dir.exists():
             shutil.rmtree(vault_dir, ignore_errors=True)
             actions.append(f"removed {vault_dir}")
-    except Exception as exc:
-        actions.append(f"FAILED vault rmtree: {exc}")
+    except Exception:
+        logger.warning("clear_sandbox: vault rmtree failed", exc_info=True)
+        actions.append("FAILED vault rmtree — see server logs")
         failed = True
 
     return {

@@ -4,11 +4,14 @@ Returns a dict of {check_name: (ok: bool, message: str)}.
 """
 from __future__ import annotations
 
+import logging
 import tomllib
 
 import requests
 
 from lit_monitor.setup._paths import SECRETS_PATH as _SECRETS_PATH
+
+logger = logging.getLogger(__name__)
 
 _ZOTERO_BASE = "https://api.zotero.org"
 _TIMEOUT = 10
@@ -28,8 +31,11 @@ def check_zotero() -> dict[str, tuple[bool, str]]:
     try:
         with _SECRETS_PATH.open("rb") as fh:
             data = tomllib.load(fh)
-    except Exception as exc:
-        results["zotero_credentials"] = (False, f"Failed to parse secrets: {exc}")
+    except Exception:
+        # Info-leak guard: a TOML parse error can echo file content / paths.
+        # Log it; surface a constant message (py/stack-trace-exposure).
+        logger.warning("check_zotero: failed to parse secrets", exc_info=True)
+        results["zotero_credentials"] = (False, "Failed to parse secrets — see server logs.")
         return results
     api_key = data.get("zotero", {}).get("api_key", "")
     library_id = data.get("zotero", {}).get("library_id", "")
@@ -79,6 +85,9 @@ def check_zotero() -> dict[str, tuple[bool, str]]:
             False,
             "Cannot reach api.zotero.org — check internet connection",
         )
-    except Exception as exc:
-        results["zotero_api"] = (False, f"Zotero API check failed: {exc}")
+    except Exception:
+        # Info-leak guard: log the detail; surface a constant message so no
+        # exception text reaches the response (py/stack-trace-exposure).
+        logger.warning("check_zotero: API check failed", exc_info=True)
+        results["zotero_api"] = (False, "Zotero API check failed — see server logs.")
     return results
