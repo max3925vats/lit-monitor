@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
+from scripts.core.doi import normalize_doi
 from scripts.retrieval.rrf import reciprocal_rank_fusion
 
 logger = logging.getLogger(__name__)
@@ -77,8 +78,11 @@ def retrieve_doi_candidates(
         )
         graph_rank = _retrieve_graph(graph_db, seed_doi, entity_ids, k)
         # RRF expects plain lists of doc IDs, not (doi, score) pairs.
-        v_ids = [d for d, _ in vector_rank]
-        g_ids = [d for d, _ in graph_rank]
+        # AR-4: canonicalize DOIs from BOTH legs before fusion so a case/URL
+        # mismatch between the vector and graph legs does not double-count the
+        # same paper (RRF fuses by string equality).
+        v_ids = [normalize_doi(d) for d, _ in vector_rank]
+        g_ids = [normalize_doi(d) for d, _ in graph_rank]
         fused = reciprocal_rank_fusion([v_ids, g_ids])
         return fused[:k]
     raise ValueError(

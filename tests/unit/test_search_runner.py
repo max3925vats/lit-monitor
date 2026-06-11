@@ -32,3 +32,59 @@ def test_format_query_canonical_form():
     """Pin the exact canonical output so silent formatter drift is caught."""
     from scripts.search.search_runner import _format_query
     assert _format_query("Topic AND Other") == "[Topic] AND [Other]"
+
+
+# ---------------------------------------------------------------------------
+# AR-4: canonical DOI normalization at the search-dedup boundary
+# ---------------------------------------------------------------------------
+
+class _FakeStateDB:
+    """Minimal stand-in exposing only known_dois() for filter_known_dois."""
+
+    def __init__(self, known):
+        self._known = set(known)
+
+    def known_dois(self):
+        return self._known
+
+
+def test_filter_known_dois_url_wrap_collision():
+    """AR-4 STASH-VERIFY target: a URL-wrapped candidate DOI must be recognised
+    as already-known when the bare canonical form is in state.db.
+
+    Before AR-4 the candidate was only ``.strip().lower()``-ed, so
+    ``https://doi.org/10.1/a`` did NOT match the stored bare ``10.1/a`` and the
+    paper was wrongly re-ingested as new.
+    """
+    from scripts.search.search_runner import filter_known_dois
+    state_db = _FakeStateDB(known={"10.1/a"})
+    papers = [{"doi": "https://doi.org/10.1/A", "title": "wrapped dup"}]
+    out = filter_known_dois(papers, state_db)
+    assert out == [], "URL-wrapped DOI should dedup against the bare known DOI"
+
+
+def test_filter_known_dois_keeps_genuinely_new():
+    """Sanity: a non-matching DOI is still kept (no over-aggressive dedup)."""
+    from scripts.search.search_runner import filter_known_dois
+    state_db = _FakeStateDB(known={"10.1/a"})
+    papers = [{"doi": "10.2/b", "title": "new"}]
+    out = filter_known_dois(papers, state_db)
+    assert len(out) == 1
+
+
+def test_convert_findpapers_results_normalizes_stored_doi():
+    """AR-4: the stored DOI on the converted record is canonicalized (URL
+    unwrapped + lowercased), consistent with how the rest of the system stores
+    bare lowercased DOIs."""
+    from types import SimpleNamespace
+
+    from scripts.search.search_runner import _convert_findpapers_results
+
+    fake_paper = SimpleNamespace(
+        doi="https://doi.org/10.1234/ABC",
+        title="t", abstract="a", authors=["x"],
+        publication=None, publication_date=None,
+        keywords=None, databases=None,
+    )
+    out = _convert_findpapers_results([fake_paper], tracked_author=False)
+    assert out[0]["doi"] == "10.1234/abc"
