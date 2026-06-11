@@ -12,7 +12,6 @@ the terminal, or any AI client that speaks the Model Context Protocol (MCP).
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Platform: macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#requirements)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![MCP compatible](https://img.shields.io/badge/MCP-compatible-blueviolet.svg)](docs/integrations.md)
 
 Your library is the signal. Each candidate paper is scored by semantic
