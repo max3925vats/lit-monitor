@@ -3,8 +3,8 @@ import datetime
 import itertools
 import edlib
 from typing import List, Optional
-from findpapers.models.paper import Paper
-from findpapers.models.publication import Publication
+from lit_monitor._vendor.findpapers.models.paper import Paper
+from lit_monitor._vendor.findpapers.models.publication import Publication
 
 
 class Search():

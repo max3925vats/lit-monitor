@@ -4,12 +4,12 @@ import logging
 import re
 from lxml import html
 from typing import Optional
-import findpapers.utils.common_util as common_util
-import findpapers.utils.query_util as query_util
-from findpapers.models.search import Search
-from findpapers.models.paper import Paper
-from findpapers.models.publication import Publication
-from findpapers.utils.requests_util import DefaultSession
+import lit_monitor._vendor.findpapers.utils.common_util as common_util
+import lit_monitor._vendor.findpapers.utils.query_util as query_util
+from lit_monitor._vendor.findpapers.models.search import Search
+from lit_monitor._vendor.findpapers.models.paper import Paper
+from lit_monitor._vendor.findpapers.models.publication import Publication
+from lit_monitor._vendor.findpapers.utils.requests_util import DefaultSession
 
 
 DATABASE_LABEL = 'Scopus'

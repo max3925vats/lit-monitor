@@ -1,8 +1,8 @@
 import logging
 import datetime
 from typing import Optional
-import findpapers.utils.persistence_util as persistence_util
-import findpapers.utils.common_util as common_util
+import lit_monitor._vendor.findpapers.utils.persistence_util as persistence_util
+import lit_monitor._vendor.findpapers.utils.common_util as common_util
 
 
 def generate_bibtex(search_path: str, outputpath: str, only_selected_papers: Optional[bool] = False,

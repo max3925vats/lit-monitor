@@ -196,6 +196,11 @@ override-dependencies = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Vendored third-party source (findpapers 0.6.7) is kept as close to upstream as
+# possible — only cli.py removal and namespace-import rewrites. Don't lint it; we
+# don't want ruff auto-rewriting vendored code (it complicates re-vendoring and
+# risks behavioural drift in code we didn't author).
+extend-exclude = ["lit_monitor/_vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]

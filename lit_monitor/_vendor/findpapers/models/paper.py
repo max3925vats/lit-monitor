@@ -2,7 +2,7 @@ from __future__ import annotations
 import datetime
 import re
 from typing import List, Set, Optional
-from findpapers.models.publication import Publication
+from lit_monitor._vendor.findpapers.models.publication import Publication
 
 
 class Paper():
@@ -93,7 +93,7 @@ class Paper():
             - Nowadays only ACM, arXiv, IEEE, PubMed or Scopus are valid database names
         """
 
-        from findpapers.searchers import AVAILABLE_DATABASES
+        from lit_monitor._vendor.findpapers.searchers import AVAILABLE_DATABASES
 
         if database_name not in AVAILABLE_DATABASES:
             raise ValueError(

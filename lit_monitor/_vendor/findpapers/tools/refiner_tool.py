@@ -3,10 +3,10 @@ import re
 import os
 from typing import Optional, List
 from colorama import Fore, Back, Style, init
-from findpapers.models.search import Search
-from findpapers.models.paper import Paper
-import findpapers.utils.common_util as common_util
-import findpapers.utils.persistence_util as persistence_util
+from lit_monitor._vendor.findpapers.models.search import Search
+from lit_monitor._vendor.findpapers.models.paper import Paper
+import lit_monitor._vendor.findpapers.utils.common_util as common_util
+import lit_monitor._vendor.findpapers.utils.persistence_util as persistence_util
 
 
 def _print_paper_details(paper: Paper, highlights: List[str], show_abstract: bool, show_extra_info: bool):  # pragma: no cover

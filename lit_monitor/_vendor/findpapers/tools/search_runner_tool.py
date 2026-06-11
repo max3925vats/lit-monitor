@@ -7,20 +7,20 @@ import re
 from urllib.parse import urlparse
 from lxml import html
 from typing import Optional, List
-from findpapers.models.search import Search
-from findpapers.models.paper import Paper
-from findpapers.models.publication import Publication
-from findpapers.utils.requests_util import DefaultSession
-import findpapers.searchers.scopus_searcher as scopus_searcher
-import findpapers.searchers.ieee_searcher as ieee_searcher
-import findpapers.searchers.pubmed_searcher as pubmed_searcher
-import findpapers.searchers.arxiv_searcher as arxiv_searcher
-import findpapers.searchers.acm_searcher as acm_searcher
-import findpapers.searchers.medrxiv_searcher as medrxiv_searcher
-import findpapers.searchers.biorxiv_searcher as biorxiv_searcher
-import findpapers.utils.common_util as common_util
-import findpapers.utils.persistence_util as persistence_util
-import findpapers.utils.publication_util as publication_util
+from lit_monitor._vendor.findpapers.models.search import Search
+from lit_monitor._vendor.findpapers.models.paper import Paper
+from lit_monitor._vendor.findpapers.models.publication import Publication
+from lit_monitor._vendor.findpapers.utils.requests_util import DefaultSession
+import lit_monitor._vendor.findpapers.searchers.scopus_searcher as scopus_searcher
+import lit_monitor._vendor.findpapers.searchers.ieee_searcher as ieee_searcher
+import lit_monitor._vendor.findpapers.searchers.pubmed_searcher as pubmed_searcher
+import lit_monitor._vendor.findpapers.searchers.arxiv_searcher as arxiv_searcher
+import lit_monitor._vendor.findpapers.searchers.acm_searcher as acm_searcher
+import lit_monitor._vendor.findpapers.searchers.medrxiv_searcher as medrxiv_searcher
+import lit_monitor._vendor.findpapers.searchers.biorxiv_searcher as biorxiv_searcher
+import lit_monitor._vendor.findpapers.utils.common_util as common_util
+import lit_monitor._vendor.findpapers.utils.persistence_util as persistence_util
+import lit_monitor._vendor.findpapers.utils.publication_util as publication_util
 
 
 def _get_paper_metadata_by_url(url: str):

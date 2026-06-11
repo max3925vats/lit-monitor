@@ -1,7 +1,7 @@
 import json
 import re
 from typing import Optional
-from findpapers.models.search import Search
+from lit_monitor._vendor.findpapers.models.search import Search
 
 
 def save(search: Search, outputpath: str):

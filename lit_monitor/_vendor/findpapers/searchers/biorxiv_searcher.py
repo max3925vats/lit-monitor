@@ -1,5 +1,5 @@
-from findpapers.models.search import Search
-import findpapers.searchers.rxiv_searcher as rxiv_searcher
+from lit_monitor._vendor.findpapers.models.search import Search
+import lit_monitor._vendor.findpapers.searchers.rxiv_searcher as rxiv_searcher
 
 DATABASE_LABEL = 'bioRxiv'
 

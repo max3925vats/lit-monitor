@@ -1,7 +1,7 @@
 import os
 import random
 import requests
-import findpapers.utils.common_util as common_util
+import lit_monitor._vendor.findpapers.utils.common_util as common_util
 
 
 # list of most common user agents (Last Updated: Wed, 09 Sep 2020)
