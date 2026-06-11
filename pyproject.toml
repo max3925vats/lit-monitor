@@ -167,6 +167,8 @@ include-package-data = true
     "_data/item_routing.yaml",
     "_data/config_examples/**/*.yaml",
     "_data/config_examples/**/*.md",
+    "_vendor/README.md",
+    "_vendor/findpapers/LICENSE",
     "**/*.yaml",
     "**/*.yml",
     "**/*.j2",
