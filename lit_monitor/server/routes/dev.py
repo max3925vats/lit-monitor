@@ -7,6 +7,7 @@ Panels 3-7 are rendered as disabled placeholders and land in Tasks #68-#72.
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 from html import escape
 from pathlib import Path
@@ -43,10 +44,11 @@ async def dev_ruff() -> str:
         )
     except subprocess.TimeoutExpired:
         return '<div class="dev-result"><span class="pill danger">✗ timeout (>60s)</span></div>'
-    except FileNotFoundError as exc:
+    except FileNotFoundError:
+        logger.warning("dev ruff: uv not found", exc_info=True)
         return (
-            f'<div class="dev-result"><span class="pill danger">'
-            f'✗ uv not found: {escape(str(exc))}</span></div>'
+            '<div class="dev-result"><span class="pill danger">'
+            '✗ uv not found — check server logs</span></div>'
         )
 
     ok = result.returncode == 0
@@ -124,10 +126,11 @@ async def dev_diagnose() -> str:
 
     try:
         results = run_diagnose(config_only=True)
-    except Exception as exc:
+    except Exception:
+        logger.exception("dev diagnose failed")
         return (
-            f'<div class="dev-result"><span class="pill danger">'
-            f"✗ {escape(str(exc))}</span></div>"
+            '<div class="dev-result"><span class="pill danger">'
+            "✗ diagnose failed — check server logs</span></div>"
         )
     return f'<div class="dev-result">{_render_checks_panel(results)}</div>'
 
@@ -139,10 +142,11 @@ async def dev_check() -> str:
 
     try:
         results = run_health_check()
-    except Exception as exc:
+    except Exception:
+        logger.exception("dev health check failed")
         return (
-            f'<div class="dev-result"><span class="pill danger">'
-            f"✗ {escape(str(exc))}</span></div>"
+            '<div class="dev-result"><span class="pill danger">'
+            "✗ health check failed — check server logs</span></div>"
         )
     return f'<div class="dev-result">{_render_checks_panel(results)}</div>'
 
@@ -169,10 +173,11 @@ async def dev_status() -> str:
             f"<tr><td>recorded runs</td><td>{run_count}</td></tr>"
             "</tbody></table></div>"
         )
-    except Exception as exc:
+    except Exception:
+        logger.exception("dev status query failed")
         return (
-            f'<div class="dev-result"><span class="pill danger">'
-            f"✗ {escape(str(exc))}</span></div>"
+            '<div class="dev-result"><span class="pill danger">'
+            "✗ status query failed — check server logs</span></div>"
         )
 
 
@@ -317,7 +322,13 @@ def _run_sandbox_ingest(*, doi: str, fulltext: str) -> str:
             msg = str(note_path)
         trace.append(("write_paper_note", True, msg))
     except Exception as exc:
-        trace.append((f"<failed: {exc.__class__.__name__}>", False, str(exc)))
+        # Info-leak guard: log the full exception (with traceback) server-side;
+        # the trace row surfaces only the exception class name (safe + useful
+        # for the dev), never the raw message which can embed paths/secrets.
+        logger.exception("dev sandbox ingest failed")
+        trace.append(
+            (f"<failed: {exc.__class__.__name__}>", False, "see server logs")
+        )
 
     rows: list[str] = []
     for stage, ok, msg in trace:
@@ -413,10 +424,11 @@ async def dev_ingest_zotero_key(request: Request) -> str:
             )
         doi = item_data.get("DOI") or f"zotero/{zotero_key}"
         return _run_sandbox_ingest(doi=doi, fulltext=md)
-    except Exception as exc:
+    except Exception:
+        logger.exception("dev zotero-key ingest failed")
         return (
             '<div class="dev-result"><span class="pill danger">'
-            f"✗ Zotero fetch failed: {escape(str(exc))}</span></div>"
+            "✗ Zotero fetch failed — check server logs</span></div>"
         )
 
 
@@ -461,8 +473,9 @@ async def dev_ingest_doi(request: Request) -> str:
 
     try:
         client = _build_zotero_client_for_dev()
-    except Exception as exc:
-        return _danger(f"Zotero client init failed: {exc}")
+    except Exception:
+        logger.exception("dev DOI ingest: Zotero client init failed")
+        return _danger("Zotero client init failed — check server logs")
 
     target = None
     try:
@@ -480,8 +493,9 @@ async def dev_ingest_doi(request: Request) -> str:
             if _extra_field_contains_doi(data.get("extra") or "", doi_lower):
                 target = m
                 break
-    except Exception as exc:
-        return _danger(f"Zotero library walk failed: {exc}")
+    except Exception:
+        logger.exception("dev DOI ingest: Zotero library walk failed")
+        return _danger("Zotero library walk failed — check server logs")
 
     if target is None:
         return _danger(
@@ -534,8 +548,17 @@ def _sandbox_note_path_for(doi: str) -> Path:
     """
     from lit_monitor.server.dev_sandbox import sandbox_vault_subfolder
 
-    slug = doi.replace("/", "_").replace(":", "_")
-    return sandbox_vault_subfolder() / f"sandbox_{slug}.md"
+    # Path-injection guard: the DOI is user-supplied. Reduce it to a single safe
+    # filename component (no path separators, no traversal) before joining it to
+    # the sandbox dir, then confirm the resolved path stays inside that dir.
+    slug = re.sub(r"[^A-Za-z0-9._-]", "_", doi)
+    slug = slug.replace("..", "_")  # belt-and-suspenders against ``..`` runs
+    sandbox_dir = sandbox_vault_subfolder().resolve()
+    candidate = (sandbox_dir / f"sandbox_{slug}.md").resolve()
+    if sandbox_dir not in candidate.parents:
+        # A crafted DOI tried to escape the sandbox subfolder — refuse.
+        raise HTTPException(status_code=400, detail="invalid DOI")
+    return candidate
 
 
 @router.get("/api/dev/sandbox-dois", response_class=HTMLResponse)
@@ -558,10 +581,9 @@ async def dev_sandbox_dois() -> str:
             rows = conn.execute(
                 "SELECT doi, title FROM papers ORDER BY doi"
             ).fetchall()
-    except Exception as exc:
-        return (
-            f'<option value="">(error: {escape(str(exc))})</option>'
-        )
+    except Exception:
+        logger.exception("dev sandbox-dois query failed")
+        return '<option value="">(error — see server logs)</option>'
     if not rows:
         return '<option value="">(sandbox empty — run Panel 3 first)</option>'
     options = ['<option value="">(pick a DOI)</option>']
@@ -607,7 +629,8 @@ async def dev_relink(request: Request) -> str:
         )
         return _ok(f"relinked {Path(note_path).name}")
     except Exception as exc:
-        return _danger(f"{exc.__class__.__name__}: {exc}")
+        logger.exception("dev relink failed")
+        return _danger(f"{exc.__class__.__name__} — check server logs")
 
 
 @router.post("/api/dev/rerender", response_class=HTMLResponse)
@@ -649,7 +672,8 @@ async def dev_rerender(request: Request) -> str:
             f"rerendered → {note_path} ({after_size} bytes, {sign}{delta} delta)"
         )
     except Exception as exc:
-        return _danger(f"{exc.__class__.__name__}: {exc}")
+        logger.exception("dev rerender failed")
+        return _danger(f"{exc.__class__.__name__} — check server logs")
 
 
 @router.post("/api/dev/re-extract", response_class=HTMLResponse)
@@ -699,7 +723,8 @@ async def dev_re_extract(request: Request) -> str:
             f"re-extracted phases={','.join(phases)} → {n_fields} fields"
         )
     except Exception as exc:
-        return _danger(f"{exc.__class__.__name__}: {exc}")
+        logger.exception("dev re-extract failed")
+        return _danger(f"{exc.__class__.__name__} — check server logs")
 
 
 @router.post("/api/dev/synthesize", response_class=HTMLResponse)
@@ -731,7 +756,8 @@ async def dev_synthesize(request: Request) -> str:
             return _danger(f"No similar notes found for topic: {topic}")
         return _ok(f"synthesis written → {note_path}")
     except Exception as exc:
-        return _danger(f"{exc.__class__.__name__}: {exc}")
+        logger.exception("dev synthesize failed")
+        return _danger(f"{exc.__class__.__name__} — check server logs")
 
 
 # ---------------------------------------------------------------------------
@@ -850,10 +876,11 @@ async def dev_dryrun_start(request: Request) -> str:
             )
             slot.started_at = datetime.now(UTC).isoformat(timespec="seconds")
             slot.dry_run = True
-        except Exception as exc:  # noqa: BLE001 — surface any spawn failure
+        except Exception:  # noqa: BLE001 — surface any spawn failure
+            logger.exception("dev dry-run spawn failed")
             return (
                 '<div class="dev-result"><span class="pill danger">'
-                f"✗ spawn failed: {escape(str(exc))}</span></div>"
+                "✗ spawn failed — check server logs</span></div>"
             )
     return (
         '<div class="dev-result"><span class="pill success">'
@@ -1145,10 +1172,11 @@ async def dev_graph_backfill_start(request: Request) -> str:
                 cwd=str(_REPO_ROOT),
             )
             slot.started_at = datetime.now(UTC).isoformat(timespec="seconds")
-        except Exception as exc:  # noqa: BLE001 — surface any spawn failure
+        except Exception:  # noqa: BLE001 — surface any spawn failure
+            logger.exception("dev graph backfill spawn failed")
             return (
                 '<div class="dev-result"><span class="pill danger">'
-                f"✗ spawn failed: {escape(str(exc))}</span></div>"
+                "✗ spawn failed — check server logs</span></div>"
             )
     return (
         '<div class="dev-result"><span class="pill success">'
@@ -1385,7 +1413,10 @@ async def dev_compare_models() -> str:
     except TimeoutError:
         return _danger("compare-models timed out after 10 minutes")
     except Exception as exc:
-        return _danger(f"compare-models failed: {exc.__class__.__name__}: {exc}")
+        logger.exception("dev compare-models failed")
+        return _danger(
+            f"compare-models failed: {exc.__class__.__name__} — check server logs"
+        )
 
 
 @router.post("/api/dev/safety", response_class=HTMLResponse)
@@ -1458,7 +1489,8 @@ async def dev_quality_report() -> str:
     try:
         head = report_path.read_text(encoding="utf-8", errors="replace")[:500]
     except Exception as exc:
-        return _danger(f"read failed: {exc.__class__.__name__}: {exc}")
+        logger.exception("dev quality-report read failed")
+        return _danger(f"read failed: {exc.__class__.__name__} — check server logs")
     return (
         "<div class='dev-result'>"
         "<span class='pill success'>Report found</span>"
@@ -1504,10 +1536,11 @@ async def dev_sandbox_status_panel() -> str:
 
     try:
         status = sandbox_status()
-    except Exception as exc:
+    except Exception:
+        logger.exception("dev sandbox status failed")
         return (
-            f'<div class="dev-result"><span class="pill danger">'
-            f"✗ {escape(str(exc))}</span></div>"
+            '<div class="dev-result"><span class="pill danger">'
+            "✗ sandbox status failed — check server logs</span></div>"
         )
     last_mod = status.get("last_modified") or "—"
     return (

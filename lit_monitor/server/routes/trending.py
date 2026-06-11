@@ -92,7 +92,9 @@ def accept_trending_suggestion(suggestion_id: int) -> dict:
             row["concept_text"],
             exc,
         )
-        return {"status": "accepted", "saved_to_topics": False, "error": str(exc)}
+        # Info-leak guard: the save exception can embed the absolute
+        # topics.yaml path. Logged above; the client gets a generic flag.
+        return {"status": "accepted", "saved_to_topics": False, "error": "could not save to topics"}
 
     return {"status": "accepted", "saved_to_topics": True}
 

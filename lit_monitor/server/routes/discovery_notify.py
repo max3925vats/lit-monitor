@@ -48,6 +48,35 @@ def _get_preferred_viewer() -> str:
         return ""
 
 
+def _is_safe_redirect(target: str) -> bool:
+    """Allow only known-safe redirect targets for the notify handler.
+
+    Permitted:
+      - relative in-app paths (must start with a single ``/``, not ``//``)
+      - ``obsidian://`` deep links
+      - loopback ``http(s)://127.0.0.1`` / ``localhost`` URLs
+
+    Everything else (arbitrary external URLs, scheme-relative ``//evil.com``,
+    ``javascript:``, etc.) is rejected so the notification click can't be
+    coerced into an open-redirect.
+    """
+    from urllib.parse import urlparse
+
+    if not target:
+        return False
+    # Relative app path: a single leading slash, never protocol-relative "//".
+    if target.startswith("/") and not target.startswith("//"):
+        return True
+    parsed = urlparse(target)
+    scheme = parsed.scheme.lower()
+    if scheme == "obsidian":
+        return True
+    if scheme in ("http", "https"):
+        host = (parsed.hostname or "").lower()
+        return host in ("127.0.0.1", "localhost", "::1")
+    return False
+
+
 def _get_vault_name() -> str:
     """Read vault name from config for building the obsidian:// URI.
 
@@ -82,13 +111,18 @@ async def notify_handler(
     viewer = _get_preferred_viewer()
 
     if viewer == "browser":
-        return RedirectResponse(url=f"/discovery/{run_id}", status_code=302)
+        # run_id is an int (ge=1), so this is always a safe relative app path;
+        # validate anyway so every redirect goes through the same allowlist.
+        target = f"/discovery/{run_id}"
+        if _is_safe_redirect(target):
+            return RedirectResponse(url=target, status_code=302)
 
     if viewer == "obsidian":
         vault = _get_vault_name()
         # Point at the vault root; P8 can refine the note path later.
         obsidian_url = f"obsidian://open?vault={quote(vault)}"
-        return RedirectResponse(url=obsidian_url, status_code=302)
+        if _is_safe_redirect(obsidian_url):
+            return RedirectResponse(url=obsidian_url, status_code=302)
 
     if viewer == "none":
         return Response(status_code=204)

@@ -82,8 +82,12 @@ def create_schedule(
     try:
         spec = ScheduleSpec.parse(day_of_week, time)
     except ValueError as exc:
+        # Info-leak guard: log the parse detail server-side; return a static
+        # guidance message (the only useful, non-leaky thing for the user).
+        logger.info("schedule parse rejected: %s", exc)
         return HTMLResponse(
-            f'<div class="card danger">{exc}</div>',
+            '<div class="card danger">Invalid schedule — day must be a weekday '
+            'name and time must be HH:MM (24h).</div>',
             status_code=400,
         )
     try:
@@ -106,8 +110,12 @@ def create_schedule(
             status_code=500,
         )
     except NotImplementedError as exc:
+        # Info-leak guard: the message embeds the platform string; log it and
+        # return a static notice.
+        logger.info("schedule install not implemented: %s", exc)
         return HTMLResponse(
-            f'<div class="card danger">{exc}</div>',
+            '<div class="card danger">Scheduling is not supported on this '
+            'platform.</div>',
             status_code=400,
         )
     return HTMLResponse(

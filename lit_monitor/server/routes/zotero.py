@@ -93,6 +93,11 @@ def test() -> dict:
     try:
         # Cheapest probe pyzotero offers: a 1-item collections page.
         client._zot.collections(limit=1)
-    except Exception as exc:
-        return {"ok": False, "message": str(exc)}
+    except Exception:
+        # Info-leak guard: the pyzotero exception can embed the API key,
+        # library id, and request URL. Log it server-side; the client gets
+        # a generic "check failed" so the wizard's status pill stays red
+        # without exposing internals.
+        logger.warning("Zotero /test probe failed", exc_info=True)
+        return {"ok": False, "message": "credential check failed"}
     return {"ok": True, "message": "ok"}

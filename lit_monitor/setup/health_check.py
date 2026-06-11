@@ -76,11 +76,14 @@ def _check_graph_section() -> dict[str, CheckResult]:
     """
     try:
         return {"graph_indexed": _check_graph_mod.check_graph()}
-    except Exception as exc:  # noqa: BLE001 — aggregator must never crash
-        logger.debug("check_graph() raised; degrading to warn: %s", exc)
+    except Exception:  # noqa: BLE001 — aggregator must never crash
+        # Info-leak guard: the exception can embed the graph DB path. Log the
+        # detail (with traceback) server-side; the surfaced message — which the
+        # health detail panel renders to the browser — stays generic.
+        logger.warning("check_graph() raised; degrading to warn", exc_info=True)
         return {
             "graph_indexed": CheckResult(
-                False, f"Graph check failed: {exc}", severity="warn"
+                False, "Graph check failed — see server logs.", severity="warn"
             )
         }
 

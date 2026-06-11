@@ -159,8 +159,15 @@ def _validate_paths(data: dict[str, Any]) -> list[str]:
     vault = o.get("vault_path", "")
     if not vault:
         errors.append("Obsidian vault path is required.")
+    elif "\x00" in vault or ".." in Path(vault).parts:
+        # Path-injection guard: reject NUL bytes and ``..`` traversal segments
+        # before touching the filesystem. The vault path is written to
+        # paths.yaml and later read/written by the pipeline, so a traversal
+        # component must never be persisted.
+        errors.append("Vault path must be absolute and must not contain '..'.")
     else:
-        p = Path(vault).expanduser()
+        # Normalize to an absolute real path before the existence checks.
+        p = Path(vault).expanduser().resolve(strict=False)
         if not p.exists():
             errors.append(f"Vault path does not exist: {vault}")
         elif not p.is_dir():
@@ -819,9 +826,19 @@ def ollama_test(request: Request, host: str = "") -> HTMLResponse:
     if not host.strip():
         return HTMLResponse('<span class="pill warning">no host provided</span>')
 
+    from urllib.parse import urlparse
+
     import httpx
 
-    url = host.strip().rstrip("/") + "/api/tags"
+    base = host.strip().rstrip("/")
+    # SSRF guard: only allow http/https reachability checks. Without this a
+    # caller could coerce the server into requesting file://, ftp://, etc.
+    scheme = urlparse(base).scheme.lower()
+    if scheme not in ("http", "https"):
+        return HTMLResponse(
+            '<span class="pill warning">host must start with http:// or https://</span>'
+        )
+    url = base + "/api/tags"
     try:
         r = httpx.get(url, timeout=5.0, headers={"User-Agent": "lit-monitor"})
     except httpx.RequestError as exc:
@@ -1385,8 +1402,11 @@ def save_notify_preference(
     try:
         safe_save_preference(viewer, enabled=enabled_bool)
     except ValueError as exc:
+        # Info-leak guard: log the validation detail server-side; return a
+        # static message (the exception can embed config paths).
+        logger.info("save_notify_preference rejected: %s", exc)
         return HTMLResponse(
-            f'<p class="error">{exc}</p>',
+            '<p class="error">Invalid notification preference.</p>',
             status_code=400,
         )
 
@@ -1422,8 +1442,12 @@ def setup_check(request: Request, name: str) -> HTMLResponse:
     elif name == "vault":
         results = _check_vault()
     else:
+        # Reflective-XSS guard: ``name`` is user-controlled (path param) and is
+        # echoed back here — escape it so it can't inject markup.
+        from html import escape
+
         return HTMLResponse(
-            f'<span class="pill danger">unknown check: {name}</span>',
+            f'<span class="pill danger">unknown check: {escape(name)}</span>',
             status_code=404,
         )
 
