@@ -12,7 +12,18 @@
 - A Zotero library (Better BibTeX optional)
 - An Obsidian vault (full absolute path required)
 
-## Quick install
+## Install with pip (recommended)
+
+```bash
+pip install lit-monitor        # or: uvx lit-monitor / pipx install lit-monitor
+lit-monitor first-run
+```
+
+`lit-monitor first-run` walks you through interactive setup and then launches the
+web UI. The base install is cloud-free and runs entirely on local Ollama.
+Ollama itself is a separate prerequisite — see [Requirements](#requirements).
+
+## From source (development)
 
 ```bash
 git clone https://github.com/max3925vats/lit-monitor.git
@@ -57,7 +68,15 @@ for f in config/*.example.yaml; do cp -n "$f" "${f%.example.yaml}.yaml"; done
 | `--extra litellm` | Multi-provider LLM routing (Anthropic, OpenAI, Vertex AI, etc.) | Ollama only |
 | `--extra dev` | Contributor tooling (ruff, pytest, mypy) | — |
 
-Install one or more with, for example:
+Install one or more with pip (square-bracket extras):
+
+```bash
+pip install "lit-monitor[nlp]"           # BioBERT entity extraction
+pip install "lit-monitor[litellm]"       # multi-provider cloud LLM routing
+pip install "lit-monitor[nlp,litellm]"   # both at once
+```
+
+Or, from a source checkout driving `uv` yourself:
 
 ```bash
 uv sync --extra nlp --extra litellm

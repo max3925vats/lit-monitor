@@ -8,7 +8,7 @@ LLM, and writes everything into your Obsidian vault — queryable from a browser
 the terminal, or any AI client that speaks the Model Context Protocol (MCP).
 
 [![CI](https://github.com/max3925vats/lit-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/max3925vats/lit-monitor/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.10.0-informational.svg)](https://github.com/max3925vats/lit-monitor/releases)
+[![Version](https://img.shields.io/badge/version-0.11.0-informational.svg)](https://github.com/max3925vats/lit-monitor/releases)
 [![Downloads](https://img.shields.io/github/downloads/max3925vats/lit-monitor/total)](https://github.com/max3925vats/lit-monitor/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
@@ -81,6 +81,22 @@ For the scoring model and the design behind each signal, see
 ## Install
 
 ```bash
+pip install lit-monitor        # or: uvx lit-monitor / pipx install lit-monitor
+lit-monitor first-run
+```
+
+That's the whole install. `lit-monitor first-run` walks you through interactive
+setup and then launches the web UI. [Ollama](https://ollama.com) is a separate
+prerequisite for local embeddings (`ollama pull mxbai-embed-large`) — see
+[Requirements](#requirements).
+
+For optional extras — `[nlp]` (BioBERT entity extraction) and `[litellm]`
+(multi-provider cloud LLM routing) — and the from-source / development install,
+see the [Installation guide](docs/installation.md).
+
+### From source (development)
+
+```bash
 git clone https://github.com/max3925vats/lit-monitor.git
 cd lit-monitor
 ./install.sh
@@ -89,10 +105,6 @@ cd lit-monitor
 The script installs [`uv`](https://docs.astral.sh/uv/) if needed, creates a
 project-local `.venv`, resolves all dependencies, and seeds working configs
 from `config/*.example.yaml`.
-
-Starting from a non-biopharma field, adding optional extras (NLP entity
-extraction, multi-provider LLM routing), or prefer to drive `uv` yourself? See
-the [Installation guide](docs/installation.md).
 
 ## Quickstart
 
