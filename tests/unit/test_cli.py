@@ -1480,10 +1480,14 @@ class TestDiagnoseCommand:
 
     def test_diagnose_returns_nonzero_when_loader_fails(self, runner, tmp_path) -> None:
         """diagnose exits 1 if any config file fails to load."""
-        # Write an invalid YAML file for paths.yaml to trigger a FAIL
-        (tmp_path / "paths.yaml").write_text("this: is: invalid: yaml: :::\n")
+        # Redirect config resolution at the env-var tier (LIT_MONITOR_ROOT ->
+        # <root>/config) so diagnose reads our malformed file, never the dev
+        # machine's real ~/.config/lit-monitor/ or repo ./config/.
+        cfg_dir = tmp_path / "config"
+        cfg_dir.mkdir()
+        (cfg_dir / "paths.yaml").write_text("this: is: invalid: yaml: :::\n")
 
-        with patch("lit_monitor.core.config._CONFIG_DIR", tmp_path):
+        with patch.dict(os.environ, {"LIT_MONITOR_ROOT": str(tmp_path)}):
             result = runner.invoke(main, ["diagnose", "--config-only"])
 
         # Should exit non-zero because paths.yaml is malformed
@@ -1492,11 +1496,13 @@ class TestDiagnoseCommand:
 
     def test_diagnose_config_only_skips_service_checks(self, runner, tmp_path) -> None:
         """--config-only must not invoke Ollama or Zotero checks."""
-        # Write minimal valid file
-        (tmp_path / "paths.yaml").write_text("key: value\n")
+        # Write minimal valid file under the env-var-redirected config dir.
+        cfg_dir = tmp_path / "config"
+        cfg_dir.mkdir()
+        (cfg_dir / "paths.yaml").write_text("key: value\n")
 
         with (
-            patch("lit_monitor.core.config._CONFIG_DIR", tmp_path),
+            patch.dict(os.environ, {"LIT_MONITOR_ROOT": str(tmp_path)}),
             patch("lit_monitor.setup.check_ollama.check_ollama") as mock_ollama,
             patch("lit_monitor.setup.check_zotero.check_zotero") as mock_zotero,
         ):
