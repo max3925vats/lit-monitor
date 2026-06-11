@@ -271,6 +271,24 @@ class TestGetPaperDetails:
         assert "relationships_in" in result
         assert "relationships_out" in result
 
+    def test_survives_state_db_accessor_error(self, fake_db):
+        """Regression: _get_state_db raising (e.g. missing config/paths.yaml on a
+        fresh checkout or in CI) must degrade to no Zotero linkage, not crash
+        get_paper_details. Reproduces the CI FileNotFoundError without needing a
+        real config on the test machine."""
+        empty = _make_cursor()
+        fake_db._conn.execute.return_value = empty
+
+        def _boom():
+            raise FileNotFoundError("config/paths.yaml not found")
+
+        with (
+            patch.object(tools, "_get_graph_db", return_value=fake_db),
+            patch.object(tools, "_get_state_db", side_effect=_boom),
+        ):
+            result = tools.get_paper_details("10.1234/test")
+        assert "metadata" in result  # returned a snapshot, did not raise
+
     def test_json_serializable(self, fake_db):
         empty = _make_cursor()
         fake_db._conn.execute.return_value = empty
