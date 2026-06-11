@@ -44,7 +44,19 @@ def fixture_graph(tmp_path):
     return db
 
 
-def test_http_mcp_get_paper_shape_parity(fixture_graph, monkeypatch):
+@pytest.fixture
+def fixture_state(tmp_path):
+    """state.db with a zotero_key row for the parity DOI."""
+    from scripts.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "parity_state.db")
+    db.upsert_paper(
+        {"doi": "10.9999/parity", "title": "Parity Test Paper", "zotero_key": "ZPARITY"}
+    )
+    return db
+
+
+def test_http_mcp_get_paper_shape_parity(fixture_graph, fixture_state, monkeypatch):
     """H9: GET /api/papers/{doi} and MCP get_paper_details return identical keys.
 
     Validates that:
@@ -62,6 +74,9 @@ def test_http_mcp_get_paper_shape_parity(fixture_graph, monkeypatch):
 
     monkeypatch.setattr(_papers_module, "safe_graph_db", lambda *a, **kw: fixture_graph)
     monkeypatch.setattr(_tools_module, "_get_graph_db", lambda: fixture_graph)
+    # NEW: both surfaces read the same seeded state.db.
+    monkeypatch.setattr(_papers_module, "_snapshot_state_db", lambda: fixture_state)
+    monkeypatch.setattr(_tools_module, "_get_state_db", lambda: fixture_state)
 
     from scripts.server.app import create_app
 
@@ -105,3 +120,14 @@ def test_http_mcp_get_paper_shape_parity(fixture_graph, monkeypatch):
             f"  HTTP metadata keys: {sorted(http_meta_keys)}\n"
             f"  MCP metadata keys:  {sorted(mcp_meta_keys)}"
         )
+
+    # Zotero linkage parity: both surfaces carry the same non-null key + deeplink.
+    assert http_result["metadata"]["zotero_key"] == "ZPARITY"
+    assert mcp_result["metadata"]["zotero_key"] == "ZPARITY"
+    assert (
+        http_result["metadata"]["zotero_deeplink"]
+        == mcp_result["metadata"]["zotero_deeplink"]
+        == "zotero://select/library/items/ZPARITY"
+    )
+    # Regression guard: metadata key SETS still identical (no per-surface enrichment).
+    assert set(http_result["metadata"]) == set(mcp_result["metadata"])
