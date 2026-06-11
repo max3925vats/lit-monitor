@@ -1,7 +1,7 @@
 """G2: tests for the alias loader (scripts.graph.aliases)."""
 from __future__ import annotations
 
-from scripts.graph.aliases import load_aliases
+from lit_monitor.graph.aliases import load_aliases
 
 
 def test_load_aliases_returns_flat_surface_to_canonical_dict_per_type(tmp_path):

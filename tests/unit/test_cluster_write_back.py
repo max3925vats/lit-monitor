@@ -41,7 +41,7 @@ def _make_zot_client():
 class TestPushTagsToZotero:
     def test_dry_run_makes_no_api_calls(self):
         """dry_run=True must not call any write methods on the Zotero client."""
-        from scripts.clustering.write_back import push_tags_to_zotero
+        from lit_monitor.clustering.write_back import push_tags_to_zotero
 
         clusters = [{"id": 1, "display_name": "Test Theme", "n_papers": 2}]
         assignments = [
@@ -70,7 +70,7 @@ class TestPushTagsToZotero:
 
     def test_confirm_adds_tags_additively(self):
         """dry_run=False actually calls update/tag methods — additive only."""
-        from scripts.clustering.write_back import push_tags_to_zotero
+        from lit_monitor.clustering.write_back import push_tags_to_zotero
 
         clusters = [{"id": 1, "display_name": "CEX Chromatography", "n_papers": 1}]
         assignments = [{"doi": "10.1000/a", "cluster_id": 1}]
@@ -96,7 +96,7 @@ class TestPushTagsToZotero:
 
     def test_no_delete_methods_called(self):
         """Under no circumstances should delete_* methods be called."""
-        from scripts.clustering.write_back import push_tags_to_zotero
+        from lit_monitor.clustering.write_back import push_tags_to_zotero
 
         clusters = [{"id": 1, "display_name": "Test", "n_papers": 1}]
         assignments = [{"doi": "10.1000/a", "cluster_id": 1}]
@@ -122,7 +122,7 @@ class TestPushTagsToZotero:
 
     def test_skips_papers_without_zotero_key(self):
         """Papers with no zotero_key in state_db are silently skipped."""
-        from scripts.clustering.write_back import push_tags_to_zotero
+        from lit_monitor.clustering.write_back import push_tags_to_zotero
 
         clusters = [{"id": 1, "display_name": "Theme", "n_papers": 1}]
         assignments = [{"doi": "10.unknown/x", "cluster_id": 1}]
@@ -137,7 +137,7 @@ class TestPushTagsToZotero:
 
     def test_tag_uses_lm_namespace(self):
         """Tags must be in the form lm/<theme-name>."""
-        from scripts.clustering.write_back import push_tags_to_zotero
+        from lit_monitor.clustering.write_back import push_tags_to_zotero
 
         clusters = [{"id": 1, "display_name": "Membrane Filtration", "n_papers": 1}]
         assignments = [{"doi": "10.1000/a", "cluster_id": 1}]
@@ -161,7 +161,7 @@ class TestPushTagsToZotero:
         success (tags_added=1, papers_processed=1) and one failure
         (tags_failed=1) — never all-success.
         """
-        from scripts.clustering.write_back import push_tags_to_zotero
+        from lit_monitor.clustering.write_back import push_tags_to_zotero
 
         clusters = [{"id": 1, "display_name": "Theme", "n_papers": 2}]
         assignments = [
@@ -193,7 +193,7 @@ class TestPushTagsToZotero:
 
         Migrated here from tests/integration/test_v09_e2e.py, where it was
         permanently skipped by a broken ``pytest.importorskip(
-        "scripts.clustering.writeback")`` (wrong module — the real module
+        "lit_monitor.clustering.writeback")`` (wrong module — the real module
         is ``write_back``) plus a call to a non-existent ``write_back_tags``.
         It is a pure unit test (mocked state_db + zotero_client, no live
         services), so it lives in the unit suite and runs unconditionally.
@@ -203,7 +203,7 @@ class TestPushTagsToZotero:
         With dry_run=True neither must be invoked, and the report must
         carry ``dry_run=True``.
         """
-        from scripts.clustering.write_back import push_tags_to_zotero
+        from lit_monitor.clustering.write_back import push_tags_to_zotero
 
         clusters = [{"id": 0, "display_name": "Protein A & CEX", "n_papers": 2}]
         assignments = [
@@ -236,7 +236,7 @@ class TestPushTagsToZotero:
 class TestPushCollectionsToZotero:
     def test_dry_run_no_collection_creates(self):
         """dry_run=True must not create collections or move items."""
-        from scripts.clustering.write_back import push_collections_to_zotero
+        from lit_monitor.clustering.write_back import push_collections_to_zotero
 
         clusters = [{"id": 1, "display_name": "CEX", "n_papers": 1}]
         assignments = [{"doi": "10.1000/a", "cluster_id": 1}]
@@ -252,7 +252,7 @@ class TestPushCollectionsToZotero:
 
     def test_creates_parent_collection_if_absent(self):
         """If the parent collection doesn't exist, it must be created."""
-        from scripts.clustering.write_back import push_collections_to_zotero
+        from lit_monitor.clustering.write_back import push_collections_to_zotero
 
         clusters = [{"id": 1, "display_name": "CEX", "n_papers": 1}]
         assignments = [{"doi": "10.1000/a", "cluster_id": 1}]
@@ -273,7 +273,7 @@ class TestPushCollectionsToZotero:
 
     def test_no_delete_methods_called_collections(self):
         """Collections write-back must never call delete methods."""
-        from scripts.clustering.write_back import push_collections_to_zotero
+        from lit_monitor.clustering.write_back import push_collections_to_zotero
 
         clusters = [{"id": 1, "display_name": "SEP", "n_papers": 1}]
         assignments = [{"doi": "10.1000/a", "cluster_id": 1}]
@@ -295,7 +295,7 @@ class TestPushCollectionsToZotero:
 
     def test_dry_run_report_lists_operations(self):
         """dry_run report must describe planned operations, not an empty dict."""
-        from scripts.clustering.write_back import push_collections_to_zotero
+        from lit_monitor.clustering.write_back import push_collections_to_zotero
 
         clusters = [
             {"id": 1, "display_name": "Theme A", "n_papers": 2},

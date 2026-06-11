@@ -25,7 +25,7 @@ import pytest
 
 def _make_entity(canonical_id: str, type_: str = "topic") -> Any:
     """Create a minimal EntityTuple for use in add_paper()."""
-    from scripts.graph.entity_extractor import EntityTuple
+    from lit_monitor.graph.entity_extractor import EntityTuple
 
     return EntityTuple(
         canonical_id=canonical_id,
@@ -39,7 +39,7 @@ def _make_entity(canonical_id: str, type_: str = "topic") -> Any:
 
 def _make_cites_rel(source_doi: str, target_doi: str) -> Any:
     """Create a CITES RelationshipTuple."""
-    from scripts.graph.relationship_extractor import RelationshipTuple
+    from lit_monitor.graph.relationship_extractor import RelationshipTuple
 
     return RelationshipTuple(
         source_doi=source_doi,
@@ -54,7 +54,7 @@ def _make_cites_rel(source_doi: str, target_doi: str) -> Any:
 
 def _make_extends_rel(source_doi: str, target_doi: str) -> Any:
     """Create an EXTENDS RelationshipTuple."""
-    from scripts.graph.relationship_extractor import RelationshipTuple
+    from lit_monitor.graph.relationship_extractor import RelationshipTuple
 
     return RelationshipTuple(
         source_doi=source_doi,
@@ -69,7 +69,7 @@ def _make_extends_rel(source_doi: str, target_doi: str) -> Any:
 
 def _make_compares_rel(source_doi: str, target_doi: str) -> Any:
     """Create a COMPARES_TO RelationshipTuple."""
-    from scripts.graph.relationship_extractor import RelationshipTuple
+    from lit_monitor.graph.relationship_extractor import RelationshipTuple
 
     return RelationshipTuple(
         source_doi=source_doi,
@@ -101,7 +101,7 @@ def fixture_graph(tmp_path):
                             authors="Garcia"
       cand-shared-authors:  entities=[], authors="Smith"
     """
-    from scripts.graph import GraphDB
+    from lit_monitor.graph import GraphDB
 
     db = GraphDB(persist_dir=str(tmp_path / "d.kuzu"))
 
@@ -161,7 +161,7 @@ class TestGraphSignalsExtraction:
 
     def test_shared_entities_counted(self, fixture_graph, library_dois):
         """Candidate mentions mAb (in lib-a, lib-c) and CEX (in lib-b) — 2 shared."""
-        from scripts.api.queries import get_graph_signals_for_candidate
+        from lit_monitor.api.queries import get_graph_signals_for_candidate
 
         sig = get_graph_signals_for_candidate(
             "10.0/cand-shared-entities", fixture_graph, library_dois
@@ -171,7 +171,7 @@ class TestGraphSignalsExtraction:
 
     def test_cites_in_library(self, fixture_graph, library_dois):
         """Candidate CITES lib-b (in library) → count 1."""
-        from scripts.api.queries import get_graph_signals_for_candidate
+        from lit_monitor.api.queries import get_graph_signals_for_candidate
 
         sig = get_graph_signals_for_candidate(
             "10.0/cand-shared-entities", fixture_graph, library_dois
@@ -180,7 +180,7 @@ class TestGraphSignalsExtraction:
 
     def test_cited_by_library_counts_incoming_cites(self, fixture_graph):
         """lib-c CITES lib-a → lib-a sees n_cited_by_library=1 when lib-c is library."""
-        from scripts.api.queries import get_graph_signals_for_candidate
+        from lit_monitor.api.queries import get_graph_signals_for_candidate
 
         # lib-a is the candidate; lib-c (which cites lib-a) is in the "library"
         sig = get_graph_signals_for_candidate(
@@ -190,7 +190,7 @@ class TestGraphSignalsExtraction:
 
     def test_extends_in_library(self, fixture_graph, library_dois):
         """Candidate EXTENDS lib-a (in library) → count 1."""
-        from scripts.api.queries import get_graph_signals_for_candidate
+        from lit_monitor.api.queries import get_graph_signals_for_candidate
 
         sig = get_graph_signals_for_candidate(
             "10.0/cand-shared-entities", fixture_graph, library_dois
@@ -199,7 +199,7 @@ class TestGraphSignalsExtraction:
 
     def test_compares_to_library_zero_when_none(self, fixture_graph, library_dois):
         """No COMPARES_TO edge → n_compares_to_library == 0."""
-        from scripts.api.queries import get_graph_signals_for_candidate
+        from lit_monitor.api.queries import get_graph_signals_for_candidate
 
         sig = get_graph_signals_for_candidate(
             "10.0/cand-shared-entities", fixture_graph, library_dois
@@ -208,7 +208,7 @@ class TestGraphSignalsExtraction:
 
     def test_compares_to_library_counted(self, fixture_graph):
         """When COMPARES_TO edge is present it is counted."""
-        from scripts.api.queries import get_graph_signals_for_candidate
+        from lit_monitor.api.queries import get_graph_signals_for_candidate
 
         # Re-use the fixture_graph connection directly to add a COMPARES_TO edge
         fixture_graph.add_paper(
@@ -224,7 +224,7 @@ class TestGraphSignalsExtraction:
 
     def test_shared_authors_detected(self, fixture_graph, library_dois):
         """Smith appears in lib-a and lib-c; cand-shared-authors is by Smith."""
-        from scripts.api.queries import get_graph_signals_for_candidate
+        from lit_monitor.api.queries import get_graph_signals_for_candidate
 
         sig = get_graph_signals_for_candidate(
             "10.0/cand-shared-authors", fixture_graph, library_dois
@@ -234,8 +234,8 @@ class TestGraphSignalsExtraction:
 
     def test_shared_authors_sample_capped_at_three(self, tmp_path):
         """shared_authors_sample contains at most 3 names."""
-        from scripts.api.queries import get_graph_signals_for_candidate
-        from scripts.graph import GraphDB
+        from lit_monitor.api.queries import get_graph_signals_for_candidate
+        from lit_monitor.graph import GraphDB
 
         db = GraphDB(persist_dir=str(tmp_path / "authors3.kuzu"))
         db.add_paper(
@@ -257,7 +257,7 @@ class TestGraphSignalsExtraction:
 
     def test_no_overlap_returns_zeros(self, fixture_graph, library_dois):
         """Unknown candidate (not in graph) returns all-zero dict."""
-        from scripts.api.queries import get_graph_signals_for_candidate
+        from lit_monitor.api.queries import get_graph_signals_for_candidate
 
         sig = get_graph_signals_for_candidate("10.0/unknown", fixture_graph, library_dois)
         assert sig["n_shared_entities"] == 0
@@ -270,14 +270,14 @@ class TestGraphSignalsExtraction:
 
     def test_empty_library_dois_returns_zeros(self, fixture_graph):
         """Empty library → no overlap possible, all zeros."""
-        from scripts.api.queries import get_graph_signals_for_candidate
+        from lit_monitor.api.queries import get_graph_signals_for_candidate
 
         sig = get_graph_signals_for_candidate("10.0/cand-shared-entities", fixture_graph, [])
         assert sig["n_shared_entities"] == 0
 
     def test_none_graph_db_returns_zeros(self):
         """graph_db=None returns the default zero dict without raising."""
-        from scripts.api.queries import get_graph_signals_for_candidate
+        from lit_monitor.api.queries import get_graph_signals_for_candidate
 
         sig = get_graph_signals_for_candidate("10.0/anything", None, ["10.0/lib"])
         assert sig["n_shared_entities"] == 0
@@ -285,7 +285,7 @@ class TestGraphSignalsExtraction:
 
     def test_result_always_contains_all_keys(self, fixture_graph, library_dois):
         """Returned dict always has all 8 required keys, even for unknown candidate."""
-        from scripts.api.queries import get_graph_signals_for_candidate
+        from lit_monitor.api.queries import get_graph_signals_for_candidate
 
         sig = get_graph_signals_for_candidate("10.0/unknown", fixture_graph, library_dois)
         required = {
@@ -298,8 +298,8 @@ class TestGraphSignalsExtraction:
 
     def test_case_insensitive_author_match(self, tmp_path):
         """Author overlap is case-insensitive: 'SMITH' in library matches 'Smith' in candidate."""
-        from scripts.api.queries import get_graph_signals_for_candidate
-        from scripts.graph import GraphDB
+        from lit_monitor.api.queries import get_graph_signals_for_candidate
+        from lit_monitor.graph import GraphDB
 
         db = GraphDB(persist_dir=str(tmp_path / "case.kuzu"))
         db.add_paper(
@@ -352,7 +352,7 @@ class TestRankerIntegration:
 
     def test_default_weights_zero_no_behavior_change(self):
         """With all graph weights at 0, scores are byte-for-byte identical (regression)."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.7), _make_candidate("10.1/b", 0.3)]
         db = MagicMock()
@@ -383,7 +383,7 @@ class TestRankerIntegration:
 
     def test_entity_overlap_weight_adds_to_score(self):
         """Nonzero graph_entity_overlap weight adds normalized signal to score."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.5)]
         db = _make_mock_db(0.5)
@@ -404,7 +404,7 @@ class TestRankerIntegration:
 
     def test_citation_weight_adds_to_score(self):
         """Nonzero citation weight (cites_in_library) adds to score."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.5)]
         db = _make_mock_db(0.5)
@@ -424,7 +424,7 @@ class TestRankerIntegration:
 
     def test_shared_authors_weight_adds_to_score(self):
         """Nonzero shared_authors weight adds to score."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.5)]
         db = _make_mock_db(0.5)
@@ -444,7 +444,7 @@ class TestRankerIntegration:
 
     def test_score_breakdown_contains_graph_keys(self):
         """Bundle B integration: score_breakdown always has graph_* keys."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.5)]
         db = _make_mock_db(0.5)
@@ -462,7 +462,7 @@ class TestRankerIntegration:
 
     def test_score_breakdown_has_graph_keys_even_without_graph_signals(self):
         """score_breakdown always has the graph_* keys (default 0.0) even when no signals."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.5)]
         db = _make_mock_db(0.5)
@@ -475,7 +475,7 @@ class TestRankerIntegration:
 
     def test_shared_authors_sample_in_breakdown(self):
         """graph_shared_authors_sample is surfaced on output paper for Bundle B UI."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.5)]
         db = _make_mock_db(0.5)
@@ -499,7 +499,7 @@ class TestRankerIntegration:
         If weights are w=0.2 and normalized signal=1.0, the score must be
         base + 0.2, not RRF-fused.
         """
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         base_score = 0.6
         candidates = [_make_candidate("10.1/a", base_score)]
@@ -558,7 +558,7 @@ class TestConfigDefaults:
 
     def test_ranking_weights_graph_defaults_zero(self, tmp_path):
         """ranking.weights.graph_* all default to 0.0 when not set in YAML."""
-        from scripts.core.config import Config
+        from lit_monitor.core.config import Config
 
         paths_yaml = self._make_paths_yaml(tmp_path)
         cfg_path = tmp_path / "extraction.yaml"
@@ -571,7 +571,7 @@ class TestConfigDefaults:
 
     def test_ranking_weights_graph_reads_from_yaml(self, tmp_path):
         """graph weights from YAML are loaded into config correctly."""
-        from scripts.core.config import Config
+        from lit_monitor.core.config import Config
 
         paths_yaml = self._make_paths_yaml(tmp_path)
         cfg_path = tmp_path / "extraction.yaml"
@@ -599,7 +599,7 @@ class TestNormalization:
 
     def test_zero_entities_normalized_to_zero(self):
         """0 shared entities → normalized value 0.0."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.5)]
         db = _make_mock_db(0.5)
@@ -615,7 +615,7 @@ class TestNormalization:
 
     def test_five_entities_normalized_to_one(self):
         """5+ shared entities → normalized value 1.0 (cap at 1.0)."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.5)]
         db = _make_mock_db(0.5)
@@ -631,7 +631,7 @@ class TestNormalization:
 
     def test_beyond_cap_entities_normalized_to_one(self):
         """10 shared entities still normalizes to 1.0 (min(10/5, 1.0) = 1.0)."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.5)]
         db = _make_mock_db(0.5)
@@ -648,7 +648,7 @@ class TestNormalization:
 
     def test_citation_normalized_combines_all_citation_signals(self):
         """citation signal combines cites_in + cited_by + extends + compares_to."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [_make_candidate("10.1/a", 0.5)]
         db = _make_mock_db(0.5)

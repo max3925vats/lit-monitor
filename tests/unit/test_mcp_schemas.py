@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import inspect
 
-from scripts.mcp import tools
-from scripts.mcp.graph_server import TOOL_NAMES, _build_tool_schemas
+from lit_monitor.mcp import tools
+from lit_monitor.mcp.graph_server import TOOL_NAMES, _build_tool_schemas
 
 # Handlers that genuinely take no parameters — their `properties` are
 # legitimately empty, but the schema must still be closed (no extra props).
@@ -124,7 +124,7 @@ def test_run_cypher_schema() -> None:
 
 def test_enum_params_match_vocabularies() -> None:
     """Enum-bearing params advertise the live closed vocabularies."""
-    from scripts.graph.relationship_validator import VALID_PREDICATES
+    from lit_monitor.graph.relationship_validator import VALID_PREDICATES
 
     schemas = _build_tool_schemas()
     pred = schemas["find_papers_by_relationship"]["inputSchema"]["properties"][

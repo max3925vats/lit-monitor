@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.mcp import tools
+from lit_monitor.mcp import tools
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -243,7 +243,7 @@ class TestFindPapersByRelationship:
 
     def test_all_valid_predicates_accepted(self, fake_db):
         """Every predicate in VALID_PREDICATES should pass validation."""
-        from scripts.graph.relationship_validator import VALID_PREDICATES
+        from lit_monitor.graph.relationship_validator import VALID_PREDICATES
 
         for pred in VALID_PREDICATES:
             cursor = _make_cursor(["10.0/a", "Test Paper", 2024, "Nature"])
@@ -405,14 +405,14 @@ class TestListEntitiesByType:
 class TestGetSchema:
     def test_returns_string(self, fake_db):
         with patch.object(tools, "_get_graph_db", return_value=fake_db):
-            with patch("scripts.mcp.tools._get_schema_text_impl", return_value="# Schema"):
+            with patch("lit_monitor.mcp.tools._get_schema_text_impl", return_value="# Schema"):
                 result = tools.get_schema()
         assert isinstance(result, str)
 
     def test_delegates_to_schema_impl(self, fake_db):
         """get_schema must call the underlying schema describer."""
         with patch.object(tools, "_get_graph_db", return_value=fake_db):
-            with patch("scripts.mcp.tools._get_schema_text_impl", return_value="ok") as mock_impl:
+            with patch("lit_monitor.mcp.tools._get_schema_text_impl", return_value="ok") as mock_impl:
                 tools.get_schema()
         mock_impl.assert_called_once_with(fake_db)
 
@@ -538,7 +538,7 @@ class TestSemanticSearch:
         tools._EMBEDDINGS_DB = None
         tools._EMPTY_WARNED = False
         with patch.object(tools, "_resolve_persist_dir", return_value=nonexistent):
-            with caplog.at_level(logging.WARNING, logger="scripts.mcp.tools"):
+            with caplog.at_level(logging.WARNING, logger="lit_monitor.mcp.tools"):
                 result = tools.semantic_search("query")
         assert result == []
         assert any("empty embeddings index" in r.message for r in caplog.records)
@@ -555,7 +555,7 @@ class TestSemanticSearch:
         tools._EMBEDDINGS_DB = None
         tools._EMPTY_WARNED = False
         with patch.object(tools, "_resolve_persist_dir", return_value=nonexistent):
-            with caplog.at_level(logging.WARNING, logger="scripts.mcp.tools"):
+            with caplog.at_level(logging.WARNING, logger="lit_monitor.mcp.tools"):
                 tools.semantic_search("query1")
                 tools.semantic_search("query2")
         warning_count = sum(
@@ -742,8 +742,8 @@ class TestDiscoveryMcpTools:
     def test_get_recent_discovery_runs_returns_list(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from scripts.core.state_db import StateDB
-        from scripts.mcp import tools
+        from lit_monitor.core.state_db import StateDB
+        from lit_monitor.mcp import tools
 
         db = StateDB(tmp_path / "state.db")
         run_id = db.start_discovery_run({})
@@ -759,8 +759,8 @@ class TestDiscoveryMcpTools:
     def test_get_recent_discovery_runs_limit(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from scripts.core.state_db import StateDB
-        from scripts.mcp import tools
+        from lit_monitor.core.state_db import StateDB
+        from lit_monitor.mcp import tools
 
         db = StateDB(tmp_path / "state.db")
         for _ in range(3):
@@ -773,8 +773,8 @@ class TestDiscoveryMcpTools:
     def test_get_discovery_run_papers_sorted_by_score(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from scripts.core.state_db import StateDB
-        from scripts.mcp import tools
+        from lit_monitor.core.state_db import StateDB
+        from lit_monitor.mcp import tools
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({})
@@ -792,8 +792,8 @@ class TestDiscoveryMcpTools:
         """P9: results must be json.dumps-safe."""
         import json
 
-        from scripts.core.state_db import StateDB
-        from scripts.mcp import tools
+        from lit_monitor.core.state_db import StateDB
+        from lit_monitor.mcp import tools
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({})
@@ -806,9 +806,9 @@ class TestDiscoveryMcpTools:
 
 
 def test_get_paper_details_includes_zotero_key(monkeypatch, tmp_path):
-    from scripts.core.state_db import StateDB
-    from scripts.graph import GraphDB
-    from scripts.mcp import tools as tools_mod
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.graph import GraphDB
+    from lit_monitor.mcp import tools as tools_mod
 
     graph = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
     graph.add_paper(

@@ -52,7 +52,7 @@ def _make_note(tmp_path: Path, doi: str, title: str) -> Path:
 
 
 def _make_state_db(tmp_path: Path):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     return StateDB(tmp_path / "state.db")
 
 
@@ -73,7 +73,7 @@ def test_referenced_by_section_populated_from_state_db(tmp_path):
     relink_note must populate the ## Referenced By zone of the target note
     with the source paper's note_title.
     """
-    from scripts.obsidian_tools.relink import relink_note
+    from lit_monitor.obsidian_tools.relink import relink_note
 
     state_db = _make_state_db(tmp_path)
     embeddings_db = _make_embeddings_db()
@@ -118,7 +118,7 @@ def test_referenced_by_library_only(tmp_path):
     When the source_doi in citation_edges is not in the papers table (no note_title),
     it must NOT appear in the ## Referenced By zone of the target note.
     """
-    from scripts.obsidian_tools.relink import relink_note
+    from lit_monitor.obsidian_tools.relink import relink_note
 
     state_db = _make_state_db(tmp_path)
     embeddings_db = _make_embeddings_db()
@@ -156,7 +156,7 @@ def test_referenced_by_not_overwritten_when_empty(tmp_path):
     When no resolved incoming citation edges exist, relink_note must NOT replace
     the placeholder text in ## Referenced By.
     """
-    from scripts.obsidian_tools.relink import relink_note
+    from lit_monitor.obsidian_tools.relink import relink_note
 
     state_db = _make_state_db(tmp_path)
     embeddings_db = _make_embeddings_db()
@@ -208,8 +208,8 @@ def test_referenced_by_persist_zone_round_trip(tmp_path, caplog):
       4. Persist markers remain intact across both relinks.
       5. No "Zone 'referenced_by' not found" WARNING is logged.
     """
-    from scripts.obsidian_tools.relink import relink_note
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.obsidian_tools.relink import relink_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
 
     config = _make_paper_config(tmp_path)
     paper = {
@@ -341,7 +341,7 @@ def _make_note_g9(tmp_path: Path, doi: str = "10.0/g9") -> Path:
 @pytest.mark.unit
 def test_relink_vector_mode_calls_embeddings_only(tmp_path):
     """G9: rag_mode='vector' calls embeddings_db.find_similar_to_text, not graph."""
-    from scripts.obsidian_tools.relink import relink_note
+    from lit_monitor.obsidian_tools.relink import relink_note
 
     state_db = _make_state_db(tmp_path)
     state_db.upsert_paper({
@@ -363,7 +363,7 @@ def test_relink_vector_mode_calls_embeddings_only(tmp_path):
 @pytest.mark.unit
 def test_relink_graph_mode_calls_graph_only(tmp_path):
     """G9: rag_mode='graph' calls graph_db.find_similar_papers, not embeddings."""
-    from scripts.obsidian_tools.relink import relink_note
+    from lit_monitor.obsidian_tools.relink import relink_note
 
     state_db = _make_state_db(tmp_path)
     state_db.upsert_paper({
@@ -391,7 +391,7 @@ def test_relink_graph_mode_calls_graph_only(tmp_path):
 @pytest.mark.unit
 def test_relink_hybrid_mode_calls_both_and_fuses(tmp_path):
     """G9: rag_mode='hybrid' calls both embeddings and graph_db; both DOIs appear."""
-    from scripts.obsidian_tools.relink import relink_note
+    from lit_monitor.obsidian_tools.relink import relink_note
 
     state_db = _make_state_db(tmp_path)
     doi_seed = "10.0/g9h"
@@ -432,7 +432,7 @@ class TestG9C1Reranker:
     """G9 C1+C3: hybrid mode actually invokes the cross-encoder reranker
     with NON-EMPTY documents.
 
-    Pre-fix, ``from scripts.output.reranker import rerank`` raised ImportError
+    Pre-fix, ``from lit_monitor.output.reranker import rerank`` raised ImportError
     on every call (the symbol does not exist) and was silently swallowed by
     ``except Exception``. Even if the import had worked, candidate dicts had
     ``"document": ""`` so the cross-encoder scored (query, "") — pure noise.
@@ -443,7 +443,7 @@ class TestG9C1Reranker:
 
     @pytest.mark.unit
     def test_hybrid_mode_calls_reranker_with_hydrated_documents(self, tmp_path):
-        from scripts.obsidian_tools.relink import relink_note
+        from lit_monitor.obsidian_tools.relink import relink_note
 
         state_db = _make_state_db(tmp_path)
         # Seed paper (the one being relinked) — has a real extraction blob so
@@ -498,7 +498,7 @@ class TestG9C1Reranker:
         mock_reranker.rerank.side_effect = _fake_rerank
 
         note_path = _make_note_g9(tmp_path, "10.0/seed")
-        with patch("scripts.output.reranker.get_reranker", return_value=mock_reranker):
+        with patch("lit_monitor.output.reranker.get_reranker", return_value=mock_reranker):
             relink_note(
                 note_path, embeddings_db, state_db,
                 rag_mode="hybrid", graph_db=graph_db, config=config,
@@ -536,15 +536,15 @@ class TestG9C4W4GraphGating:
         """W4: ``--rag-mode graph`` + safe_graph_db()→None → UsageError."""
         from click.testing import CliRunner
 
-        from scripts.cli import main as cli_main
+        from lit_monitor.cli import main as cli_main
 
         runner = CliRunner()
         # Patch safe_graph_db at its origin module to return None, simulating a
         # missing [graph] extra. The CLI imports it inside the function body.
-        with patch("scripts.graph.safe_graph_db", return_value=None), \
-             patch("scripts.cli._make_config") as mock_cfg, \
-             patch("scripts.cli._make_state_db", return_value=MagicMock()), \
-             patch("scripts.cli._make_embeddings_db", return_value=MagicMock()):
+        with patch("lit_monitor.graph.safe_graph_db", return_value=None), \
+             patch("lit_monitor.cli._make_config") as mock_cfg, \
+             patch("lit_monitor.cli._make_state_db", return_value=MagicMock()), \
+             patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()):
             mock_cfg.return_value = SimpleNamespace(
                 retrieval=SimpleNamespace(default_mode="vector"),
                 reranker=None,
@@ -570,7 +570,7 @@ class TestG9C4W4GraphGating:
         command MUST silently fall back to vector — not silently degrade with
         graph_db=None and effective_rag='graph' (the pre-fix state).
         """
-        from scripts.obsidian_tools.relink import relink_note
+        from lit_monitor.obsidian_tools.relink import relink_note
 
         state_db = _make_state_db(tmp_path)
         state_db.upsert_paper({
@@ -602,7 +602,7 @@ class TestG9C4W4GraphGating:
 @pytest.mark.unit
 def test_relink_default_rag_mode_reads_from_config(tmp_path):
     """G9: when rag_mode is None, default is read from config.retrieval.default_mode."""
-    from scripts.obsidian_tools.relink import relink_note
+    from lit_monitor.obsidian_tools.relink import relink_note
 
     state_db = _make_state_db(tmp_path)
     state_db.upsert_paper({
@@ -640,7 +640,7 @@ def test_relink_default_rag_mode_reads_from_config(tmp_path):
 def test_relink_note_updated_via_atomic_path(tmp_path):
     """B1 happy-path: relink_note rewrites the note's persist zone and the new
     content is present (proving the atomic_write_text path actually lands)."""
-    from scripts.obsidian_tools.relink import relink_note
+    from lit_monitor.obsidian_tools.relink import relink_note
 
     state_db = _make_state_db(tmp_path)
     embeddings_db = _make_embeddings_db()
@@ -684,8 +684,8 @@ def test_relink_note_survives_replace_failure(tmp_path, monkeypatch):
     already be truncated/rewritten in place before any replace ran, so the
     'original intact' assertion would fail.
     """
-    from scripts.core import atomic_write as atomic_write_mod
-    from scripts.obsidian_tools.relink import relink_note
+    from lit_monitor.core import atomic_write as atomic_write_mod
+    from lit_monitor.obsidian_tools.relink import relink_note
 
     state_db = _make_state_db(tmp_path)
     embeddings_db = _make_embeddings_db()

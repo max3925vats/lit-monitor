@@ -16,14 +16,14 @@ def runner() -> CliRunner:
 @pytest.fixture
 def fake_cfg_and_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Provide a tmp state.db + a fake_cfg patched into both get_config sites."""
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     db_path = tmp_path / "state.db"
     db = StateDB(db_path)
 
     fake_cfg = MagicMock()
     fake_cfg.state_db.path = str(db_path)
-    monkeypatch.setattr("scripts.core.config.get_config", lambda: fake_cfg)
+    monkeypatch.setattr("lit_monitor.core.config.get_config", lambda: fake_cfg)
     return db, db_path, tmp_path
 
 
@@ -40,14 +40,14 @@ class TestDomainView:
     def test_empty_table_friendly_message(
         self, runner: CliRunner, fake_cfg_and_db
     ) -> None:
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         result = runner.invoke(main, ["domain", "view"])
         assert result.exit_code == 0, result.output
         assert "No domain extraction" in result.output
 
     def test_view_populated(self, runner: CliRunner, fake_cfg_and_db) -> None:
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         db, _, _ = fake_cfg_and_db
         db.save_domain_extraction(
@@ -72,7 +72,7 @@ class TestDomainAnalyze:
         fake_cfg_and_db,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         # Use isolated FS so config/domain_context.yaml is genuinely absent
         with runner.isolated_filesystem():
@@ -86,7 +86,7 @@ class TestDomainAnalyze:
         fake_cfg_and_db,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         db, _, _ = fake_cfg_and_db
         # Stub analyze_domain at its call site in scripts.cli
@@ -98,7 +98,7 @@ class TestDomainAnalyze:
             "exclusions": [],
         }
         monkeypatch.setattr(
-            "scripts.domain.extract.analyze_domain",
+            "lit_monitor.domain.extract.analyze_domain",
             lambda text: fake_extraction,
         )
 
@@ -119,10 +119,10 @@ class TestDomainAnalyze:
         fake_cfg_and_db,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         monkeypatch.setattr(
-            "scripts.domain.extract.analyze_domain",
+            "lit_monitor.domain.extract.analyze_domain",
             lambda text: None,
         )
         with runner.isolated_filesystem():
@@ -134,7 +134,7 @@ class TestDomainAnalyze:
 
 class TestDomainClear:
     def test_clear_wipes_table(self, runner: CliRunner, fake_cfg_and_db) -> None:
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         db, _, _ = fake_cfg_and_db
         db.save_domain_extraction(

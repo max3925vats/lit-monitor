@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.graph import GraphDB
+from lit_monitor.graph import GraphDB
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ class TestCitesSchemaParity:
         Pre-fix this raised a Kuzu RuntimeError because _upsert_typed_edge
         writes 'evidence' but the CITES table only had 'resolution'.
         """
-        from scripts.graph.relationship_extractor import RelationshipTuple
+        from lit_monitor.graph.relationship_extractor import RelationshipTuple
 
         fresh_db.add_paper(
             doi="10.9999/cited",
@@ -80,7 +80,7 @@ class TestCitesSchemaParity:
 
     def test_cites_edge_readable_after_add_paper(self, fresh_db: GraphDB) -> None:
         """A CITES edge written via add_paper is visible in a MATCH query."""
-        from scripts.graph.relationship_extractor import RelationshipTuple
+        from lit_monitor.graph.relationship_extractor import RelationshipTuple
 
         fresh_db.add_paper(
             doi="10.8888/ref",

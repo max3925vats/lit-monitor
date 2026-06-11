@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 def _make_dev_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """Return a TestClient against a freshly-created app with /dev mounted."""
     monkeypatch.setenv("LIT_MONITOR_DEV", "1")
-    from scripts.server.app import create_app
+    from lit_monitor.server.app import create_app
 
     return TestClient(create_app())
 
@@ -64,23 +64,23 @@ def test_ingest_markdown_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_cfg = MagicMock()
     fake_cfg.obsidian.vault_path = "/tmp/vault"
 
-    with patch("scripts.core.chunker.chunk_markdown", return_value=fake_chunks), \
-         patch("scripts.llm.extractor.extract_paper", return_value=fake_extraction), \
-         patch("scripts.llm.llm_client.get_client", return_value=MagicMock()), \
-         patch("scripts.core.config.get_config", return_value=fake_cfg), \
+    with patch("lit_monitor.core.chunker.chunk_markdown", return_value=fake_chunks), \
+         patch("lit_monitor.llm.extractor.extract_paper", return_value=fake_extraction), \
+         patch("lit_monitor.llm.llm_client.get_client", return_value=MagicMock()), \
+         patch("lit_monitor.core.config.get_config", return_value=fake_cfg), \
          patch(
-            "scripts.server.dev_sandbox.sandbox_state_db",
+            "lit_monitor.server.dev_sandbox.sandbox_state_db",
             return_value=fake_state_db,
          ), \
          patch(
-            "scripts.server.dev_sandbox.sandbox_embeddings_db",
+            "lit_monitor.server.dev_sandbox.sandbox_embeddings_db",
             return_value=fake_emb_db,
          ), \
          patch(
-            "scripts.server.dev_sandbox.sandbox_vault_subfolder",
+            "lit_monitor.server.dev_sandbox.sandbox_vault_subfolder",
             return_value=fake_vault_dir,
          ), \
-         patch("scripts.output.obsidian_writer.write_paper_note", return_value="ok"):
+         patch("lit_monitor.output.obsidian_writer.write_paper_note", return_value="ok"):
         resp = client.post(
             "/api/dev/ingest/markdown",
             data={"doi": "10.0/test", "markdown": "# Hello\n\nBody."},
@@ -112,7 +112,7 @@ def test_ingest_zotero_key_no_markdown(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client.get_markdown_attachment.return_value = None  # no local file
 
     with patch(
-        "scripts.server.routes.dev._build_zotero_client_for_dev",
+        "lit_monitor.server.routes.dev._build_zotero_client_for_dev",
         return_value=fake_client,
     ):
         resp = client.post("/api/dev/ingest/zotero-key", data={"zotero_key": "ABC123"})
@@ -137,7 +137,7 @@ def test_ingest_doi_no_match(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client._zot.everything.return_value = iter([])
 
     with patch(
-        "scripts.server.routes.dev._build_zotero_client_for_dev",
+        "lit_monitor.server.routes.dev._build_zotero_client_for_dev",
         return_value=fake_client,
     ):
         resp = client.post("/api/dev/ingest/doi", data={"doi": "10.0/nope"})
@@ -198,10 +198,10 @@ def test_ingest_zotero_attachment_key_reads_directly(
         return "<div>ok</div>"
 
     with patch(
-        "scripts.server.routes.dev._build_zotero_client_for_dev",
+        "lit_monitor.server.routes.dev._build_zotero_client_for_dev",
         return_value=fake_client,
     ), patch(
-        "scripts.server.routes.dev._run_sandbox_ingest",
+        "lit_monitor.server.routes.dev._run_sandbox_ingest",
         side_effect=_capture,
     ):
         resp = client.post(
@@ -234,7 +234,7 @@ def test_ingest_zotero_attachment_key_rejects_non_markdown(
     }
 
     with patch(
-        "scripts.server.routes.dev._build_zotero_client_for_dev",
+        "lit_monitor.server.routes.dev._build_zotero_client_for_dev",
         return_value=fake_client,
     ):
         resp = client.post(
@@ -278,10 +278,10 @@ def test_ingest_doi_walks_full_library_via_data_doi(
         return "<div>ok</div>"
 
     with patch(
-        "scripts.server.routes.dev._build_zotero_client_for_dev",
+        "lit_monitor.server.routes.dev._build_zotero_client_for_dev",
         return_value=fake_client,
     ), patch(
-        "scripts.server.routes.dev._run_sandbox_ingest",
+        "lit_monitor.server.routes.dev._run_sandbox_ingest",
         side_effect=_capture,
     ):
         resp = client.post("/api/dev/ingest/doi", data={"doi": "10.0/target"})
@@ -339,10 +339,10 @@ def test_ingest_doi_finds_via_extra_field(
         return "<div>ok</div>"
 
     with patch(
-        "scripts.server.routes.dev._build_zotero_client_for_dev",
+        "lit_monitor.server.routes.dev._build_zotero_client_for_dev",
         return_value=fake_client,
     ), patch(
-        "scripts.server.routes.dev._run_sandbox_ingest",
+        "lit_monitor.server.routes.dev._run_sandbox_ingest",
         side_effect=_capture,
     ):
         resp = client.post("/api/dev/ingest/doi", data={"doi": "10.test/abc"})
@@ -384,10 +384,10 @@ def test_ingest_doi_finds_via_extra_field_no_space_after_colon(
         return "<div>ok</div>"
 
     with patch(
-        "scripts.server.routes.dev._build_zotero_client_for_dev",
+        "lit_monitor.server.routes.dev._build_zotero_client_for_dev",
         return_value=fake_client,
     ), patch(
-        "scripts.server.routes.dev._run_sandbox_ingest",
+        "lit_monitor.server.routes.dev._run_sandbox_ingest",
         side_effect=_capture,
     ):
         resp = client.post(
@@ -413,10 +413,10 @@ def test_ingest_extraction_failure_reports_stage_failure(
     def _raise(*args, **kwargs):
         raise BoomError("LLM exploded")
 
-    with patch("scripts.core.chunker.chunk_markdown", return_value=fake_chunks), \
-         patch("scripts.llm.extractor.extract_paper", side_effect=_raise), \
-         patch("scripts.llm.llm_client.get_client", return_value=MagicMock()), \
-         patch("scripts.core.config.get_config", return_value=MagicMock()):
+    with patch("lit_monitor.core.chunker.chunk_markdown", return_value=fake_chunks), \
+         patch("lit_monitor.llm.extractor.extract_paper", side_effect=_raise), \
+         patch("lit_monitor.llm.llm_client.get_client", return_value=MagicMock()), \
+         patch("lit_monitor.core.config.get_config", return_value=MagicMock()):
         resp = client.post(
             "/api/dev/ingest/markdown",
             data={"doi": "10.0/boom", "markdown": "# x"},

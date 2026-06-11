@@ -1,7 +1,7 @@
 """G2: tests for the entity normalizer pipeline (scripts.graph.normalizer)."""
 from __future__ import annotations
 
-from scripts.graph.normalizer import EntityNormalizer, _basic_normalize
+from lit_monitor.graph.normalizer import EntityNormalizer, _basic_normalize
 
 
 class TestNormalizerCore:

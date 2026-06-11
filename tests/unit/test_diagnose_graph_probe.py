@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts.setup import diagnose as _diag
+from lit_monitor.setup import diagnose as _diag
 
 
 @pytest.mark.unit
@@ -65,7 +65,7 @@ def test_check_graph_extra_unwritable_parent_reports_failure(
         return real_access(path, mode)
 
     with patch.object(_diag._config_mod, "get_config", return_value=_Cfg()), \
-         patch("scripts.setup.diagnose.os.access", side_effect=_fake_access):
+         patch("lit_monitor.setup.diagnose.os.access", side_effect=_fake_access):
         ok, msg = _diag._check_graph_extra()
 
     assert ok is False

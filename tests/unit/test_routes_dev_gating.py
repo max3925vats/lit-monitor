@@ -19,7 +19,7 @@ def test_dev_route_404_without_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     # Make sure no leftover env var from another test leaks into this one.
     monkeypatch.delenv("LIT_MONITOR_DEV", raising=False)
 
-    from scripts.server.app import create_app
+    from lit_monitor.server.app import create_app
 
     client = TestClient(create_app())
     resp = client.get("/dev")
@@ -34,7 +34,7 @@ def test_dev_route_200_with_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     """When LIT_MONITOR_DEV=1, /dev is mounted and serves the placeholder."""
     monkeypatch.setenv("LIT_MONITOR_DEV", "1")
 
-    from scripts.server.app import create_app
+    from lit_monitor.server.app import create_app
 
     app = create_app()
     # app.state.dev_mode is the contract used by templates for the banner.

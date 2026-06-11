@@ -29,17 +29,17 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from scripts.clustering.atrophy import (
+from lit_monitor.clustering.atrophy import (
     compute_cluster_feedback_weights_from_db,
     find_under_engaged_clusters,
 )
-from scripts.core.state_db import StateDB
-from scripts.learning.rocchio import (
+from lit_monitor.core.state_db import StateDB
+from lit_monitor.learning.rocchio import (
     build_interest_inputs,
     compute_interest_vector,
     soft_gate,
 )
-from scripts.llm.ranker import rank_papers
+from lit_monitor.llm.ranker import rank_papers
 
 # Three orthogonal "taste directions" in a tiny embedding space.
 _LIKED_DIR = np.array([1.0, 0.0, 0.0], dtype=np.float32)     # saved toward this

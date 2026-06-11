@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from scripts.cli import main
+from lit_monitor.cli import main
 
 
 class TestGraphBackfillCLI:
@@ -28,8 +28,8 @@ class TestGraphBackfillCLI:
         """G10: safe_graph_db() returning None gives a helpful error."""
         runner = CliRunner()
         with (
-            patch("scripts.graph.safe_graph_db", return_value=None),
-            patch("scripts.core.config.get_config") as mock_cfg,
+            patch("lit_monitor.graph.safe_graph_db", return_value=None),
+            patch("lit_monitor.core.config.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "backfill", "--all"])
@@ -41,10 +41,10 @@ class TestGraphBackfillCLI:
         runner = CliRunner()
         mock_graph_db = MagicMock()
         with (
-            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
-            patch("scripts.graph.backfill.backfill_papers", return_value=3),
+            patch("lit_monitor.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("lit_monitor.graph.backfill.backfill_papers", return_value=3),
             # get_config is imported inside the command function body so patch the source.
-            patch("scripts.core.config.get_config") as mock_cfg,
+            patch("lit_monitor.core.config.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "backfill", "--all"])
@@ -72,8 +72,8 @@ class TestGraphBackfillCLI:
         """G10: rebuild without graph extra gives helpful error."""
         runner = CliRunner()
         with (
-            patch("scripts.graph.safe_graph_db", return_value=None),
-            patch("scripts.core.config.get_config") as mock_cfg,
+            patch("lit_monitor.graph.safe_graph_db", return_value=None),
+            patch("lit_monitor.core.config.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "rebuild", "--all", "--yes"])
@@ -90,9 +90,9 @@ class TestGraphBackfillNerCLI:
         mock_graph_db = MagicMock()
         summary = {"papers_processed": 5, "edges_added": 12, "failures": 0}
         with (
-            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
-            patch("scripts.graph.backfill.backfill_ner", return_value=summary),
-            patch("scripts.core.config.get_config") as mock_cfg,
+            patch("lit_monitor.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("lit_monitor.graph.backfill.backfill_ner", return_value=summary),
+            patch("lit_monitor.core.config.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "backfill", "--ner"])
@@ -112,9 +112,9 @@ class TestGraphBackfillNerCLI:
             return summary
 
         with (
-            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
-            patch("scripts.graph.backfill.backfill_ner", side_effect=fake_backfill_ner),
-            patch("scripts.core.config.get_config") as mock_cfg,
+            patch("lit_monitor.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("lit_monitor.graph.backfill.backfill_ner", side_effect=fake_backfill_ner),
+            patch("lit_monitor.core.config.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "backfill", "--ner-with-llm"])
@@ -127,9 +127,9 @@ class TestGraphBackfillNerCLI:
         mock_graph_db = MagicMock()
         summary = {"papers_processed": 3, "edges_added": 7, "failures": 2}
         with (
-            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
-            patch("scripts.graph.backfill.backfill_ner", return_value=summary),
-            patch("scripts.core.config.get_config") as mock_cfg,
+            patch("lit_monitor.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("lit_monitor.graph.backfill.backfill_ner", return_value=summary),
+            patch("lit_monitor.core.config.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "backfill", "--ner"])
@@ -148,9 +148,9 @@ class TestGraphBackfillNerCLI:
         mock_graph_db = MagicMock()
         summary = {"papers_processed": 0, "edges_added": 0, "failures": 0}
         with (
-            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
-            patch("scripts.graph.backfill.backfill_ner", return_value=summary),
-            patch("scripts.core.config.get_config") as mock_cfg,
+            patch("lit_monitor.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("lit_monitor.graph.backfill.backfill_ner", return_value=summary),
+            patch("lit_monitor.core.config.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "backfill", "--ner"])
@@ -167,9 +167,9 @@ class TestGraphBackfillNerCLI:
             return {"papers_processed": 0, "edges_added": 0, "failures": 0}
 
         with (
-            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
-            patch("scripts.graph.backfill.backfill_ner", side_effect=fake_backfill_ner),
-            patch("scripts.core.config.get_config") as mock_cfg,
+            patch("lit_monitor.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("lit_monitor.graph.backfill.backfill_ner", side_effect=fake_backfill_ner),
+            patch("lit_monitor.core.config.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "backfill", "--ner", "--limit", "10"])
@@ -189,7 +189,7 @@ class TestGraphStatusCLI:
         _real_import = builtins.__import__
 
         def _mock_import(name: str, *args: object, **kwargs: object) -> object:
-            if name == "scripts.graph":
+            if name == "lit_monitor.graph":
                 raise ImportError("[graph] not installed")
             return _real_import(name, *args, **kwargs)
 
@@ -201,7 +201,7 @@ class TestGraphStatusCLI:
     def test_status_exits_zero_when_no_graph_db(self):
         """G13: safe_graph_db() returns None -> friendly message, exit 0."""
         runner = CliRunner()
-        with patch("scripts.graph.safe_graph_db", return_value=None):
+        with patch("lit_monitor.graph.safe_graph_db", return_value=None):
             result = runner.invoke(main, ["graph", "status"])
         assert result.exit_code == 0
         # Assert the specific no-DB guidance the command prints, not just that
@@ -232,7 +232,7 @@ class TestGraphStatusCLI:
         mock_graph_db = MagicMock()
         mock_graph_db._conn = mock_conn
 
-        with patch("scripts.graph.safe_graph_db", return_value=mock_graph_db):
+        with patch("lit_monitor.graph.safe_graph_db", return_value=mock_graph_db):
             result = runner.invoke(main, ["graph", "status"])
 
         assert result.exit_code == 0
@@ -285,7 +285,7 @@ class TestGraphStatusCLI:
         mock_graph_db = MagicMock()
         mock_graph_db._conn = mock_conn
 
-        with patch("scripts.graph.safe_graph_db", return_value=mock_graph_db):
+        with patch("lit_monitor.graph.safe_graph_db", return_value=mock_graph_db):
             result = runner.invoke(main, ["graph", "status", "--by-source"])
 
         assert result.exit_code == 0, result.output
@@ -306,9 +306,9 @@ class TestCliGraphBackfillRelationshipsFlag:
         mock_graph_db = MagicMock()
         summary = {"papers_processed": 4, "edges_added": 9, "failures": 0}
         with (
-            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
-            patch("scripts.graph.backfill.backfill_relationships", return_value=summary),
-            patch("scripts.core.config.get_config") as mock_cfg,
+            patch("lit_monitor.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("lit_monitor.graph.backfill.backfill_relationships", return_value=summary),
+            patch("lit_monitor.core.config.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "backfill", "--relationships"])
@@ -328,9 +328,9 @@ class TestCliGraphBackfillRelationshipsFlag:
             return summary
 
         with (
-            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
-            patch("scripts.graph.backfill.backfill_relationships", side_effect=fake_backfill_rel),
-            patch("scripts.core.config.get_config") as mock_cfg,
+            patch("lit_monitor.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("lit_monitor.graph.backfill.backfill_relationships", side_effect=fake_backfill_rel),
+            patch("lit_monitor.core.config.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "backfill", "--relationships-with-llm"])
@@ -348,9 +348,9 @@ class TestCliGraphBackfillRelationshipsFlag:
             return {"papers_processed": 0, "edges_added": 0, "failures": 0}
 
         with (
-            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
-            patch("scripts.graph.backfill.backfill_relationships", side_effect=fake_backfill_rel),
-            patch("scripts.core.config.get_config") as mock_cfg,
+            patch("lit_monitor.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("lit_monitor.graph.backfill.backfill_relationships", side_effect=fake_backfill_rel),
+            patch("lit_monitor.core.config.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "backfill", "--relationships"])
@@ -363,9 +363,9 @@ class TestCliGraphBackfillRelationshipsFlag:
         mock_graph_db = MagicMock()
         summary = {"papers_processed": 3, "edges_added": 6, "failures": 1}
         with (
-            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
-            patch("scripts.graph.backfill.backfill_relationships", return_value=summary),
-            patch("scripts.core.config.get_config") as mock_cfg,
+            patch("lit_monitor.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("lit_monitor.graph.backfill.backfill_relationships", return_value=summary),
+            patch("lit_monitor.core.config.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "backfill", "--relationships"])
@@ -377,9 +377,9 @@ class TestCliGraphBackfillRelationshipsFlag:
         mock_graph_db = MagicMock()
         summary = {"papers_processed": 0, "edges_added": 0, "failures": 0}
         with (
-            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
-            patch("scripts.graph.backfill.backfill_relationships", return_value=summary),
-            patch("scripts.core.config.get_config") as mock_cfg,
+            patch("lit_monitor.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("lit_monitor.graph.backfill.backfill_relationships", return_value=summary),
+            patch("lit_monitor.core.config.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "backfill", "--relationships"])
@@ -403,9 +403,9 @@ class TestCliGraphBackfillRelationshipsFlag:
             return {"papers_processed": 0, "edges_added": 0, "failures": 0}
 
         with (
-            patch("scripts.graph.safe_graph_db", return_value=mock_graph_db),
-            patch("scripts.graph.backfill.backfill_relationships", side_effect=fake_backfill_rel),
-            patch("scripts.core.config.get_config") as mock_cfg,
+            patch("lit_monitor.graph.safe_graph_db", return_value=mock_graph_db),
+            patch("lit_monitor.graph.backfill.backfill_relationships", side_effect=fake_backfill_rel),
+            patch("lit_monitor.core.config.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.state_db.path = str(tmp_path / "state.db")
             result = runner.invoke(main, ["graph", "backfill", "--relationships", "--limit", "5"])

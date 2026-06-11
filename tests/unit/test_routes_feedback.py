@@ -22,10 +22,10 @@ from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
 from fastapi.testclient import TestClient
 
-from scripts.server.routes.feedback import router as feedback_router
-from scripts.server.runtime import reset_runtime
+from lit_monitor.server.routes.feedback import router as feedback_router
+from lit_monitor.server.runtime import reset_runtime
 
-TEMPLATES_DIR = Path(__file__).parents[2] / "scripts" / "server" / "templates"
+TEMPLATES_DIR = Path(__file__).parents[2] / "lit_monitor" / "server" / "templates"
 
 
 # ---------------------------------------------------------------------------
@@ -41,14 +41,14 @@ def fresh_runtime():
 
 @pytest.fixture()
 def real_db(tmp_path):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     return StateDB(tmp_path / "state.db")
 
 
 @pytest.fixture()
 def client(real_db, monkeypatch):
     """TestClient with feedback router + patched runtime pointing at real_db."""
-    import scripts.server.app as app_mod
+    import lit_monitor.server.app as app_mod
 
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     templates.env.filters["fromjson"] = _json.loads
@@ -60,7 +60,7 @@ def client(real_db, monkeypatch):
     rt.state_db = real_db
 
     monkeypatch.setattr(
-        "scripts.server.routes.feedback.get_runtime", lambda: rt
+        "lit_monitor.server.routes.feedback.get_runtime", lambda: rt
     )
 
     app = FastAPI()

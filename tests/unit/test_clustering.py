@@ -45,7 +45,7 @@ def _make_dois(n: int) -> list[str]:
 
 class TestComputeClusters:
     def test_returns_cluster_objects(self):
-        from scripts.clustering.kmeans import Cluster, compute_clusters
+        from lit_monitor.clustering.kmeans import Cluster, compute_clusters
 
         embs = _make_embeddings(30, dim=8)
         dois = _make_dois(30)
@@ -56,7 +56,7 @@ class TestComputeClusters:
             assert isinstance(c, Cluster)
 
     def test_cluster_size_property(self):
-        from scripts.clustering.kmeans import compute_clusters
+        from lit_monitor.clustering.kmeans import compute_clusters
 
         embs = _make_embeddings(30, dim=8)
         dois = _make_dois(30)
@@ -67,7 +67,7 @@ class TestComputeClusters:
 
     def test_deterministic_output(self):
         """Same inputs + same random_state must yield identical cluster structure."""
-        from scripts.clustering.kmeans import compute_clusters
+        from lit_monitor.clustering.kmeans import compute_clusters
 
         embs = _make_embeddings(40, dim=8)
         dois = _make_dois(40)
@@ -82,7 +82,7 @@ class TestComputeClusters:
 
     def test_different_seed_may_differ(self):
         """Changing random_state CAN (doesn't have to) change the output."""
-        from scripts.clustering.kmeans import compute_clusters
+        from lit_monitor.clustering.kmeans import compute_clusters
 
         # We just assert the function runs without error; output may be same/different
         embs = _make_embeddings(40, dim=8)
@@ -92,7 +92,7 @@ class TestComputeClusters:
 
     def test_below_k_min_returns_empty(self):
         """Fewer embeddings than k_min → empty list, not an error."""
-        from scripts.clustering.kmeans import compute_clusters
+        from lit_monitor.clustering.kmeans import compute_clusters
 
         embs = _make_embeddings(3, dim=8)
         dois = _make_dois(3)
@@ -100,7 +100,7 @@ class TestComputeClusters:
         assert clusters == []
 
     def test_centroid_vec_is_float32(self):
-        from scripts.clustering.kmeans import compute_clusters
+        from lit_monitor.clustering.kmeans import compute_clusters
 
         embs = _make_embeddings(30, dim=8)
         dois = _make_dois(30)
@@ -109,7 +109,7 @@ class TestComputeClusters:
             assert c.centroid_vec.dtype == np.float32
 
     def test_members_are_subset_of_input_dois(self):
-        from scripts.clustering.kmeans import compute_clusters
+        from lit_monitor.clustering.kmeans import compute_clusters
 
         embs = _make_embeddings(30, dim=8)
         dois = _make_dois(30)
@@ -123,7 +123,7 @@ class TestComputeClusters:
 
     def test_initial_cluster_ids_are_none(self):
         """Clusters come out of compute_clusters with id=None; IDs are set on persist."""
-        from scripts.clustering.kmeans import compute_clusters
+        from lit_monitor.clustering.kmeans import compute_clusters
 
         embs = _make_embeddings(30, dim=8)
         dois = _make_dois(30)
@@ -138,7 +138,7 @@ class TestComputeClusters:
 
 class TestMapToExistingClusters:
     def _make_cluster(self, cid: int, centroid: np.ndarray, members: list[str]):
-        from scripts.clustering.kmeans import Cluster
+        from lit_monitor.clustering.kmeans import Cluster
 
         return Cluster(
             id=cid,
@@ -149,7 +149,7 @@ class TestMapToExistingClusters:
         )
 
     def test_identical_centroids_map_to_themselves(self):
-        from scripts.clustering.kmeans import Cluster, map_to_existing_clusters
+        from lit_monitor.clustering.kmeans import Cluster, map_to_existing_clusters
 
         centroid = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         existing = [self._make_cluster(10, centroid, [])]
@@ -162,7 +162,7 @@ class TestMapToExistingClusters:
         assert mapping.get(0) == 10
 
     def test_empty_existing_returns_empty_mapping(self):
-        from scripts.clustering.kmeans import Cluster, map_to_existing_clusters
+        from lit_monitor.clustering.kmeans import Cluster, map_to_existing_clusters
 
         new_clusters = [
             Cluster(id=None, display_name=None,
@@ -174,7 +174,7 @@ class TestMapToExistingClusters:
 
     def test_dissimilar_centroids_get_no_mapping(self):
         """New cluster too far from any existing cluster → not mapped."""
-        from scripts.clustering.kmeans import Cluster, map_to_existing_clusters
+        from lit_monitor.clustering.kmeans import Cluster, map_to_existing_clusters
 
         existing = [
             self._make_cluster(1, np.array([1.0, 0.0, 0.0], dtype=np.float32), [])
@@ -195,12 +195,12 @@ class TestMapToExistingClusters:
 
 class TestNameCluster:
     def test_returns_string_on_success(self):
-        from scripts.clustering.naming import name_cluster
+        from lit_monitor.clustering.naming import name_cluster
 
         mock_llm = MagicMock()
         mock_llm.complete.return_value = "Cation Exchange Chromatography"
 
-        with patch("scripts.clustering.naming.load_prompt") as mock_load:
+        with patch("lit_monitor.clustering.naming.load_prompt") as mock_load:
             mock_prompt = MagicMock()
             mock_prompt.system = "You are a librarian."
             mock_prompt.user_template = "Papers:\n{paper_samples}\n\nName:"
@@ -216,12 +216,12 @@ class TestNameCluster:
         assert len(result) > 0
 
     def test_caps_at_four_words(self):
-        from scripts.clustering.naming import name_cluster
+        from lit_monitor.clustering.naming import name_cluster
 
         mock_llm = MagicMock()
         mock_llm.complete.return_value = "Very Long Name That Exceeds The Word Limit"
 
-        with patch("scripts.clustering.naming.load_prompt") as mock_load:
+        with patch("lit_monitor.clustering.naming.load_prompt") as mock_load:
             mock_prompt = MagicMock()
             mock_prompt.system = "sys"
             mock_prompt.user_template = "{paper_samples}"
@@ -238,12 +238,12 @@ class TestNameCluster:
 
     def test_returns_none_on_llm_exception(self):
         """Defensive perimeter: LLM error → None, never raises."""
-        from scripts.clustering.naming import name_cluster
+        from lit_monitor.clustering.naming import name_cluster
 
         mock_llm = MagicMock()
         mock_llm.complete.side_effect = RuntimeError("LLM unreachable")
 
-        with patch("scripts.clustering.naming.load_prompt") as mock_load:
+        with patch("lit_monitor.clustering.naming.load_prompt") as mock_load:
             mock_prompt = MagicMock()
             mock_prompt.system = "sys"
             mock_prompt.user_template = "{paper_samples}"
@@ -258,18 +258,18 @@ class TestNameCluster:
         assert result is None
 
     def test_returns_none_on_empty_titles(self):
-        from scripts.clustering.naming import name_cluster
+        from lit_monitor.clustering.naming import name_cluster
 
         result = name_cluster(sample_dois=[], sample_titles=[], llm=MagicMock())
         assert result is None
 
     def test_returns_none_on_empty_llm_response(self):
-        from scripts.clustering.naming import name_cluster
+        from lit_monitor.clustering.naming import name_cluster
 
         mock_llm = MagicMock()
         mock_llm.complete.return_value = ""
 
-        with patch("scripts.clustering.naming.load_prompt") as mock_load:
+        with patch("lit_monitor.clustering.naming.load_prompt") as mock_load:
             mock_prompt = MagicMock()
             mock_prompt.system = "sys"
             mock_prompt.user_template = "{paper_samples}"
@@ -285,9 +285,9 @@ class TestNameCluster:
 
     def test_prompt_load_failure_returns_none(self):
         """If prompt registry raises, name_cluster returns None (not raises)."""
-        from scripts.clustering.naming import name_cluster
+        from lit_monitor.clustering.naming import name_cluster
 
-        with patch("scripts.clustering.naming.load_prompt",
+        with patch("lit_monitor.clustering.naming.load_prompt",
                    side_effect=FileNotFoundError("prompt not found")):
             result = name_cluster(
                 sample_dois=["10.1000/a"],
@@ -304,7 +304,7 @@ class TestNameCluster:
 
 class TestClusteringSchema:
     def test_tables_created(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
@@ -317,7 +317,7 @@ class TestClusteringSchema:
         assert "cluster_assignments" in tables
 
     def test_cluster_insert_and_retrieve(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         centroid = np.zeros(8, dtype=np.float32)
@@ -337,7 +337,7 @@ class TestClusteringSchema:
         assert row["n_papers"] == 5
 
     def test_list_active_clusters(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         centroid = np.zeros(8, dtype=np.float32)
@@ -350,7 +350,7 @@ class TestClusteringSchema:
 
     def test_archive_old_clusters(self, tmp_path):
         """archive_clusters marks rows archived=1 so list_active_clusters skips them."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         centroid = np.zeros(8, dtype=np.float32)
@@ -362,7 +362,7 @@ class TestClusteringSchema:
         assert not any(c["id"] == cid for c in active)
 
     def test_upsert_cluster_assignment(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         centroid = np.zeros(8, dtype=np.float32)
@@ -394,7 +394,7 @@ class TestClusteringSchema:
         violates the NOT NULL constraint on cluster_id. The whole
         executemany must roll back, so the first (valid) row must NOT persist.
         """
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         centroid = np.zeros(8, dtype=np.float32)
@@ -427,7 +427,7 @@ class TestClusteringSchema:
 
     def test_replace_cluster_assignments_writes_full_batch(self, tmp_path):
         """P3.5: the happy path writes every assignment in the batch."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         centroid = np.zeros(8, dtype=np.float32)
@@ -457,7 +457,7 @@ class TestClusteringSchema:
 
 class TestReplaceClustersAtomicity:
     def _spec(self, inherited_id, name, n, cohesion, centroid):
-        from scripts.core.state_db import NewClusterSpec
+        from lit_monitor.core.state_db import NewClusterSpec
 
         return NewClusterSpec(
             inherited_id=inherited_id,
@@ -469,7 +469,7 @@ class TestReplaceClustersAtomicity:
 
     def test_replace_clusters_archives_and_inserts(self, tmp_path):
         """replace_clusters archives old IDs and inserts new rows in one call."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         centroid = np.zeros(8, dtype=np.float32)
@@ -492,7 +492,7 @@ class TestReplaceClustersAtomicity:
 
     def test_replace_clusters_upserts_inherited_id(self, tmp_path):
         """An inherited_id reactivates the existing row (stable ID preserved)."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         centroid = np.zeros(8, dtype=np.float32)
@@ -510,7 +510,7 @@ class TestReplaceClustersAtomicity:
 
     def test_replace_clusters_display_name_fallback(self, tmp_path):
         """A None display_name falls back to 'Cluster <id>' inside the txn."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         centroid = np.zeros(8, dtype=np.float32)
@@ -526,7 +526,7 @@ class TestReplaceClustersAtomicity:
         stay active and NO new rows land — never a zero-cluster window."""
         import pytest as _pytest
 
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         centroid = np.zeros(8, dtype=np.float32)
@@ -596,8 +596,8 @@ class TestRecomputeAtomicity:
     def test_recompute_replaces_via_atomic_method(self, tmp_path):
         """Happy path: recompute archives the seeded clusters and installs new
         ones; afterwards list_active_clusters reflects ONLY the new set."""
-        from scripts.clustering.recompute import recompute_clusters
-        from scripts.core.state_db import StateDB
+        from lit_monitor.clustering.recompute import recompute_clusters
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         seeded = self._seed_active_clusters(db, n=3)
@@ -607,8 +607,8 @@ class TestRecomputeAtomicity:
         edb = self._make_embeddings_db()
         cfg = self._make_cfg()
 
-        with patch("scripts.clustering.recompute.name_cluster", return_value=None), \
-             patch("scripts.clustering.recompute.assign_papers_to_clusters"):
+        with patch("lit_monitor.clustering.recompute.name_cluster", return_value=None), \
+             patch("lit_monitor.clustering.recompute.assign_papers_to_clusters"):
             created = recompute_clusters(db, edb, cfg)
 
         assert created > 0
@@ -621,8 +621,8 @@ class TestRecomputeAtomicity:
     def test_recompute_crash_mid_persist_keeps_old_clusters(self, tmp_path, monkeypatch):
         """If the persist transaction crashes mid-insert, the OLD clusters
         survive — list_active_clusters is non-empty and unchanged (never zero)."""
-        from scripts.clustering.recompute import recompute_clusters
-        from scripts.core.state_db import StateDB
+        from lit_monitor.clustering.recompute import recompute_clusters
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         self._seed_active_clusters(db, n=3)
@@ -644,8 +644,8 @@ class TestRecomputeAtomicity:
 
         monkeypatch.setattr(StateDB, "_insert_cluster_conn", boom_helper)
 
-        with patch("scripts.clustering.recompute.name_cluster", return_value=None), \
-             patch("scripts.clustering.recompute.assign_papers_to_clusters"):
+        with patch("lit_monitor.clustering.recompute.name_cluster", return_value=None), \
+             patch("lit_monitor.clustering.recompute.assign_papers_to_clusters"):
             import pytest as _pytest
             with _pytest.raises(RuntimeError):
                 recompute_clusters(db, edb, cfg)
@@ -665,8 +665,8 @@ class TestRecomputeAtomicity:
         """
         import logging
 
-        from scripts.clustering.recompute import recompute_clusters
-        from scripts.core.state_db import StateDB
+        from lit_monitor.clustering.recompute import recompute_clusters
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         # Malformed: 4-d centroid blob, but embeddings below are 8-d.
@@ -676,9 +676,9 @@ class TestRecomputeAtomicity:
         edb = self._make_embeddings_db()  # dim=8
         cfg = self._make_cfg()
 
-        with caplog.at_level(logging.WARNING, logger="scripts.clustering.recompute"), \
-             patch("scripts.clustering.recompute.name_cluster", return_value=None), \
-             patch("scripts.clustering.recompute.assign_papers_to_clusters"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.clustering.recompute"), \
+             patch("lit_monitor.clustering.recompute.name_cluster", return_value=None), \
+             patch("lit_monitor.clustering.recompute.assign_papers_to_clusters"):
             created = recompute_clusters(db, edb, cfg)
 
         # Recompute still produced clusters (the bad centroid did not break it).
@@ -699,7 +699,7 @@ class TestThresholdGating:
         """recompute_clusters with fewer papers than threshold returns 0."""
         from unittest.mock import MagicMock
 
-        from scripts.clustering.recompute import recompute_clusters
+        from lit_monitor.clustering.recompute import recompute_clusters
 
         state_db = MagicMock()
         # list_active_clusters returns empty (no existing clusters)
@@ -726,7 +726,7 @@ class TestThresholdGating:
         """recompute_clusters with enough papers calls compute and returns N > 0."""
         from unittest.mock import MagicMock, patch
 
-        from scripts.clustering.recompute import recompute_clusters
+        from lit_monitor.clustering.recompute import recompute_clusters
 
         n = 120
         embs = _make_embeddings(n, dim=8)
@@ -753,8 +753,8 @@ class TestThresholdGating:
         cfg.clustering.k_min = 2
         cfg.clustering.k_max = 5
 
-        with patch("scripts.clustering.recompute.name_cluster", return_value=None), \
-             patch("scripts.clustering.recompute.assign_papers_to_clusters"):
+        with patch("lit_monitor.clustering.recompute.name_cluster", return_value=None), \
+             patch("lit_monitor.clustering.recompute.assign_papers_to_clusters"):
             result = recompute_clusters(state_db, embeddings_db, cfg)
 
         assert result > 0
@@ -768,7 +768,7 @@ class TestThresholdGating:
 class TestBrainBuildHook:
     def test_no_trigger_when_clusters_exist(self, tmp_path):
         """_maybe_trigger_initial_clustering is a no-op when clusters table is non-empty."""
-        from scripts.pipelines.brain_build import _maybe_trigger_initial_clustering
+        from lit_monitor.pipelines.brain_build import _maybe_trigger_initial_clustering
 
         state_db = MagicMock()
         state_db.list_active_clusters.return_value = [{"id": 1, "display_name": "Existing"}]
@@ -780,13 +780,13 @@ class TestBrainBuildHook:
         cfg.clustering.enabled = True
         cfg.clustering.min_papers_threshold = 100
 
-        with patch("scripts.clustering.recompute.recompute_clusters") as mock_recompute:
+        with patch("lit_monitor.clustering.recompute.recompute_clusters") as mock_recompute:
             _maybe_trigger_initial_clustering(state_db, embeddings_db, cfg)
             mock_recompute.assert_not_called()
 
     def test_triggers_when_threshold_crossed_and_no_clusters(self, tmp_path):
         """_maybe_trigger_initial_clustering calls recompute when 0 clusters + ≥threshold papers."""
-        from scripts.pipelines.brain_build import _maybe_trigger_initial_clustering
+        from lit_monitor.pipelines.brain_build import _maybe_trigger_initial_clustering
 
         state_db = MagicMock()
         state_db.list_active_clusters.return_value = []
@@ -799,7 +799,7 @@ class TestBrainBuildHook:
         cfg.clustering.min_papers_threshold = 100
 
         with patch(
-            "scripts.pipelines.brain_build.recompute_clusters"
+            "lit_monitor.pipelines.brain_build.recompute_clusters"
         ) as mock_recompute:
             mock_recompute.return_value = 5
             _maybe_trigger_initial_clustering(state_db, embeddings_db, cfg)
@@ -807,7 +807,7 @@ class TestBrainBuildHook:
 
     def test_no_trigger_when_feature_disabled(self):
         """_maybe_trigger_initial_clustering is no-op when clustering.enabled is False."""
-        from scripts.pipelines.brain_build import _maybe_trigger_initial_clustering
+        from lit_monitor.pipelines.brain_build import _maybe_trigger_initial_clustering
 
         state_db = MagicMock()
         embeddings_db = MagicMock()
@@ -817,7 +817,7 @@ class TestBrainBuildHook:
         cfg.clustering.enabled = False
 
         with patch(
-            "scripts.pipelines.brain_build.recompute_clusters"
+            "lit_monitor.pipelines.brain_build.recompute_clusters"
         ) as mock_recompute:
             _maybe_trigger_initial_clustering(state_db, embeddings_db, cfg)
             mock_recompute.assert_not_called()
@@ -837,7 +837,7 @@ class TestRankPapersClusterSignal:
 
     def test_default_zero_weight_preserves_behavior(self):
         """When cluster_centroid weight=0.0, rank_papers output is unchanged."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = self._make_candidates(3)
 
@@ -847,7 +847,7 @@ class TestRankPapersClusterSignal:
         mock_llm = MagicMock()
         mock_llm.complete.return_value = "{}"
 
-        with patch("scripts.llm.ranker.load_prompt") as mock_load:
+        with patch("lit_monitor.llm.ranker.load_prompt") as mock_load:
             mock_prompt = MagicMock()
             mock_prompt.render_user.return_value = "user"
             mock_prompt.system = "sys"
@@ -874,8 +874,8 @@ class TestRankPapersClusterSignal:
 
     def test_nonzero_weight_adds_cluster_score(self):
         """When cluster_centroid weight > 0 and centroids provided, scores change."""
-        from scripts.clustering.kmeans import Cluster
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.clustering.kmeans import Cluster
+        from lit_monitor.llm.ranker import rank_papers
 
         # Centroid pointing in a specific direction
         centroid_vec = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -898,7 +898,7 @@ class TestRankPapersClusterSignal:
         mock_llm = MagicMock()
         mock_llm.complete.return_value = "{}"
 
-        with patch("scripts.llm.ranker.load_prompt") as mock_load:
+        with patch("lit_monitor.llm.ranker.load_prompt") as mock_load:
             mock_prompt = MagicMock()
             mock_prompt.render_user.return_value = "user"
             mock_prompt.system = "sys"
@@ -925,8 +925,8 @@ class TestRankPapersClusterSignal:
 
     def test_cluster_matched_annotation_added(self):
         """Papers with a matching centroid get cluster_matched set to display_name."""
-        from scripts.clustering.kmeans import Cluster
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.clustering.kmeans import Cluster
+        from lit_monitor.llm.ranker import rank_papers
 
         centroid_vec = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
         cluster = Cluster(
@@ -944,7 +944,7 @@ class TestRankPapersClusterSignal:
         mock_llm = MagicMock()
         mock_llm.complete.return_value = "{}"
 
-        with patch("scripts.llm.ranker.load_prompt") as mock_load:
+        with patch("lit_monitor.llm.ranker.load_prompt") as mock_load:
             mock_prompt = MagicMock()
             mock_prompt.render_user.return_value = "user"
             mock_prompt.system = "sys"

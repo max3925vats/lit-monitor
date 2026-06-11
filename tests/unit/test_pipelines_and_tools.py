@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.pipelines.discovery import run_discovery
+from lit_monitor.pipelines.discovery import run_discovery
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ def _make_config(tmp_path: Path) -> SimpleNamespace:
         email="test@example.com",
     )
 def _make_state_db(tmp_path: Path):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     return StateDB(tmp_path / "state.db")
 def _make_paper(doi: str = "10.1000/test", score: float = 0.0) -> dict:
     return {
@@ -67,14 +67,14 @@ def test_full_discovery_dry_run_no_writes(tmp_path):
     llm.complete.return_value = "{}"
     zotero_client = MagicMock()
     papers = [_make_paper("10.1/new1"), _make_paper("10.1/new2")]
-    with patch("scripts.pipelines.discovery.run_searches", return_value=papers):
-        with patch("scripts.pipelines.discovery.run_researcher_searches",
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=papers):
+        with patch("lit_monitor.pipelines.discovery.run_researcher_searches",
                    return_value=[]):
-            with patch("scripts.pipelines.discovery.filter_known_dois",
+            with patch("lit_monitor.pipelines.discovery.filter_known_dois",
                        return_value=papers):
-                with patch("scripts.pipelines.discovery.rank_papers",
+                with patch("lit_monitor.pipelines.discovery.rank_papers",
                            return_value=papers):
-                    from scripts.pipelines.discovery import run_discovery
+                    from lit_monitor.pipelines.discovery import run_discovery
                     summary = run_discovery(
                         config, state_db, zotero_client, embeddings_db, llm,
                         dry_run=True
@@ -100,14 +100,14 @@ def test_discovery_digest_written(tmp_path):
     zotero_client = MagicMock()
     zotero_client.get_current_version.return_value = 100  # first-run baseline
     papers = [_make_paper("10.1/p1", score=0.85)]
-    with patch("scripts.pipelines.discovery.run_searches", return_value=papers):
-        with patch("scripts.pipelines.discovery.run_researcher_searches",
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=papers):
+        with patch("lit_monitor.pipelines.discovery.run_researcher_searches",
                    return_value=[]):
-            with patch("scripts.pipelines.discovery.filter_known_dois",
+            with patch("lit_monitor.pipelines.discovery.filter_known_dois",
                        return_value=papers):
-                with patch("scripts.pipelines.discovery.rank_papers",
+                with patch("lit_monitor.pipelines.discovery.rank_papers",
                            return_value=papers):
-                    from scripts.pipelines.discovery import run_discovery
+                    from lit_monitor.pipelines.discovery import run_discovery
                     summary = run_discovery(
                         config, state_db, zotero_client, embeddings_db, llm,
                         dry_run=False
@@ -149,10 +149,10 @@ def test_discovery_forwards_interest_vector_to_ranker(tmp_path):
     # Patch the StateDB method so no real interest_vectors row is needed.
     state_db.get_interest_vector = MagicMock(return_value=(fake_vec, 17))
 
-    with patch("scripts.pipelines.discovery.run_searches", return_value=papers), \
-         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
-         patch("scripts.pipelines.discovery.filter_known_dois", return_value=papers), \
-         patch("scripts.pipelines.discovery.rank_papers", return_value=papers) as mock_rank:
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=papers), \
+         patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=papers), \
+         patch("lit_monitor.pipelines.discovery.rank_papers", return_value=papers) as mock_rank:
         run_discovery(
             config, state_db, zotero_client, embeddings_db, llm, dry_run=True
         )
@@ -178,10 +178,10 @@ def test_discovery_no_interest_vector_passes_none(tmp_path):
     papers = [_make_paper("10.1/new1")]
 
     # No row stored → get_interest_vector returns None (real DB, empty table).
-    with patch("scripts.pipelines.discovery.run_searches", return_value=papers), \
-         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
-         patch("scripts.pipelines.discovery.filter_known_dois", return_value=papers), \
-         patch("scripts.pipelines.discovery.rank_papers", return_value=papers) as mock_rank:
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=papers), \
+         patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=papers), \
+         patch("lit_monitor.pipelines.discovery.rank_papers", return_value=papers) as mock_rank:
         run_discovery(
             config, state_db, zotero_client, embeddings_db, llm, dry_run=True
         )
@@ -208,10 +208,10 @@ def test_discovery_feedback_weight_zero_skips_db_read(tmp_path):
 
     state_db.get_interest_vector = MagicMock(return_value=None)
 
-    with patch("scripts.pipelines.discovery.run_searches", return_value=papers), \
-         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
-         patch("scripts.pipelines.discovery.filter_known_dois", return_value=papers), \
-         patch("scripts.pipelines.discovery.rank_papers", return_value=papers) as mock_rank:
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=papers), \
+         patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=papers), \
+         patch("lit_monitor.pipelines.discovery.rank_papers", return_value=papers) as mock_rank:
         run_discovery(
             config, state_db, zotero_client, embeddings_db, llm, dry_run=True
         )
@@ -236,14 +236,14 @@ def test_duplicate_dois_not_reprocessed(tmp_path):
     zotero_client.get_current_version.return_value = 100  # first-run baseline
     raw = [_make_paper("10.1/existing"), _make_paper("10.1/new")]
     # Use real filter_known_dois
-    with patch("scripts.pipelines.discovery.run_searches", return_value=raw):
-        with patch("scripts.pipelines.discovery.run_researcher_searches",
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=raw):
+        with patch("lit_monitor.pipelines.discovery.run_researcher_searches",
                    return_value=[]):
-            with patch("scripts.pipelines.discovery.rank_papers",
+            with patch("lit_monitor.pipelines.discovery.rank_papers",
                        return_value=[_make_paper("10.1/new")]):
-                from scripts.pipelines.discovery import run_discovery
-                from scripts.search.search_runner import filter_known_dois
-                with patch("scripts.pipelines.discovery.filter_known_dois",
+                from lit_monitor.pipelines.discovery import run_discovery
+                from lit_monitor.search.search_runner import filter_known_dois
+                with patch("lit_monitor.pipelines.discovery.filter_known_dois",
                            side_effect=lambda papers, db: filter_known_dois(papers, db)):
                     summary = run_discovery(
                         config, state_db, zotero_client, embeddings_db, llm,
@@ -259,15 +259,15 @@ def test_pipeline_continues_on_search_failure(tmp_path):
     llm = MagicMock()
     llm.complete.return_value = "{}"
     zotero_client = MagicMock()
-    with patch("scripts.pipelines.discovery.run_searches",
+    with patch("lit_monitor.pipelines.discovery.run_searches",
                side_effect=RuntimeError("API down")):
-        with patch("scripts.pipelines.discovery.run_researcher_searches",
+        with patch("lit_monitor.pipelines.discovery.run_researcher_searches",
                    return_value=[]):
-            with patch("scripts.pipelines.discovery.filter_known_dois",
+            with patch("lit_monitor.pipelines.discovery.filter_known_dois",
                        return_value=[]):
-                with patch("scripts.pipelines.discovery.rank_papers",
+                with patch("lit_monitor.pipelines.discovery.rank_papers",
                            return_value=[]):
-                    from scripts.pipelines.discovery import run_discovery
+                    from lit_monitor.pipelines.discovery import run_discovery
                     summary = run_discovery(
                         config, state_db, zotero_client, embeddings_db, llm,
                         dry_run=True
@@ -316,21 +316,21 @@ def test_new_zotero_items_ingested(tmp_path):
     zotero_client.get_current_version.return_value = 101
     # M1: pipeline reads markdown attachments — not PDFs
     zotero_client.get_markdown_attachment.return_value = "Full paper text."
-    with patch("scripts.pipelines.discovery.run_searches", return_value=[]):
-        with patch("scripts.pipelines.discovery.run_researcher_searches",
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=[]):
+        with patch("lit_monitor.pipelines.discovery.run_researcher_searches",
                    return_value=[]):
-            with patch("scripts.pipelines.discovery.filter_known_dois",
+            with patch("lit_monitor.pipelines.discovery.filter_known_dois",
                        return_value=[]):
-                with patch("scripts.pipelines.discovery.rank_papers", return_value=[]):
-                    with patch("scripts.pipelines.discovery.enrich_paper",
+                with patch("lit_monitor.pipelines.discovery.rank_papers", return_value=[]):
+                    with patch("lit_monitor.pipelines.discovery.enrich_paper",
                                return_value={}):
-                        with patch("scripts.pipelines.discovery.extract_paper",
+                        with patch("lit_monitor.pipelines.discovery.extract_paper",
                                    return_value={"core_finding": "ok",
                                                  "core_finding_confidence": "explicit"}):
-                            with patch("scripts.pipelines.discovery.write_paper_note",
+                            with patch("lit_monitor.pipelines.discovery.write_paper_note",
                                        return_value=note_path):
-                                with patch("scripts.pipelines.discovery.relink_note"):
-                                    from scripts.pipelines.discovery import run_discovery
+                                with patch("lit_monitor.pipelines.discovery.relink_note"):
+                                    from lit_monitor.pipelines.discovery import run_discovery
                                     summary = run_discovery(
                                         config, state_db, zotero_client, embeddings_db,
                                         llm,
@@ -342,7 +342,7 @@ def test_new_zotero_items_ingested(tmp_path):
 @pytest.mark.unit
 def test_item_quality_filter_skips_no_title(tmp_path):
     """A2: _check_item_quality returns (False, reason) for items without a title."""
-    from scripts.pipelines.brain_build import _check_item_quality
+    from lit_monitor.pipelines.brain_build import _check_item_quality
     ok, reason = _check_item_quality({"title": "", "creators": [], "abstractNote": "Abstract."})
     assert not ok
     assert "title" in reason
@@ -350,7 +350,7 @@ def test_item_quality_filter_skips_no_title(tmp_path):
 @pytest.mark.unit
 def test_item_quality_filter_passes_valid_item(tmp_path):
     """A2: _check_item_quality returns (True, '') for a well-formed item."""
-    from scripts.pipelines.brain_build import _check_item_quality
+    from lit_monitor.pipelines.brain_build import _check_item_quality
     data = {
         "title": "Filtration of ProteinAs",
         "creators": [{"creatorType": "author", "lastName": "Smith", "firstName": "J"}],
@@ -364,7 +364,7 @@ def test_item_quality_filter_passes_valid_item(tmp_path):
 @pytest.mark.unit
 def test_discovery_ingestion_resumes_after_partial_failure(tmp_path):
     """A3: Items marked fully_complete in brain_build_progress are skipped on re-run."""
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     state_db = StateDB(tmp_path / "state.db")
 
     # Pre-mark item DONE1 as fully complete in the progress table
@@ -395,11 +395,11 @@ def test_discovery_ingestion_resumes_after_partial_failure(tmp_path):
             },
         }
     ]
-    with patch("scripts.pipelines.discovery.run_searches", return_value=[]):
-        with patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]):
-            with patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]):
-                with patch("scripts.pipelines.discovery.rank_papers", return_value=[]):
-                    from scripts.pipelines.discovery import run_discovery
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=[]):
+        with patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]):
+            with patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=[]):
+                with patch("lit_monitor.pipelines.discovery.rank_papers", return_value=[]):
+                    from lit_monitor.pipelines.discovery import run_discovery
                     summary = run_discovery(
                         config, state_db, zotero_client, embeddings_db, llm,
                         dry_run=False,
@@ -433,12 +433,12 @@ def test_since_days_computed_from_last_run_date(tmp_path):
         captured_since.append(since_days)
         return []
 
-    with patch("scripts.pipelines.discovery.run_searches",
+    with patch("lit_monitor.pipelines.discovery.run_searches",
                side_effect=capture_run_searches):
-        with patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]):
-            with patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]):
-                with patch("scripts.pipelines.discovery.rank_papers", return_value=[]):
-                    from scripts.pipelines.discovery import run_discovery
+        with patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]):
+            with patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=[]):
+                with patch("lit_monitor.pipelines.discovery.rank_papers", return_value=[]):
+                    from lit_monitor.pipelines.discovery import run_discovery
                     run_discovery(
                         config, state_db, zotero_client, embeddings_db, llm,
                         dry_run=False,
@@ -455,7 +455,7 @@ def test_since_days_computed_from_last_run_date(tmp_path):
 @pytest.mark.unit
 def test_ranker_sorts_by_similarity():
     """Papers returned sorted by similarity_score descending."""
-    from scripts.llm.ranker import rank_papers
+    from lit_monitor.llm.ranker import rank_papers
     candidates = [
         {"doi": "10.1/low", "title": "Low relevance", "abstract": ""},
         {"doi": "10.1/high", "title": "High relevance", "abstract": ""},
@@ -474,7 +474,7 @@ def test_ranker_sorts_by_similarity():
 @pytest.mark.unit
 def test_ranker_adds_llm_rationale():
     """Top-K papers have llm_rationale set."""
-    from scripts.llm.ranker import rank_papers
+    from lit_monitor.llm.ranker import rank_papers
     candidates = [{"doi": "10.1/p1", "title": "Paper 1", "abstract": "Abstract 1"}]
     embeddings_db = MagicMock()
     embeddings_db.find_similar_to_text.return_value = [{"score": 0.75, "id": "10.1/other",
@@ -486,7 +486,7 @@ def test_ranker_adds_llm_rationale():
 @pytest.mark.unit
 def test_ranker_empty_returns_empty():
     """Empty candidates list returns empty list without calling embeddings or LLM."""
-    from scripts.llm.ranker import rank_papers
+    from lit_monitor.llm.ranker import rank_papers
     embeddings_db = MagicMock()
     llm = MagicMock()
     result = rank_papers([], embeddings_db, llm)
@@ -496,7 +496,7 @@ def test_ranker_empty_returns_empty():
 @pytest.mark.unit
 def test_ranker_llm_failure_returns_empty_rationale():
     """LLM failure does not crash ranker — rationale fields left empty."""
-    from scripts.llm.ranker import rank_papers
+    from lit_monitor.llm.ranker import rank_papers
     candidates = [{"doi": "10.1/p1", "title": "Paper", "abstract": ""}]
 
     embeddings_db = MagicMock()
@@ -511,8 +511,8 @@ def test_ranker_llm_failure_returns_empty_rationale():
 @pytest.mark.unit
 def test_get_rationales_raises_under_strict():
     """P4.2: rationale-LLM failure must raise in --strict, not return empty."""
-    import scripts.core.strict_mode as _sm
-    from scripts.llm.ranker import _get_rationales
+    import lit_monitor.core.strict_mode as _sm
+    from lit_monitor.llm.ranker import _get_rationales
 
     llm = MagicMock()
     llm.complete.side_effect = RuntimeError("Ollama down")
@@ -526,13 +526,13 @@ def test_get_rationales_non_strict_logs_and_returns_empty(caplog):
     """P4.2: non-strict logs at WARNING and returns {} (empty rationales)."""
     import logging
 
-    import scripts.core.strict_mode as _sm
-    from scripts.llm.ranker import _get_rationales
+    import lit_monitor.core.strict_mode as _sm
+    from lit_monitor.llm.ranker import _get_rationales
 
     llm = MagicMock()
     llm.complete.side_effect = RuntimeError("Ollama down")
     _sm.set_strict(False)
-    with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
         result = _get_rationales([{"doi": "10.1/p1", "title": "P", "abstract": ""}], llm, "")
     assert result == {}
     assert any("rationale generation failed" in r.message for r in caplog.records)
@@ -547,7 +547,7 @@ def test_ranker_propagates_chromadb_connection_error():
     """
     from chromadb.errors import ChromaError
 
-    from scripts.llm.ranker import rank_papers
+    from lit_monitor.llm.ranker import rank_papers
 
     candidates = [{"doi": "10.1/p1", "title": "Paper", "abstract": ""}]
     embeddings_db = MagicMock()
@@ -562,7 +562,7 @@ def test_ranker_non_chroma_exception_logged_and_continues(caplog):
     """L3: per-paper non-Chroma exceptions log WARNING with traceback, score=0.0."""
     import logging
 
-    from scripts.llm.ranker import rank_papers
+    from lit_monitor.llm.ranker import rank_papers
 
     candidates = [{"doi": "10.1/p1", "title": "Paper", "abstract": ""}]
     embeddings_db = MagicMock()
@@ -572,7 +572,7 @@ def test_ranker_non_chroma_exception_logged_and_continues(caplog):
     llm = MagicMock()
     llm.complete.return_value = json.dumps({"10.1/p1": "ok"})
 
-    with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
         ranked = rank_papers(candidates, embeddings_db, llm)
 
     assert ranked[0]["similarity_score"] == 0.0
@@ -586,7 +586,7 @@ def test_ranker_non_chroma_exception_logged_and_continues(caplog):
 @pytest.mark.unit
 def test_retheme_rewrites_wikilinks(tmp_path):
     """retheme() rewrites [[OldTheme]] → [[NewTheme]] in vault notes."""
-    from scripts.obsidian_tools.retheme import retheme
+    from lit_monitor.obsidian_tools.retheme import retheme
     vault = tmp_path / "vault"
     vault.mkdir()
     note = vault / "note.md"
@@ -600,7 +600,7 @@ def test_retheme_rewrites_wikilinks(tmp_path):
 @pytest.mark.unit
 def test_retheme_renames_page(tmp_path):
     """retheme() renames the theme .md page if it exists."""
-    from scripts.obsidian_tools.retheme import retheme
+    from lit_monitor.obsidian_tools.retheme import retheme
     vault = tmp_path / "vault"
     vault.mkdir()
     old_page = vault / "OldTheme.md"
@@ -629,8 +629,8 @@ def test_retheme_survives_replace_failure_per_file(tmp_path, monkeypatch):
     inconsistency is a documented, out-of-scope limitation; B1 only guarantees
     per-file atomicity (no individual note truncated).
     """
-    from scripts.core import atomic_write as atomic_write_mod
-    from scripts.obsidian_tools.retheme import retheme
+    from lit_monitor.core import atomic_write as atomic_write_mod
+    from lit_monitor.obsidian_tools.retheme import retheme
 
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -680,8 +680,8 @@ def test_retheme_survives_replace_failure_per_file(tmp_path, monkeypatch):
 @pytest.mark.unit
 def test_retheme_per_file_failure_raises_under_strict(tmp_path, monkeypatch):
     """P4.4: in --strict, a per-file retheme failure escalates to a raise."""
-    import scripts.core.strict_mode as _sm
-    from scripts.obsidian_tools.retheme import retheme
+    import lit_monitor.core.strict_mode as _sm
+    from lit_monitor.obsidian_tools.retheme import retheme
 
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -689,7 +689,7 @@ def test_retheme_per_file_failure_raises_under_strict(tmp_path, monkeypatch):
 
     _sm.set_strict(True)
     with patch(
-        "scripts.obsidian_tools.retheme.atomic_write_text",
+        "lit_monitor.obsidian_tools.retheme.atomic_write_text",
         side_effect=OSError("disk full"),
     ):
         with pytest.raises(Exception, match="Could not process"):
@@ -697,7 +697,7 @@ def test_retheme_per_file_failure_raises_under_strict(tmp_path, monkeypatch):
 @pytest.mark.unit
 def test_rerender_paper_note(tmp_path):
     """rerender_note() calls write_paper_note with extraction from state DB."""
-    from scripts.obsidian_tools.rerender import rerender_note
+    from lit_monitor.obsidian_tools.rerender import rerender_note
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
     extraction = {"core_finding": "Test.", "core_finding_confidence": "explicit"}
@@ -712,7 +712,7 @@ def test_rerender_paper_note(tmp_path):
         "status": "extraction_complete",
     })
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Smith2021_Test.md")
-    with patch("scripts.obsidian_tools.rerender.write_paper_note",
+    with patch("lit_monitor.obsidian_tools.rerender.write_paper_note",
                return_value=note_path) as mock_write:
         result = rerender_note("10.1/test", config, state_db)
     mock_write.assert_called_once()
@@ -720,7 +720,7 @@ def test_rerender_paper_note(tmp_path):
 @pytest.mark.unit
 def test_rerender_raises_for_missing_doi(tmp_path):
     """rerender_note() raises ValueError for unknown doi."""
-    from scripts.obsidian_tools.rerender import rerender_note
+    from lit_monitor.obsidian_tools.rerender import rerender_note
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
     with pytest.raises(ValueError, match="No record found"):
@@ -728,7 +728,7 @@ def test_rerender_raises_for_missing_doi(tmp_path):
 @pytest.mark.unit
 def test_re_extract_updates_state_db(tmp_path):
     """re_extract() updates extraction_json in state DB."""
-    from scripts.obsidian_tools.re_extract import re_extract
+    from lit_monitor.obsidian_tools.re_extract import re_extract
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
     llm = MagicMock()
@@ -747,9 +747,9 @@ def test_re_extract_updates_state_db(tmp_path):
                       "results_summary": None, "results_summary_confidence": "absent",
                       "conclusions": None, "conclusions_confidence": "absent",
                       "study_type": None, "study_type_confidence": "absent"}
-    with patch("scripts.obsidian_tools.re_extract.extract_paper",
+    with patch("lit_monitor.obsidian_tools.re_extract.extract_paper",
                return_value=new_extraction):
-        with patch("scripts.obsidian_tools.re_extract.rerender_note"):
+        with patch("lit_monitor.obsidian_tools.re_extract.rerender_note"):
             re_extract("10.1/test", config, state_db, llm, phases=["simple"])
     updated = state_db.get_extraction_json("10.1/test")
     assert updated["core_finding"] == "Updated result."
@@ -757,7 +757,7 @@ def test_re_extract_updates_state_db(tmp_path):
 def test_synthesize_writes_note(tmp_path):
     """synthesize() writes a synthesis note to the connections folder."""
 
-    from scripts.obsidian_tools.synthesize import synthesize
+    from lit_monitor.obsidian_tools.synthesize import synthesize
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
     embeddings_db = MagicMock()
@@ -791,7 +791,7 @@ def test_synthesize_empty_results_returns_none(tmp_path):
     """Q3.8: synthesize() returns None (the no-result sentinel) when no similar
     notes are found — NOT an empty string. Callers branch on truthiness, so the
     type contract is str | None, and None is the correct 'nothing written'."""
-    from scripts.obsidian_tools.synthesize import synthesize
+    from lit_monitor.obsidian_tools.synthesize import synthesize
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
     embeddings_db = MagicMock()
@@ -815,8 +815,8 @@ def test_synthesize_survives_replace_failure(tmp_path, monkeypatch):
     has no temp file and would truncate/rewrite the destination in place before
     any replace ran, so the 'original intact' assertion would fail.
     """
-    from scripts.core import atomic_write as atomic_write_mod
-    from scripts.obsidian_tools.synthesize import _slugify, synthesize
+    from lit_monitor.core import atomic_write as atomic_write_mod
+    from lit_monitor.obsidian_tools.synthesize import _slugify, synthesize
 
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
@@ -871,7 +871,7 @@ def test_model_compare_extract_paper_uses_valid_kwargs():
     """
     import inspect
 
-    from scripts.llm.extractor import extract_paper
+    from lit_monitor.llm.extractor import extract_paper
     valid_params = set(inspect.signature(extract_paper).parameters.keys())
     # 'passes' must not exist; 'phases' must
     assert "passes" not in valid_params, "'passes' must be removed after M3 hard-cut"
@@ -888,7 +888,7 @@ def test_brain_build_respects_max_papers(tmp_path):
     when 5 valid items are available.  Papers skipped by quality/resume checks
     do not count against the cap — the limit applies to papers *attempted*.
     """
-    from scripts.pipelines.brain_build import run_brain_build
+    from lit_monitor.pipelines.brain_build import run_brain_build
 
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
@@ -920,7 +920,7 @@ def test_brain_build_respects_max_papers(tmp_path):
         process_calls.append(doi)
         return True, []  # M4: _process_paper returns (success, discovered_topics)
 
-    with patch("scripts.pipelines.brain_build._process_paper",
+    with patch("lit_monitor.pipelines.brain_build._process_paper",
                side_effect=fake_process_paper):
         summary = run_brain_build(
             config=config,
@@ -973,17 +973,17 @@ def _run_ingestion_with_item(tmp_path, item, enrich_return=None):
     zotero_client.get_markdown_attachment.return_value = "Full paper text in markdown."
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Smith2021.md")
 
-    with patch("scripts.pipelines.discovery.run_searches", return_value=[]), \
-         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
-         patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]), \
-         patch("scripts.pipelines.discovery.rank_papers", return_value=[]), \
-         patch("scripts.pipelines.discovery.enrich_paper",
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.rank_papers", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.enrich_paper",
                return_value=enrich_return or {}), \
-         patch("scripts.pipelines.discovery.extract_paper",
+         patch("lit_monitor.pipelines.discovery.extract_paper",
                return_value={"core_finding": "ok", "core_finding_confidence": "explicit"}), \
-         patch("scripts.pipelines.discovery.write_paper_note", return_value=note_path), \
-         patch("scripts.pipelines.discovery.relink_note"):
-        from scripts.pipelines.discovery import run_discovery
+         patch("lit_monitor.pipelines.discovery.write_paper_note", return_value=note_path), \
+         patch("lit_monitor.pipelines.discovery.relink_note"):
+        from lit_monitor.pipelines.discovery import run_discovery
         summary = run_discovery(
             config, state_db, zotero_client, embeddings_db, llm, dry_run=False
         )
@@ -1032,7 +1032,7 @@ def test_discovery_digest_prepends_pipeline_run_summary(tmp_path):
     write_discovery_digest() with a non-empty recent_runs list must prepend a
     '## Pipeline Run Summary' section before the discovery content.
     """
-    from scripts.pipelines.discovery import _write_digest
+    from lit_monitor.pipelines.discovery import _write_digest
     config = _make_config(tmp_path)
     recent_runs = [
         {
@@ -1076,14 +1076,14 @@ def test_pipeline_run_summary_sources_from_run_log_not_in_memory(tmp_path):
     zotero_client = MagicMock()
     papers = [_make_paper("10.1/L2paper", score=0.8)]
 
-    with patch("scripts.pipelines.discovery.run_searches", return_value=papers):
-        with patch("scripts.pipelines.discovery.run_researcher_searches",
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=papers):
+        with patch("lit_monitor.pipelines.discovery.run_researcher_searches",
                    return_value=[]):
-            with patch("scripts.pipelines.discovery.filter_known_dois",
+            with patch("lit_monitor.pipelines.discovery.filter_known_dois",
                        return_value=papers):
-                with patch("scripts.pipelines.discovery.rank_papers",
+                with patch("lit_monitor.pipelines.discovery.rank_papers",
                            return_value=papers):
-                    from scripts.pipelines.discovery import run_discovery
+                    from lit_monitor.pipelines.discovery import run_discovery
                     run_discovery(
                         config, state_db, zotero_client, embeddings_db, llm,
                         dry_run=False,
@@ -1133,7 +1133,7 @@ def test_rebuild_citations_scope_doi_calls_re_extract_and_graph(tmp_path):
     """--scope doi: calls complex-phase re_extract then build_citation_graph."""
     from click.testing import CliRunner
 
-    from scripts.cli import main
+    from lit_monitor.cli import main
 
     config = _make_config(tmp_path)  # creates vault/Literature/Papers/ tree
     state_db = _make_state_db(tmp_path)
@@ -1148,15 +1148,15 @@ def test_rebuild_citations_scope_doi_calls_re_extract_and_graph(tmp_path):
         return _fake_citation_result()
 
     runner = CliRunner()
-    with patch("scripts.cli._make_config", return_value=config), \
-         patch("scripts.cli._make_state_db", return_value=state_db), \
-         patch("scripts.cli._make_embeddings_db", return_value=MagicMock()), \
-         patch("scripts.cli._load_secrets", return_value={}), \
-         patch("scripts.cli._make_zotero_client", return_value=MagicMock()), \
-         patch("scripts.cli._make_llm", return_value=MagicMock()), \
-         patch("scripts.obsidian_tools.re_extract.re_extract", return_value={}), \
-         patch("scripts.search.citation_graph.build_citation_graph", fake_build_citation_graph), \
-         patch("scripts.obsidian_tools.relink.relink_note"):
+    with patch("lit_monitor.cli._make_config", return_value=config), \
+         patch("lit_monitor.cli._make_state_db", return_value=state_db), \
+         patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()), \
+         patch("lit_monitor.cli._load_secrets", return_value={}), \
+         patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()), \
+         patch("lit_monitor.cli._make_llm", return_value=MagicMock()), \
+         patch("lit_monitor.obsidian_tools.re_extract.re_extract", return_value={}), \
+         patch("lit_monitor.search.citation_graph.build_citation_graph", fake_build_citation_graph), \
+         patch("lit_monitor.obsidian_tools.relink.relink_note"):
         result = runner.invoke(
             main,
             ["obsidian", "rebuild-citations", "--doi", "10.1/doi-test", "--scope", "doi"],
@@ -1172,14 +1172,14 @@ def test_rebuild_citations_scope_doi_requires_doi_flag(tmp_path):
     """--scope doi without --doi raises UsageError."""
     from click.testing import CliRunner
 
-    from scripts.cli import main
+    from lit_monitor.cli import main
 
     runner = CliRunner()
-    with patch("scripts.cli._make_config", return_value=_make_config(tmp_path)), \
-         patch("scripts.cli._make_state_db", return_value=_make_state_db(tmp_path)), \
-         patch("scripts.cli._make_embeddings_db", return_value=MagicMock()), \
-         patch("scripts.cli._load_secrets", return_value={}), \
-         patch("scripts.cli._make_zotero_client", return_value=MagicMock()):
+    with patch("lit_monitor.cli._make_config", return_value=_make_config(tmp_path)), \
+         patch("lit_monitor.cli._make_state_db", return_value=_make_state_db(tmp_path)), \
+         patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()), \
+         patch("lit_monitor.cli._load_secrets", return_value={}), \
+         patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()):
         result = runner.invoke(
             main,
             ["obsidian", "rebuild-citations", "--scope", "doi"],
@@ -1194,7 +1194,7 @@ def test_rebuild_citations_scope_all_skips_no_key_citations(tmp_path):
     """--scope all skips papers that have no key_citations in extraction_json."""
     from click.testing import CliRunner
 
-    from scripts.cli import main
+    from lit_monitor.cli import main
 
     state_db = _make_state_db(tmp_path)
     # One paper with citations, one without
@@ -1220,13 +1220,13 @@ def test_rebuild_citations_scope_all_skips_no_key_citations(tmp_path):
         return _fake_citation_result()
 
     runner = CliRunner()
-    with patch("scripts.cli._make_config", return_value=_make_config(tmp_path)), \
-         patch("scripts.cli._make_state_db", return_value=state_db), \
-         patch("scripts.cli._make_embeddings_db", return_value=MagicMock()), \
-         patch("scripts.cli._load_secrets", return_value={}), \
-         patch("scripts.cli._make_zotero_client", return_value=MagicMock()), \
-         patch("scripts.search.citation_graph.build_citation_graph", fake_build), \
-         patch("scripts.obsidian_tools.relink.relink_note"):
+    with patch("lit_monitor.cli._make_config", return_value=_make_config(tmp_path)), \
+         patch("lit_monitor.cli._make_state_db", return_value=state_db), \
+         patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()), \
+         patch("lit_monitor.cli._load_secrets", return_value={}), \
+         patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()), \
+         patch("lit_monitor.search.citation_graph.build_citation_graph", fake_build), \
+         patch("lit_monitor.obsidian_tools.relink.relink_note"):
         result = runner.invoke(main, ["obsidian", "rebuild-citations", "--scope", "all"])
 
     assert result.exit_code == 0, result.output
@@ -1239,7 +1239,7 @@ def test_rebuild_citations_scope_failed_skips_already_resolved(tmp_path):
     """--scope failed skips papers that already have citation_edges rows."""
     from click.testing import CliRunner
 
-    from scripts.cli import main
+    from lit_monitor.cli import main
 
     state_db = _make_state_db(tmp_path)
     # Seed two papers with citations
@@ -1268,13 +1268,13 @@ def test_rebuild_citations_scope_failed_skips_already_resolved(tmp_path):
         return _fake_citation_result()
 
     runner = CliRunner()
-    with patch("scripts.cli._make_config", return_value=_make_config(tmp_path)), \
-         patch("scripts.cli._make_state_db", return_value=state_db), \
-         patch("scripts.cli._make_embeddings_db", return_value=MagicMock()), \
-         patch("scripts.cli._load_secrets", return_value={}), \
-         patch("scripts.cli._make_zotero_client", return_value=MagicMock()), \
-         patch("scripts.search.citation_graph.build_citation_graph", fake_build), \
-         patch("scripts.obsidian_tools.relink.relink_note"):
+    with patch("lit_monitor.cli._make_config", return_value=_make_config(tmp_path)), \
+         patch("lit_monitor.cli._make_state_db", return_value=state_db), \
+         patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()), \
+         patch("lit_monitor.cli._load_secrets", return_value={}), \
+         patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()), \
+         patch("lit_monitor.search.citation_graph.build_citation_graph", fake_build), \
+         patch("lit_monitor.obsidian_tools.relink.relink_note"):
         result = runner.invoke(main, ["obsidian", "rebuild-citations", "--scope", "failed"])
 
     assert result.exit_code == 0, result.output
@@ -1287,7 +1287,7 @@ def test_rebuild_citations_no_rerender_skips_relink(tmp_path):
     """--no-rerender prevents relink_note from being called."""
     from click.testing import CliRunner
 
-    from scripts.cli import main
+    from lit_monitor.cli import main
 
     state_db = _make_state_db(tmp_path)
     note_path = str(tmp_path / "Test2024.md")
@@ -1300,15 +1300,15 @@ def test_rebuild_citations_no_rerender_skips_relink(tmp_path):
     relink_calls: list = []
 
     runner = CliRunner()
-    with patch("scripts.cli._make_config", return_value=_make_config(tmp_path)), \
-         patch("scripts.cli._make_state_db", return_value=state_db), \
-         patch("scripts.cli._make_embeddings_db", return_value=MagicMock()), \
-         patch("scripts.cli._load_secrets", return_value={}), \
-         patch("scripts.cli._make_zotero_client", return_value=MagicMock()), \
-         patch("scripts.cli._make_llm", return_value=MagicMock()), \
-         patch("scripts.obsidian_tools.re_extract.re_extract", return_value={}), \
-         patch("scripts.search.citation_graph.build_citation_graph", fake_build), \
-         patch("scripts.obsidian_tools.relink.relink_note",
+    with patch("lit_monitor.cli._make_config", return_value=_make_config(tmp_path)), \
+         patch("lit_monitor.cli._make_state_db", return_value=state_db), \
+         patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()), \
+         patch("lit_monitor.cli._load_secrets", return_value={}), \
+         patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()), \
+         patch("lit_monitor.cli._make_llm", return_value=MagicMock()), \
+         patch("lit_monitor.obsidian_tools.re_extract.re_extract", return_value={}), \
+         patch("lit_monitor.search.citation_graph.build_citation_graph", fake_build), \
+         patch("lit_monitor.obsidian_tools.relink.relink_note",
                side_effect=lambda *a, **kw: relink_calls.append(a)):
         result = runner.invoke(
             main,
@@ -1332,7 +1332,7 @@ def test_build_citation_graph_uses_state_db_path_not_paths(tmp_path):
     """
     from click.testing import CliRunner
 
-    from scripts.cli import main
+    from lit_monitor.cli import main
 
     state_db = _make_state_db(tmp_path)
     captured: dict = {}
@@ -1352,10 +1352,10 @@ def test_build_citation_graph_uses_state_db_path_not_paths(tmp_path):
         return state_db
 
     runner = CliRunner()
-    with patch("scripts.core.config.Config", _CfgStub), \
-         patch("scripts.core.state_db.StateDB", fake_state_db_ctor), \
-         patch("scripts.cli._load_secrets", return_value={}), \
-         patch("scripts.cli._maybe_set_s2_key"):
+    with patch("lit_monitor.core.config.Config", _CfgStub), \
+         patch("lit_monitor.core.state_db.StateDB", fake_state_db_ctor), \
+         patch("lit_monitor.cli._load_secrets", return_value={}), \
+         patch("lit_monitor.cli._maybe_set_s2_key"):
         result = runner.invoke(
             main,
             ["obsidian", "build-citation-graph", "--scope", "all"],
@@ -1385,7 +1385,7 @@ def test_brain_build_embed_failure_does_not_mark_extraction_complete(tmp_path):
     outer Exception handler overwrites with 'error' in BOTH pre- and post-fix
     code, so the end state looks identical.
     """
-    from scripts.pipelines.brain_build import run_brain_build
+    from lit_monitor.pipelines.brain_build import run_brain_build
 
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
@@ -1424,10 +1424,10 @@ def test_brain_build_embed_failure_does_not_mark_extraction_complete(tmp_path):
     state_db.upsert_paper = _spy_upsert  # type: ignore[method-assign]
 
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Smith2024.md")
-    with patch("scripts.pipelines.brain_build.enrich_paper", return_value={}), \
-         patch("scripts.pipelines.brain_build.extract_paper",
+    with patch("lit_monitor.pipelines.brain_build.enrich_paper", return_value={}), \
+         patch("lit_monitor.pipelines.brain_build.extract_paper",
                return_value={"core_finding": "ok", "core_finding_confidence": "explicit"}), \
-         patch("scripts.pipelines.brain_build.write_paper_note", return_value=note_path):
+         patch("lit_monitor.pipelines.brain_build.write_paper_note", return_value=note_path):
         summary = run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
 
     # Pipeline counts: embed failure -> failed=1
@@ -1458,7 +1458,7 @@ def test_brain_build_enrich_paper_failure_is_non_fatal(tmp_path, caplog):
     """
     import logging
 
-    from scripts.pipelines.brain_build import run_brain_build
+    from lit_monitor.pipelines.brain_build import run_brain_build
 
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
@@ -1484,12 +1484,12 @@ def test_brain_build_enrich_paper_failure_is_non_fatal(tmp_path, caplog):
     zotero_client.get_markdown_attachment.return_value = "Paper text."
 
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Smith2024.md")
-    with caplog.at_level(logging.WARNING, logger="scripts.pipelines.brain_build"), \
-         patch("scripts.pipelines.brain_build.enrich_paper",
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.pipelines.brain_build"), \
+         patch("lit_monitor.pipelines.brain_build.enrich_paper",
                side_effect=ConnectionError("S2 timeout")), \
-         patch("scripts.pipelines.brain_build.extract_paper",
+         patch("lit_monitor.pipelines.brain_build.extract_paper",
                return_value={"core_finding": "ok", "core_finding_confidence": "explicit"}), \
-         patch("scripts.pipelines.brain_build.write_paper_note", return_value=note_path):
+         patch("lit_monitor.pipelines.brain_build.write_paper_note", return_value=note_path):
         summary = run_brain_build(config, state_db, zotero_client, embeddings_db, llm)
 
     # The paper completes successfully — S2 failure is non-fatal.
@@ -1532,18 +1532,18 @@ def test_discovery_enrich_paper_failure_is_non_fatal(tmp_path, caplog):
     zotero_client.get_markdown_attachment.return_value = "Paper text."
 
     note_path = str(tmp_path / "vault" / "Literature" / "Papers" / "Smith2021.md")
-    with caplog.at_level(logging.WARNING, logger="scripts.pipelines.discovery"), \
-         patch("scripts.pipelines.discovery.run_searches", return_value=[]), \
-         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
-         patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]), \
-         patch("scripts.pipelines.discovery.rank_papers", return_value=[]), \
-         patch("scripts.pipelines.discovery.enrich_paper",
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.pipelines.discovery"), \
+         patch("lit_monitor.pipelines.discovery.run_searches", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.rank_papers", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.enrich_paper",
                side_effect=ConnectionError("S2 timeout")), \
-         patch("scripts.pipelines.discovery.extract_paper",
+         patch("lit_monitor.pipelines.discovery.extract_paper",
                return_value={"core_finding": "ok", "core_finding_confidence": "explicit"}), \
-         patch("scripts.pipelines.discovery.write_paper_note", return_value=note_path), \
-         patch("scripts.pipelines.discovery.relink_note"):
-        from scripts.pipelines.discovery import run_discovery
+         patch("lit_monitor.pipelines.discovery.write_paper_note", return_value=note_path), \
+         patch("lit_monitor.pipelines.discovery.relink_note"):
+        from lit_monitor.pipelines.discovery import run_discovery
         summary = run_discovery(
             config, state_db, zotero_client, embeddings_db, llm, dry_run=False
         )
@@ -1576,8 +1576,8 @@ def test_discovery_aborts_after_three_consecutive_rate_limits(tmp_path):
     boundary maps the exception to exit code 2 so cron still sees a non-zero
     exit instead of a silent success.
     """
-    from scripts.llm.llm_client import RateLimitError
-    from scripts.pipelines.brain_build import RateLimitExhausted
+    from lit_monitor.llm.llm_client import RateLimitError
+    from lit_monitor.pipelines.brain_build import RateLimitExhausted
 
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
@@ -1619,14 +1619,14 @@ def test_discovery_aborts_after_three_consecutive_rate_limits(tmp_path):
 
     # extract_paper raises RateLimitError on every call — simulates the LLM
     # being throttled across 3 consecutive papers.
-    with patch("scripts.pipelines.discovery.run_searches", return_value=[]), \
-         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
-         patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]), \
-         patch("scripts.pipelines.discovery.rank_papers", return_value=[]), \
-         patch("scripts.pipelines.discovery.enrich_paper", return_value={}), \
-         patch("scripts.pipelines.discovery.extract_paper",
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.rank_papers", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.enrich_paper", return_value={}), \
+         patch("lit_monitor.pipelines.discovery.extract_paper",
                side_effect=RateLimitError("429 Too Many Requests")), \
-         patch("scripts.pipelines.discovery._time.sleep"):  # skip actual back-off
+         patch("lit_monitor.pipelines.discovery._time.sleep"):  # skip actual back-off
         with pytest.raises(RateLimitExhausted):
             run_discovery(
                 config, state_db, zotero_client, embeddings_db, llm,
@@ -1692,12 +1692,12 @@ def test_discovery_rag_mode_graph_uses_graph_ranking(tmp_path):
         graph_rank_calls.append(rag_mode)
         return [dict(p, similarity_score=0.3) for p in candidates]
 
-    with patch("scripts.pipelines.discovery.run_searches", return_value=papers), \
-         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
-         patch("scripts.pipelines.discovery.filter_known_dois", return_value=papers), \
-         patch("scripts.pipelines.discovery.rank_papers", side_effect=fake_rank_papers), \
-         patch("scripts.pipelines.discovery._rank_papers_graph", side_effect=fake_rank_graph):
-        from scripts.pipelines.discovery import run_discovery
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=papers), \
+         patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=papers), \
+         patch("lit_monitor.pipelines.discovery.rank_papers", side_effect=fake_rank_papers), \
+         patch("lit_monitor.pipelines.discovery._rank_papers_graph", side_effect=fake_rank_graph):
+        from lit_monitor.pipelines.discovery import run_discovery
         summary = run_discovery(
             config, state_db, zotero_client, embeddings_db, llm,
             dry_run=True, rag_mode="graph",
@@ -1725,11 +1725,11 @@ def test_discovery_rag_mode_vector_uses_rank_papers(tmp_path):
         rank_papers_calls.append(True)
         return [dict(p, similarity_score=0.8) for p in candidates]
 
-    with patch("scripts.pipelines.discovery.run_searches", return_value=papers), \
-         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
-         patch("scripts.pipelines.discovery.filter_known_dois", return_value=papers), \
-         patch("scripts.pipelines.discovery.rank_papers", side_effect=fake_rank_papers):
-        from scripts.pipelines.discovery import run_discovery
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=papers), \
+         patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=papers), \
+         patch("lit_monitor.pipelines.discovery.rank_papers", side_effect=fake_rank_papers):
+        from lit_monitor.pipelines.discovery import run_discovery
         run_discovery(
             config, state_db, zotero_client, embeddings_db, llm,
             dry_run=True, rag_mode="vector",
@@ -1756,7 +1756,7 @@ def test_rank_papers_graph_produces_rationales(tmp_path):
     ``except Exception`` swallowed it, leaving every paper with
     ``llm_rationale=""``.
     """
-    from scripts.pipelines.discovery import _rank_papers_graph
+    from lit_monitor.pipelines.discovery import _rank_papers_graph
 
     candidates = [
         {"doi": "10.1/a", "title": "Paper A", "abstract": "About A."},
@@ -1779,8 +1779,8 @@ def test_rank_papers_graph_produces_rationales(tmp_path):
 
     # safe_graph_db is called inside _rank_papers_graph — patch it to return
     # our mock so we don't depend on the [graph] extra.
-    with patch("scripts.pipelines.discovery.safe_graph_db", return_value=graph_db), \
-         patch("scripts.retrieval.branch.retrieve_doi_candidates",
+    with patch("lit_monitor.pipelines.discovery.safe_graph_db", return_value=graph_db), \
+         patch("lit_monitor.retrieval.branch.retrieve_doi_candidates",
                return_value=[("10.1/neigh", 0.8)]):
         ranked = _rank_papers_graph(
             candidates, embeddings_db=MagicMock(), llm=llm,
@@ -1819,11 +1819,11 @@ def test_discovery_writes_run_row_and_paper_rows(tmp_path):
     paper = _make_paper("10.9/p1_test", score=0.9)
     paper["llm_rationale"] = "highly relevant"
 
-    with patch("scripts.pipelines.discovery.run_searches", return_value=[paper]), \
-         patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
-         patch("scripts.pipelines.discovery.filter_known_dois", return_value=[paper]), \
-         patch("scripts.pipelines.discovery.rank_papers", return_value=[paper]), \
-         patch("scripts.pipelines.discovery._run_ingestion", return_value=None):
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=[paper]), \
+         patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=[paper]), \
+         patch("lit_monitor.pipelines.discovery.rank_papers", return_value=[paper]), \
+         patch("lit_monitor.pipelines.discovery._run_ingestion", return_value=None):
         run_discovery(config, state_db, zotero_client, embeddings_db, llm, dry_run=False)
 
     with state_db._connect() as conn:
@@ -1863,7 +1863,7 @@ class TestDigestAutoWriteFlag:
         autouse fixture (tests/unit/conftest.py), so get_config() always returns
         a fresh Config (or raises FileNotFoundError → skip) — never a stale mock.
         """
-        from scripts.core import config as config_mod
+        from lit_monitor.core import config as config_mod
 
         try:
             cfg = config_mod.get_config()
@@ -1883,15 +1883,15 @@ class TestDigestAutoWriteFlag:
 
         # Monkeypatch the resolver to return False
         monkeypatch.setattr(
-            "scripts.pipelines.discovery._resolve_digest_auto_write",
+            "lit_monitor.pipelines.discovery._resolve_digest_auto_write",
             lambda cfg: False,
         )
 
-        with patch("scripts.pipelines.discovery._write_digest") as mock_write, \
-             patch("scripts.pipelines.discovery.run_searches", return_value=[]), \
-             patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
-             patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]), \
-             patch("scripts.pipelines.discovery.rank_papers", return_value=[]):
+        with patch("lit_monitor.pipelines.discovery._write_digest") as mock_write, \
+             patch("lit_monitor.pipelines.discovery.run_searches", return_value=[]), \
+             patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]), \
+             patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=[]), \
+             patch("lit_monitor.pipelines.discovery.rank_papers", return_value=[]):
             with caplog.at_level(logging.INFO):
                 run_discovery(config, state_db, MagicMock(), MagicMock(), MagicMock())
 
@@ -1908,15 +1908,15 @@ class TestDigestAutoWriteFlag:
         state_db = _make_state_db(tmp_path)
 
         monkeypatch.setattr(
-            "scripts.pipelines.discovery._resolve_digest_auto_write",
+            "lit_monitor.pipelines.discovery._resolve_digest_auto_write",
             lambda cfg: True,
         )
 
-        with patch("scripts.pipelines.discovery._write_digest") as mock_write, \
-             patch("scripts.pipelines.discovery.run_searches", return_value=[]), \
-             patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
-             patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]), \
-             patch("scripts.pipelines.discovery.rank_papers", return_value=[]):
+        with patch("lit_monitor.pipelines.discovery._write_digest") as mock_write, \
+             patch("lit_monitor.pipelines.discovery.run_searches", return_value=[]), \
+             patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]), \
+             patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=[]), \
+             patch("lit_monitor.pipelines.discovery.rank_papers", return_value=[]):
             run_discovery(config, state_db, MagicMock(), MagicMock(), MagicMock())
 
         mock_write.assert_called_once()
@@ -1927,14 +1927,14 @@ class TestDigestAutoWriteFlag:
         state_db = _make_state_db(tmp_path)
 
         monkeypatch.setattr(
-            "scripts.pipelines.discovery._resolve_digest_auto_write",
+            "lit_monitor.pipelines.discovery._resolve_digest_auto_write",
             lambda cfg: False,
         )
 
-        with patch("scripts.pipelines.discovery.run_searches", return_value=[]), \
-             patch("scripts.pipelines.discovery.run_researcher_searches", return_value=[]), \
-             patch("scripts.pipelines.discovery.filter_known_dois", return_value=[]), \
-             patch("scripts.pipelines.discovery.rank_papers", return_value=[]):
+        with patch("lit_monitor.pipelines.discovery.run_searches", return_value=[]), \
+             patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]), \
+             patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=[]), \
+             patch("lit_monitor.pipelines.discovery.rank_papers", return_value=[]):
             run_discovery(config, state_db, MagicMock(), MagicMock(), MagicMock())
 
         with state_db._connect() as conn:

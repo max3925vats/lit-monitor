@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.llm.prompt_registry import (
+from lit_monitor.llm.prompt_registry import (
     _reset_prompt_cache,
     load_clustering_prompts,
     load_extraction_prompts,
@@ -167,7 +167,7 @@ def test_rationale_prompt_has_paper_card_template():
 def test_render_paper_card_raises_when_template_missing():
     """If a prompt YAML doesn't declare paper_card_template, calling
     render_paper_card() must raise ValueError, not return None."""
-    from scripts.llm.prompt_registry import Prompt
+    from lit_monitor.llm.prompt_registry import Prompt
     p = Prompt(system="x", user_template="y")
     with pytest.raises(ValueError, match="paper_card_template"):
         p.render_paper_card(doi="x", title="y", abstract="z")
@@ -179,7 +179,7 @@ def test_render_paper_card_raises_when_template_missing():
 
 @pytest.mark.unit
 def test_load_extraction_prompts():
-    from scripts.llm.prompt_registry import load_extraction_prompts
+    from lit_monitor.llm.prompt_registry import load_extraction_prompts
     prompts = load_extraction_prompts()
     # Required fields must be non-empty.
     assert prompts.user_prefix
@@ -192,7 +192,7 @@ def test_load_extraction_prompts():
 
 @pytest.mark.unit
 def test_load_extraction_prompts_cached():
-    from scripts.llm.prompt_registry import load_extraction_prompts
+    from lit_monitor.llm.prompt_registry import load_extraction_prompts
     first = load_extraction_prompts()
     second = load_extraction_prompts()
     assert first is second
@@ -200,7 +200,7 @@ def test_load_extraction_prompts_cached():
 
 @pytest.mark.unit
 def test_load_extraction_prompts_reload_after_reset():
-    from scripts.llm.prompt_registry import load_extraction_prompts
+    from lit_monitor.llm.prompt_registry import load_extraction_prompts
     _ = load_extraction_prompts()
     _reset_prompt_cache()
     reloaded = load_extraction_prompts()
@@ -214,7 +214,7 @@ def test_load_extraction_prompts_reload_after_reset():
 @pytest.mark.unit
 def test_render_substitutes_known_placeholder():
     """A simple {variable} should be replaced with the supplied value."""
-    from scripts.llm.prompt_registry import _render
+    from lit_monitor.llm.prompt_registry import _render
     out = _render("Hello {name}!", {"name": "world"})
     assert out == "Hello world!"
 
@@ -223,7 +223,7 @@ def test_render_substitutes_known_placeholder():
 def test_render_preserves_literal_json_braces():
     """Literal JSON inside the prompt must pass through unchanged while
     Python-identifier placeholders are still substituted."""
-    from scripts.llm.prompt_registry import _render
+    from lit_monitor.llm.prompt_registry import _render
     text = 'Respond with: {"<doi>": "<rationale>"}. Domain: {domain_focus}.'
     out = _render(text, {"domain_focus": "TEST_DOMAIN"})
     # The JSON example must be intact.
@@ -236,7 +236,7 @@ def test_render_preserves_literal_json_braces():
 @pytest.mark.unit
 def test_render_unknown_placeholder_left_intact():
     """Unknown variable names should be left as-is, not raise."""
-    from scripts.llm.prompt_registry import _render
+    from lit_monitor.llm.prompt_registry import _render
     out = _render("Hello {unknown_var}!", {"name": "world"})
     assert "{unknown_var}" in out, f"unknown placeholder was removed: {out!r}"
 
@@ -249,9 +249,9 @@ def test_render_warns_on_unrendered_placeholder(caplog):
     """
     import logging
 
-    from scripts.llm.prompt_registry import _render
+    from lit_monitor.llm.prompt_registry import _render
 
-    with caplog.at_level(logging.WARNING, logger="scripts.llm.prompt_registry"):
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.prompt_registry"):
         out = _render(
             "text with {typo_field} and {known}",
             {"known": "value"},
@@ -272,7 +272,7 @@ def test_render_warns_on_unrendered_placeholder(caplog):
 @pytest.fixture()
 def _restore_strict():
     """Save/restore the process-wide strict override around a test (A5)."""
-    from scripts.core.strict_mode import get_strict_override, set_strict
+    from lit_monitor.core.strict_mode import get_strict_override, set_strict
     prior = get_strict_override()
     try:
         yield set_strict
@@ -284,7 +284,7 @@ def _restore_strict():
 def test_render_strict_raises_on_unknown_placeholder(_restore_strict):
     """A5: under strict mode, a genuinely-unknown placeholder raises instead of
     warning."""
-    from scripts.llm.prompt_registry import _render
+    from lit_monitor.llm.prompt_registry import _render
 
     _restore_strict(True)
     with pytest.raises(Exception) as exc_info:
@@ -301,7 +301,7 @@ def test_render_strict_does_not_raise_on_deferred_placeholder(_restore_strict):
     """A5 critical nuance: an intentionally-deferred placeholder (listed in
     allowed_extra, e.g. {cluster_context}) must NOT raise even under strict —
     it is preserved verbatim for downstream rendering."""
-    from scripts.llm.prompt_registry import _render
+    from lit_monitor.llm.prompt_registry import _render
 
     _restore_strict(True)
     # cluster_context is a downstream-render placeholder for ask_summarize.
@@ -318,7 +318,7 @@ def test_render_strict_does_not_raise_on_deferred_placeholder(_restore_strict):
 def test_render_strict_does_not_raise_on_json_braces(_restore_strict):
     """A5 nuance: literal JSON braces never match _VAR_PLACEHOLDER, so strict
     mode must not raise on them."""
-    from scripts.llm.prompt_registry import _render
+    from lit_monitor.llm.prompt_registry import _render
 
     _restore_strict(True)
     out = _render(
@@ -336,10 +336,10 @@ def test_render_non_strict_warns_not_raises(_restore_strict, caplog):
     (prior behaviour preserved)."""
     import logging
 
-    from scripts.llm.prompt_registry import _render
+    from lit_monitor.llm.prompt_registry import _render
 
     _restore_strict(False)
-    with caplog.at_level(logging.WARNING, logger="scripts.llm.prompt_registry"):
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.prompt_registry"):
         out = _render(
             "text with {typo_field}",
             {"known": "value"},
@@ -377,7 +377,7 @@ def test_load_prompt_emits_no_false_positive_warnings(caplog):
     import logging
 
     _reset_prompt_cache()
-    with caplog.at_level(logging.WARNING, logger="scripts.llm.prompt_registry"):
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.prompt_registry"):
         load_prompt("rationale")
         load_extraction_prompts()
 
@@ -404,7 +404,7 @@ def test_load_prompt_emits_no_false_positive_warnings(caplog):
 def test_prompt_registry_ask_summarize_has_cluster_context():
     """prompt_registry must declare cluster_context as required for
     ask_summarize after the Bundle I cluster-aware-ask update."""
-    from scripts.llm.prompt_registry import required_placeholders
+    from lit_monitor.llm.prompt_registry import required_placeholders
 
     placeholders = required_placeholders("ask_summarize")
     assert "cluster_context" in placeholders, (

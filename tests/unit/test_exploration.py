@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from scripts.clustering.exploration import (
+from lit_monitor.clustering.exploration import (
     build_exploration_queries,
     build_exploration_queries_for_cluster,
     central_entities_for_dois,

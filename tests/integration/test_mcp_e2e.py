@@ -47,9 +47,9 @@ def fixture_graph(tmp_path):
         high throughput screen (method) — Gamma
         J1 (journal)                 — Alpha, Beta
     """
-    from scripts.graph import GraphDB
-    from scripts.graph.entity_extractor import EntityTuple
-    from scripts.graph.relationship_extractor import RelationshipTuple
+    from lit_monitor.graph import GraphDB
+    from lit_monitor.graph.entity_extractor import EntityTuple
+    from lit_monitor.graph.relationship_extractor import RelationshipTuple
 
     db = GraphDB(persist_dir=str(tmp_path / "e2e.kuzu"))
 
@@ -213,7 +213,7 @@ class TestAllTenToolsViaDirectCall:
     # ------------------------------------------------------------------ #
 
     def test_get_corpus_stats(self, fixture_graph: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_get_graph_db", lambda: fixture_graph)
 
         result = tools.get_corpus_stats()
@@ -229,7 +229,7 @@ class TestAllTenToolsViaDirectCall:
     # ------------------------------------------------------------------ #
 
     def test_get_schema(self, fixture_graph: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_get_graph_db", lambda: fixture_graph)
 
         result = tools.get_schema()
@@ -244,7 +244,7 @@ class TestAllTenToolsViaDirectCall:
     # ------------------------------------------------------------------ #
 
     def test_get_paper_details(self, fixture_graph: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_get_graph_db", lambda: fixture_graph)
 
         result = tools.get_paper_details("10.0/a")
@@ -258,7 +258,7 @@ class TestAllTenToolsViaDirectCall:
 
     def test_get_paper_details_bad_doi(self, fixture_graph: Any, monkeypatch: pytest.MonkeyPatch) -> None:
         """Non-DOI strings must raise ValueError (the MCP guard returns error text)."""
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_get_graph_db", lambda: fixture_graph)
 
         with pytest.raises(ValueError):
@@ -269,7 +269,7 @@ class TestAllTenToolsViaDirectCall:
     # ------------------------------------------------------------------ #
 
     def test_find_papers_by_entity(self, fixture_graph: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_get_graph_db", lambda: fixture_graph)
 
         result = tools.find_papers_by_entity("monoclonal antibody")
@@ -282,7 +282,7 @@ class TestAllTenToolsViaDirectCall:
         json.dumps(result)
 
     def test_find_papers_by_entity_empty_raises(self, fixture_graph: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_get_graph_db", lambda: fixture_graph)
 
         with pytest.raises(ValueError):
@@ -293,7 +293,7 @@ class TestAllTenToolsViaDirectCall:
     # ------------------------------------------------------------------ #
 
     def test_find_papers_by_relationship(self, fixture_graph: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_get_graph_db", lambda: fixture_graph)
 
         result = tools.find_papers_by_relationship("EXTENDS")
@@ -308,7 +308,7 @@ class TestAllTenToolsViaDirectCall:
     def test_find_papers_by_relationship_bad_predicate(
         self, fixture_graph: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_get_graph_db", lambda: fixture_graph)
 
         with pytest.raises(ValueError):
@@ -319,7 +319,7 @@ class TestAllTenToolsViaDirectCall:
     # ------------------------------------------------------------------ #
 
     def test_list_entities_by_type(self, fixture_graph: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_get_graph_db", lambda: fixture_graph)
 
         result = tools.list_entities_by_type("method")
@@ -336,7 +336,7 @@ class TestAllTenToolsViaDirectCall:
     def test_list_entities_by_type_bad_type(
         self, fixture_graph: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_get_graph_db", lambda: fixture_graph)
 
         with pytest.raises(ValueError):
@@ -347,7 +347,7 @@ class TestAllTenToolsViaDirectCall:
     # ------------------------------------------------------------------ #
 
     def test_run_cypher_safe_query(self, fixture_graph: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_get_graph_db", lambda: fixture_graph)
 
         result = tools.run_cypher("MATCH (p:Paper) RETURN p.doi AS doi")
@@ -358,7 +358,7 @@ class TestAllTenToolsViaDirectCall:
 
     def test_run_cypher_mutation_blocked(self, fixture_graph: Any, monkeypatch: pytest.MonkeyPatch) -> None:
         """Mutation keywords must raise ValueError (CypherSafetyError subclass)."""
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_get_graph_db", lambda: fixture_graph)
 
         with pytest.raises(ValueError):
@@ -369,7 +369,7 @@ class TestAllTenToolsViaDirectCall:
     # ------------------------------------------------------------------ #
 
     def test_find_papers_by_query(self, fixture_graph: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_get_graph_db", lambda: fixture_graph)
 
         result = tools.find_papers_by_query("monoclonal antibody")
@@ -383,7 +383,7 @@ class TestAllTenToolsViaDirectCall:
 
     def test_find_papers_by_query_hybrid(self, fixture_graph: Any, monkeypatch: pytest.MonkeyPatch) -> None:
         """Hybrid falls back gracefully to graph-only when EmbeddingsDB is absent."""
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_get_graph_db", lambda: fixture_graph)
 
         result = tools.find_papers_by_query_hybrid("monoclonal antibody")
@@ -398,7 +398,7 @@ class TestAllTenToolsViaDirectCall:
     def test_semantic_search_paper(
         self, mock_embeddings_db: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_EMBEDDINGS_DB", mock_embeddings_db)
 
         result = tools.semantic_search("monoclonal antibody", top_k=5, granularity="paper")
@@ -417,7 +417,7 @@ class TestAllTenToolsViaDirectCall:
     def test_semantic_search_chunk(
         self, mock_embeddings_db: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_EMBEDDINGS_DB", mock_embeddings_db)
 
         result = tools.semantic_search("monoclonal antibody", top_k=5, granularity="chunk")
@@ -432,7 +432,7 @@ class TestAllTenToolsViaDirectCall:
     def test_semantic_search_bad_granularity(
         self, mock_embeddings_db: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from scripts.mcp import tools
+        from lit_monitor.mcp import tools
         monkeypatch.setattr(tools, "_EMBEDDINGS_DB", mock_embeddings_db)
 
         with pytest.raises(ValueError):
@@ -447,7 +447,7 @@ class TestDispatchCount:
     """Confirm the server's TOOL_NAMES tuple stays at 12 (P9)."""
 
     def test_twelve_tools_in_dispatch(self) -> None:
-        from scripts.mcp import graph_server
+        from lit_monitor.mcp import graph_server
 
         assert len(graph_server.TOOL_NAMES) == 12, (
             f"Expected 12 tool names, got {len(graph_server.TOOL_NAMES)}: "

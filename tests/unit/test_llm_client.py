@@ -16,28 +16,28 @@ import pytest
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 def test_strip_markdown_fences_json_block():
-    from scripts.llm.llm_client import strip_markdown_fences
+    from lit_monitor.llm.llm_client import strip_markdown_fences
     raw = '```json\n{"key": "value"}\n```'
     assert strip_markdown_fences(raw) == '{"key": "value"}'
 @pytest.mark.unit
 def test_strip_markdown_fences_plain_block():
-    from scripts.llm.llm_client import strip_markdown_fences
+    from lit_monitor.llm.llm_client import strip_markdown_fences
     raw = '```\n{"key": "value"}\n```'
     assert strip_markdown_fences(raw) == '{"key": "value"}'
 @pytest.mark.unit
 def test_strip_markdown_fences_no_fence():
-    from scripts.llm.llm_client import strip_markdown_fences
+    from lit_monitor.llm.llm_client import strip_markdown_fences
     raw = '{"key": "value"}'
     assert strip_markdown_fences(raw) == '{"key": "value"}'
 @pytest.mark.unit
 def test_parse_llm_json_with_fences():
-    from scripts.llm.llm_client import parse_llm_json
+    from lit_monitor.llm.llm_client import parse_llm_json
     raw = '```json\n{"core_finding": "test"}\n```'
     result = parse_llm_json(raw)
     assert result["core_finding"] == "test"
 @pytest.mark.unit
 def test_parse_llm_json_raises_on_invalid():
-    from scripts.llm.llm_client import parse_llm_json
+    from lit_monitor.llm.llm_client import parse_llm_json
     with pytest.raises(ValueError, match="not valid JSON"):
         parse_llm_json("This is not JSON at all.")
 # ---------------------------------------------------------------------------
@@ -45,7 +45,7 @@ def test_parse_llm_json_raises_on_invalid():
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 def test_mock_client_returns_string():
-    from scripts.llm.llm_client import MockLLMClient
+    from lit_monitor.llm.llm_client import MockLLMClient
     client = MockLLMClient()
     result = client.complete("system prompt", "user prompt")
     assert isinstance(result, str)
@@ -55,14 +55,14 @@ def test_mock_client_returns_string():
     assert isinstance(parsed, dict)
 @pytest.mark.unit
 def test_mock_client_tracks_call_count():
-    from scripts.llm.llm_client import MockLLMClient
+    from lit_monitor.llm.llm_client import MockLLMClient
     client = MockLLMClient()
     client.complete("s", "u1")
     client.complete("s", "u2")
     assert client.call_count == 2
 @pytest.mark.unit
 def test_mock_client_infers_paper_pass1():
-    from scripts.llm.llm_client import MockLLMClient
+    from lit_monitor.llm.llm_client import MockLLMClient
     client = MockLLMClient()
     result = json.loads(
         client.complete("Extract fields.", "Please extract core_finding and methods_summary.")
@@ -71,7 +71,7 @@ def test_mock_client_infers_paper_pass1():
     assert "methods_summary" in result
 @pytest.mark.unit
 def test_mock_client_infers_paper_pass2():
-    from scripts.llm.llm_client import MockLLMClient
+    from lit_monitor.llm.llm_client import MockLLMClient
     client = MockLLMClient()
     result = json.loads(
         client.complete("Extract fields.", "Extract background_motivation and limitations.")
@@ -79,7 +79,7 @@ def test_mock_client_infers_paper_pass2():
     assert "background_motivation" in result
 @pytest.mark.unit
 def test_mock_client_infers_paper_pass3():
-    from scripts.llm.llm_client import MockLLMClient
+    from lit_monitor.llm.llm_client import MockLLMClient
     client = MockLLMClient()
     result = json.loads(
         client.complete("Extract fields.", "Extract novelty_statement and key_citations.")
@@ -88,20 +88,20 @@ def test_mock_client_infers_paper_pass3():
 @pytest.mark.unit
 def test_mock_client_explicit_key_override():
 
-    from scripts.llm.llm_client import MockLLMClient
+    from lit_monitor.llm.llm_client import MockLLMClient
     client = MockLLMClient(mock_response_key="paper_pass3")
     result = json.loads(client.complete("s", "u"))
     assert "novelty_statement" in result
 @pytest.mark.unit
 def test_mock_client_raises_on_demand():
-    from scripts.llm.llm_client import MockLLMClient
+    from lit_monitor.llm.llm_client import MockLLMClient
     client = MockLLMClient(raise_on_call=RuntimeError("Ollama timeout"))
     with pytest.raises(RuntimeError, match="Ollama timeout"):
         client.complete("s", "u")
 @pytest.mark.unit
 def test_mock_client_null_fields_present():
     """Null fields (absent values) must be present in mock responses — not omitted."""
-    from scripts.llm.llm_client import MockLLMClient
+    from lit_monitor.llm.llm_client import MockLLMClient
     client = MockLLMClient(mock_response_key="paper_pass2")
     result = json.loads(client.complete("s", "u"))
     # These should be explicitly None, not missing
@@ -113,7 +113,7 @@ def test_mock_client_null_fields_present():
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 def test_get_client_returns_ollama_client_for_brain_build():
-    from scripts.llm.llm_client import OllamaClient, get_client
+    from lit_monitor.llm.llm_client import OllamaClient, get_client
     config = MagicMock()
     config.brain_build.provider = "ollama"
     config.brain_build.model = "qwen2.5:7b"
@@ -129,7 +129,7 @@ def test_get_client_returns_ollama_client_for_brain_build():
     assert client.model == "qwen2.5:7b"
 @pytest.mark.unit
 def test_get_client_returns_correct_model_for_ingestion():
-    from scripts.llm.llm_client import OllamaClient, get_client
+    from lit_monitor.llm.llm_client import OllamaClient, get_client
     config = MagicMock()
     config.ingestion.provider = "ollama"
     config.ingestion.model = "qwen2.5:3b"
@@ -144,7 +144,7 @@ def test_get_client_returns_correct_model_for_ingestion():
     assert client.model == "qwen2.5:3b"
 @pytest.mark.unit
 def test_get_client_raises_for_unknown_mode():
-    from scripts.llm.llm_client import get_client
+    from lit_monitor.llm.llm_client import get_client
     config = MagicMock()
     config.nonsense_mode = None
     # getattr will return a Mock for unknown attr, but provider check will fail
@@ -153,7 +153,7 @@ def test_get_client_raises_for_unknown_mode():
 
 @pytest.mark.unit
 def test_get_client_rejects_non_ollama_provider():
-    from scripts.llm.llm_client import get_client
+    from lit_monitor.llm.llm_client import get_client
     config = MagicMock()
     config.ingestion.provider = "anthropic"
     config.ingestion.model = "claude-3-sonnet"
@@ -166,7 +166,7 @@ def test_get_client_rejects_non_ollama_provider():
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 def test_ollama_client_stores_timeout():
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
     # _skip_api_show=True avoids the real /api/show HTTP call in __init__ so this
     # construction is network-free (passes in clean CI / no Ollama running).
     client = OllamaClient(model="phi4-mini", timeout=300, _skip_api_show=True)
@@ -180,7 +180,7 @@ def test_ollama_client_thinking_mode_is_on():
     the 'options' dict.  This is a regression test for A9: placing it inside
     options caused Ollama to silently ignore the flag.
     """
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
     # _skip_api_show=True so __init__ makes no real /api/show call; the patch
     # below only covers the complete() POST we actually want to assert on.
     client = OllamaClient(model="qwen2.5:3b", _skip_api_show=True)
@@ -217,7 +217,7 @@ def test_get_client_respects_think_false_from_yaml_config():
     """
     from types import SimpleNamespace
 
-    from scripts.llm.llm_client import OllamaClient, get_client
+    from lit_monitor.llm.llm_client import OllamaClient, get_client
 
     # Simulate extraction.yaml with 'think: false' (non-reasoning model).
     # Use SimpleNamespace rather than MagicMock so getattr returns None for absent
@@ -250,7 +250,7 @@ def test_get_client_falls_back_to_caller_think_when_yaml_omits_it():
     """
     from types import SimpleNamespace
 
-    from scripts.llm.llm_client import OllamaClient, get_client
+    from lit_monitor.llm.llm_client import OllamaClient, get_client
 
     # No 'think' attribute — simulates a YAML section without the key.
     mode_config = SimpleNamespace(
@@ -276,7 +276,7 @@ def test_get_client_falls_back_to_caller_think_when_yaml_omits_it():
 @pytest.mark.unit
 def test_ollama_client_explicit_api_key_stored():
     """Explicit api_key parameter is stored on the client."""
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
     client = OllamaClient(model="gemma4:31b", api_key="explicit-key", _skip_api_show=True)
     assert client.api_key == "explicit-key"
 
@@ -284,7 +284,7 @@ def test_ollama_client_explicit_api_key_stored():
 @pytest.mark.unit
 def test_ollama_client_reads_api_key_from_env(monkeypatch):
     """When no explicit key is given, OllamaClient falls back to OLLAMA_API_KEY env var."""
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
     monkeypatch.setenv("OLLAMA_API_KEY", "env-key-abc")
     client = OllamaClient(model="gemma4:31b", _skip_api_show=True)
     assert client.api_key == "env-key-abc"
@@ -293,7 +293,7 @@ def test_ollama_client_reads_api_key_from_env(monkeypatch):
 @pytest.mark.unit
 def test_ollama_client_explicit_key_wins_over_env(monkeypatch):
     """Explicit api_key takes precedence over OLLAMA_API_KEY env var."""
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
     monkeypatch.setenv("OLLAMA_API_KEY", "env-key-should-be-ignored")
     client = OllamaClient(model="gemma4:31b", api_key="explicit-wins", _skip_api_show=True)
     assert client.api_key == "explicit-wins"
@@ -302,7 +302,7 @@ def test_ollama_client_explicit_key_wins_over_env(monkeypatch):
 @pytest.mark.unit
 def test_ollama_client_no_key_when_neither_set(monkeypatch):
     """api_key is None when neither explicit key nor env var is present."""
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
     monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
     client = OllamaClient(model="qwen2.5:3b", _skip_api_show=True)
     assert client.api_key is None
@@ -311,7 +311,7 @@ def test_ollama_client_no_key_when_neither_set(monkeypatch):
 @pytest.mark.unit
 def test_ollama_client_sends_bearer_header_in_complete():
     """complete() includes Authorization: Bearer <key> when api_key is set."""
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
     client = OllamaClient(model="gemma4:31b", api_key="test-bearer-key", _skip_api_show=True)
     captured = {}
 
@@ -334,7 +334,7 @@ def test_ollama_client_sends_bearer_header_in_complete():
 @pytest.mark.unit
 def test_ollama_client_no_auth_header_without_api_key(monkeypatch):
     """complete() sends no Authorization header when api_key is None (local Ollama)."""
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
     monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
     client = OllamaClient(model="qwen2.5:3b", _skip_api_show=True)
     captured = {}
@@ -358,7 +358,7 @@ def test_ollama_client_no_auth_header_without_api_key(monkeypatch):
 @pytest.mark.unit
 def test_ollama_client_is_available_sends_bearer_header():
     """is_available() includes Authorization: Bearer <key> for cloud endpoints."""
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
     client = OllamaClient(
         model="gemma4:31b",
         host="https://ollama.com",
@@ -391,7 +391,7 @@ def test_get_client_factory_passes_ollama_host():
     """
     from types import SimpleNamespace
 
-    from scripts.llm.llm_client import OllamaClient, get_client
+    from lit_monitor.llm.llm_client import OllamaClient, get_client
 
     mode_config = SimpleNamespace(
         provider="ollama",
@@ -419,7 +419,7 @@ def test_litellm_client_complete_calls_litellm():
     _litellm = pytest.importorskip("litellm")
     if not hasattr(_litellm, "completion"):
         pytest.skip("litellm installed but missing 'completion' attribute (stub/partial install)")
-    from scripts.llm.llm_client import LiteLLMClient
+    from lit_monitor.llm.llm_client import LiteLLMClient
 
     mock_resp = MagicMock()
     mock_resp.choices[0].message.content = '{"core_finding": "test"}'
@@ -450,7 +450,7 @@ def test_litellm_client_429_raises_rate_limit_error():
     """
     import sys
 
-    from scripts.llm.llm_client import LiteLLMClient, RateLimitError
+    from lit_monitor.llm.llm_client import LiteLLMClient, RateLimitError
 
     # Build a fake litellm module whose RateLimitError class is the one raised.
     FakeRateLimit = type("RateLimitError", (Exception,), {})
@@ -470,7 +470,7 @@ def test_litellm_client_non_429_raises_runtime_error():
     """LiteLLMClient.complete() wraps non-429 errors as RuntimeError, not RateLimitError."""
     import sys
 
-    from scripts.llm.llm_client import LiteLLMClient, RateLimitError
+    from lit_monitor.llm.llm_client import LiteLLMClient, RateLimitError
 
     # RateLimitError class is distinct from the error actually raised.
     FakeRateLimit = type("RateLimitError", (Exception,), {})
@@ -495,7 +495,7 @@ def test_litellm_client_stores_num_ctx():
     _litellm = pytest.importorskip("litellm")
     if not hasattr(_litellm, "completion"):
         pytest.skip("litellm installed but missing 'completion' attribute (stub/partial install)")
-    from scripts.llm.llm_client import LiteLLMClient
+    from lit_monitor.llm.llm_client import LiteLLMClient
 
     client = LiteLLMClient(model="anthropic/claude-sonnet-4-5", num_ctx=200000)
     assert client.num_ctx == 200000
@@ -509,7 +509,7 @@ def test_get_client_routes_to_litellm():
         pytest.skip("litellm installed but missing 'completion' attribute (stub/partial install)")
     from types import SimpleNamespace
 
-    from scripts.llm.llm_client import LiteLLMClient, get_client
+    from lit_monitor.llm.llm_client import LiteLLMClient, get_client
 
     mode_config = SimpleNamespace(
         provider="litellm",
@@ -535,7 +535,7 @@ def test_get_client_litellm_raises_without_litellm_model():
         pytest.skip("litellm installed but missing 'completion' attribute (stub/partial install)")
     from types import SimpleNamespace
 
-    from scripts.llm.llm_client import get_client
+    from lit_monitor.llm.llm_client import get_client
 
     mode_config = SimpleNamespace(
         provider="litellm",
@@ -554,7 +554,7 @@ def test_litellm_client_raises_importerror_when_not_installed():
     """LiteLLMClient.complete() raises ImportError with install instructions."""
     import sys
 
-    from scripts.llm.llm_client import LiteLLMClient
+    from lit_monitor.llm.llm_client import LiteLLMClient
 
     client = LiteLLMClient(model="anthropic/claude-haiku-4-5")
     # Setting sys.modules["litellm"] = None causes `import litellm` to raise ImportError.
@@ -570,7 +570,7 @@ def test_litellm_client_wraps_provider_errors_as_runtimeerror():
     _litellm = pytest.importorskip("litellm")
     if not hasattr(_litellm, "completion"):
         pytest.skip("litellm installed but missing 'completion' attribute (stub/partial install)")
-    from scripts.llm.llm_client import LiteLLMClient
+    from lit_monitor.llm.llm_client import LiteLLMClient
 
     client = LiteLLMClient(model="anthropic/claude-haiku-4-5")
     with patch("litellm.completion", side_effect=Exception("rate limit exceeded")):
@@ -585,7 +585,7 @@ def test_get_clients_for_passes_returns_single_when_no_pass_models():
     """Without passN_model keys, get_clients_for_passes returns a single LLMClient."""
     from types import SimpleNamespace
 
-    from scripts.llm.llm_client import OllamaClient, get_clients_for_passes
+    from lit_monitor.llm.llm_client import OllamaClient, get_clients_for_passes
 
     mode_config = SimpleNamespace(
         provider="ollama",
@@ -608,7 +608,7 @@ def test_get_clients_for_passes_returns_dict_when_pass1_model_set():
     """Setting pass1_model triggers dict-of-clients return."""
     from types import SimpleNamespace
 
-    from scripts.llm.llm_client import OllamaClient, get_clients_for_passes
+    from lit_monitor.llm.llm_client import OllamaClient, get_clients_for_passes
 
     mode_config = SimpleNamespace(
         provider="ollama",
@@ -634,7 +634,7 @@ def test_get_clients_for_passes_per_pass_model_assigned_correctly():
     """Each pass gets the right model; omitted passes fall back to the mode default."""
     from types import SimpleNamespace
 
-    from scripts.llm.llm_client import get_clients_for_passes
+    from lit_monitor.llm.llm_client import get_clients_for_passes
 
     mode_config = SimpleNamespace(
         provider="ollama",
@@ -660,7 +660,7 @@ def test_get_clients_for_passes_inherits_shared_settings():
     """Timeout, temperature, and think are inherited from the mode config per-pass."""
     from types import SimpleNamespace
 
-    from scripts.llm.llm_client import OllamaClient, get_clients_for_passes
+    from lit_monitor.llm.llm_client import OllamaClient, get_clients_for_passes
 
     mode_config = SimpleNamespace(
         provider="ollama",
@@ -689,7 +689,7 @@ def test_get_clients_for_passes_litellm_returns_dict():
         pytest.skip("litellm installed but missing 'completion' attribute (stub/partial install)")
     from types import SimpleNamespace
 
-    from scripts.llm.llm_client import LiteLLMClient, get_clients_for_passes
+    from lit_monitor.llm.llm_client import LiteLLMClient, get_clients_for_passes
 
     mode_config = SimpleNamespace(
         provider="litellm",
@@ -715,7 +715,7 @@ def test_get_clients_for_passes_rejects_unknown_provider():
     """Unknown provider raises ValueError up front, before any per-pass work."""
     from types import SimpleNamespace
 
-    from scripts.llm.llm_client import get_clients_for_passes
+    from lit_monitor.llm.llm_client import get_clients_for_passes
 
     mode_config = SimpleNamespace(provider="bogus")
     config = SimpleNamespace(brain_build=mode_config)
@@ -730,7 +730,7 @@ def test_get_clients_for_passes_rejects_unknown_provider():
 @pytest.mark.unit
 def test_h5_api_show_model_info_format():
     """OllamaClient discovers num_ctx from /api/show new-format model_info dict."""
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
 
     api_show_resp = MagicMock()
     api_show_resp.status_code = 200
@@ -750,7 +750,7 @@ def test_h5_api_show_model_info_format():
 @pytest.mark.unit
 def test_h5_api_show_details_format():
     """OllamaClient discovers num_ctx from /api/show older details.context_length format."""
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
 
     api_show_resp = MagicMock()
     api_show_resp.status_code = 200
@@ -767,7 +767,7 @@ def test_h5_api_show_details_format():
 @pytest.mark.unit
 def test_h5_num_ctx_override_wins_and_skips_api_show():
     """num_ctx_override wins over /api/show and prevents the HTTP call entirely."""
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
 
     with patch("requests.post") as mock_post:
         client = OllamaClient(model="qwen2.5:7b", num_ctx_override=8192)
@@ -779,7 +779,7 @@ def test_h5_num_ctx_override_wins_and_skips_api_show():
 @pytest.mark.unit
 def test_h5_api_show_connection_error_falls_back_to_constructor_num_ctx():
     """On /api/show failure, fall back to the constructor num_ctx arg."""
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
 
     with patch("requests.post", side_effect=ConnectionError("refused")):
         client = OllamaClient(model="phi4-mini", num_ctx=32768)
@@ -790,7 +790,7 @@ def test_h5_api_show_connection_error_falls_back_to_constructor_num_ctx():
 @pytest.mark.unit
 def test_h5_api_show_connection_error_falls_back_to_16384():
     """/api/show failure with no constructor num_ctx falls back to the 16384 floor."""
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
 
     with patch("requests.post", side_effect=ConnectionError("refused")):
         client = OllamaClient(model="phi4-mini")  # no num_ctx arg
@@ -801,7 +801,7 @@ def test_h5_api_show_connection_error_falls_back_to_16384():
 @pytest.mark.unit
 def test_h5_api_show_bad_status_falls_back_to_num_ctx():
     """/api/show returning a non-200 status falls back to the constructor num_ctx arg."""
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
 
     api_show_resp = MagicMock()
     api_show_resp.status_code = 404
@@ -815,7 +815,7 @@ def test_h5_api_show_bad_status_falls_back_to_num_ctx():
 @pytest.mark.unit
 def test_h5_skip_api_show_uses_constructor_num_ctx():
     """_skip_api_show=True uses constructor num_ctx without any HTTP call."""
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
 
     with patch("requests.post") as mock_post:
         client = OllamaClient(model="phi4-mini", num_ctx=32768, _skip_api_show=True)
@@ -827,7 +827,7 @@ def test_h5_skip_api_show_uses_constructor_num_ctx():
 @pytest.mark.unit
 def test_h5_skip_api_show_falls_back_to_16384():
     """_skip_api_show=True with no num_ctx arg uses the 16384 floor."""
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
 
     with patch("requests.post") as mock_post:
         client = OllamaClient(model="phi4-mini", _skip_api_show=True)
@@ -841,7 +841,7 @@ def test_h5_get_client_reads_num_ctx_override_from_config():
     """get_client() passes num_ctx_override from extraction.yaml to OllamaClient."""
     from types import SimpleNamespace
 
-    from scripts.llm.llm_client import OllamaClient, get_client
+    from lit_monitor.llm.llm_client import OllamaClient, get_client
 
     mode_config = SimpleNamespace(
         provider="ollama",
@@ -874,7 +874,7 @@ def test_pass_all_model_overrides_mode_model_when_set():
     """
     from types import SimpleNamespace
 
-    from scripts.llm.llm_client import OllamaClient, get_client
+    from lit_monitor.llm.llm_client import OllamaClient, get_client
 
     mode_config = SimpleNamespace(
         provider="ollama",
@@ -906,7 +906,7 @@ def test_pass_all_model_absent_falls_back_to_model():
     """
     from types import SimpleNamespace
 
-    from scripts.llm.llm_client import OllamaClient, get_client
+    from lit_monitor.llm.llm_client import OllamaClient, get_client
 
     mode_config = SimpleNamespace(
         provider="ollama",
@@ -937,7 +937,7 @@ def test_ollama_client_warns_on_neg1_max_tokens_for_cloud_host(caplog):
     """N13: num_predict=-1 with non-localhost host should log a WARNING before the call."""
     import logging
 
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
 
     client = OllamaClient(
         model="test-model",
@@ -950,7 +950,7 @@ def test_ollama_client_warns_on_neg1_max_tokens_for_cloud_host(caplog):
     with patch("requests.post") as mock_post:
         mock_post.return_value = MagicMock(status_code=200, json=lambda: ok_response)
         mock_post.return_value.raise_for_status = MagicMock()
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.llm_client"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.llm_client"):
             client.complete("sys", "usr", max_tokens=-1)
 
     assert any("num_predict=-1" in r.message for r in caplog.records), (
@@ -963,7 +963,7 @@ def test_ollama_client_no_warn_on_neg1_max_tokens_for_localhost(caplog):
     """N13: num_predict=-1 with localhost should NOT warn (local Ollama handles it fine)."""
     import logging
 
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
 
     client = OllamaClient(
         model="test-model",
@@ -975,7 +975,7 @@ def test_ollama_client_no_warn_on_neg1_max_tokens_for_localhost(caplog):
     with patch("requests.post") as mock_post:
         mock_post.return_value = MagicMock(status_code=200, json=lambda: ok_response)
         mock_post.return_value.raise_for_status = MagicMock()
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.llm_client"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.llm_client"):
             client.complete("sys", "usr", max_tokens=-1)
 
     assert not any("num_predict=-1" in r.message for r in caplog.records), (
@@ -990,7 +990,7 @@ def test_ollama_client_no_warn_on_neg1_max_tokens_for_custom_local_host(caplog):
     """
     import logging
 
-    from scripts.llm.llm_client import OllamaClient
+    from lit_monitor.llm.llm_client import OllamaClient
 
     client = OllamaClient(
         model="test-model",
@@ -1002,7 +1002,7 @@ def test_ollama_client_no_warn_on_neg1_max_tokens_for_custom_local_host(caplog):
     with patch("requests.post") as mock_post:
         mock_post.return_value = MagicMock(status_code=200, json=lambda: ok_response)
         mock_post.return_value.raise_for_status = MagicMock()
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.llm_client"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.llm_client"):
             client.complete("sys", "usr", max_tokens=-1)
 
     assert not any("num_predict=-1" in r.message for r in caplog.records), (
@@ -1022,7 +1022,7 @@ def test_mock_responses_load_lazily_and_cache() -> None:
     ``except RateLimitError`` handlers. Instead we drive the module-level cache
     directly and spy on the loader.
     """
-    import scripts.llm.llm_client as _llm
+    import lit_monitor.llm.llm_client as _llm
 
     original_cache = _llm._MOCK_RESPONSES
     try:

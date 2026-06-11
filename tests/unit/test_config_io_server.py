@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.server import config_io
+from lit_monitor.server import config_io
 
 
 @pytest.fixture()

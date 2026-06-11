@@ -22,8 +22,8 @@ from fastapi.testclient import TestClient
 def _make_dev_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """Return a TestClient against a freshly-created app with dev mode on."""
     monkeypatch.setenv("LIT_MONITOR_DEV", "1")
-    from scripts.server.app import create_app
-    from scripts.server.runtime import reset_runtime
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
 
     reset_runtime()
     return TestClient(create_app())
@@ -44,13 +44,13 @@ def test_dryrun_start_spawns_subprocess(
     # Stub the signature snapshot so the route doesn't depend on a real config.
     with (
         patch(
-            "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+            "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
         ),
         patch(
-            "scripts.server.routes.dev._snapshot_state_db_signature",
+            "lit_monitor.server.routes.dev._snapshot_state_db_signature",
             return_value={"state.db": (12345, 4096)},
         ),
-        patch("scripts.server.routes.dev._newest_digest_path", return_value=None),
+        patch("lit_monitor.server.routes.dev._newest_digest_path", return_value=None),
     ):
         resp = client.post("/api/dev/dryrun/start")
 
@@ -69,7 +69,7 @@ def test_dryrun_start_blocks_if_already_running(
     """If the dev_dryrun slot is already busy, start returns a 'already running' pill."""
     client = _make_dev_client(monkeypatch)
 
-    from scripts.server.runtime import get_runtime
+    from lit_monitor.server.runtime import get_runtime
 
     runtime = get_runtime()
     fake_proc = MagicMock()
@@ -79,7 +79,7 @@ def test_dryrun_start_blocks_if_already_running(
 
     spawn_mock = AsyncMock()
     with patch(
-        "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+        "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
     ):
         resp = client.post("/api/dev/dryrun/start")
 
@@ -96,7 +96,7 @@ def test_dryrun_result_detects_no_state_db_change(
     """Unchanged signature → green 'Read-only' pill."""
     client = _make_dev_client(monkeypatch)
 
-    from scripts.server.runtime import get_runtime
+    from lit_monitor.server.runtime import get_runtime
 
     runtime = get_runtime()
     slot = runtime.processes["dev_dryrun"]
@@ -110,10 +110,10 @@ def test_dryrun_result_detects_no_state_db_change(
 
     with (
         patch(
-            "scripts.server.routes.dev._snapshot_state_db_signature",
+            "lit_monitor.server.routes.dev._snapshot_state_db_signature",
             return_value=dict(sig),
         ),
-        patch("scripts.server.routes.dev._newest_digest_path", return_value=None),
+        patch("lit_monitor.server.routes.dev._newest_digest_path", return_value=None),
     ):
         resp = client.get("/api/dev/dryrun/result")
 
@@ -129,7 +129,7 @@ def test_dryrun_result_detects_state_db_change(
     """Changed signature → red 'LEAK detected' pill."""
     client = _make_dev_client(monkeypatch)
 
-    from scripts.server.runtime import get_runtime
+    from lit_monitor.server.runtime import get_runtime
 
     runtime = get_runtime()
     slot = runtime.processes["dev_dryrun"]
@@ -145,10 +145,10 @@ def test_dryrun_result_detects_state_db_change(
 
     with (
         patch(
-            "scripts.server.routes.dev._snapshot_state_db_signature",
+            "lit_monitor.server.routes.dev._snapshot_state_db_signature",
             return_value=after,
         ),
-        patch("scripts.server.routes.dev._newest_digest_path", return_value=None),
+        patch("lit_monitor.server.routes.dev._newest_digest_path", return_value=None),
     ):
         resp = client.get("/api/dev/dryrun/result")
 
@@ -164,7 +164,7 @@ def test_dryrun_refuses_when_discovery_running(
     """Start refuses (no spawn) when prod discovery slot is busy."""
     client = _make_dev_client(monkeypatch)
 
-    from scripts.server.runtime import get_runtime
+    from lit_monitor.server.runtime import get_runtime
 
     runtime = get_runtime()
     # Mark the prod discovery slot as running.
@@ -175,7 +175,7 @@ def test_dryrun_refuses_when_discovery_running(
 
     spawn_mock = AsyncMock()
     with patch(
-        "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+        "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
     ):
         resp = client.post("/api/dev/dryrun/start")
 
@@ -192,7 +192,7 @@ def test_dryrun_result_detects_wal_change(
     """A WAL sibling change between before/after surfaces as a LEAK pill."""
     client = _make_dev_client(monkeypatch)
 
-    from scripts.server.runtime import get_runtime
+    from lit_monitor.server.runtime import get_runtime
 
     runtime = get_runtime()
     slot = runtime.processes["dev_dryrun"]
@@ -208,10 +208,10 @@ def test_dryrun_result_detects_wal_change(
 
     with (
         patch(
-            "scripts.server.routes.dev._snapshot_state_db_signature",
+            "lit_monitor.server.routes.dev._snapshot_state_db_signature",
             return_value=after,
         ),
-        patch("scripts.server.routes.dev._newest_digest_path", return_value=None),
+        patch("lit_monitor.server.routes.dev._newest_digest_path", return_value=None),
     ):
         resp = client.get("/api/dev/dryrun/result")
 
@@ -247,7 +247,7 @@ def test_dryrun_status_running_parses_iso_started_at(
     """
     from datetime import UTC, datetime, timedelta
 
-    from scripts.server.runtime import get_runtime
+    from lit_monitor.server.runtime import get_runtime
 
     client = _make_dev_client(monkeypatch)
 
@@ -278,7 +278,7 @@ def test_dryrun_status_running_tolerates_malformed_started_at(
     """If slot.started_at is somehow malformed, the endpoint must still return
     200 (degrading to "no elapsed shown") rather than 500'ing.
     """
-    from scripts.server.runtime import get_runtime
+    from lit_monitor.server.runtime import get_runtime
 
     client = _make_dev_client(monkeypatch)
 
@@ -299,7 +299,7 @@ def test_dryrun_status_completed_when_exited_zero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A process that exited with returncode=0 renders the green completed pill."""
-    from scripts.server.runtime import get_runtime
+    from lit_monitor.server.runtime import get_runtime
 
     client = _make_dev_client(monkeypatch)
 
@@ -320,7 +320,7 @@ def test_dryrun_status_failed_when_exited_nonzero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A process that exited with non-zero returncode renders the red failed pill."""
-    from scripts.server.runtime import get_runtime
+    from lit_monitor.server.runtime import get_runtime
 
     client = _make_dev_client(monkeypatch)
 

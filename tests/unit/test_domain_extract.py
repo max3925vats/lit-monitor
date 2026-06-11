@@ -25,14 +25,14 @@ class TestPromptYaml:
 
     def test_registered_in_prompt_registry(self) -> None:
         """The prompt is registered with the required placeholder set."""
-        from scripts.llm.prompt_registry import _REQUIRED_PLACEHOLDERS
+        from lit_monitor.llm.prompt_registry import _REQUIRED_PLACEHOLDERS
 
         assert "domain_extraction" in _REQUIRED_PLACEHOLDERS
         assert "domain_context" in _REQUIRED_PLACEHOLDERS["domain_extraction"]
 
     def test_load_prompt_renders(self) -> None:
         """load_prompt resolves the example file and validates the schema."""
-        from scripts.llm.prompt_registry import _reset_prompt_cache, load_prompt
+        from lit_monitor.llm.prompt_registry import _reset_prompt_cache, load_prompt
 
         _reset_prompt_cache()
         prompt = load_prompt("domain_extraction")
@@ -47,7 +47,7 @@ class TestPromptYaml:
 # ---------------------------------------------------------------------------
 class TestAnalyzeDomain:
     def test_happy_path_parses_json(self) -> None:
-        from scripts.domain.extract import analyze_domain
+        from lit_monitor.domain.extract import analyze_domain
 
         mock_llm = MagicMock()
         mock_llm.complete.return_value = json.dumps(
@@ -68,29 +68,29 @@ class TestAnalyzeDomain:
         assert result["exclusions"] == []
 
     def test_empty_input_returns_none(self) -> None:
-        from scripts.domain.extract import analyze_domain
+        from lit_monitor.domain.extract import analyze_domain
 
         assert analyze_domain("", llm=MagicMock()) is None
         assert analyze_domain("   \n  ", llm=MagicMock()) is None
 
     def test_none_input_returns_none(self) -> None:
-        from scripts.domain.extract import analyze_domain
+        from lit_monitor.domain.extract import analyze_domain
 
         # type: ignore[arg-type] — defensive: callers shouldn't but we tolerate.
         assert analyze_domain(None, llm=MagicMock()) is None  # type: ignore[arg-type]
 
     def test_malformed_json_returns_none(self, caplog: pytest.LogCaptureFixture) -> None:
-        from scripts.domain.extract import analyze_domain
+        from lit_monitor.domain.extract import analyze_domain
 
         mock_llm = MagicMock()
         mock_llm.complete.return_value = "not actually JSON {broken"
-        with caplog.at_level(logging.INFO, logger="scripts.domain.extract"):
+        with caplog.at_level(logging.INFO, logger="lit_monitor.domain.extract"):
             result = analyze_domain("real input", llm=mock_llm)
         assert result is None
         assert any("JSON parse failed" in rec.message for rec in caplog.records)
 
     def test_llm_exception_returns_none(self) -> None:
-        from scripts.domain.extract import analyze_domain
+        from lit_monitor.domain.extract import analyze_domain
 
         mock_llm = MagicMock()
         mock_llm.complete.side_effect = RuntimeError("network")
@@ -98,7 +98,7 @@ class TestAnalyzeDomain:
         assert result is None
 
     def test_empty_llm_response_returns_none(self) -> None:
-        from scripts.domain.extract import analyze_domain
+        from lit_monitor.domain.extract import analyze_domain
 
         mock_llm = MagicMock()
         mock_llm.complete.return_value = "   "
@@ -106,7 +106,7 @@ class TestAnalyzeDomain:
 
     def test_missing_required_keys_returns_none(self) -> None:
         """JSON missing required schema keys → fail soft, return None."""
-        from scripts.domain.extract import analyze_domain
+        from lit_monitor.domain.extract import analyze_domain
 
         mock_llm = MagicMock()
         mock_llm.complete.return_value = json.dumps({"topics": ["x"]})
@@ -114,7 +114,7 @@ class TestAnalyzeDomain:
 
     def test_non_object_json_returns_none(self) -> None:
         """JSON array (not object) → None."""
-        from scripts.domain.extract import analyze_domain
+        from lit_monitor.domain.extract import analyze_domain
 
         mock_llm = MagicMock()
         mock_llm.complete.return_value = "[1, 2, 3]"
@@ -122,7 +122,7 @@ class TestAnalyzeDomain:
 
     def test_fenced_output_stripped(self) -> None:
         """LLM may wrap output in ```json ...``` fences — should still parse."""
-        from scripts.domain.extract import analyze_domain
+        from lit_monitor.domain.extract import analyze_domain
 
         mock_llm = MagicMock()
         mock_llm.complete.return_value = (
@@ -137,7 +137,7 @@ class TestAnalyzeDomain:
 
     def test_thinking_block_stripped(self) -> None:
         """Ollama thinking-mode <think>...</think> block is stripped."""
-        from scripts.domain.extract import analyze_domain
+        from lit_monitor.domain.extract import analyze_domain
 
         mock_llm = MagicMock()
         mock_llm.complete.return_value = (
@@ -151,7 +151,7 @@ class TestAnalyzeDomain:
 
     def test_caps_items_at_eight(self) -> None:
         """Defense-in-depth: cap each list at 8 even if the LLM ignores the prompt."""
-        from scripts.domain.extract import analyze_domain
+        from lit_monitor.domain.extract import analyze_domain
 
         mock_llm = MagicMock()
         twelve = [f"t{i}" for i in range(12)]
@@ -169,7 +169,7 @@ class TestAnalyzeDomain:
         assert len(result["topics"]) == 8
 
     def test_dedup_case_insensitive(self) -> None:
-        from scripts.domain.extract import analyze_domain
+        from lit_monitor.domain.extract import analyze_domain
 
         mock_llm = MagicMock()
         mock_llm.complete.return_value = json.dumps(
@@ -187,7 +187,7 @@ class TestAnalyzeDomain:
         assert result["topics"] == ["Bioprocessing", "other"]
 
     def test_non_list_field_coerced_to_empty(self) -> None:
-        from scripts.domain.extract import analyze_domain
+        from lit_monitor.domain.extract import analyze_domain
 
         mock_llm = MagicMock()
         mock_llm.complete.return_value = json.dumps(
@@ -209,7 +209,7 @@ class TestAnalyzeDomain:
 # ---------------------------------------------------------------------------
 class TestDomainFocusTable:
     def test_table_exists(self, tmp_path: Path) -> None:
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
@@ -220,7 +220,7 @@ class TestDomainFocusTable:
         assert rows
 
     def test_save_extraction_counts(self, tmp_path: Path) -> None:
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         db.save_domain_extraction(
@@ -243,7 +243,7 @@ class TestDomainFocusTable:
 
     def test_save_replaces_previous(self, tmp_path: Path) -> None:
         """save_domain_extraction has REPLACE semantics — wipes old rows."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         empty: dict[str, list[str]] = {
@@ -258,7 +258,7 @@ class TestDomainFocusTable:
         assert rows[0][0] == "B"
 
     def test_list_extracted_grouped_by_plural(self, tmp_path: Path) -> None:
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         db.save_domain_extraction(
@@ -280,7 +280,7 @@ class TestDomainFocusTable:
         assert result["materials"] == []
 
     def test_list_row_shape(self, tmp_path: Path) -> None:
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         db.save_domain_extraction(
@@ -297,7 +297,7 @@ class TestDomainFocusTable:
         assert row["user_confirmed"] is False
 
     def test_clear_returns_rowcount(self, tmp_path: Path) -> None:
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         db.save_domain_extraction(
@@ -313,7 +313,7 @@ class TestDomainFocusTable:
         assert db.clear_domain_extraction() == 0
 
     def test_set_confirmed_toggle(self, tmp_path: Path) -> None:
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         db.save_domain_extraction(
@@ -331,7 +331,7 @@ class TestDomainFocusTable:
 
     def test_save_skips_empty_strings(self, tmp_path: Path) -> None:
         """Whitespace-only / empty items shouldn't pollute the table."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         db.save_domain_extraction(

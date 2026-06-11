@@ -46,7 +46,7 @@ class TestEmbedText:
 
     def test_returns_ndarray(self, tmp_path):
         """embed_text() returns a numpy ndarray."""
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
 
         db = EmbeddingsDB.__new__(EmbeddingsDB)
         db._embed_model = "mxbai-embed-large"
@@ -66,7 +66,7 @@ class TestEmbedText:
         (Previously misnamed test_returns_l2_normalised_vector; embed_text does
         not normalise, and the assertions only ever checked value preservation.)
         """
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
 
         db = EmbeddingsDB.__new__(EmbeddingsDB)
         db._embed_model = "mxbai-embed-large"
@@ -82,7 +82,7 @@ class TestEmbedText:
 
     def test_lru_cache_avoids_re_embedding(self):
         """Calling embed_text() twice with the same text hits _embed only once."""
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
 
         db = EmbeddingsDB.__new__(EmbeddingsDB)
         db._embed_model = "mxbai-embed-large"
@@ -104,7 +104,7 @@ class TestEmbedText:
 
     def test_different_texts_both_embedded(self):
         """Two distinct texts each trigger a real _embed call (no false cache hit)."""
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
 
         db = EmbeddingsDB.__new__(EmbeddingsDB)
         db._embed_model = "mxbai-embed-large"
@@ -124,7 +124,7 @@ class TestEmbedText:
 
     def test_empty_text_raises_value_error(self):
         """embed_text('') raises ValueError before touching the provider."""
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
 
         db = EmbeddingsDB.__new__(EmbeddingsDB)
         db._embed_model = "mxbai-embed-large"
@@ -134,7 +134,7 @@ class TestEmbedText:
 
     def test_whitespace_only_raises_value_error(self):
         """embed_text('   ') raises ValueError (whitespace-only guard)."""
-        from scripts.output.embeddings import EmbeddingsDB
+        from lit_monitor.output.embeddings import EmbeddingsDB
 
         db = EmbeddingsDB.__new__(EmbeddingsDB)
         db._embed_model = "mxbai-embed-large"
@@ -158,7 +158,7 @@ class TestRankPapersDefaultRegression:
 
     def test_no_domain_context_emb_kwarg_accepted(self):
         """rank_papers() still works without the new domain_context_emb kwarg."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [{"doi": "10.1/a", "title": "A", "abstract": ""}]
         embeddings_db = MagicMock()
@@ -173,7 +173,7 @@ class TestRankPapersDefaultRegression:
 
     def test_default_config_preserves_similarity_score_field(self):
         """With default config, similarity_score key is present and correct."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [
             {"doi": "10.1/low", "title": "Low", "abstract": ""},
@@ -194,7 +194,7 @@ class TestRankPapersDefaultRegression:
 
     def test_domain_context_emb_none_same_as_absent(self):
         """Passing domain_context_emb=None explicitly is identical to omitting it."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [{"doi": "10.1/x", "title": "X", "abstract": ""}]
         embeddings_db = MagicMock()
@@ -241,7 +241,7 @@ class TestDomainContextSignal:
 
     def test_weight_zero_no_score_change(self):
         """ranking.weights.domain_context = 0 → similarity_score unmodified."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         domain_emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         candidates = [{"doi": "10.1/a", "title": "A", "abstract": ""}]
@@ -262,7 +262,7 @@ class TestDomainContextSignal:
         single bad vector still surfaces exactly one warning. Score unchanged."""
         import logging
 
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         domain_emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         # Degenerate candidate: stored embedding is all-zero (norm ≈ 0).
@@ -273,7 +273,7 @@ class TestDomainContextSignal:
             "_embedding": np.zeros(3, dtype=np.float32),
         }]
 
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -303,7 +303,7 @@ class TestDomainContextSignal:
         import logging
         import math
 
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         domain_emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         # Degenerate candidate: stored embedding is all-NaN (norm is NaN).
@@ -314,7 +314,7 @@ class TestDomainContextSignal:
             "_embedding": np.full(3, np.nan, dtype=np.float32),
         }]
 
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -347,8 +347,8 @@ class TestDomainContextSignal:
         import logging
         import math
 
-        from scripts.clustering.kmeans import Cluster
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.clustering.kmeans import Cluster
+        from lit_monitor.llm.ranker import rank_papers
 
         cluster = Cluster(
             id=1,
@@ -365,7 +365,7 @@ class TestDomainContextSignal:
             "_embedding": np.full(3, np.nan, dtype=np.float32),
         }]
 
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -398,7 +398,7 @@ class TestDomainContextSignal:
         import logging
         import math
 
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         # Degenerate DOMAIN embedding (all-NaN → NaN norm); candidate is FINITE.
         domain_emb = np.full(3, np.nan, dtype=np.float32)
@@ -409,7 +409,7 @@ class TestDomainContextSignal:
             "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),
         }]
 
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -441,8 +441,8 @@ class TestDomainContextSignal:
         import logging
         import math
 
-        from scripts.clustering.kmeans import Cluster
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.clustering.kmeans import Cluster
+        from lit_monitor.llm.ranker import rank_papers
 
         # One healthy centroid, one with a NaN component.
         good = Cluster(
@@ -462,7 +462,7 @@ class TestDomainContextSignal:
             "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),
         }]
 
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -484,7 +484,7 @@ class TestDomainContextSignal:
 
     def test_weight_nonzero_adds_to_score(self):
         """ranking.weights.domain_context > 0 → score includes cosine*weight."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         # Candidate embedding aligned with domain_emb → domain cosine ≈ 1.0
         domain_emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
@@ -510,7 +510,7 @@ class TestDomainContextSignal:
 
     def test_weight_nonzero_no_embedding_key_no_crash(self):
         """Candidate without _embedding key: weight contribution is 0, no crash."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         domain_emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         candidates = [{"doi": "10.1/a", "title": "A", "abstract": ""}]
@@ -527,7 +527,7 @@ class TestDomainContextSignal:
 
     def test_domain_score_stored_as_metadata_key(self):
         """When weight>0 and _embedding present, _domain_score is stored on the paper."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         domain_emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         candidates = [
@@ -574,7 +574,7 @@ class TestClusterCentroidGolden:
         return llm
 
     def _fixture(self):
-        from scripts.clustering.kmeans import Cluster
+        from lit_monitor.clustering.kmeans import Cluster
 
         clusters = [
             Cluster(
@@ -605,7 +605,7 @@ class TestClusterCentroidGolden:
         norm vector has length K=2 and is reused across all 3 candidates). The
         floats below are the captured baseline; the hoist must not change them.
         """
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         clusters, candidates = self._fixture()
         ranked = rank_papers(
@@ -636,7 +636,7 @@ class TestClusterCentroidGolden:
         (``ndim == 1``) are ignored. Pre-hoist this count equals N (one per
         candidate); post-hoist it must be exactly 1.
         """
-        from scripts.llm import ranker
+        from lit_monitor.llm import ranker
 
         clusters, candidates = self._fixture()
         real_norm = np.linalg.norm
@@ -668,7 +668,7 @@ class TestClusterCentroidGolden:
         count '3' — not one warning per candidate."""
         import logging
 
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         domain_emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         candidates = [
@@ -677,7 +677,7 @@ class TestClusterCentroidGolden:
             for i in range(3)
         ]
 
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates, self._make_db(0.5), self._make_llm(),
                 domain_context_emb=domain_emb,
@@ -739,7 +739,7 @@ class TestInterestVectorSignal:
     def test_weight_zero_no_score_change(self):
         """interest_weight = 0 → similarity_score unmodified (inert), even with a
         vector and an open gate."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         interest_vec = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         candidates = [{
@@ -761,7 +761,7 @@ class TestInterestVectorSignal:
         """n_events < COLD_START_FLOOR → soft_gate==0 → NO change even with a
         non-zero weight AND an aligned interest vector. This is the cold-start
         inertness guarantee."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         interest_vec = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         candidates = [{
@@ -783,8 +783,8 @@ class TestInterestVectorSignal:
     def test_aligned_candidate_score_rises_by_weight_gate_cosine(self):
         """weight>0 + n_events>=floor + candidate aligned with interest_vec →
         score rises by exactly weight * soft_gate(n_events) * cosine."""
-        from scripts.learning.rocchio import soft_gate
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.learning.rocchio import soft_gate
+        from lit_monitor.llm.ranker import rank_papers
 
         interest_vec = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         candidates = [{
@@ -818,14 +818,14 @@ class TestInterestVectorSignal:
         import logging
         import math
 
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         bad_vec = np.zeros(3, dtype=np.float32)  # norm ≈ 0
         candidates = [{
             "doi": "10.1/a", "title": "A", "abstract": "",
             "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),
         }]
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -848,14 +848,14 @@ class TestInterestVectorSignal:
         import logging
         import math
 
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         nan_vec = np.full(3, np.nan, dtype=np.float32)
         candidates = [{
             "doi": "10.1/a", "title": "A", "abstract": "",
             "_embedding": np.array([1.0, 0.0, 0.0], dtype=np.float32),
         }]
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -877,7 +877,7 @@ class TestInterestVectorSignal:
         import logging
         import math
 
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         interest_vec = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         candidates = [{
@@ -886,7 +886,7 @@ class TestInterestVectorSignal:
             "abstract": "",
             "_embedding": np.full(3, np.nan, dtype=np.float32),
         }]
-        with caplog.at_level(logging.WARNING, logger="scripts.llm.ranker"):
+        with caplog.at_level(logging.WARNING, logger="lit_monitor.llm.ranker"):
             ranked = rank_papers(
                 candidates,
                 self._make_db(0.5),
@@ -905,7 +905,7 @@ class TestInterestVectorSignal:
     def test_default_off_regression(self):
         """No interest kwargs at all → byte-for-byte v0.x behavior (leg never
         runs, no _interest_score, breakdown feedback == 0.0)."""
-        from scripts.llm.ranker import rank_papers
+        from lit_monitor.llm.ranker import rank_papers
 
         candidates = [{
             "doi": "10.1/a", "title": "A", "abstract": "",
@@ -926,7 +926,7 @@ class TestSoftFilter:
 
     def test_filter_off_preserves_all_candidates(self):
         """_apply_soft_domain_filter with enabled=False is a no-op (no import side-effect)."""
-        from scripts.pipelines.discovery import _apply_soft_domain_filter
+        from lit_monitor.pipelines.discovery import _apply_soft_domain_filter
 
         domain_emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         candidates = [_make_candidate(f"10/{i}", float(i) / 10) for i in range(10)]
@@ -942,7 +942,7 @@ class TestSoftFilter:
 
     def test_filter_on_splits_correctly(self):
         """Candidates below threshold go to off_domain pool, above to in_domain."""
-        from scripts.pipelines.discovery import _apply_soft_domain_filter
+        from lit_monitor.pipelines.discovery import _apply_soft_domain_filter
 
         domain_emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         # Two candidates: one aligned (cosine≈1.0), one orthogonal (cosine≈0.0)
@@ -963,7 +963,7 @@ class TestSoftFilter:
         Bundle A spec: assemble_with_soft_floor(in_domain=[], off_domain=100, digest_size=100)
         → exactly ⌈100 * 0.05⌉ = 5 off-domain slots must be in the final list.
         """
-        from scripts.pipelines.discovery import assemble_with_soft_floor
+        from lit_monitor.pipelines.discovery import assemble_with_soft_floor
 
         # All 100 are off-domain; in_domain is empty.
         off_domain = [
@@ -984,7 +984,7 @@ class TestSoftFilter:
 
     def test_soft_floor_reserves_slots_when_both_pools_present(self):
         """When in_domain has 50 and off_domain has 50, digest_size=20 → 1 off-domain slot."""
-        from scripts.pipelines.discovery import assemble_with_soft_floor
+        from lit_monitor.pipelines.discovery import assemble_with_soft_floor
 
         # ⌈20 * 0.05⌉ = 1 off-domain slot reserved
         in_domain = [
@@ -1007,7 +1007,7 @@ class TestSoftFilter:
 
     def test_soft_floor_no_duplicate_dois(self):
         """Final assembled list must not contain the same DOI twice."""
-        from scripts.pipelines.discovery import assemble_with_soft_floor
+        from lit_monitor.pipelines.discovery import assemble_with_soft_floor
 
         in_domain = [{"doi": f"in-{i}", "title": f"In {i}", "similarity_score": float(i)} for i in range(10)]
         off_domain = [{"doi": f"off-{i}", "title": f"Off {i}", "similarity_score": float(i)} for i in range(5)]
@@ -1022,7 +1022,7 @@ class TestSoftFilter:
 
     def test_no_embedding_candidate_defaults_to_in_domain(self):
         """Candidate with no _embedding key is placed in in_domain (fail-safe)."""
-        from scripts.pipelines.discovery import _apply_soft_domain_filter
+        from lit_monitor.pipelines.discovery import _apply_soft_domain_filter
 
         domain_emb = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         # No _embedding key → can't evaluate cosine → default to in-domain
@@ -1045,7 +1045,7 @@ class TestS2Cap:
 
     def test_cap_off_preserves_all_candidates(self):
         """Without min_relevance kwarg, all S2 results pass through unchanged."""
-        from scripts.search.semantic_scholar import search_semantic_scholar
+        from lit_monitor.search.semantic_scholar import search_semantic_scholar
 
         mock_paper = MagicMock()
         mock_paper.externalIds = {"DOI": "10.1/test"}
@@ -1056,8 +1056,8 @@ class TestS2Cap:
         mock_paper.fieldsOfStudy = []
         mock_paper.abstract = "Abstract"
 
-        with patch("scripts.search.semantic_scholar._S2_AVAILABLE", True), \
-             patch("scripts.search.semantic_scholar._SemanticScholar") as mock_s2_cls:
+        with patch("lit_monitor.search.semantic_scholar._S2_AVAILABLE", True), \
+             patch("lit_monitor.search.semantic_scholar._SemanticScholar") as mock_s2_cls:
             mock_s2 = MagicMock()
             mock_s2_cls.return_value = mock_s2
             # Two papers with no relevance_score key (default behavior)
@@ -1068,7 +1068,7 @@ class TestS2Cap:
 
     def test_cap_on_drops_low_relevance(self):
         """With min_relevance set, candidates below threshold are dropped."""
-        from scripts.search.semantic_scholar import search_semantic_scholar
+        from lit_monitor.search.semantic_scholar import search_semantic_scholar
 
         def _make_mock_paper(doi: str, relevance: float):
             p = MagicMock()
@@ -1085,8 +1085,8 @@ class TestS2Cap:
         high = _make_mock_paper("10.1/high", 0.8)
         low = _make_mock_paper("10.1/low", 0.2)
 
-        with patch("scripts.search.semantic_scholar._S2_AVAILABLE", True), \
-             patch("scripts.search.semantic_scholar._SemanticScholar") as mock_s2_cls:
+        with patch("lit_monitor.search.semantic_scholar._S2_AVAILABLE", True), \
+             patch("lit_monitor.search.semantic_scholar._SemanticScholar") as mock_s2_cls:
             mock_s2 = MagicMock()
             mock_s2_cls.return_value = mock_s2
             mock_s2.search_paper.return_value = [high, low]
@@ -1101,7 +1101,7 @@ class TestS2Cap:
         """When cap drops candidates, a log message reports the count."""
         import logging
 
-        from scripts.search.semantic_scholar import search_semantic_scholar
+        from lit_monitor.search.semantic_scholar import search_semantic_scholar
 
         def _make_mock_paper(doi: str, relevance: float):
             p = MagicMock()
@@ -1117,12 +1117,12 @@ class TestS2Cap:
 
         papers = [_make_mock_paper(f"10.1/{i}", 0.1 * i) for i in range(5)]
 
-        with patch("scripts.search.semantic_scholar._S2_AVAILABLE", True), \
-             patch("scripts.search.semantic_scholar._SemanticScholar") as mock_s2_cls:
+        with patch("lit_monitor.search.semantic_scholar._S2_AVAILABLE", True), \
+             patch("lit_monitor.search.semantic_scholar._SemanticScholar") as mock_s2_cls:
             mock_s2 = MagicMock()
             mock_s2_cls.return_value = mock_s2
             mock_s2.search_paper.return_value = papers
-            with caplog.at_level(logging.INFO, logger="scripts.search.semantic_scholar"):
+            with caplog.at_level(logging.INFO, logger="lit_monitor.search.semantic_scholar"):
                 search_semantic_scholar(
                     "test query", since_days=7, limit=10, min_relevance=0.35
                 )
@@ -1140,7 +1140,7 @@ class TestConfigRankingNamespace:
 
     def _build_config_with_ranking(self, ranking_dict: dict) -> Any:
         """Build a minimal Config-like object with a ranking sub-namespace."""
-        from scripts.core.config import _Namespace
+        from lit_monitor.core.config import _Namespace
         return _Namespace({"ranking": ranking_dict})
 
     def test_defaults_domain_context_weight_zero(self):
@@ -1187,7 +1187,7 @@ class TestConfigRankingNamespace:
         """Config.ranking attribute is accessible after loading extraction.yaml with ranking block."""
         import yaml
 
-        from scripts.core.config import Config
+        from lit_monitor.core.config import Config
 
         # Minimal paths.yaml
         paths_data = {
@@ -1248,7 +1248,7 @@ class TestConfigRankingNamespace:
         """Config without a ranking key in extraction.yaml: ranking attr is None or default."""
         import yaml
 
-        from scripts.core.config import Config
+        from lit_monitor.core.config import Config
 
         paths_data = {
             "zotero": {

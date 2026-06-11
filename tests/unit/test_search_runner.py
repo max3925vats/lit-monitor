@@ -18,7 +18,7 @@ def test_format_query_round_trips_bracketed_input():
     short-circuit, this test fails because the early-return would preserve
     the input verbatim instead of normalising whitespace + bracket layout.
     """
-    from scripts.search.search_runner import _format_query
+    from lit_monitor.search.search_runner import _format_query
     # Input with extra whitespace inside brackets — early-return would
     # preserve the spaces verbatim; canonical path strips and re-wraps.
     messy = _format_query("[ Topic ]   AND   [ Other ]")
@@ -30,7 +30,7 @@ def test_format_query_round_trips_bracketed_input():
 
 def test_format_query_canonical_form():
     """Pin the exact canonical output so silent formatter drift is caught."""
-    from scripts.search.search_runner import _format_query
+    from lit_monitor.search.search_runner import _format_query
     assert _format_query("Topic AND Other") == "[Topic] AND [Other]"
 
 
@@ -56,7 +56,7 @@ def test_filter_known_dois_url_wrap_collision():
     ``https://doi.org/10.1/a`` did NOT match the stored bare ``10.1/a`` and the
     paper was wrongly re-ingested as new.
     """
-    from scripts.search.search_runner import filter_known_dois
+    from lit_monitor.search.search_runner import filter_known_dois
     state_db = _FakeStateDB(known={"10.1/a"})
     papers = [{"doi": "https://doi.org/10.1/A", "title": "wrapped dup"}]
     out = filter_known_dois(papers, state_db)
@@ -65,7 +65,7 @@ def test_filter_known_dois_url_wrap_collision():
 
 def test_filter_known_dois_keeps_genuinely_new():
     """Sanity: a non-matching DOI is still kept (no over-aggressive dedup)."""
-    from scripts.search.search_runner import filter_known_dois
+    from lit_monitor.search.search_runner import filter_known_dois
     state_db = _FakeStateDB(known={"10.1/a"})
     papers = [{"doi": "10.2/b", "title": "new"}]
     out = filter_known_dois(papers, state_db)
@@ -78,7 +78,7 @@ def test_convert_findpapers_results_normalizes_stored_doi():
     bare lowercased DOIs."""
     from types import SimpleNamespace
 
-    from scripts.search.search_runner import _convert_findpapers_results
+    from lit_monitor.search.search_runner import _convert_findpapers_results
 
     fake_paper = SimpleNamespace(
         doi="https://doi.org/10.1234/ABC",

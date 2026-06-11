@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from scripts.llm.llm_client import MockLLMClient
+from lit_monitor.llm.llm_client import MockLLMClient
 
 
 # ---------------------------------------------------------------------------
@@ -16,13 +16,13 @@ from scripts.llm.llm_client import MockLLMClient
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 def test_simple_phase_system_prompt_contains_simple_fields():
-    from scripts.llm.extractor import PAPER_SIMPLE_FIELDS, _build_system_prompt
+    from lit_monitor.llm.extractor import PAPER_SIMPLE_FIELDS, _build_system_prompt
     prompt = _build_system_prompt("paper", PAPER_SIMPLE_FIELDS, "Simple", "domain ctx")
     for field in PAPER_SIMPLE_FIELDS:
         assert field in prompt, f"Field {field!r} missing from simple phase prompt"
 @pytest.mark.unit
 def test_complex_phase_system_prompt_contains_complex_fields():
-    from scripts.llm.extractor import PAPER_COMPLEX_FIELDS, _build_system_prompt
+    from lit_monitor.llm.extractor import PAPER_COMPLEX_FIELDS, _build_system_prompt
     prompt = _build_system_prompt("paper", PAPER_COMPLEX_FIELDS, "Complex", "domain ctx")
     for field in PAPER_COMPLEX_FIELDS:
         assert field in prompt, f"Field {field!r} missing from complex phase prompt"
@@ -31,7 +31,7 @@ def test_system_prompt_strips_role_marker_from_domain_context():
     """C1 review: domain_context flows into the extractor SYSTEM prompt; a
     role marker in that config paragraph must be stripped (the third consumer
     of domain_context, alongside ranker and domain/extract)."""
-    from scripts.llm.extractor import PAPER_SIMPLE_FIELDS, _build_system_prompt
+    from lit_monitor.llm.extractor import PAPER_SIMPLE_FIELDS, _build_system_prompt
     marker = "<|im_start|>"
     prompt = _build_system_prompt(
         "paper",
@@ -45,19 +45,19 @@ def test_system_prompt_strips_role_marker_from_domain_context():
 
 @pytest.mark.unit
 def test_ocr_warning_appended_when_ocr_heavy():
-    from scripts.llm.extractor import _build_extraction_user_prompt
+    from lit_monitor.llm.extractor import _build_extraction_user_prompt
     prompt = _build_extraction_user_prompt("Some text.", ocr_heavy=True)
     assert "OCR" in prompt
     assert "equations" in prompt.lower()
 
 @pytest.mark.unit
 def test_no_ocr_warning_when_not_ocr_heavy():
-    from scripts.llm.extractor import _build_extraction_user_prompt
+    from lit_monitor.llm.extractor import _build_extraction_user_prompt
     prompt = _build_extraction_user_prompt("Some text.", ocr_heavy=False)
     assert "OCR" not in prompt
 @pytest.mark.unit
 def test_null_instruction_in_paper_prompt():
-    from scripts.llm.extractor import PAPER_SIMPLE_FIELDS, _build_system_prompt
+    from lit_monitor.llm.extractor import PAPER_SIMPLE_FIELDS, _build_system_prompt
     prompt = _build_system_prompt("paper", PAPER_SIMPLE_FIELDS, "Simple", "domain")
     assert "null" in prompt.lower()
     assert "confidence" in prompt.lower()
@@ -66,7 +66,7 @@ def test_null_instruction_in_paper_prompt():
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 def test_extract_simple_returns_all_fields():
-    from scripts.llm.extractor import PAPER_SIMPLE_FIELDS, extract_simple
+    from lit_monitor.llm.extractor import PAPER_SIMPLE_FIELDS, extract_simple
     llm = MockLLMClient(mock_response_key="paper_pass1")
     result = extract_simple("full text here", llm).fields
     for field in PAPER_SIMPLE_FIELDS:
@@ -74,7 +74,7 @@ def test_extract_simple_returns_all_fields():
         assert f"{field}_confidence" in result
 @pytest.mark.unit
 def test_extract_complex_returns_all_fields():
-    from scripts.llm.extractor import PAPER_COMPLEX_FIELDS, extract_complex
+    from lit_monitor.llm.extractor import PAPER_COMPLEX_FIELDS, extract_complex
     llm = MockLLMClient(mock_response_key="paper_pass3")
     result = extract_complex("full text here", llm).fields
     for field in PAPER_COMPLEX_FIELDS:
@@ -82,7 +82,7 @@ def test_extract_complex_returns_all_fields():
         assert f"{field}_confidence" in result
 @pytest.mark.unit
 def test_extract_paper_both_phases_merged():
-    from scripts.llm.extractor import (
+    from lit_monitor.llm.extractor import (
         PAPER_COMPLEX_FIELDS,
         PAPER_SIMPLE_FIELDS,
         extract_paper,
@@ -94,7 +94,7 @@ def test_extract_paper_both_phases_merged():
 @pytest.mark.unit
 def test_extract_paper_phase_failure_preserves_other_phase():
     """M3: If complex phase fails, simple phase results must still be in the output."""
-    from scripts.llm.extractor import extract_paper
+    from lit_monitor.llm.extractor import extract_paper
     call_count = [0]
     class SelectiveMockClient(MockLLMClient):
         def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
@@ -107,14 +107,14 @@ def test_extract_paper_phase_failure_preserves_other_phase():
     # Simple phase fields should be present
     assert "core_finding" in result
     # Complex phase error should be recorded, not raise (B10 contract)
-    from scripts.llm.extractor import failed_phases
+    from lit_monitor.llm.extractor import failed_phases
     assert "complex" in failed_phases(result)
     # Complex phase fields are absent (extraction failed)
     assert result.get("novelty_statement") is None
 @pytest.mark.unit
 def test_normalise_fills_missing_fields_with_null():
     """Fields missing from LLM response should default to null/absent."""
-    from scripts.llm.extractor import PAPER_SIMPLE_FIELDS, _normalise_extraction
+    from lit_monitor.llm.extractor import PAPER_SIMPLE_FIELDS, _normalise_extraction
     # Partial response — missing some fields
     partial = {"core_finding": "Found something.", "core_finding_confidence": "explicit"}
     result = _normalise_extraction(partial, PAPER_SIMPLE_FIELDS)
@@ -127,7 +127,7 @@ def test_normalise_fills_missing_fields_with_null():
     assert result["methods_summary_confidence"] == "absent"
 @pytest.mark.unit
 def test_normalise_null_value_forces_absent_confidence():
-    from scripts.llm.extractor import _normalise_extraction
+    from lit_monitor.llm.extractor import _normalise_extraction
     raw = {
         "core_finding": None,
         "core_finding_confidence": "explicit",  # wrong — should be absent
@@ -137,7 +137,7 @@ def test_normalise_null_value_forces_absent_confidence():
     assert result["core_finding_confidence"] == "absent"
 @pytest.mark.unit
 def test_normalise_empty_string_coerced_to_null():
-    from scripts.llm.extractor import _normalise_extraction
+    from lit_monitor.llm.extractor import _normalise_extraction
     raw = {"core_finding": "", "core_finding_confidence": "explicit"}
     result = _normalise_extraction(raw, ["core_finding"])
     assert result["core_finding"] is None
@@ -145,7 +145,7 @@ def test_normalise_empty_string_coerced_to_null():
 @pytest.mark.unit
 def test_extract_paper_with_existing_extraction():
     """Resume: existing simple result should be preserved when only complex phase runs."""
-    from scripts.llm.extractor import extract_paper
+    from lit_monitor.llm.extractor import extract_paper
     existing = {
         "core_finding": "Existing finding",
         "core_finding_confidence": "explicit",
@@ -158,7 +158,7 @@ def test_extract_paper_with_existing_extraction():
 def test_extract_paper_simple_phase_failure_records_error_continues():
     """M3/B10: If simple phase fails, it is recorded in _phase_errors and the
     complex phase still runs."""
-    from scripts.llm.extractor import PHASE_ERRORS_KEY, extract_paper, failed_phases
+    from lit_monitor.llm.extractor import PHASE_ERRORS_KEY, extract_paper, failed_phases
     call_count = [0]
     class SimpleFailClient(MockLLMClient):
         def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
@@ -176,7 +176,7 @@ def test_extract_paper_simple_phase_failure_records_error_continues():
 @pytest.mark.unit
 def test_extract_paper_all_phases_fail_records_all_errors():
     """M3/B10: If every phase fails, both phases appear in _phase_errors."""
-    from scripts.llm.extractor import extract_paper, failed_phases
+    from lit_monitor.llm.extractor import extract_paper, failed_phases
     class AllFailClient(MockLLMClient):
         def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
             raise RuntimeError("LLM unavailable")
@@ -193,8 +193,8 @@ def test_extract_paper_all_phases_fail_records_all_errors():
 def test_extract_paper_phase_failure_raises_under_strict():
     """P4.1: in --strict a crashed phase must raise, not be downgraded to an
     empty-fields result carrying a magic _<phase>_error key."""
-    import scripts.core.strict_mode as _sm
-    from scripts.llm.extractor import extract_paper
+    import lit_monitor.core.strict_mode as _sm
+    from lit_monitor.llm.extractor import extract_paper
 
     class SimpleFailClient(MockLLMClient):
         def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
@@ -209,8 +209,8 @@ def test_extract_paper_phase_failure_raises_under_strict():
 def test_extract_paper_phase_failure_detectable_in_non_strict():
     """P4.1: non-strict preserves the detectable _<phase>_error marker so a
     caller (e.g. re_extract_all_failed_phase) can find the failed phase."""
-    import scripts.core.strict_mode as _sm
-    from scripts.llm.extractor import extract_paper
+    import lit_monitor.core.strict_mode as _sm
+    from lit_monitor.llm.extractor import extract_paper
 
     class SimpleFailClient(MockLLMClient):
         def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
@@ -219,7 +219,7 @@ def test_extract_paper_phase_failure_detectable_in_non_strict():
     _sm.set_strict(False)
     result = extract_paper("full text", SimpleFailClient(), phases=("simple",))
     # Failure is recorded, not silently absent (B10 structured contract).
-    from scripts.llm.extractor import PHASE_ERRORS_KEY, failed_phases
+    from lit_monitor.llm.extractor import PHASE_ERRORS_KEY, failed_phases
     assert failed_phases(result) == ["simple"]
     assert "timeout" in result[PHASE_ERRORS_KEY]["simple"]
 
@@ -230,8 +230,8 @@ def test_extract_paper_phase_failure_detectable_in_non_strict():
 @pytest.mark.unit
 def test_failed_phases_empty_when_both_ok():
     """B10: a successful extraction (no _phase_errors) reports no failed phases."""
-    import scripts.core.strict_mode as _sm
-    from scripts.llm.extractor import extract_paper, failed_phases
+    import lit_monitor.core.strict_mode as _sm
+    from lit_monitor.llm.extractor import extract_paper, failed_phases
 
     _sm.set_strict(False)
     result = extract_paper("Some paper text.", MockLLMClient())
@@ -241,8 +241,8 @@ def test_failed_phases_empty_when_both_ok():
 @pytest.mark.unit
 def test_failed_phases_simple_only():
     """B10: when only the simple phase crashes, accessor returns ['simple']."""
-    import scripts.core.strict_mode as _sm
-    from scripts.llm.extractor import extract_paper, failed_phases
+    import lit_monitor.core.strict_mode as _sm
+    from lit_monitor.llm.extractor import extract_paper, failed_phases
 
     call_count = [0]
     class SimpleFailClient(MockLLMClient):
@@ -260,8 +260,8 @@ def test_failed_phases_simple_only():
 @pytest.mark.unit
 def test_failed_phases_both_fail():
     """B10: when both phases crash, accessor returns both names in order."""
-    import scripts.core.strict_mode as _sm
-    from scripts.llm.extractor import extract_paper, failed_phases
+    import lit_monitor.core.strict_mode as _sm
+    from lit_monitor.llm.extractor import extract_paper, failed_phases
 
     class AllFailClient(MockLLMClient):
         def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
@@ -275,7 +275,7 @@ def test_failed_phases_both_fail():
 @pytest.mark.unit
 def test_failed_phases_ignores_legacy_or_missing_key():
     """B10: accessor is a no-op (returns []) on dicts lacking _phase_errors."""
-    from scripts.llm.extractor import failed_phases
+    from lit_monitor.llm.extractor import failed_phases
     assert failed_phases({}) == []
     assert failed_phases({"core_finding": "x"}) == []
     # Defensive: a non-dict value under the key is ignored, not crashed on.
@@ -286,8 +286,8 @@ def test_failed_phases_ignores_legacy_or_missing_key():
 def test_failed_phases_accessor_strict_still_raises():
     """B10: strict mode still raises via strict_fallback (P4 preserved); the
     structured contract is the non-strict path only."""
-    import scripts.core.strict_mode as _sm
-    from scripts.llm.extractor import extract_paper
+    import lit_monitor.core.strict_mode as _sm
+    from lit_monitor.llm.extractor import extract_paper
 
     class SimpleFailClient(MockLLMClient):
         def complete(self, system: str, user: str, max_tokens: int = 1500) -> str:
@@ -304,7 +304,7 @@ def test_failed_phases_accessor_strict_still_raises():
 @pytest.mark.unit
 def test_citation_fields_are_in_complex_phase():
     """M3: comparison_to_prior, key_citations, discovered_topics are in PAPER_COMPLEX_FIELDS."""
-    from scripts.llm.extractor import PAPER_COMPLEX_FIELDS
+    from lit_monitor.llm.extractor import PAPER_COMPLEX_FIELDS
     assert "comparison_to_prior" in PAPER_COMPLEX_FIELDS, (
         "comparison_to_prior must be in PAPER_COMPLEX_FIELDS under M3"
     )
@@ -318,7 +318,7 @@ def test_citation_fields_are_in_complex_phase():
 @pytest.mark.unit
 def test_extract_simple_strips_end_matter_before_llm():
     """extract_simple() must strip end-matter before the LLM sees the text."""
-    from scripts.llm.extractor import extract_simple
+    from lit_monitor.llm.extractor import extract_simple
     body = "Main paper body content.\n" * 20
     refs = "\n## References\n\nSmith 2020. Journal of Membranes.\nDoe 2019. Nature.\n"
     full_text = body + refs
@@ -349,7 +349,7 @@ def test_extract_simple_strips_end_matter_before_llm():
 @pytest.mark.unit
 def test_split_for_extraction_single_chunk_unchanged():
     """Text within budget → single chunk returned unchanged."""
-    from scripts.llm.extractor import _split_for_extraction
+    from lit_monitor.llm.extractor import _split_for_extraction
     text = "Short paper text.\n\nSecond paragraph."
     chunks = _split_for_extraction(text, chunk_chars=10_000)
     assert chunks == [text]
@@ -358,7 +358,7 @@ def test_split_for_extraction_single_chunk_unchanged():
 @pytest.mark.unit
 def test_split_for_extraction_splits_on_paragraph_boundary():
     """Prefers \n\n boundary over hard cut."""
-    from scripts.llm.extractor import _split_for_extraction
+    from lit_monitor.llm.extractor import _split_for_extraction
     # Build text: 800 chars of body + \n\n near char 1000 + more text
     body = "A" * 800
     rest = "B" * 300
@@ -375,7 +375,7 @@ def test_split_for_extraction_splits_on_paragraph_boundary():
 @pytest.mark.unit
 def test_split_for_extraction_falls_back_to_single_newline():
     """Falls back to \n when no \n\n exists in the search window."""
-    from scripts.llm.extractor import _split_for_extraction
+    from lit_monitor.llm.extractor import _split_for_extraction
     # Text with only single newlines
     body = "A" * 800 + "\n" + "B" * 200
     text = body + "C" * 100
@@ -392,7 +392,7 @@ def test_split_for_extraction_falls_back_to_single_newline():
 @pytest.mark.unit
 def test_merge_pass_results_prefers_explicit_over_absent():
     """When chunk 1 has absent and chunk 2 has explicit, chunk 2 wins."""
-    from scripts.llm.extractor import _merge_pass_results
+    from lit_monitor.llm.extractor import _merge_pass_results
     chunk1 = {"core_finding": None, "core_finding_confidence": "absent"}
     chunk2 = {"core_finding": "Key finding here.", "core_finding_confidence": "explicit"}
     merged = _merge_pass_results([chunk1, chunk2], ["core_finding"])
@@ -403,7 +403,7 @@ def test_merge_pass_results_prefers_explicit_over_absent():
 @pytest.mark.unit
 def test_merge_pass_results_first_chunk_wins_on_tie():
     """When both chunks have explicit confidence, first chunk's value is kept."""
-    from scripts.llm.extractor import _merge_pass_results
+    from lit_monitor.llm.extractor import _merge_pass_results
     chunk1 = {"core_finding": "Finding from intro.", "core_finding_confidence": "explicit"}
     chunk2 = {"core_finding": "Finding from conclusion.", "core_finding_confidence": "explicit"}
     merged = _merge_pass_results([chunk1, chunk2], ["core_finding"])
@@ -413,7 +413,7 @@ def test_merge_pass_results_first_chunk_wins_on_tie():
 @pytest.mark.unit
 def test_extract_simple_chunks_long_text():
     """LLM is called once per chunk when document exceeds the model's context budget."""
-    from scripts.llm.extractor import (
+    from lit_monitor.llm.extractor import (
         PAPER_SIMPLE_FIELDS,
         _available_input_chars,
         extract_simple,
@@ -443,7 +443,7 @@ def test_extract_simple_chunks_long_text():
 @pytest.mark.unit
 def test_confidence_score_explicit_only():
     """All explicit fields → score of 1.0."""
-    from scripts.llm.extractor import compute_confidence_score
+    from lit_monitor.llm.extractor import compute_confidence_score
     extraction = {
         "core_finding": "Some finding.",
         "core_finding_confidence": "explicit",
@@ -456,7 +456,7 @@ def test_confidence_score_explicit_only():
 @pytest.mark.unit
 def test_confidence_score_mixed():
     """Mixed confidence levels score correctly: (1.0 + 0.5 + 0.0) / 3 = 0.5."""
-    from scripts.llm.extractor import compute_confidence_score
+    from lit_monitor.llm.extractor import compute_confidence_score
     extraction = {
         "core_finding_confidence": "explicit",
         "methods_summary_confidence": "inferred",
@@ -468,7 +468,7 @@ def test_confidence_score_mixed():
 @pytest.mark.unit
 def test_confidence_score_all_absent():
     """All absent fields → score of 0.0."""
-    from scripts.llm.extractor import compute_confidence_score
+    from lit_monitor.llm.extractor import compute_confidence_score
     extraction = {
         "core_finding": None,
         "core_finding_confidence": "absent",
@@ -481,14 +481,14 @@ def test_confidence_score_all_absent():
 @pytest.mark.unit
 def test_confidence_score_empty_dict():
     """Empty extraction (no confidence keys) → score of 0.0, no crash."""
-    from scripts.llm.extractor import compute_confidence_score
+    from lit_monitor.llm.extractor import compute_confidence_score
     assert compute_confidence_score({}) == 0.0
 
 
 @pytest.mark.unit
 def test_extract_paper_injects_overall_confidence():
     """extract_paper() must include _overall_confidence in the returned dict."""
-    from scripts.llm.extractor import extract_paper
+    from lit_monitor.llm.extractor import extract_paper
     llm = MockLLMClient(mock_response_key="paper_pass1")
     result = extract_paper("Some paper text.", llm, phases=("simple",))
     assert "_overall_confidence" in result
@@ -502,7 +502,7 @@ def test_extract_paper_injects_overall_confidence():
 @pytest.mark.unit
 def test_extract_paper_returns_both_phase_fields():
     """extract_paper() with default phases returns fields from both phases."""
-    from scripts.llm.extractor import extract_paper
+    from lit_monitor.llm.extractor import extract_paper
     llm = MockLLMClient()
     result = extract_paper("Some paper text.", llm)
     assert "core_finding" in result        # simple phase
@@ -513,12 +513,12 @@ def test_extract_paper_returns_both_phase_fields():
 @pytest.mark.unit
 def test_extract_paper_simple_only_returns_simple_fields():
     """extract_paper(phases=('simple',)) returns simple fields and skips complex."""
-    from scripts.llm.extractor import extract_paper
+    from lit_monitor.llm.extractor import extract_paper
     llm = MockLLMClient()
     result = extract_paper("Some paper text.", llm, phases=("simple",))
     assert "core_finding" in result
     # No complex-phase error — complex simply wasn't run (B10 contract)
-    from scripts.llm.extractor import failed_phases
+    from lit_monitor.llm.extractor import failed_phases
     assert "complex" not in failed_phases(result)
 
 
@@ -529,7 +529,7 @@ def test_extract_paper_simple_only_returns_simple_fields():
 @pytest.mark.unit
 def test_extract_fields_returns_only_requested_fields():
     """extract_fields() result contains only the requested fields + their confidence."""
-    from scripts.llm.extractor import extract_fields
+    from lit_monitor.llm.extractor import extract_fields
     # Mock returns paper_pass1 dict which includes core_finding etc.
     # The result should only contain the single requested field + confidence.
     llm = MockLLMClient(mock_response_key="paper_pass1")
@@ -544,7 +544,7 @@ def test_extract_fields_returns_only_requested_fields():
 @pytest.mark.unit
 def test_extract_fields_system_prompt_contains_only_requested_fields():
     """System prompt sent to LLM lists only the requested fields — no extras."""
-    from scripts.llm.extractor import extract_fields
+    from lit_monitor.llm.extractor import extract_fields
 
     seen_prompts: list[str] = []
 
@@ -570,7 +570,7 @@ def test_extract_fields_system_prompt_contains_only_requested_fields():
 @pytest.mark.unit
 def test_extract_fields_raises_on_unknown_field():
     """ValueError raised immediately for any field not in ALL_PAPER_FIELDS."""
-    from scripts.llm.extractor import extract_fields
+    from lit_monitor.llm.extractor import extract_fields
     llm = MockLLMClient()
     with pytest.raises(ValueError, match="Unknown field"):
         extract_fields("Paper text.", ["nonexistent_field"], llm)
@@ -579,7 +579,7 @@ def test_extract_fields_raises_on_unknown_field():
 @pytest.mark.unit
 def test_extract_fields_raises_on_empty_fields():
     """ValueError raised when fields list is empty."""
-    from scripts.llm.extractor import extract_fields
+    from lit_monitor.llm.extractor import extract_fields
     llm = MockLLMClient()
     with pytest.raises(ValueError, match="non-empty"):
         extract_fields("Paper text.", [], llm)
@@ -588,7 +588,7 @@ def test_extract_fields_raises_on_empty_fields():
 @pytest.mark.unit
 def test_extract_fields_strips_references_before_llm():
     """References section is stripped before the LLM sees the text."""
-    from scripts.llm.extractor import extract_fields
+    from lit_monitor.llm.extractor import extract_fields
     body = "Main text.\n" * 20
     refs = "\n## References\n\nSmith 2020. J. Mem.\nDoe 2019. Nature.\n"
     full_text = body + refs
@@ -612,7 +612,7 @@ def test_extract_fields_strips_references_before_llm():
 @pytest.mark.unit
 def test_extract_fields_chunks_long_text():
     """Long text is split into multiple LLM calls and results merged."""
-    from scripts.llm.extractor import extract_fields
+    from lit_monitor.llm.extractor import extract_fields
 
     call_count = [0]
 
@@ -635,7 +635,7 @@ def test_extract_fields_chunks_long_text():
 @pytest.mark.unit
 def test_extract_fields_citation_fields_now_valid():
     """M3: key_citations and comparison_to_prior are in ALL_PAPER_FIELDS (complex phase)."""
-    from scripts.llm.extractor import ALL_PAPER_FIELDS, extract_fields
+    from lit_monitor.llm.extractor import ALL_PAPER_FIELDS, extract_fields
     assert "key_citations" in ALL_PAPER_FIELDS
     assert "comparison_to_prior" in ALL_PAPER_FIELDS
     # Should NOT raise — these are now valid schema fields
@@ -647,7 +647,7 @@ def test_extract_fields_citation_fields_now_valid():
 @pytest.mark.unit
 def test_extract_fields_sets_overall_confidence():
     """N8c: extract_fields() must set _overall_confidence (was missing, causing 0.0 in notes)."""
-    from scripts.llm.extractor import extract_fields
+    from lit_monitor.llm.extractor import extract_fields
     llm = MockLLMClient(mock_response_key="paper_pass1")
     result = extract_fields("Paper text.", ["core_finding"], llm)
     assert "_overall_confidence" in result, "_overall_confidence absent from extract_fields result"
@@ -665,7 +665,7 @@ def test_re_extract_uses_extract_fields_when_fields_given_without_passes():
     is given without an explicit passes argument."""
     from unittest.mock import patch
 
-    from scripts.obsidian_tools.re_extract import re_extract
+    from lit_monitor.obsidian_tools.re_extract import re_extract
 
     state_db = MagicMock()
     state_db.get_paper.return_value = {
@@ -680,8 +680,8 @@ def test_re_extract_uses_extract_fields_when_fields_given_without_passes():
     llm = MockLLMClient(mock_response_key="paper_pass1")
     config = MagicMock()
 
-    with patch("scripts.obsidian_tools.re_extract._load_fulltext", return_value="Body text."):
-        with patch("scripts.obsidian_tools.re_extract.extract_fields") as mock_ef:
+    with patch("lit_monitor.obsidian_tools.re_extract._load_fulltext", return_value="Body text."):
+        with patch("lit_monitor.obsidian_tools.re_extract.extract_fields") as mock_ef:
             mock_ef.return_value = {
                 "actionable_insights": "Insight text.",
                 "actionable_insights_confidence": "explicit",
@@ -703,7 +703,7 @@ def test_re_extract_uses_extract_paper_when_phase_and_field_both_given():
     (not extract_fields()), and the result is filtered to the requested fields."""
     from unittest.mock import patch
 
-    from scripts.obsidian_tools.re_extract import re_extract
+    from lit_monitor.obsidian_tools.re_extract import re_extract
 
     state_db = MagicMock()
     state_db.get_paper.return_value = {
@@ -718,9 +718,9 @@ def test_re_extract_uses_extract_paper_when_phase_and_field_both_given():
     llm = MockLLMClient(mock_response_key="paper_pass1")
     config = MagicMock()
 
-    with patch("scripts.obsidian_tools.re_extract._load_fulltext", return_value="Body text."):
-        with patch("scripts.obsidian_tools.re_extract.extract_fields") as mock_ef:
-            with patch("scripts.obsidian_tools.re_extract.extract_paper") as mock_ep:
+    with patch("lit_monitor.obsidian_tools.re_extract._load_fulltext", return_value="Body text."):
+        with patch("lit_monitor.obsidian_tools.re_extract.extract_fields") as mock_ef:
+            with patch("lit_monitor.obsidian_tools.re_extract.extract_paper") as mock_ep:
                 mock_ep.return_value = {
                     "core_finding": "Finding.",
                     "core_finding_confidence": "explicit",
@@ -745,7 +745,7 @@ def test_re_extract_uses_extract_paper_when_phase_and_field_both_given():
 @pytest.mark.unit
 def test_extract_simple_returns_passresult():
     """extract_simple() returns a PassResult, not a plain dict."""
-    from scripts.llm.extractor import PassResult, extract_simple
+    from lit_monitor.llm.extractor import PassResult, extract_simple
     llm = MockLLMClient(mock_response_key="paper_pass1")
     pr = extract_simple("some text", llm)
     assert isinstance(pr, PassResult)
@@ -756,7 +756,7 @@ def test_extract_simple_returns_passresult():
 @pytest.mark.unit
 def test_extract_simple_n_chunks_1_for_short_text():
     """Short text that fits in one call → n_chunks == 1."""
-    from scripts.llm.extractor import extract_simple
+    from lit_monitor.llm.extractor import extract_simple
     llm = MockLLMClient(mock_response_key="paper_pass1")
     pr = extract_simple("Short paper text.", llm)
     assert pr.n_chunks == 1
@@ -765,7 +765,7 @@ def test_extract_simple_n_chunks_1_for_short_text():
 @pytest.mark.unit
 def test_extract_simple_n_chunks_gt_1_for_long_text():
     """Chunked text → n_chunks reflects the actual chunk count."""
-    from scripts.llm.extractor import _available_input_chars, extract_simple
+    from lit_monitor.llm.extractor import _available_input_chars, extract_simple
 
     class TinyCtxMock(MockLLMClient):
         num_ctx = 512  # forces chunking
@@ -783,7 +783,7 @@ def test_extract_simple_n_chunks_gt_1_for_long_text():
 @pytest.mark.unit
 def test_extract_paper_includes_max_n_chunks():
     """extract_paper() propagates _max_n_chunks from all phase results."""
-    from scripts.llm.extractor import extract_paper
+    from lit_monitor.llm.extractor import extract_paper
     llm = MockLLMClient()
     result = extract_paper("some text", llm)
     assert "_max_n_chunks" in result
@@ -794,7 +794,7 @@ def test_extract_paper_includes_max_n_chunks():
 @pytest.mark.unit
 def test_extract_paper_max_n_chunks_reflects_worst_phase():
     """_max_n_chunks reflects the chunk count from the simple phase."""
-    from scripts.llm.extractor import _available_input_chars, extract_paper
+    from lit_monitor.llm.extractor import _available_input_chars, extract_paper
 
     class TinyCtxMock(MockLLMClient):
         num_ctx = 512
@@ -819,7 +819,7 @@ def test_extract_fields_paper_unchanged():
     return a dict containing every field — regression guard against V-7 changes
     accidentally removing paper fields from the valid set.
     """
-    from scripts.llm.extractor import ALL_PAPER_FIELDS, extract_fields
+    from lit_monitor.llm.extractor import ALL_PAPER_FIELDS, extract_fields
 
     llm = MockLLMClient()
     result = extract_fields("Full paper text.", ALL_PAPER_FIELDS, llm, content_type="paper")
@@ -831,7 +831,7 @@ def test_extract_fields_paper_unchanged():
 def test_extract_fields_review_schema():
     """M3: review schema has 23 fields (paper minus study_type, plus comparison_to_prior/
     key_citations/discovered_topics in the complex phase).  All must be extractable."""
-    from scripts.llm.extraction_schema import all_fields_for_schema
+    from lit_monitor.llm.extraction_schema import all_fields_for_schema
 
     review_fields = all_fields_for_schema("review")
     assert len(review_fields) == 23, (
@@ -844,7 +844,7 @@ def test_extract_fields_review_schema():
     assert "discovered_topics" in review_fields
 
     llm = MockLLMClient()
-    from scripts.llm.extractor import extract_fields
+    from lit_monitor.llm.extractor import extract_fields
     result = extract_fields("Review text.", review_fields, llm, content_type="review")
     for field in review_fields:
         assert field in result
@@ -856,7 +856,7 @@ def test_extract_fields_unknown_schema_field_raises():
     extract_fields() with a field not in the schema for content_type must raise
     ValueError — guards against typos or schema drift.
     """
-    from scripts.llm.extractor import extract_fields
+    from lit_monitor.llm.extractor import extract_fields
 
     llm = MockLLMClient()
     with pytest.raises(ValueError, match="Unknown field"):

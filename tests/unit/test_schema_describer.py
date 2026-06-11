@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.graph import GraphDB
-from scripts.graph.schema_describer import describe_schema, invalidate_schema_cache
+from lit_monitor.graph import GraphDB
+from lit_monitor.graph.schema_describer import describe_schema, invalidate_schema_cache
 
 
 @pytest.fixture
@@ -116,7 +116,7 @@ class TestSchemaCache:
 
     def test_invalidate_called_after_add_paper(self, basic_db):
         """A1: GraphDB.add_paper invalidates the cache so subsequent describes are fresh."""
-        import scripts.graph.schema_describer as sd_mod
+        import lit_monitor.graph.schema_describer as sd_mod
 
         describe_schema(basic_db)
         # Cache populated after first call

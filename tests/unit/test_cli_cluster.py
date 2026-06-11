@@ -75,16 +75,16 @@ class TestClusterRecomputeCmd:
         target the source modules (scripts.core.config.get_config,
         scripts.core.state_db.StateDB), NOT scripts.cli._make_config.
         """
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         runner = CliRunner()
 
-        with patch("scripts.core.config.get_config", return_value=_mock_config()), \
-             patch("scripts.core.state_db.StateDB"), \
-             patch("scripts.cli._make_embeddings_db", return_value=_mock_embeddings_db(150)), \
-             patch("scripts.clustering.recompute.recompute_clusters",
+        with patch("lit_monitor.core.config.get_config", return_value=_mock_config()), \
+             patch("lit_monitor.core.state_db.StateDB"), \
+             patch("lit_monitor.cli._make_embeddings_db", return_value=_mock_embeddings_db(150)), \
+             patch("lit_monitor.clustering.recompute.recompute_clusters",
                    return_value=7) as mock_recompute, \
-             patch("scripts.cli._load_secrets", return_value={}):
+             patch("lit_monitor.cli._load_secrets", return_value={}):
             result = runner.invoke(main, ["cluster", "recompute"])
 
         assert result.exit_code == 0, result.output
@@ -92,15 +92,15 @@ class TestClusterRecomputeCmd:
 
     def test_recompute_respects_threshold_flag(self):
         """--threshold option overrides config value: 50 papers < 200 → skipped."""
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         runner = CliRunner()
 
-        with patch("scripts.core.config.get_config", return_value=_mock_config()), \
-             patch("scripts.core.state_db.StateDB"), \
-             patch("scripts.cli._make_embeddings_db", return_value=_mock_embeddings_db(50)), \
-             patch("scripts.clustering.recompute.recompute_clusters") as mock_recompute, \
-             patch("scripts.cli._load_secrets", return_value={}):
+        with patch("lit_monitor.core.config.get_config", return_value=_mock_config()), \
+             patch("lit_monitor.core.state_db.StateDB"), \
+             patch("lit_monitor.cli._make_embeddings_db", return_value=_mock_embeddings_db(50)), \
+             patch("lit_monitor.clustering.recompute.recompute_clusters") as mock_recompute, \
+             patch("lit_monitor.cli._load_secrets", return_value={}):
             result = runner.invoke(main, ["cluster", "recompute", "--threshold", "200"])
 
         # 50 indexed papers < threshold 200 → CLI prints the warning and
@@ -122,13 +122,13 @@ class TestClusterViewCmd:
         and scripts.core.state_db.StateDB) — not the dead scripts.cli._make_config
         / _make_state_db helpers, which the handler never calls.
         """
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         runner = CliRunner()
         state_db = _mock_state_db(150, 3)  # 3 named clusters: "Theme 0/1/2"
 
-        with patch("scripts.core.config.get_config", return_value=_mock_config()), \
-             patch("scripts.core.state_db.StateDB", return_value=state_db):
+        with patch("lit_monitor.core.config.get_config", return_value=_mock_config()), \
+             patch("lit_monitor.core.state_db.StateDB", return_value=state_db):
             result = runner.invoke(main, ["cluster", "view"])
 
         assert result.exit_code == 0, result.output
@@ -138,13 +138,13 @@ class TestClusterViewCmd:
 
     def test_view_handles_empty_clusters(self):
         """cluster view with no clusters shows the recompute hint and exits 0."""
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         runner = CliRunner()
         state_db = _mock_state_db(50, 0)  # no clusters
 
-        with patch("scripts.core.config.get_config", return_value=_mock_config()), \
-             patch("scripts.core.state_db.StateDB", return_value=state_db):
+        with patch("lit_monitor.core.config.get_config", return_value=_mock_config()), \
+             patch("lit_monitor.core.state_db.StateDB", return_value=state_db):
             result = runner.invoke(main, ["cluster", "view"])
 
         assert result.exit_code == 0, result.output
@@ -162,15 +162,15 @@ class TestClusterWriteBackCmd:
         Patches target the lazy-imported source modules. Mock return value
         carries the full key set the CLI echoes (tags_added, papers_processed).
         """
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         runner = CliRunner()
 
-        with patch("scripts.core.config.get_config", return_value=_mock_config()), \
-             patch("scripts.core.state_db.StateDB"), \
-             patch("scripts.cli._make_zotero_client", return_value=MagicMock()), \
-             patch("scripts.cli._load_secrets", return_value={}), \
-             patch("scripts.clustering.write_back.push_tags_to_zotero",
+        with patch("lit_monitor.core.config.get_config", return_value=_mock_config()), \
+             patch("lit_monitor.core.state_db.StateDB"), \
+             patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()), \
+             patch("lit_monitor.cli._load_secrets", return_value={}), \
+             patch("lit_monitor.clustering.write_back.push_tags_to_zotero",
                    return_value=_MOCK_TAGS_REPORT_DRY) as mock_push:
             result = runner.invoke(main, ["cluster", "write-back", "tags"])
 
@@ -185,15 +185,15 @@ class TestClusterWriteBackCmd:
 
     def test_tags_confirm_flag_passes_dry_run_false(self):
         """cluster write-back tags --confirm passes dry_run=False."""
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         runner = CliRunner()
 
-        with patch("scripts.core.config.get_config", return_value=_mock_config()), \
-             patch("scripts.core.state_db.StateDB"), \
-             patch("scripts.cli._make_zotero_client", return_value=MagicMock()), \
-             patch("scripts.cli._load_secrets", return_value={}), \
-             patch("scripts.clustering.write_back.push_tags_to_zotero",
+        with patch("lit_monitor.core.config.get_config", return_value=_mock_config()), \
+             patch("lit_monitor.core.state_db.StateDB"), \
+             patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()), \
+             patch("lit_monitor.cli._load_secrets", return_value={}), \
+             patch("lit_monitor.clustering.write_back.push_tags_to_zotero",
                    return_value=_MOCK_TAGS_REPORT_REAL) as mock_push:
             result = runner.invoke(main, ["cluster", "write-back", "tags", "--confirm"])
 
@@ -206,15 +206,15 @@ class TestClusterWriteBackCmd:
 
     def test_collections_default_dry_run(self):
         """cluster write-back collections is dry-run by default."""
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         runner = CliRunner()
 
-        with patch("scripts.core.config.get_config", return_value=_mock_config()), \
-             patch("scripts.core.state_db.StateDB"), \
-             patch("scripts.cli._make_zotero_client", return_value=MagicMock()), \
-             patch("scripts.cli._load_secrets", return_value={}), \
-             patch("scripts.clustering.write_back.push_collections_to_zotero",
+        with patch("lit_monitor.core.config.get_config", return_value=_mock_config()), \
+             patch("lit_monitor.core.state_db.StateDB"), \
+             patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()), \
+             patch("lit_monitor.cli._load_secrets", return_value={}), \
+             patch("lit_monitor.clustering.write_back.push_collections_to_zotero",
                    return_value=_MOCK_COLLECTIONS_REPORT_DRY) as mock_push:
             result = runner.invoke(main, ["cluster", "write-back", "collections"])
 

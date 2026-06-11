@@ -15,12 +15,12 @@ import pytest
 # Helpers
 # ---------------------------------------------------------------------------
 def _make_state_db(tmp_path: Path):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     db = StateDB(str(tmp_path / "state.db"))
     return db
 def _make_embeddings_db(tmp_path: Path):
     """Create EmbeddingsDB with Ollama embedding calls mocked out."""
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
     db = EmbeddingsDB(
         persist_dir=str(tmp_path / "chromadb"),
         ollama_host="http://localhost:11434",
@@ -87,7 +87,7 @@ def test_find_similar_empty_collection(tmp_path):
 @pytest.mark.unit
 def test_add_chunks_indexes_passages(tmp_path):
     """add_chunks stores chunk documents and they are queryable."""
-    from scripts.core.chunker import Chunk
+    from lit_monitor.core.chunker import Chunk
     db = _make_embeddings_db(tmp_path)
     chunks = [
         Chunk(
@@ -120,7 +120,7 @@ def test_add_chunks_indexes_passages(tmp_path):
 @pytest.mark.unit
 def test_add_chunks_delete_then_add(tmp_path):
     """Re-calling add_chunks replaces stale chunks, not appends."""
-    from scripts.core.chunker import Chunk
+    from lit_monitor.core.chunker import Chunk
     db = _make_embeddings_db(tmp_path)
 
     def _make_chunk(idx: int) -> Chunk:
@@ -148,7 +148,7 @@ def test_add_chunks_delete_then_add(tmp_path):
 @pytest.mark.unit
 def test_add_chunks_empty_list_clears_stale(tmp_path):
     """add_chunks([]) removes existing chunks for that DOI."""
-    from scripts.core.chunker import Chunk
+    from lit_monitor.core.chunker import Chunk
     db = _make_embeddings_db(tmp_path)
     c = Chunk(
         chunk_id="10.1/c#chunk-0",
@@ -178,7 +178,7 @@ def test_find_similar_chunks_empty_returns_empty(tmp_path):
 @pytest.mark.unit
 def test_find_similar_chunks_dedupe_by_paper(tmp_path):
     """dedupe_by_paper=True returns at most one result per DOI."""
-    from scripts.core.chunker import Chunk
+    from lit_monitor.core.chunker import Chunk
     db = _make_embeddings_db(tmp_path)
 
     for i in range(3):
@@ -222,7 +222,7 @@ def test_find_similar_chunks_dedupe_by_paper(tmp_path):
 @pytest.mark.unit
 def test_clear_chunks_only_removes_chunk_collection(tmp_path):
     """clear_chunks() removes chunks but leaves paper-level index intact."""
-    from scripts.core.chunker import Chunk
+    from lit_monitor.core.chunker import Chunk
     db = _make_embeddings_db(tmp_path)
     db.add_paper("10.1/e", "paper text", {"source_type": "paper", "note_title": "E2024"})
     c = Chunk(
@@ -248,7 +248,7 @@ def test_clear_chunks_only_removes_chunk_collection(tmp_path):
 @pytest.mark.unit
 def test_clear_also_clears_chunks(tmp_path):
     """clear() removes both the paper-level and chunk-level collections."""
-    from scripts.core.chunker import Chunk
+    from lit_monitor.core.chunker import Chunk
     db = _make_embeddings_db(tmp_path)
     db.add_paper("10.1/f", "paper text", {"source_type": "paper", "note_title": "F2024"})
     db.add_chunks("10.1/f", [
@@ -272,7 +272,7 @@ def test_clear_also_clears_chunks(tmp_path):
 @pytest.mark.unit
 def test_get_collection_stats_includes_chunk_count(tmp_path):
     """get_collection_stats() reports both paper count and chunk count."""
-    from scripts.core.chunker import Chunk
+    from lit_monitor.core.chunker import Chunk
     db = _make_embeddings_db(tmp_path)
     db.add_paper("10.1/g", "text", {"source_type": "paper", "note_title": "G"})
     db.add_chunks("10.1/g", [
@@ -299,7 +299,7 @@ def test_get_collection_stats_includes_chunk_count(tmp_path):
 @pytest.mark.unit
 def test_resolve_citations_matches_title(tmp_path):
     """resolve_citations fuzzy-matches citation strings to state DB titles."""
-    from scripts.obsidian_tools.relink import resolve_citations
+    from lit_monitor.obsidian_tools.relink import resolve_citations
     state_db = _make_state_db(tmp_path)
     state_db.upsert_paper({
         "doi": "10.1234/author1_2011",
@@ -317,7 +317,7 @@ def test_resolve_citations_matches_title(tmp_path):
 @pytest.mark.unit
 def test_resolve_citations_below_threshold_excluded(tmp_path):
     """Citations that don't match above threshold return nothing."""
-    from scripts.obsidian_tools.relink import resolve_citations
+    from lit_monitor.obsidian_tools.relink import resolve_citations
     state_db = _make_state_db(tmp_path)
     state_db.upsert_paper({
         "doi": "10.1234/unrelated",
@@ -332,7 +332,7 @@ def test_resolve_citations_below_threshold_excluded(tmp_path):
 @pytest.mark.unit
 def test_build_related_work_block_cited_first():
     """Cited items appear before similarity-based items."""
-    from scripts.obsidian_tools.relink import build_related_work_block
+    from lit_monitor.obsidian_tools.relink import build_related_work_block
     similar = [
         {"metadata": {"note_title": "Foo2020_Related", "source_type": "paper"}, "score": 0.88},
     ]
@@ -347,7 +347,7 @@ def test_build_related_work_block_cited_first():
 
 def test_relink_similarity_populates_related_work(tmp_path):
     """relink_note writes similarity results into Related Work zone."""
-    from scripts.obsidian_tools.relink import relink_note
+    from lit_monitor.obsidian_tools.relink import relink_note
     state_db = _make_state_db(tmp_path)
     embeddings_db = _make_embeddings_db(tmp_path)
     # Add a target document to embeddings
@@ -388,7 +388,7 @@ def test_persist_zones_not_overwritten_by_relink(tmp_path):
     Relink preserves user content in zones it doesn't touch.
     The synthesis zone must remain intact after relinking.
     """
-    from scripts.obsidian_tools.relink import relink_note
+    from lit_monitor.obsidian_tools.relink import relink_note
     state_db = _make_state_db(tmp_path)
     state_db.upsert_paper({
         "doi": "doi_src",
@@ -427,7 +427,7 @@ def _make_embeddings_db_with_varying_vectors(tmp_path):
     """
     import hashlib
 
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
     db = EmbeddingsDB(
         persist_dir=str(tmp_path / "chromadb"),
         ollama_host="http://localhost:11434",
@@ -485,7 +485,7 @@ def test_varying_vectors_exclude_id_still_works(tmp_path):
 @pytest.mark.unit
 def test_embed_model_first_run_records_model(tmp_path):
     """First call records the model in kv_store and returns False (no reset)."""
-    from scripts.output.embeddings import check_embed_model_change
+    from lit_monitor.output.embeddings import check_embed_model_change
     state_db = _make_state_db(tmp_path)
     embed_db = _make_embeddings_db(tmp_path)
 
@@ -498,7 +498,7 @@ def test_embed_model_first_run_records_model(tmp_path):
 @pytest.mark.unit
 def test_embed_model_no_change_leaves_collection_intact(tmp_path):
     """Calling with the same model as stored does not clear ChromaDB."""
-    from scripts.output.embeddings import check_embed_model_change
+    from lit_monitor.output.embeddings import check_embed_model_change
     state_db = _make_state_db(tmp_path)
     embed_db = _make_embeddings_db(tmp_path)
 
@@ -514,7 +514,7 @@ def test_embed_model_no_change_leaves_collection_intact(tmp_path):
 @pytest.mark.unit
 def test_embed_model_change_clears_collection_and_resets_index(tmp_path):
     """Changing the model clears ChromaDB and resets embeddings_indexed=0."""
-    from scripts.output.embeddings import check_embed_model_change
+    from lit_monitor.output.embeddings import check_embed_model_change
     state_db = _make_state_db(tmp_path)
     embed_db = _make_embeddings_db(tmp_path)
 
@@ -544,7 +544,7 @@ def test_embed_model_change_clears_collection_and_resets_index(tmp_path):
 @pytest.mark.unit
 def test_embed_model_change_resets_all_rows(tmp_path):
     """reset_embeddings_indexed covers all rows regardless of source_type."""
-    from scripts.output.embeddings import check_embed_model_change
+    from lit_monitor.output.embeddings import check_embed_model_change
     state_db = _make_state_db(tmp_path)
     embed_db = _make_embeddings_db(tmp_path)
 
@@ -574,7 +574,7 @@ def test_check_embed_model_change_recovers_from_partial_application(tmp_path):
     set_kv("embed_model", ...) as the LAST step this happens naturally: a crash
     between clear() and set_kv leaves the function re-runnable.
     """
-    from scripts.output.embeddings import check_embed_model_change
+    from lit_monitor.output.embeddings import check_embed_model_change
 
     state_db = _make_state_db(tmp_path)
     embed_db = _make_embeddings_db(tmp_path)
@@ -627,7 +627,7 @@ def test_check_embed_model_change_recovers_from_partial_application(tmp_path):
 @pytest.mark.unit
 def test_check_embed_model_change_idempotent_when_collection_empty(tmp_path):
     """Idempotency guard: kv_store matches but collection is empty -> reset only."""
-    from scripts.output.embeddings import check_embed_model_change
+    from lit_monitor.output.embeddings import check_embed_model_change
 
     state_db = _make_state_db(tmp_path)
     embed_db = _make_embeddings_db(tmp_path)
@@ -663,7 +663,7 @@ def test_embed_retries_with_truncation_on_context_length_error(tmp_path):
     import io
     from urllib.error import HTTPError
 
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
 
     db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
 
@@ -708,7 +708,7 @@ def test_embed_does_not_retry_on_non_context_400(tmp_path):
     import io
     from urllib.error import HTTPError
 
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
 
     db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
     calls: list[int] = []
@@ -734,7 +734,7 @@ def test_embed_does_not_retry_if_text_already_short(tmp_path):
     import io
     from urllib.error import HTTPError
 
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
 
     db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
     calls: list[int] = []
@@ -763,7 +763,7 @@ def test_embed_progressively_truncates_until_success(tmp_path):
     import io
     from urllib.error import HTTPError
 
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
 
     db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
     long_text = "polymer " * 1000  # 8000 chars
@@ -806,7 +806,7 @@ def test_embed_gives_up_below_floor(tmp_path):
     import io
     from urllib.error import HTTPError
 
-    from scripts.output.embeddings import EmbeddingsDB
+    from lit_monitor.output.embeddings import EmbeddingsDB
 
     db = EmbeddingsDB(persist_dir=str(tmp_path / "chroma"))
     long_text = "x" * 8000

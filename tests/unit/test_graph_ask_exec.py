@@ -6,8 +6,8 @@ import logging
 
 import pytest
 
-from scripts.graph import GraphDB
-from scripts.graph.ask import execute_cypher, render_rows
+from lit_monitor.graph import GraphDB
+from lit_monitor.graph.ask import execute_cypher, render_rows
 
 
 @pytest.fixture
@@ -130,7 +130,7 @@ class TestRenderRows:
 class TestAskResultShape:
     def test_ask_result_dataclass_fields(self):
         """AskResult must expose cypher, rows, rendered, prose fields."""
-        from scripts.graph.ask import AskResult
+        from lit_monitor.graph.ask import AskResult
 
         r = AskResult(
             cypher="MATCH (p) RETURN p",

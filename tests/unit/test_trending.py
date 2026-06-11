@@ -58,22 +58,22 @@ def _make_row(
 
 class TestComputeGrowthRate:
     def test_basic_growth(self):
-        from scripts.graph.trending import _compute_growth_rate
+        from lit_monitor.graph.trending import _compute_growth_rate
         # (20 / 5) - 1 = 3.0
         assert _compute_growth_rate(20, 5) == pytest.approx(3.0)
 
     def test_zero_prev_uses_floor_of_1(self):
-        from scripts.graph.trending import _compute_growth_rate
+        from lit_monitor.graph.trending import _compute_growth_rate
         # prev=0 → treated as 1; growth = (10/1) - 1 = 9.0
         assert _compute_growth_rate(10, 0) == pytest.approx(9.0)
 
     def test_growth_equals_threshold_accepted(self):
-        from scripts.graph.trending import _compute_growth_rate
+        from lit_monitor.graph.trending import _compute_growth_rate
         # (6 / 5) - 1 = 0.2 — below 0.3 threshold (caller handles this)
         assert _compute_growth_rate(6, 5) == pytest.approx(0.2)
 
     def test_new_zero_returns_negative(self):
-        from scripts.graph.trending import _compute_growth_rate
+        from lit_monitor.graph.trending import _compute_growth_rate
         assert _compute_growth_rate(0, 10) == pytest.approx(-1.0)
 
 
@@ -83,9 +83,9 @@ class TestComputeGrowthRate:
 
 class TestLoadExistingTopicTerms:
     def test_returns_empty_when_no_file(self, tmp_path, monkeypatch):
-        from scripts.graph import trending as _trending_mod
+        from lit_monitor.graph import trending as _trending_mod
         monkeypatch.setattr(_trending_mod, "_TOPICS_PATH", tmp_path / "nonexistent.yaml")
-        from scripts.graph.trending import _load_existing_topic_terms
+        from lit_monitor.graph.trending import _load_existing_topic_terms
         assert _load_existing_topic_terms() == set()
 
     def test_returns_lowercase_terms(self, tmp_path, monkeypatch):
@@ -96,9 +96,9 @@ class TestLoadExistingTopicTerms:
             "    query: biorefinery AND design\n",
             encoding="utf-8",
         )
-        from scripts.graph import trending as _trending_mod
+        from lit_monitor.graph import trending as _trending_mod
         monkeypatch.setattr(_trending_mod, "_TOPICS_PATH", topics_yaml)
-        from scripts.graph.trending import _load_existing_topic_terms
+        from lit_monitor.graph.trending import _load_existing_topic_terms
         terms = _load_existing_topic_terms()
         assert "biorefinery design" in terms
         assert "biorefinery and design" in terms
@@ -106,9 +106,9 @@ class TestLoadExistingTopicTerms:
     def test_handles_malformed_yaml(self, tmp_path, monkeypatch):
         topics_yaml = tmp_path / "topics.yaml"
         topics_yaml.write_text(":: not valid yaml ::", encoding="utf-8")
-        from scripts.graph import trending as _trending_mod
+        from lit_monitor.graph import trending as _trending_mod
         monkeypatch.setattr(_trending_mod, "_TOPICS_PATH", topics_yaml)
-        from scripts.graph.trending import _load_existing_topic_terms
+        from lit_monitor.graph.trending import _load_existing_topic_terms
         # should return empty set, not raise
         result = _load_existing_topic_terms()
         assert isinstance(result, set)
@@ -127,9 +127,9 @@ class TestInExistingTopicsFlag:
             "    query: biorefinery AND cascade\n",
             encoding="utf-8",
         )
-        from scripts.graph import trending as _trending_mod
+        from lit_monitor.graph import trending as _trending_mod
         monkeypatch.setattr(_trending_mod, "_TOPICS_PATH", topics_yaml)
-        from scripts.graph.trending import _check_in_existing_topics
+        from lit_monitor.graph.trending import _check_in_existing_topics
         # "biorefinery" is a substring of "biorefinery cascade"
         assert _check_in_existing_topics("Biorefinery") is True
 
@@ -141,9 +141,9 @@ class TestInExistingTopicsFlag:
             "    query: membrane filtration\n",
             encoding="utf-8",
         )
-        from scripts.graph import trending as _trending_mod
+        from lit_monitor.graph import trending as _trending_mod
         monkeypatch.setattr(_trending_mod, "_TOPICS_PATH", topics_yaml)
-        from scripts.graph.trending import _check_in_existing_topics
+        from lit_monitor.graph.trending import _check_in_existing_topics
         assert _check_in_existing_topics("biorefinery") is False
 
 
@@ -173,18 +173,18 @@ class TestFindTrendingConcepts:
         return state_db
 
     def test_returns_empty_when_no_rows(self, tmp_path, monkeypatch):
-        from scripts.graph import trending as _trending_mod
+        from lit_monitor.graph import trending as _trending_mod
         monkeypatch.setattr(_trending_mod, "_TOPICS_PATH", tmp_path / "topics.yaml")
-        from scripts.graph.trending import find_trending_concepts
+        from lit_monitor.graph.trending import find_trending_concepts
         graph_db = self._make_graph_db_mock([])
         state_db = self._make_state_db_mock()
         result = find_trending_concepts(graph_db, state_db, _make_cfg())
         assert result == []
 
     def test_above_threshold_included(self, tmp_path, monkeypatch):
-        from scripts.graph import trending as _trending_mod
+        from lit_monitor.graph import trending as _trending_mod
         monkeypatch.setattr(_trending_mod, "_TOPICS_PATH", tmp_path / "topics.yaml")
-        from scripts.graph.trending import find_trending_concepts
+        from lit_monitor.graph.trending import find_trending_concepts
         # growth = (20 / 5) - 1 = 3.0 > 0.3 threshold; n_new=20 >= 5 min
         rows = [_make_row(n_new=20, n_prev=5)]
         graph_db = self._make_graph_db_mock(rows)
@@ -197,9 +197,9 @@ class TestFindTrendingConcepts:
         assert result[0]["n_mentions_prev"] == 5
 
     def test_below_threshold_excluded(self, tmp_path, monkeypatch):
-        from scripts.graph import trending as _trending_mod
+        from lit_monitor.graph import trending as _trending_mod
         monkeypatch.setattr(_trending_mod, "_TOPICS_PATH", tmp_path / "topics.yaml")
-        from scripts.graph.trending import find_trending_concepts
+        from lit_monitor.graph.trending import find_trending_concepts
         # growth = (6 / 5) - 1 = 0.2 < 0.3 threshold
         rows = [_make_row(n_new=6, n_prev=5)]
         graph_db = self._make_graph_db_mock(rows)
@@ -208,9 +208,9 @@ class TestFindTrendingConcepts:
         assert result == []
 
     def test_below_min_mentions_excluded(self, tmp_path, monkeypatch):
-        from scripts.graph import trending as _trending_mod
+        from lit_monitor.graph import trending as _trending_mod
         monkeypatch.setattr(_trending_mod, "_TOPICS_PATH", tmp_path / "topics.yaml")
-        from scripts.graph.trending import find_trending_concepts
+        from lit_monitor.graph.trending import find_trending_concepts
         # growth is high but n_new=3 < min_recent_mentions=5
         rows = [_make_row(n_new=3, n_prev=0)]
         graph_db = self._make_graph_db_mock(rows)
@@ -219,14 +219,14 @@ class TestFindTrendingConcepts:
         assert result == []
 
     def test_in_existing_topics_flag_set(self, tmp_path, monkeypatch):
-        from scripts.graph import trending as _trending_mod
+        from lit_monitor.graph import trending as _trending_mod
         topics_yaml = tmp_path / "topics.yaml"
         topics_yaml.write_text(
             "searches:\n- name: biorefinery design\n  query: biorefinery AND design\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(_trending_mod, "_TOPICS_PATH", topics_yaml)
-        from scripts.graph.trending import find_trending_concepts
+        from lit_monitor.graph.trending import find_trending_concepts
         rows = [_make_row(concept_text="Biorefinery", n_new=20, n_prev=5)]
         graph_db = self._make_graph_db_mock(rows)
         state_db = self._make_state_db_mock()
@@ -235,9 +235,9 @@ class TestFindTrendingConcepts:
         assert result[0]["in_existing_topics"] is True
 
     def test_not_in_existing_topics_flag_false(self, tmp_path, monkeypatch):
-        from scripts.graph import trending as _trending_mod
+        from lit_monitor.graph import trending as _trending_mod
         monkeypatch.setattr(_trending_mod, "_TOPICS_PATH", tmp_path / "topics.yaml")
-        from scripts.graph.trending import find_trending_concepts
+        from lit_monitor.graph.trending import find_trending_concepts
         rows = [_make_row(concept_text="novel_concept", n_new=20, n_prev=5)]
         graph_db = self._make_graph_db_mock(rows)
         state_db = self._make_state_db_mock()
@@ -246,9 +246,9 @@ class TestFindTrendingConcepts:
         assert result[0]["in_existing_topics"] is False
 
     def test_cooldown_respected_dismissed_concept_excluded(self, tmp_path, monkeypatch):
-        from scripts.graph import trending as _trending_mod
+        from lit_monitor.graph import trending as _trending_mod
         monkeypatch.setattr(_trending_mod, "_TOPICS_PATH", tmp_path / "topics.yaml")
-        from scripts.graph.trending import find_trending_concepts
+        from lit_monitor.graph.trending import find_trending_concepts
         rows = [_make_row(concept_text="biorefinery", n_new=20, n_prev=5)]
         graph_db = self._make_graph_db_mock(rows)
         # "biorefinery" was recently dismissed → in cooldown
@@ -257,9 +257,9 @@ class TestFindTrendingConcepts:
         assert result == []
 
     def test_cooldown_not_applied_to_different_concept(self, tmp_path, monkeypatch):
-        from scripts.graph import trending as _trending_mod
+        from lit_monitor.graph import trending as _trending_mod
         monkeypatch.setattr(_trending_mod, "_TOPICS_PATH", tmp_path / "topics.yaml")
-        from scripts.graph.trending import find_trending_concepts
+        from lit_monitor.graph.trending import find_trending_concepts
         rows = [_make_row(concept_text="biorefinery", n_new=20, n_prev=5)]
         graph_db = self._make_graph_db_mock(rows)
         # "other_concept" dismissed, not "biorefinery"
@@ -268,9 +268,9 @@ class TestFindTrendingConcepts:
         assert len(result) == 1
 
     def test_returns_empty_on_graph_exception(self, tmp_path, monkeypatch):
-        from scripts.graph import trending as _trending_mod
+        from lit_monitor.graph import trending as _trending_mod
         monkeypatch.setattr(_trending_mod, "_TOPICS_PATH", tmp_path / "topics.yaml")
-        from scripts.graph.trending import find_trending_concepts
+        from lit_monitor.graph.trending import find_trending_concepts
         graph_db = MagicMock()
         graph_db._conn.execute.side_effect = RuntimeError("Kuzu offline")
         state_db = self._make_state_db_mock()
@@ -279,9 +279,9 @@ class TestFindTrendingConcepts:
         assert result == []
 
     def test_config_defaults_used_when_cfg_attrs_missing(self, tmp_path, monkeypatch):
-        from scripts.graph import trending as _trending_mod
+        from lit_monitor.graph import trending as _trending_mod
         monkeypatch.setattr(_trending_mod, "_TOPICS_PATH", tmp_path / "topics.yaml")
-        from scripts.graph.trending import find_trending_concepts
+        from lit_monitor.graph.trending import find_trending_concepts
         rows = [_make_row(n_new=20, n_prev=5)]
         graph_db = self._make_graph_db_mock(rows)
         state_db = self._make_state_db_mock()

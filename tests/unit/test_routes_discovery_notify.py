@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def client():
-    from scripts.server.app import create_app
+    from lit_monitor.server.app import create_app
 
     return TestClient(create_app(), follow_redirects=False)
 
@@ -17,7 +17,7 @@ def client():
 class TestPreferredViewerRedirect:
     def test_browser_preference_302_to_discovery_run(self, client):
         with patch(
-            "scripts.server.routes.discovery_notify._get_preferred_viewer",
+            "lit_monitor.server.routes.discovery_notify._get_preferred_viewer",
             return_value="browser",
         ):
             r = client.get("/discovery/notify-handler?run_id=42")
@@ -26,7 +26,7 @@ class TestPreferredViewerRedirect:
 
     def test_obsidian_preference_302_to_obsidian_uri(self, client):
         with patch(
-            "scripts.server.routes.discovery_notify._get_preferred_viewer",
+            "lit_monitor.server.routes.discovery_notify._get_preferred_viewer",
             return_value="obsidian",
         ):
             r = client.get("/discovery/notify-handler?run_id=42")
@@ -35,7 +35,7 @@ class TestPreferredViewerRedirect:
 
     def test_none_preference_204(self, client):
         with patch(
-            "scripts.server.routes.discovery_notify._get_preferred_viewer",
+            "lit_monitor.server.routes.discovery_notify._get_preferred_viewer",
             return_value="none",
         ):
             r = client.get("/discovery/notify-handler?run_id=42")
@@ -45,7 +45,7 @@ class TestPreferredViewerRedirect:
 class TestChooserPage:
     def test_chooser_rendered_when_unset(self, client):
         with patch(
-            "scripts.server.routes.discovery_notify._get_preferred_viewer",
+            "lit_monitor.server.routes.discovery_notify._get_preferred_viewer",
             return_value="",
         ):
             r = client.get("/discovery/notify-handler?run_id=99")
@@ -60,7 +60,7 @@ class TestChooserPage:
 class TestSavePreferencePost:
     def test_remember_true_calls_save(self, client):
         with patch(
-            "scripts.server.routes.discovery_notify.safe_save_preference"
+            "lit_monitor.server.routes.discovery_notify.safe_save_preference"
         ) as m:
             r = client.post(
                 "/discovery/notify-handler/save-preference",
@@ -77,7 +77,7 @@ class TestSavePreferencePost:
 
     def test_remember_false_does_not_save(self, client):
         with patch(
-            "scripts.server.routes.discovery_notify.safe_save_preference"
+            "lit_monitor.server.routes.discovery_notify.safe_save_preference"
         ) as m:
             r = client.post(
                 "/discovery/notify-handler/save-preference",
@@ -101,10 +101,10 @@ class TestSavePreferencePost:
 
         secret = "/Users/secret/config/extraction.yaml"
         with caplog.at_level(
-            logging.ERROR, logger="scripts.server.routes.discovery_notify"
+            logging.ERROR, logger="lit_monitor.server.routes.discovery_notify"
         ):
             with patch(
-                "scripts.server.routes.discovery_notify.safe_save_preference",
+                "lit_monitor.server.routes.discovery_notify.safe_save_preference",
                 side_effect=OSError(secret),
             ):
                 r = client.post(

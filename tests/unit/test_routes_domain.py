@@ -16,20 +16,20 @@ def client_with_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Test
     runtime whose ``.state_db`` IS the same instance the test seeds — so
     writes via the fixture and reads via the route hit the same connection.
     """
-    from scripts.core.state_db import StateDB
-    from scripts.server.app import create_app
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.server.app import create_app
 
     db_path = tmp_path / "state.db"
     db = StateDB(db_path)
 
     fake_cfg = MagicMock()
     fake_cfg.state_db.path = str(db_path)
-    monkeypatch.setattr("scripts.core.config.get_config", lambda: fake_cfg)
+    monkeypatch.setattr("lit_monitor.core.config.get_config", lambda: fake_cfg)
 
     fake_runtime = MagicMock()
     fake_runtime.state_db = db
     monkeypatch.setattr(
-        "scripts.server.routes.domain.get_runtime",
+        "lit_monitor.server.routes.domain.get_runtime",
         lambda: fake_runtime,
     )
 
@@ -104,7 +104,7 @@ class TestPostAnalyze:
         )
         # Patch the symbol AS IMPORTED IN routes/domain.py
         monkeypatch.setattr(
-            "scripts.server.routes.domain.analyze_domain",
+            "lit_monitor.server.routes.domain.analyze_domain",
             lambda text: None,
         )
         r = client_with_runtime.post("/api/domain/analyze")
@@ -131,7 +131,7 @@ class TestPostAnalyze:
             "exclusions": [],
         }
         monkeypatch.setattr(
-            "scripts.server.routes.domain.analyze_domain",
+            "lit_monitor.server.routes.domain.analyze_domain",
             lambda text: fake_extraction,
         )
         r = client_with_runtime.post("/api/domain/analyze")
@@ -157,7 +157,7 @@ class TestConfigDirResolution:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from scripts.server import config_io
+        from lit_monitor.server import config_io
 
         # CWD is some OTHER directory with no config/ in it — proves the route
         # does not depend on the process working directory.
@@ -183,7 +183,7 @@ class TestConfigDirResolution:
             }
 
         monkeypatch.setattr(
-            "scripts.server.routes.domain.analyze_domain", _capture
+            "lit_monitor.server.routes.domain.analyze_domain", _capture
         )
 
         r = client_with_runtime.post("/api/domain/analyze")
@@ -198,7 +198,7 @@ class TestConfigDirResolution:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A3-4: a config dir without the file → 404 (resolution honored)."""
-        from scripts.server import config_io
+        from lit_monitor.server import config_io
 
         other_cwd = tmp_path / "elsewhere2"
         other_cwd.mkdir()

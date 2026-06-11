@@ -18,9 +18,9 @@ from click.testing import CliRunner
 class TestCliEmbeddingsStatus:
     def test_status_empty_when_no_rows(self, tmp_path, monkeypatch):
         """status command prints 'No embedding collections' when table is empty."""
-        from scripts.cli import main
-        from scripts.core import config as config_mod
-        from scripts.core.state_db import StateDB
+        from lit_monitor.cli import main
+        from lit_monitor.core import config as config_mod
+        from lit_monitor.core.state_db import StateDB
 
         # Create empty state.db at tmp_path; side-effect only — the CLI re-opens
         # via _make_state_db, so we don't need to hold the handle.
@@ -35,9 +35,9 @@ class TestCliEmbeddingsStatus:
 
     def test_status_lists_provenance_rows(self, tmp_path, monkeypatch):
         """status command shows each recorded collection."""
-        from scripts.cli import main
-        from scripts.core import config as config_mod
-        from scripts.core.state_db import StateDB
+        from lit_monitor.cli import main
+        from lit_monitor.core import config as config_mod
+        from lit_monitor.core.state_db import StateDB
 
         sdb = StateDB(tmp_path / "state.db")
         sdb.record_embedding_provenance("lit_monitor_v1", "ollama", "mxbai-embed-large", 1024)
@@ -59,8 +59,8 @@ class TestCliEmbeddingsStatus:
 class TestCliEmbeddingsSwitch:
     def test_switch_destructive_without_confirm_exits_nonzero(self, tmp_path, monkeypatch):
         """switch without --keep-old and without --confirm exits with code 2."""
-        from scripts.cli import main
-        from scripts.core import config as config_mod
+        from lit_monitor.cli import main
+        from lit_monitor.core import config as config_mod
 
         mock_cfg = _make_mock_config(tmp_path)
         monkeypatch.setattr(config_mod, "_config_cache", mock_cfg)
@@ -77,9 +77,9 @@ class TestCliEmbeddingsSwitch:
 
     def test_switch_with_keep_old_aborted_via_stdin(self, tmp_path, monkeypatch):
         """switch --keep-old exits 1 when user answers 'n' to the cost prompt."""
-        from scripts.cli import main
-        from scripts.core import config as config_mod
-        from scripts.core.state_db import StateDB
+        from lit_monitor.cli import main
+        from lit_monitor.core import config as config_mod
+        from lit_monitor.core.state_db import StateDB
 
         # Create empty state.db at tmp_path; side-effect only.
         StateDB(tmp_path / "state.db")
@@ -103,8 +103,8 @@ class TestCliEmbeddingsSwitch:
 class TestCliEmbeddingsRebuild:
     def test_rebuild_without_confirm_exits_nonzero(self, tmp_path, monkeypatch):
         """rebuild without --confirm (and without --keep-old) exits non-zero."""
-        from scripts.cli import main
-        from scripts.core import config as config_mod
+        from lit_monitor.cli import main
+        from lit_monitor.core import config as config_mod
 
         mock_cfg = _make_mock_config(tmp_path)
         monkeypatch.setattr(config_mod, "_config_cache", mock_cfg)
@@ -124,7 +124,7 @@ class TestCliEmbeddingsRebuild:
 class TestSwitchProviderSafeSwap:
     def _setup_current(self, tmp_path):
         """Seed a current 'lit_monitor_v1' provenance row; return the StateDB."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
 
         sdb = StateDB(tmp_path / "state.db")
         sdb.record_embedding_provenance(
@@ -134,7 +134,7 @@ class TestSwitchProviderSafeSwap:
         return sdb
 
     def _patch_config(self, tmp_path, monkeypatch):
-        from scripts.core import config as config_mod
+        from lit_monitor.core import config as config_mod
 
         mock_cfg = _make_mock_config(tmp_path)
         monkeypatch.setattr(config_mod, "get_config", lambda: mock_cfg)
@@ -149,7 +149,7 @@ class TestSwitchProviderSafeSwap:
         best-effort cleaned up."""
         import pytest
 
-        from scripts.pipelines import embeddings_migration as mig
+        from lit_monitor.pipelines import embeddings_migration as mig
 
         sdb = self._setup_current(tmp_path)
         self._patch_config(tmp_path, monkeypatch)
@@ -195,7 +195,7 @@ class TestSwitchProviderSafeSwap:
         """B3 happy path: a successful destructive switch builds into a NEW
         collection, records provenance + marks it current, THEN drops the old
         one (swap order: build → record → set-current → drop-old)."""
-        from scripts.pipelines import embeddings_migration as mig
+        from lit_monitor.pipelines import embeddings_migration as mig
 
         sdb = self._setup_current(tmp_path)
         self._patch_config(tmp_path, monkeypatch)

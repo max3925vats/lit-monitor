@@ -60,7 +60,7 @@ def _make_graph_db_with_entity_and_coentities(
 
 class TestSuggestExpansions:
     def test_returns_top_k_co_entities(self):
-        from scripts.graph.query_expansion import suggest_expansions
+        from lit_monitor.graph.query_expansion import suggest_expansions
 
         co_entities = [
             ("entity_a", 50),
@@ -74,7 +74,7 @@ class TestSuggestExpansions:
         assert result == ["entity_a", "entity_b", "entity_c"]
 
     def test_returns_all_if_fewer_than_top_k(self):
-        from scripts.graph.query_expansion import suggest_expansions
+        from lit_monitor.graph.query_expansion import suggest_expansions
 
         co_entities = [("entity_a", 10), ("entity_b", 5)]
         graph_db = _make_graph_db_with_entity_and_coentities("topic_entity", co_entities)
@@ -82,14 +82,14 @@ class TestSuggestExpansions:
         assert result == ["entity_a", "entity_b"]
 
     def test_returns_empty_when_no_entity_found(self):
-        from scripts.graph.query_expansion import suggest_expansions
+        from lit_monitor.graph.query_expansion import suggest_expansions
 
         graph_db = _make_graph_db_with_entity_and_coentities(None, [])
         result = suggest_expansions("unknown topic", graph_db, top_k=3)
         assert result == []
 
     def test_returns_empty_on_graph_exception(self):
-        from scripts.graph.query_expansion import suggest_expansions
+        from lit_monitor.graph.query_expansion import suggest_expansions
 
         graph_db = MagicMock()
         graph_db._conn.execute.side_effect = RuntimeError("Kuzu down")
@@ -98,7 +98,7 @@ class TestSuggestExpansions:
         assert result == []
 
     def test_default_top_k_is_3(self):
-        from scripts.graph.query_expansion import suggest_expansions
+        from lit_monitor.graph.query_expansion import suggest_expansions
 
         co_entities = [("a", 10), ("b", 9), ("c", 8), ("d", 7)]
         # Simulate LIMIT 3 (the default top_k) applied by Kuzu
@@ -107,7 +107,7 @@ class TestSuggestExpansions:
         assert len(result) == 3
 
     def test_returns_empty_for_empty_co_entities(self):
-        from scripts.graph.query_expansion import suggest_expansions
+        from lit_monitor.graph.query_expansion import suggest_expansions
 
         graph_db = _make_graph_db_with_entity_and_coentities("topic_entity", [])
         result = suggest_expansions("filtration", graph_db, top_k=3)

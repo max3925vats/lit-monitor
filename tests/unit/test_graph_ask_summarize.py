@@ -20,7 +20,7 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from scripts.graph.ask import summarize_results
+from lit_monitor.graph.ask import summarize_results
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +225,7 @@ class TestPromptRoundTrip:
     def test_prompt_loads_via_registry(self) -> None:
         """Round-trip through the registry — confirms required-placeholder
         validation passes and Pydantic model accepts the YAML."""
-        from scripts.llm.prompt_registry import _reset_prompt_cache, load_prompt
+        from lit_monitor.llm.prompt_registry import _reset_prompt_cache, load_prompt
 
         _reset_prompt_cache()
         prompt = load_prompt("ask_summarize")
@@ -344,7 +344,7 @@ class TestIdentifyRelevantCluster:
         return np.array(vec, dtype=np.float32).tobytes()
 
     def test_returns_none_on_empty_cluster_list(self) -> None:
-        from scripts.graph.ask import _identify_relevant_cluster
+        from lit_monitor.graph.ask import _identify_relevant_cluster
 
         mock_state_db = MagicMock()
         mock_state_db.list_active_clusters.return_value = []
@@ -358,7 +358,7 @@ class TestIdentifyRelevantCluster:
     def test_returns_none_when_similarity_below_threshold(self) -> None:
         import numpy as np
 
-        from scripts.graph.ask import _identify_relevant_cluster
+        from lit_monitor.graph.ask import _identify_relevant_cluster
 
         mock_state_db = MagicMock()
         # Centroid and question orthogonal → cosine similarity ≈ 0.
@@ -384,7 +384,7 @@ class TestIdentifyRelevantCluster:
     def test_returns_cluster_dict_when_similarity_above_threshold(self) -> None:
         import numpy as np
 
-        from scripts.graph.ask import _identify_relevant_cluster
+        from lit_monitor.graph.ask import _identify_relevant_cluster
 
         mock_state_db = MagicMock()
         centroid = [1.0, 0.0, 0.0, 0.0]
@@ -416,7 +416,7 @@ class TestIdentifyRelevantCluster:
     def test_picks_highest_similarity_cluster(self) -> None:
         import numpy as np
 
-        from scripts.graph.ask import _identify_relevant_cluster
+        from lit_monitor.graph.ask import _identify_relevant_cluster
 
         mock_state_db = MagicMock()
         mock_state_db.list_active_clusters.return_value = [
@@ -446,7 +446,7 @@ class TestIdentifyRelevantCluster:
 
     def test_graceful_degradation_on_state_db_exception(self) -> None:
         """list_active_clusters raises → returns None, does not propagate."""
-        from scripts.graph.ask import _identify_relevant_cluster
+        from lit_monitor.graph.ask import _identify_relevant_cluster
 
         mock_state_db = MagicMock()
         mock_state_db.list_active_clusters.side_effect = RuntimeError("DB error")
@@ -457,7 +457,7 @@ class TestIdentifyRelevantCluster:
 
     def test_graceful_degradation_on_embed_exception(self) -> None:
         """embed_text raises → returns None, does not propagate."""
-        from scripts.graph.ask import _identify_relevant_cluster
+        from lit_monitor.graph.ask import _identify_relevant_cluster
 
         mock_state_db = MagicMock()
         mock_state_db.list_active_clusters.return_value = [
@@ -478,7 +478,7 @@ class TestIdentifyRelevantCluster:
         """Clusters with None centroid_blob are skipped without error."""
         import numpy as np
 
-        from scripts.graph.ask import _identify_relevant_cluster
+        from lit_monitor.graph.ask import _identify_relevant_cluster
 
         mock_state_db = MagicMock()
         mock_state_db.list_active_clusters.return_value = [

@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from unittest.mock import MagicMock
 
-import scripts.notify.os_notification as mod
+import lit_monitor.notify.os_notification as mod
 
 
 def _install_mock_plyer(monkeypatch) -> MagicMock:

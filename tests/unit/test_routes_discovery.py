@@ -5,7 +5,7 @@ Tests cover:
   - GET /api/discovery/runs (list, pagination, validation)
   - GET /api/discovery/runs/{run_id} (detail + papers, 404)
   - GET /api/discovery/runs/{run_id}/papers (sorted, top_k validation)
-  - Direct shared-query-layer functions from scripts.api.queries
+  - Direct shared-query-layer functions from lit_monitor.api.queries
   - P8: /discovery index with run history / latest-run section
   - P8: /discovery/{run_id} HTML detail page (200 + 404 + action buttons)
   - P8: route-ordering safety (/discovery/notify-handler not shadowed)
@@ -17,8 +17,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.server.app import create_app
-from scripts.server.runtime import reset_runtime
+from lit_monitor.server.app import create_app
+from lit_monitor.server.runtime import reset_runtime
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -42,7 +42,7 @@ def _make_fake_runtime(state_db) -> MagicMock:
 @pytest.fixture
 def empty_db(tmp_path):
     """Real StateDB with no data."""
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     return StateDB(tmp_path / "state.db")
 
@@ -53,7 +53,7 @@ def seeded_db(tmp_path):
 
     Returns (db, run_id) so callers can reference the run id.
     """
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     db = StateDB(tmp_path / "state.db")
     run_id = db.start_discovery_run({"topics": ["x"]})
@@ -80,7 +80,7 @@ def client():
 class TestListRuns:
     def test_empty_returns_zero_total(self, client, empty_db):
         rt = _make_fake_runtime(empty_db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get("/api/discovery/runs")
         assert r.status_code == 200
         body = r.json()
@@ -89,7 +89,7 @@ class TestListRuns:
     def test_with_data_returns_run(self, client, seeded_db):
         db, run_id = seeded_db
         rt = _make_fake_runtime(db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get("/api/discovery/runs?limit=5")
         assert r.status_code == 200
         body = r.json()
@@ -101,7 +101,7 @@ class TestListRuns:
     def test_run_has_expected_keys(self, client, seeded_db):
         db, run_id = seeded_db
         rt = _make_fake_runtime(db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get("/api/discovery/runs")
         run = r.json()["runs"][0]
         for key in ("id", "started_at", "finished_at", "status", "total_found", "total_ingested"):
@@ -109,31 +109,31 @@ class TestListRuns:
 
     def test_limit_overflow_422(self, client, empty_db):
         rt = _make_fake_runtime(empty_db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get("/api/discovery/runs?limit=500")
         assert r.status_code == 422
 
     def test_limit_zero_422(self, client, empty_db):
         rt = _make_fake_runtime(empty_db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get("/api/discovery/runs?limit=0")
         assert r.status_code == 422
 
     def test_offset_negative_422(self, client, empty_db):
         rt = _make_fake_runtime(empty_db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get("/api/discovery/runs?offset=-1")
         assert r.status_code == 422
 
     def test_default_limit_accepted(self, client, empty_db):
         rt = _make_fake_runtime(empty_db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get("/api/discovery/runs")
         assert r.status_code == 200
 
     def test_limit_100_accepted(self, client, empty_db):
         rt = _make_fake_runtime(empty_db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get("/api/discovery/runs?limit=100")
         assert r.status_code == 200
 
@@ -147,7 +147,7 @@ class TestRunDetail:
     def test_known_run_200(self, client, seeded_db):
         db, run_id = seeded_db
         rt = _make_fake_runtime(db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get(f"/api/discovery/runs/{run_id}")
         assert r.status_code == 200
         body = r.json()
@@ -159,7 +159,7 @@ class TestRunDetail:
     def test_papers_sorted_by_score_desc_in_detail(self, client, seeded_db):
         db, run_id = seeded_db
         rt = _make_fake_runtime(db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get(f"/api/discovery/runs/{run_id}")
         papers = r.json()["papers"]
         scores = [p["score"] for p in papers]
@@ -167,7 +167,7 @@ class TestRunDetail:
 
     def test_unknown_returns_404(self, client, empty_db):
         rt = _make_fake_runtime(empty_db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get("/api/discovery/runs/99999")
         assert r.status_code == 404
 
@@ -177,7 +177,7 @@ class TestRunDetail:
 
         db, run_id = seeded_db
         rt = _make_fake_runtime(db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get(f"/api/discovery/runs/{run_id}")
         # TestClient already parses via json, but this confirms no TypeError
         assert json.dumps(r.json()) is not None
@@ -192,7 +192,7 @@ class TestRunPapers:
     def test_papers_sorted_by_score(self, client, seeded_db):
         db, run_id = seeded_db
         rt = _make_fake_runtime(db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get(f"/api/discovery/runs/{run_id}/papers?top_k=5")
         assert r.status_code == 200
         papers = r.json()["papers"]
@@ -202,20 +202,20 @@ class TestRunPapers:
 
     def test_top_k_overflow_422(self, client, empty_db):
         rt = _make_fake_runtime(empty_db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get("/api/discovery/runs/1/papers?top_k=500")
         assert r.status_code == 422
 
     def test_top_k_zero_422(self, client, empty_db):
         rt = _make_fake_runtime(empty_db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get("/api/discovery/runs/1/papers?top_k=0")
         assert r.status_code == 422
 
     def test_top_k_100_accepted(self, client, seeded_db):
         db, run_id = seeded_db
         rt = _make_fake_runtime(db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get(f"/api/discovery/runs/{run_id}/papers?top_k=100")
         assert r.status_code == 200
 
@@ -223,7 +223,7 @@ class TestRunPapers:
         """top_k=1 should return only the highest-scored paper."""
         db, run_id = seeded_db
         rt = _make_fake_runtime(db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get(f"/api/discovery/runs/{run_id}/papers?top_k=1")
         papers = r.json()["papers"]
         assert len(papers) == 1
@@ -232,7 +232,7 @@ class TestRunPapers:
     def test_unknown_run_returns_empty_papers(self, client, empty_db):
         """Papers endpoint for an unknown run_id returns empty list (not 404)."""
         rt = _make_fake_runtime(empty_db)
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
             r = client.get("/api/discovery/runs/99999/papers")
         assert r.status_code == 200
         assert r.json()["papers"] == []
@@ -245,16 +245,16 @@ class TestRunPapers:
 
 class TestQueriesShared:
     def test_get_discovery_runs_empty(self, tmp_path):
-        from scripts.api.queries import get_discovery_runs
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_runs
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         result = get_discovery_runs(db, limit=20, offset=0)
         assert result == {"runs": [], "total": 0}
 
     def test_get_discovery_runs_returns_expected_keys(self, tmp_path):
-        from scripts.api.queries import get_discovery_runs
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_runs
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({})
@@ -266,8 +266,8 @@ class TestQueriesShared:
             assert key in run, f"missing key {key!r}"
 
     def test_get_discovery_runs_with_data(self, tmp_path):
-        from scripts.api.queries import get_discovery_runs
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_runs
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({})
@@ -277,15 +277,15 @@ class TestQueriesShared:
         assert result["runs"][0]["total_ingested"] == 2
 
     def test_get_discovery_run_not_found(self, tmp_path):
-        from scripts.api.queries import get_discovery_run
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_run
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         assert get_discovery_run(db, 99999) is None
 
     def test_get_discovery_run_found(self, tmp_path):
-        from scripts.api.queries import get_discovery_run
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_run
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({"topics": ["x"]})
@@ -296,8 +296,8 @@ class TestQueriesShared:
         assert run["status"] == "success"
 
     def test_get_discovery_run_papers_sorted(self, tmp_path):
-        from scripts.api.queries import get_discovery_run_papers
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_run_papers
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({})
@@ -307,8 +307,8 @@ class TestQueriesShared:
         assert [p["doi"] for p in papers] == ["10/hi", "10/lo"]
 
     def test_get_discovery_run_papers_top_k(self, tmp_path):
-        from scripts.api.queries import get_discovery_run_papers
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_run_papers
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({})
@@ -326,8 +326,8 @@ class TestQueriesShared:
         """All values in paper dicts must be JSON-native (no Row tuples)."""
         import json
 
-        from scripts.api.queries import get_discovery_run_papers
-        from scripts.core.state_db import StateDB
+        from lit_monitor.api.queries import get_discovery_run_papers
+        from lit_monitor.core.state_db import StateDB
 
         db = StateDB(tmp_path / "state.db")
         rid = db.start_discovery_run({})
@@ -345,7 +345,7 @@ class TestQueriesShared:
 def client_with_db(empty_db):
     """TestClient with get_runtime() returning a real empty StateDB."""
     rt = _make_fake_runtime(empty_db)
-    with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+    with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
         yield TestClient(create_app())
 
 
@@ -354,7 +354,7 @@ def client_with_seeded_run(seeded_db):
     """TestClient with get_runtime() returning a seeded StateDB; also yields run_id."""
     db, run_id = seeded_db
     rt = _make_fake_runtime(db)
-    with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+    with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
         yield TestClient(create_app()), run_id
 
 
@@ -481,7 +481,7 @@ class TestDiscoveryRunDetailPage:
         still suppress the feedback row, even though the default is now True."""
         client, run_id = client_with_seeded_run
         monkeypatch.setattr(
-            "scripts.server.config_io.load_config",
+            "lit_monitor.server.config_io.load_config",
             lambda which: {"web_ui": {"show_feedback_buttons": False}},
         )
         r = client.get(f"/discovery/{run_id}")
@@ -509,7 +509,7 @@ class TestDiscoveryLastRunKvSemantics:
         fake_rt = MagicMock()
         fake_rt.state_db = fake_db
         fake_rt.config.obsidian.vault_path = ""
-        with patch("scripts.server.routes.discovery.get_runtime", return_value=fake_rt):
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=fake_rt):
             r = client.get("/discovery")
         assert r.status_code == 200
         assert '<dl class="kv">' in r.text
@@ -523,7 +523,7 @@ class TestDiscoveryLastRunKvSemantics:
 @pytest.fixture
 def seeded_many_runs_db(tmp_path):
     """Real StateDB with 25 discovery_runs so the runs table spans >1 page (20)."""
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     db = StateDB(tmp_path / "state.db")
     ids = []
@@ -538,7 +538,7 @@ def seeded_many_runs_db(tmp_path):
 def client_with_many_runs(seeded_many_runs_db):
     db, ids = seeded_many_runs_db
     rt = _make_fake_runtime(db)
-    with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+    with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
         yield TestClient(create_app()), ids
 
 

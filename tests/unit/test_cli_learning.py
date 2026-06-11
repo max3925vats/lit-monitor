@@ -44,9 +44,9 @@ def _feedback_event(doi: str, signal_type: str, weight: float) -> dict:
 def _patches(state_db: MagicMock, embeddings_db: MagicMock):
     """Patch the three CLI factory helpers used by the learning commands."""
     return (
-        patch("scripts.cli._make_config", return_value=_mock_config()),
-        patch("scripts.cli._make_state_db", return_value=state_db),
-        patch("scripts.cli._make_embeddings_db", return_value=embeddings_db),
+        patch("lit_monitor.cli._make_config", return_value=_mock_config()),
+        patch("lit_monitor.cli._make_state_db", return_value=state_db),
+        patch("lit_monitor.cli._make_embeddings_db", return_value=embeddings_db),
     )
 
 
@@ -59,7 +59,7 @@ class TestLearningRecomputeCmd:
     def test_recompute_stores_vector_with_right_n_events(self):
         """≥10 saved events with embeddings → store_interest_vector called with
         n_events == number of contributing events and a finite vector."""
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         # 12 saved (positive) events on distinct DOIs, all with stored embeddings.
         n = 12
@@ -97,7 +97,7 @@ class TestLearningRecomputeCmd:
 
     def test_recompute_zero_events_is_inert_no_store(self):
         """No feedback events → inert message, store_interest_vector NOT called."""
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         state_db = MagicMock()
         state_db.list_feedback_events.return_value = []
@@ -113,7 +113,7 @@ class TestLearningRecomputeCmd:
 
     def test_recompute_below_floor_marks_inert(self):
         """<10 contributing events → vector stored but flagged INERT."""
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         events = [_feedback_event(f"10.1/p{i}", "saved", 1.0) for i in range(4)]
         embeddings = {
@@ -138,7 +138,7 @@ class TestLearningRecomputeCmd:
 
     def test_recompute_no_embeddings_graceful(self):
         """Events present but no library embeddings → graceful message, no store."""
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         events = [_feedback_event("10.1/p0", "saved", 1.0)]
         state_db = MagicMock()
@@ -163,7 +163,7 @@ class TestLearningRecomputeCmd:
 class TestLearningViewCmd:
     def test_view_with_stored_vector(self):
         """view prints n_events, soft_gate, dim, and a top-K alignment list."""
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         vec = np.array([1.0, 0.0, 0.0], dtype=np.float32)
         state_db = MagicMock()
@@ -195,7 +195,7 @@ class TestLearningViewCmd:
 
     def test_view_without_stored_vector(self):
         """view with nothing stored → recompute hint, exit 0."""
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         state_db = MagicMock()
         state_db.get_interest_vector.return_value = None
@@ -231,7 +231,7 @@ class TestLearningViewPerCluster:
         """
         from datetime import datetime, timedelta
 
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         recent = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -264,10 +264,10 @@ class TestLearningViewPerCluster:
 
         embeddings_db = MagicMock()
 
-        with patch("scripts.cli._make_config",
+        with patch("lit_monitor.cli._make_config",
                    return_value=_mock_config_with_floor(0.1)), \
-                patch("scripts.cli._make_state_db", return_value=state_db), \
-                patch("scripts.cli._make_embeddings_db", return_value=embeddings_db):
+                patch("lit_monitor.cli._make_state_db", return_value=state_db), \
+                patch("lit_monitor.cli._make_embeddings_db", return_value=embeddings_db):
             result = CliRunner().invoke(main, ["learning", "view", "--per-cluster"])
 
         assert result.exit_code == 0, result.output
@@ -279,16 +279,16 @@ class TestLearningViewPerCluster:
 
     def test_per_cluster_no_clusters(self):
         """--per-cluster with no active clusters → friendly message, exit 0."""
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         state_db = MagicMock()
         state_db.list_active_clusters.return_value = []
         embeddings_db = MagicMock()
 
-        with patch("scripts.cli._make_config",
+        with patch("lit_monitor.cli._make_config",
                    return_value=_mock_config_with_floor(0.1)), \
-                patch("scripts.cli._make_state_db", return_value=state_db), \
-                patch("scripts.cli._make_embeddings_db", return_value=embeddings_db):
+                patch("lit_monitor.cli._make_state_db", return_value=state_db), \
+                patch("lit_monitor.cli._make_embeddings_db", return_value=embeddings_db):
             result = CliRunner().invoke(main, ["learning", "view", "--per-cluster"])
 
         assert result.exit_code == 0, result.output

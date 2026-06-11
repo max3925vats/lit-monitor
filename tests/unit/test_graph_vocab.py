@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from scripts.graph.vocab import EntityTypeVocab, PredicateVocab
+from lit_monitor.graph.vocab import EntityTypeVocab, PredicateVocab
 
 
 class TestPredicateVocab:
@@ -44,7 +44,7 @@ class TestPredicateVocabDeprecated:
     def test_deprecated_predicate_emits_warning_once(self, tmp_path, caplog):
         """G15: deprecated predicates resolve but warn ONCE per session."""
         # Reset the module-level cache so this test is deterministic in any run order.
-        import scripts.graph.vocab as vocab_mod
+        import lit_monitor.graph.vocab as vocab_mod
         vocab_mod._WARNED.clear()
 
         yaml_path = tmp_path / "preds.yaml"
@@ -63,7 +63,7 @@ class TestPredicateVocabDeprecated:
 
     def test_deprecated_predicate_still_resolves(self, tmp_path, caplog):
         """G15: deprecated predicates still return the canonical name."""
-        import scripts.graph.vocab as vocab_mod
+        import lit_monitor.graph.vocab as vocab_mod
         vocab_mod._WARNED.clear()
 
         yaml_path = tmp_path / "preds.yaml"
@@ -94,7 +94,7 @@ class TestEntityTypeVocab:
 
     def test_entity_type_deprecated_warns_once(self, tmp_path, caplog):
         """G15: EntityTypeVocab deprecated warning uses the same _WARNED cache."""
-        import scripts.graph.vocab as vocab_mod
+        import lit_monitor.graph.vocab as vocab_mod
         vocab_mod._WARNED.clear()
 
         yaml_path = tmp_path / "types.yaml"

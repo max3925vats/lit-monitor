@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.server.app import create_app
+from lit_monitor.server.app import create_app
 
 # ---------------------------------------------------------------------------
 # Fixture
@@ -78,7 +78,7 @@ class TestModes:
             captured.update({"query": query, "mode": mode, "k": k})
             return [{"doi": "10.1/a", "title": "Test Paper", "score": 0.9}]
 
-        monkeypatch.setattr("scripts.server.routes.search.get_papers_by_query", fake_gpbq)
+        monkeypatch.setattr("lit_monitor.server.routes.search.get_papers_by_query", fake_gpbq)
         r = client.post("/api/search", json={"query": "antibody", "mode": "vector", "k": 5})
         assert r.status_code == 200
         assert captured["query"] == "antibody"
@@ -98,7 +98,7 @@ class TestModes:
             captured["mode"] = mode
             return []
 
-        monkeypatch.setattr("scripts.server.routes.search.get_papers_by_query", fake_gpbq)
+        monkeypatch.setattr("lit_monitor.server.routes.search.get_papers_by_query", fake_gpbq)
         client.post("/api/search", json={"query": "BRCA1", "mode": "graph", "k": 10})
         assert captured["mode"] == "graph"
 
@@ -110,7 +110,7 @@ class TestModes:
             captured["mode"] = mode
             return []
 
-        monkeypatch.setattr("scripts.server.routes.search.get_papers_by_query", fake_gpbq)
+        monkeypatch.setattr("lit_monitor.server.routes.search.get_papers_by_query", fake_gpbq)
         client.post("/api/search", json={"query": "BRCA1", "mode": "hybrid", "k": 10})
         assert captured["mode"] == "hybrid"
 
@@ -122,7 +122,7 @@ class TestModes:
             captured["mode"] = mode
             return []
 
-        monkeypatch.setattr("scripts.server.routes.search.get_papers_by_query", fake_gpbq)
+        monkeypatch.setattr("lit_monitor.server.routes.search.get_papers_by_query", fake_gpbq)
         client.post("/api/search", json={"query": "x"})
         assert captured["mode"] == "vector"
 
@@ -134,7 +134,7 @@ class TestModes:
             captured["k"] = k
             return []
 
-        monkeypatch.setattr("scripts.server.routes.search.get_papers_by_query", fake_gpbq)
+        monkeypatch.setattr("lit_monitor.server.routes.search.get_papers_by_query", fake_gpbq)
         client.post("/api/search", json={"query": "x", "mode": "graph"})
         assert captured["k"] == 20
 
@@ -147,7 +147,7 @@ class TestEmptyResults:
     def test_no_matches_returns_200_empty_list(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         """Zero results: 200 + [] (not 404)."""
         monkeypatch.setattr(
-            "scripts.server.routes.search.get_papers_by_query",
+            "lit_monitor.server.routes.search.get_papers_by_query",
             lambda q, *, mode, k, **kw: [],
         )
         r = client.post("/api/search", json={"query": "unicorn", "mode": "vector", "k": 10})
@@ -168,7 +168,7 @@ class TestKBoundaries:
             captured["k"] = k
             return []
 
-        monkeypatch.setattr("scripts.server.routes.search.get_papers_by_query", fake_gpbq)
+        monkeypatch.setattr("lit_monitor.server.routes.search.get_papers_by_query", fake_gpbq)
         r = client.post("/api/search", json={"query": "x", "mode": "vector", "k": 1})
         assert r.status_code == 200
         assert captured["k"] == 1
@@ -181,7 +181,7 @@ class TestKBoundaries:
             captured["k"] = k
             return []
 
-        monkeypatch.setattr("scripts.server.routes.search.get_papers_by_query", fake_gpbq)
+        monkeypatch.setattr("lit_monitor.server.routes.search.get_papers_by_query", fake_gpbq)
         r = client.post("/api/search", json={"query": "x", "mode": "vector", "k": 100})
         assert r.status_code == 200
         assert captured["k"] == 100

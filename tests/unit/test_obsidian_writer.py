@@ -109,7 +109,7 @@ _CHAPTER_EXTRACTION = {
 @pytest.mark.unit
 def test_paper_note_written(tmp_path):
     """write_paper_note creates a .md file in the papers folder."""
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
     config = _make_config(tmp_path)
     note_path = write_paper_note(_PAPER, _EXTRACTION, config, template_dir=_TEMPLATE_DIR)
     path = Path(note_path)
@@ -125,7 +125,7 @@ def test_paper_note_written(tmp_path):
 @pytest.mark.unit
 def test_paper_note_null_fields_hidden(tmp_path):
     """Fields with null extraction values should not appear as headings."""
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
     config = _make_config(tmp_path)
     note_path = write_paper_note(_PAPER, _EXTRACTION, config, template_dir=_TEMPLATE_DIR)
     content = Path(note_path).read_text(encoding="utf-8")
@@ -134,7 +134,7 @@ def test_paper_note_null_fields_hidden(tmp_path):
 @pytest.mark.unit
 def test_paper_note_inferred_flag_shown(tmp_path):
     """Inferred confidence fields should show ⚠️ indicator."""
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
     config = _make_config(tmp_path)
     extraction_with_inferred = dict(_EXTRACTION)
     extraction_with_inferred["methods_summary_confidence"] = "inferred"
@@ -151,7 +151,7 @@ def test_persist_zones_survive_update(tmp_path):
     When a note is regenerated, user content inside persist zones
     must be preserved unchanged.
     """
-    from scripts.output.obsidian_writer import update_note_preserve_persist_zones
+    from lit_monitor.output.obsidian_writer import update_note_preserve_persist_zones
     note_path = tmp_path / "TestNote.md"
     # Write initial note with a persist zone that has content
     initial = (
@@ -180,7 +180,7 @@ def test_persist_zones_survive_update(tmp_path):
 @pytest.mark.unit
 def test_persist_zones_created_fresh_if_no_existing_note(tmp_path):
     """When writing a new note, persist zones are left as-is (no prior content)."""
-    from scripts.output.obsidian_writer import update_note_preserve_persist_zones
+    from lit_monitor.output.obsidian_writer import update_note_preserve_persist_zones
     note_path = tmp_path / "NewNote.md"
     content = (
         "# New\n"
@@ -200,8 +200,8 @@ def test_note_write_survives_replace_failure(tmp_path, monkeypatch):
     """H4 — Atomic-write parity. If os.replace fails partway through, the
     original note content must remain untouched and no .tmp sibling must leak.
     """
-    from scripts.core import atomic_write as atomic_write_mod
-    from scripts.output.obsidian_writer import update_note_preserve_persist_zones
+    from lit_monitor.core import atomic_write as atomic_write_mod
+    from lit_monitor.output.obsidian_writer import update_note_preserve_persist_zones
 
     note_path = tmp_path / "Atomic.md"
     original = (
@@ -244,7 +244,7 @@ def test_title_collision_handled(tmp_path):
     When a note with the generated title already exists in the folder,
     write_paper_note appends 'b' to produce a unique title.
     """
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
     config = _make_config(tmp_path)
     # Write the first note
     note_path_1 = write_paper_note(_PAPER, _EXTRACTION, config, template_dir=_TEMPLATE_DIR)
@@ -258,13 +258,13 @@ def test_title_collision_handled(tmp_path):
 @pytest.mark.unit
 def test_note_title_normalises_allcaps_surname():
     """ALL-CAPS surnames are Title-cased in the note title."""
-    from scripts.output.obsidian_writer import note_title_for
+    from lit_monitor.output.obsidian_writer import note_title_for
     title = note_title_for(["HARRISON R"], 2015, "Bioseparation_Principles")
     assert title.startswith("Harrison2015_")
 @pytest.mark.unit
 def test_note_title_chapter_suffix():
     """Chapter suffix _Ch04 is appended correctly."""
-    from scripts.output.obsidian_writer import note_title_for
+    from lit_monitor.output.obsidian_writer import note_title_for
     title = note_title_for(["Smith, John"], 2024, "Filtration_Fund", suffix="_Ch04")
     assert "_Ch04" in title
 # ---------------------------------------------------------------------------
@@ -274,7 +274,7 @@ def test_note_title_chapter_suffix():
 @pytest.mark.unit
 def test_write_paper_note_uses_absolute_path(tmp_path):
     """write_paper_note produces an absolute path regardless of platform."""
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
     config = _make_config(tmp_path)
     note_path = write_paper_note(_PAPER, _EXTRACTION, config, template_dir=_TEMPLATE_DIR)
     result_path = Path(note_path)
@@ -283,7 +283,7 @@ def test_write_paper_note_uses_absolute_path(tmp_path):
 @pytest.mark.unit
 def test_write_paper_note_no_backslash_in_content(tmp_path):
     """Note content should not contain Windows backslashes in wikilinks or paths."""
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
     config = _make_config(tmp_path)
     note_path = write_paper_note(_PAPER, _EXTRACTION, config, template_dir=_TEMPLATE_DIR)
     content = Path(note_path).read_text(encoding="utf-8")
@@ -297,14 +297,14 @@ def test_collision_suffix_numeric_sequence(tmp_path):
     """
     Multiple collisions produce _2, _3, _4... suffixes (not alphabet).
     """
-    from scripts.output.obsidian_writer import _collision_suffix
+    from lit_monitor.output.obsidian_writer import _collision_suffix
     existing = {"base", "base_2", "base_3"}
     result = _collision_suffix("base", existing)
     assert result == "base_4"
 @pytest.mark.unit
 def test_collision_suffix_no_collision():
     """No collision → returns base unchanged."""
-    from scripts.output.obsidian_writer import _collision_suffix
+    from lit_monitor.output.obsidian_writer import _collision_suffix
     result = _collision_suffix("unique_title", {"other_title"})
     assert result == "unique_title"
 
@@ -328,7 +328,7 @@ def test_obsidian_note_front_matter_dataview_compatible(tmp_path):
 
     import yaml
 
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
 
     paper_with_tricky_keywords = dict(_PAPER)
     paper_with_tricky_keywords["keywords"] = [
@@ -378,7 +378,7 @@ def test_obsidian_note_front_matter_dataview_compatible(tmp_path):
 @pytest.mark.unit
 def test_coerce_year_variants():
     """_coerce_year handles int, str, None, and unparseable gracefully."""
-    from scripts.output.obsidian_writer import _coerce_year
+    from lit_monitor.output.obsidian_writer import _coerce_year
 
     assert _coerce_year(2024) == 2024
     assert _coerce_year("2024") == 2024
@@ -390,7 +390,7 @@ def test_coerce_year_variants():
 @pytest.mark.unit
 def test_make_tags_sanitization():
     """_make_tags produces lowercase hyphenated slugs and deduplicates."""
-    from scripts.output.obsidian_writer import _make_tags
+    from lit_monitor.output.obsidian_writer import _make_tags
 
     tags = _make_tags(
         keywords=["Filtration", "ProteinA purification", "TopicX: concentration"],
@@ -414,7 +414,7 @@ def test_make_tags_sanitization():
 @pytest.mark.unit
 def test_make_tags_non_string_inputs():
     """_make_tags coerces None and int items rather than raising AttributeError."""
-    from scripts.output.obsidian_writer import _make_tags
+    from lit_monitor.output.obsidian_writer import _make_tags
 
     # Should not raise — returns whatever sanitization produces from str(raw)
     tags = _make_tags(keywords=[None, 42, "valid-tag"], themes=[])  # type: ignore[list-item]
@@ -431,7 +431,7 @@ def test_tags_yaml_reserved_words_parse_correctly(tmp_path):
 
     import yaml
 
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
 
     paper = dict(_PAPER)
     paper["keywords"] = ["yes", "null", "true", "off"]  # YAML reserved words
@@ -456,7 +456,7 @@ def test_degraded_extraction_adds_quality_tag(tmp_path):
     When extraction contains _extraction_quality='degraded_high_chunking', the
     written note must include the 'extraction-quality-degraded' YAML tag.
     """
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
     config = _make_config(tmp_path)
     extraction = dict(_EXTRACTION)
     extraction["_extraction_quality"] = "degraded_high_chunking"
@@ -471,7 +471,7 @@ def test_degraded_extraction_prepends_warning_callout(tmp_path):
     When extraction contains _extraction_quality='degraded_high_chunking', the
     written note body must contain the Obsidian warning callout block.
     """
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
     config = _make_config(tmp_path)
     extraction = dict(_EXTRACTION)
     extraction["_extraction_quality"] = "degraded_high_chunking"
@@ -486,7 +486,7 @@ def test_normal_extraction_has_no_quality_callout(tmp_path):
     """
     When _extraction_quality is absent, the note must NOT contain the warning callout.
     """
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
     config = _make_config(tmp_path)
     note_path = write_paper_note(_PAPER, _EXTRACTION, config, template_dir=_TEMPLATE_DIR)
     content = Path(note_path).read_text(encoding="utf-8")
@@ -497,7 +497,7 @@ def test_normal_extraction_has_no_quality_callout(tmp_path):
 @pytest.mark.unit
 def test_discovered_topics_rendered_in_front_matter(tmp_path):
     """M4: discovered_topics from extraction must appear as a YAML list in note front matter."""
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
     config = _make_config(tmp_path)
     extraction_with_topics = {
         **_EXTRACTION,
@@ -516,7 +516,7 @@ def test_discovered_topics_rendered_in_front_matter(tmp_path):
 @pytest.mark.unit
 def test_discovered_topics_empty_when_absent_from_extraction(tmp_path):
     """M4: notes written without discovered_topics must render an empty list, not an error."""
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
     config = _make_config(tmp_path)
     note_path = write_paper_note(_PAPER, _EXTRACTION, config, template_dir=_TEMPLATE_DIR)
     content = Path(note_path).read_text(encoding="utf-8")
@@ -528,7 +528,7 @@ def test_discovered_topics_empty_when_absent_from_extraction(tmp_path):
 @pytest.mark.unit
 def test_write_paper_note_backfills_overall_confidence_when_absent(tmp_path):
     """N8c: notes from old DB rows (no _overall_confidence) must compute and render it."""
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
     config = _make_config(tmp_path)
     # _EXTRACTION has no _overall_confidence — simulates pre-fix DB row
     assert "_overall_confidence" not in _EXTRACTION
@@ -542,7 +542,7 @@ def test_write_paper_note_backfills_overall_confidence_when_absent(tmp_path):
 @pytest.mark.unit
 def test_write_paper_note_does_not_mutate_extraction_dict(tmp_path):
     """N8c: write_paper_note must not modify the caller's extraction dict."""
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
     config = _make_config(tmp_path)
     extraction_copy = dict(_EXTRACTION)
     write_paper_note(_PAPER, extraction_copy, config, template_dir=_TEMPLATE_DIR)
@@ -556,7 +556,7 @@ def test_write_paper_note_uses_extraction_provider_from_paper_dict(tmp_path):
     The N8d fix routes through paper.get('extraction_provider') first.
     This test verifies the PRIMARY path (paper dict) is used, not the fallback (config attr).
     """
-    from scripts.output.obsidian_writer import write_paper_note
+    from lit_monitor.output.obsidian_writer import write_paper_note
     config = _make_config(tmp_path)  # config has extraction_provider="ollama"
     # Paper dict explicitly carries a different provider (cloud model string).
     paper_with_provider = {

@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.graph import GraphDB
-from scripts.graph.entity_extractor import EntityTuple
+from lit_monitor.graph import GraphDB
+from lit_monitor.graph.entity_extractor import EntityTuple
 
 
 class _Fixture:

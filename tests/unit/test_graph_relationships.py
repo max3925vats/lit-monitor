@@ -24,7 +24,7 @@ class TestMultiSourceRelationshipMerge:
 
     def _make_db(self, tmp_path, name: str = "r3.kuzu"):
         """Return a fresh GraphDB and pre-create two Paper nodes + one Entity."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
 
         db = GraphDB(persist_dir=str(tmp_path / name))
         conn = db._conn
@@ -51,7 +51,7 @@ class TestMultiSourceRelationshipMerge:
 
     def _rel(self, **overrides):
         """Build a RelationshipTuple with sensible defaults; override as needed."""
-        from scripts.graph.relationship_extractor import RelationshipTuple
+        from lit_monitor.graph.relationship_extractor import RelationshipTuple
 
         defaults = dict(
             source_doi="10.0/a",

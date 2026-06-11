@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts.server import scheduler
+from lit_monitor.server import scheduler
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -66,7 +66,7 @@ def test_schedulespec_parse_validates_time():
 @pytest.mark.unit
 def test_write_macos_renders_plist_and_calls_launchctl(macos_tmp_dirs):
     spec = scheduler.ScheduleSpec.parse("mon", "08:00")
-    with patch("scripts.server.scheduler.subprocess.run") as mock_run:
+    with patch("lit_monitor.server.scheduler.subprocess.run") as mock_run:
         mock_run.return_value.returncode = 0
         path = scheduler.write_schedule(spec)
     assert path.exists()
@@ -83,7 +83,7 @@ def test_write_macos_renders_plist_and_calls_launchctl(macos_tmp_dirs):
 @pytest.mark.unit
 def test_write_linux_renders_timer_and_calls_systemctl(linux_tmp_dirs):
     spec = scheduler.ScheduleSpec.parse("fri", "14:30")
-    with patch("scripts.server.scheduler.subprocess.run") as mock_run:
+    with patch("lit_monitor.server.scheduler.subprocess.run") as mock_run:
         mock_run.return_value.returncode = 0
         path = scheduler.write_schedule(spec)
     assert path.exists()
@@ -106,9 +106,9 @@ def test_write_macos_uses_atomic_write(macos_tmp_dirs):
     """
     spec = scheduler.ScheduleSpec.parse("mon", "08:00")
     with (
-        patch("scripts.server.scheduler.subprocess.run") as mock_run,
+        patch("lit_monitor.server.scheduler.subprocess.run") as mock_run,
         patch(
-            "scripts.server.scheduler.atomic_write_text",
+            "lit_monitor.server.scheduler.atomic_write_text",
             wraps=scheduler.atomic_write_text,
         ) as mock_atomic,
     ):
@@ -131,9 +131,9 @@ def test_write_linux_uses_atomic_write_for_both_units(linux_tmp_dirs):
     """P1.2: both systemd timer and service files are written atomically."""
     spec = scheduler.ScheduleSpec.parse("fri", "14:30")
     with (
-        patch("scripts.server.scheduler.subprocess.run") as mock_run,
+        patch("lit_monitor.server.scheduler.subprocess.run") as mock_run,
         patch(
-            "scripts.server.scheduler.atomic_write_text",
+            "lit_monitor.server.scheduler.atomic_write_text",
             wraps=scheduler.atomic_write_text,
         ) as mock_atomic,
     ):
@@ -157,7 +157,7 @@ def test_write_linux_uses_atomic_write_for_both_units(linux_tmp_dirs):
 @pytest.mark.unit
 def test_read_macos_round_trips(macos_tmp_dirs):
     spec = scheduler.ScheduleSpec.parse("wed", "09:15")
-    with patch("scripts.server.scheduler.subprocess.run"):
+    with patch("lit_monitor.server.scheduler.subprocess.run"):
         scheduler.write_schedule(spec)
     got = scheduler.read_schedule()
     assert got is not None
@@ -173,9 +173,9 @@ def test_read_macos_round_trips(macos_tmp_dirs):
 @pytest.mark.unit
 def test_remove_macos_unlinks_plist(macos_tmp_dirs):
     spec = scheduler.ScheduleSpec.parse("mon", "08:00")
-    with patch("scripts.server.scheduler.subprocess.run"):
+    with patch("lit_monitor.server.scheduler.subprocess.run"):
         scheduler.write_schedule(spec)
     assert scheduler._LAUNCHD_PLIST.exists()
-    with patch("scripts.server.scheduler.subprocess.run"):
+    with patch("lit_monitor.server.scheduler.subprocess.run"):
         scheduler.remove_schedule()
     assert not scheduler._LAUNCHD_PLIST.exists()

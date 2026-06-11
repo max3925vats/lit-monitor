@@ -19,7 +19,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts.server import dev_sandbox
+from lit_monitor.server import dev_sandbox
 
 
 @pytest.fixture(autouse=True)
@@ -193,7 +193,7 @@ def test_clear_sandbox_with_confirm_removes_state_db(
 @pytest.mark.unit
 def test_clear_sandbox_returns_partial_on_failure(monkeypatch, tmp_path):
     """If any cleanup step raises, status should be 'partial', not 'cleared'."""
-    from scripts.server import dev_sandbox
+    from lit_monitor.server import dev_sandbox
     sandbox_db = tmp_path / "state_dev.db"
     sandbox_db.touch()
     sandbox_chroma = tmp_path / "chroma_dev"
@@ -280,7 +280,7 @@ def test_sandbox_embeddings_db_is_singleton(
             construction_count["n"] += 1
 
     monkeypatch.setattr(
-        "scripts.output.embeddings.EmbeddingsDB", _FakeEmbDB
+        "lit_monitor.output.embeddings.EmbeddingsDB", _FakeEmbDB
     )
 
     first = dev_sandbox.sandbox_embeddings_db()
@@ -320,7 +320,7 @@ def test_clear_sandbox_invalidates_embeddings_cache(
             self.kwargs = kwargs
 
     monkeypatch.setattr(
-        "scripts.output.embeddings.EmbeddingsDB", _FakeEmbDB
+        "lit_monitor.output.embeddings.EmbeddingsDB", _FakeEmbDB
     )
 
     first = dev_sandbox.sandbox_embeddings_db()
@@ -420,9 +420,9 @@ def test_sandbox_graph_db_returns_graphdb_instance(
         def __init__(self, persist_dir: str) -> None:
             self.persist_dir = persist_dir
 
-    monkeypatch.setattr("scripts.graph.db.GraphDB", _FakeGraphDB)
+    monkeypatch.setattr("lit_monitor.graph.db.GraphDB", _FakeGraphDB)
     # Also patch the import inside dev_sandbox so the module-level import resolves
-    import scripts.graph as graph_mod
+    import lit_monitor.graph as graph_mod
     monkeypatch.setattr(graph_mod, "GraphDB", _FakeGraphDB)
 
     graph = dev_sandbox.sandbox_graph_db()
@@ -446,7 +446,7 @@ def test_sandbox_graph_db_is_cached(
         def __init__(self, persist_dir: str) -> None:
             construction_count["n"] += 1
 
-    import scripts.graph as graph_mod
+    import lit_monitor.graph as graph_mod
     monkeypatch.setattr(graph_mod, "GraphDB", _FakeGraphDB)
 
     g1 = dev_sandbox.sandbox_graph_db()
@@ -525,7 +525,7 @@ def test_clear_sandbox_clears_graph_cache(
         def __init__(self, persist_dir: str) -> None:
             construction_count["n"] += 1
 
-    import scripts.graph as graph_mod
+    import lit_monitor.graph as graph_mod
     monkeypatch.setattr(graph_mod, "GraphDB", _FakeGraphDB)
 
     first = dev_sandbox.sandbox_graph_db()
@@ -566,7 +566,7 @@ def test_sandbox_status_includes_graph_node_count(
         def __init__(self, persist_dir: str) -> None:
             self._conn = _FakeConn()
 
-    import scripts.graph as graph_mod
+    import lit_monitor.graph as graph_mod
     monkeypatch.setattr(graph_mod, "GraphDB", _FakeGraphDB)
     # Reset the cache so the next sandbox_graph_db() uses _FakeGraphDB.
     dev_sandbox.sandbox_graph_db.cache_clear()
@@ -596,7 +596,7 @@ def test_sandbox_status_graph_node_count_zero_on_error(
         def __init__(self, persist_dir: str) -> None:
             self._conn = _BrokenConn()
 
-    import scripts.graph as graph_mod
+    import lit_monitor.graph as graph_mod
     monkeypatch.setattr(graph_mod, "GraphDB", _FakeGraphDB)
     dev_sandbox.sandbox_graph_db.cache_clear()
 

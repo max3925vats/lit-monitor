@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 def _make_dev_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """Return a TestClient against a freshly-created app with /dev mounted."""
     monkeypatch.setenv("LIT_MONITOR_DEV", "1")
-    from scripts.server.app import create_app
+    from lit_monitor.server.app import create_app
 
     return TestClient(create_app())
 
@@ -64,7 +64,7 @@ def test_quality_report_absent(
     client = _make_dev_client(monkeypatch)
     missing = tmp_path / "definitely-not-here.md"
     monkeypatch.setattr(
-        "scripts.server.routes.dev.QUALITY_REPORT_PATH", missing
+        "lit_monitor.server.routes.dev.QUALITY_REPORT_PATH", missing
     )
     resp = client.get("/api/dev/quality-report")
     assert resp.status_code == 200
@@ -87,7 +87,7 @@ def test_quality_report_present(
         encoding="utf-8",
     )
     monkeypatch.setattr(
-        "scripts.server.routes.dev.QUALITY_REPORT_PATH", report
+        "lit_monitor.server.routes.dev.QUALITY_REPORT_PATH", report
     )
     resp = client.get("/api/dev/quality-report")
     assert resp.status_code == 200
@@ -110,7 +110,7 @@ def test_quality_report_raw_serves_content(
     body_text = "# Quality report\n\nTier 4 ran clean. All checks green.\n"
     report.write_text(body_text, encoding="utf-8")
     monkeypatch.setattr(
-        "scripts.server.routes.dev.QUALITY_REPORT_PATH", report
+        "lit_monitor.server.routes.dev.QUALITY_REPORT_PATH", report
     )
     resp = client.get("/api/dev/quality-report/raw")
     assert resp.status_code == 200
@@ -126,7 +126,7 @@ def test_quality_report_raw_404_when_absent(
     client = _make_dev_client(monkeypatch)
     missing = tmp_path / "definitely-not-here.md"
     monkeypatch.setattr(
-        "scripts.server.routes.dev.QUALITY_REPORT_PATH", missing
+        "lit_monitor.server.routes.dev.QUALITY_REPORT_PATH", missing
     )
     resp = client.get("/api/dev/quality-report/raw")
     assert resp.status_code == 404
@@ -145,7 +145,7 @@ def test_quality_report_raw_rejects_path_traversal(
     report = tmp_path / "release-quality-report.md"
     report.write_text("# Quality report\n", encoding="utf-8")
     monkeypatch.setattr(
-        "scripts.server.routes.dev.QUALITY_REPORT_PATH", report
+        "lit_monitor.server.routes.dev.QUALITY_REPORT_PATH", report
     )
 
     # Plant a secret outside the report dir and try to reach it via traversal.
@@ -188,14 +188,14 @@ def test_compare_models_endpoint_calls_run_model_comparison(
     fake_zot = MagicMock(name="zotero_client")
 
     with patch(
-        "scripts.pipelines.model_compare.run_model_comparison",
+        "lit_monitor.pipelines.model_compare.run_model_comparison",
         return_value=fake_summary,
     ) as mock_run, patch(
-        "scripts.server.dev_sandbox.sandbox_state_db", return_value=fake_sdb
+        "lit_monitor.server.dev_sandbox.sandbox_state_db", return_value=fake_sdb
     ), patch(
-        "scripts.core.config.get_config", return_value=fake_cfg
+        "lit_monitor.core.config.get_config", return_value=fake_cfg
     ), patch(
-        "scripts.server.routes.dev._build_zotero_client_for_dev",
+        "lit_monitor.server.routes.dev._build_zotero_client_for_dev",
         return_value=fake_zot,
     ):
         resp = client.post("/api/dev/compare-models")

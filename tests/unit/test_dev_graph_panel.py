@@ -36,8 +36,8 @@ from fastapi.testclient import TestClient
 def _make_dev_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """Return a TestClient against a freshly-created app with dev mode on."""
     monkeypatch.setenv("LIT_MONITOR_DEV", "1")
-    from scripts.server.app import create_app
-    from scripts.server.runtime import reset_runtime
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
 
     reset_runtime()
     return TestClient(create_app())
@@ -46,8 +46,8 @@ def _make_dev_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
 def _make_plain_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """Return a TestClient with dev mode OFF (no /dev router mounted)."""
     monkeypatch.delenv("LIT_MONITOR_DEV", raising=False)
-    from scripts.server.app import create_app
-    from scripts.server.runtime import reset_runtime
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
 
     reset_runtime()
     return TestClient(create_app())
@@ -69,7 +69,7 @@ def test_backfill_kind_ner_with_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     spawn_mock = _spawn_mock_for(77777)
 
     with patch(
-        "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+        "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
     ):
         resp = client.post(
             "/api/dev/graph/backfill/start",
@@ -95,7 +95,7 @@ def test_backfill_kind_relationships_plain(monkeypatch: pytest.MonkeyPatch) -> N
     spawn_mock = _spawn_mock_for(88888)
 
     with patch(
-        "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+        "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
     ):
         resp = client.post(
             "/api/dev/graph/backfill/start",
@@ -116,7 +116,7 @@ def test_backfill_kind_schema_only(monkeypatch: pytest.MonkeyPatch) -> None:
     spawn_mock = _spawn_mock_for(99999)
 
     with patch(
-        "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+        "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
     ):
         resp = client.post(
             "/api/dev/graph/backfill/start",
@@ -138,7 +138,7 @@ def test_backfill_kind_schema_no_scope_defaults_to_all(
     spawn_mock = _spawn_mock_for(11111)
 
     with patch(
-        "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+        "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
     ):
         resp = client.post(
             "/api/dev/graph/backfill/start",
@@ -158,7 +158,7 @@ def test_dev_graph_backfill_blocks_if_already_running(
     """If the graph-backfill slot is busy, start returns an 'already running' pill, no spawn."""
     client = _make_dev_client(monkeypatch)
 
-    from scripts.server.runtime import get_runtime
+    from lit_monitor.server.runtime import get_runtime
 
     runtime = get_runtime()
     fake_proc = MagicMock()
@@ -168,7 +168,7 @@ def test_dev_graph_backfill_blocks_if_already_running(
 
     spawn_mock = AsyncMock()
     with patch(
-        "scripts.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
+        "lit_monitor.server.routes.dev.asyncio.create_subprocess_exec", spawn_mock
     ):
         resp = client.post("/api/dev/graph/backfill/start", data={"all": "on"})
 

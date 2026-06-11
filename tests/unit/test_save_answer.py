@@ -21,7 +21,7 @@ def _cfg(tmp_path):
 
 
 def test_save_ask_answer_writes_connections_note(tmp_path):
-    from scripts.obsidian_tools.save_answer import save_ask_answer
+    from lit_monitor.obsidian_tools.save_answer import save_ask_answer
 
     p = save_ask_answer(
         question="Which papers cite Smith 2021?",
@@ -40,7 +40,7 @@ def test_save_ask_answer_writes_connections_note(tmp_path):
 
 
 def test_save_ask_answer_preserves_user_notes(tmp_path):
-    from scripts.obsidian_tools.save_answer import save_ask_answer
+    from lit_monitor.obsidian_tools.save_answer import save_ask_answer
 
     cfg = _cfg(tmp_path)
     p = save_ask_answer("Q", "A1", [], None, cfg)

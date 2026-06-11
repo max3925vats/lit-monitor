@@ -53,7 +53,7 @@ class TestGraphDBInit:
         target = tmp_path / "subdir" / "graph.kuzu"
         assert not (tmp_path / "subdir").exists()
 
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
         GraphDB(persist_dir=str(target))
 
         # Parent dir was created and KuzuDB wrote its file at the target path.
@@ -64,7 +64,7 @@ class TestGraphDBInit:
         """After init, _conn is a live kuzu Connection that can execute queries."""
         import kuzu
 
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
 
         g = GraphDB(persist_dir=str(tmp_path / "graph.kuzu"))
 
@@ -84,8 +84,8 @@ class TestGraphDBInit:
         ``relationship_validator.VALID_PREDICATES`` (single source of truth) so a
         missing REL table fails this test instead of slipping through.
         """
-        from scripts.graph import GraphDB
-        from scripts.graph.relationship_validator import VALID_PREDICATES
+        from lit_monitor.graph import GraphDB
+        from lit_monitor.graph.relationship_validator import VALID_PREDICATES
 
         g = GraphDB(persist_dir=str(tmp_path / "graph.kuzu"))
         tables = _tables(g._conn)
@@ -97,7 +97,7 @@ class TestGraphDBInit:
 
     def test_reinit_is_idempotent(self, tmp_path):
         """Re-instantiating GraphDB on an already-initialised directory is a no-op."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
 
         db_path = str(tmp_path / "graph.kuzu")
         GraphDB(persist_dir=db_path)  # first init
@@ -114,7 +114,7 @@ class TestGraphDB:
 
     def test_context_manager_closes_handles(self, tmp_path):
         """GraphDB used as a context manager releases its kuzu handles on exit."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
 
         persist = tmp_path / "ctx.kuzu"
         with GraphDB(persist_dir=str(persist)) as g:
@@ -127,7 +127,7 @@ class TestGraphDB:
     def test_close_is_idempotent(self, tmp_path):
         """close() may be called repeatedly without raising (the second call sees
         already-None handles and skips the kuzu .close() calls)."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
 
         g = GraphDB(persist_dir=str(tmp_path / "idem.kuzu"))
         g.close()
@@ -142,8 +142,8 @@ class TestGraphDBSchemaVersion:
 
     def test_schema_version_file_written_on_fresh_init(self, tmp_path):
         """The .schema_version sentinel file is created on first GraphDB init."""
-        from scripts.graph import GraphDB
-        from scripts.graph.migrations import SCHEMA_VERSION
+        from lit_monitor.graph import GraphDB
+        from lit_monitor.graph.migrations import SCHEMA_VERSION
 
         db_path = tmp_path / "fresh.kuzu"
         GraphDB(persist_dir=str(db_path))
@@ -161,7 +161,7 @@ class TestGraphDBEdgeProperties:
     ):
         """G14: every MENTIONS edge defaults to confidence=1.0, prompt_version='phase1.0',
         extracted_at=now (set by DB DEFAULT)."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
 
         db = GraphDB(persist_dir=str(tmp_path / "g14.kuzu"))
         conn = db._conn
@@ -190,7 +190,7 @@ class TestGraphDBEdgeProperties:
 
     def test_compares_to_edge_has_default_properties(self, tmp_path):
         """G14: Paper→Paper REL COMPARES_TO also carries the three default properties."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
 
         db = GraphDB(persist_dir=str(tmp_path / "g14_pp.kuzu"))
         conn = db._conn
@@ -221,7 +221,7 @@ class TestAddPaper:
     """
 
     def _entity_tuple(self, **overrides):
-        from scripts.graph.entity_extractor import EntityTuple
+        from lit_monitor.graph.entity_extractor import EntityTuple
         defaults = dict(
             canonical_id="ion exchange",
             type="method",
@@ -234,7 +234,7 @@ class TestAddPaper:
         return EntityTuple(**defaults)
 
     def _rel_tuple(self, **overrides):
-        from scripts.graph.relationship_extractor import RelationshipTuple
+        from lit_monitor.graph.relationship_extractor import RelationshipTuple
         defaults = dict(
             source_doi="10.0/a",
             predicate="PROPOSES",
@@ -249,7 +249,7 @@ class TestAddPaper:
 
     def test_creates_paper_node(self, tmp_path):
         """G6: add_paper creates a Paper node with the given metadata."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         db.add_paper(
             doi="10.0/a",
@@ -268,7 +268,7 @@ class TestAddPaper:
 
     def test_creates_entity_and_mentions(self, tmp_path):
         """G6: each entity tuple -> 1 Entity node + 1 MENTIONS edge with source='schema'."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         db.add_paper(
             doi="10.0/a",
@@ -290,7 +290,7 @@ class TestAddPaper:
 
     def test_mentions_handles_none_spans(self, tmp_path):
         """G6: Zotero-origin entities have span_start/end = None; write must not crash."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         ent = self._entity_tuple(
             canonical_id="smith, jane",
@@ -317,7 +317,7 @@ class TestAddPaper:
 
     def test_creates_typed_predicate_edge(self, tmp_path):
         """G6: each validated relationship -> 1 typed edge with confidence + prompt_version."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         # The target entity must exist for the MATCH to succeed.
         target_ent = self._entity_tuple(
@@ -347,7 +347,7 @@ class TestAddPaper:
 
     def test_creates_paper_to_paper_compares_to(self, tmp_path):
         """G6: Paper-target relationships create the target Paper if absent then COMPARES_TO."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         # Pre-create target paper so the MATCH succeeds.
         db.add_paper(
@@ -381,7 +381,7 @@ class TestAddPaper:
 
     def test_is_idempotent(self, tmp_path):
         """G6: re-running add_paper for the same DOI must not duplicate nodes or edges."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         ents = [self._entity_tuple()]
         rels = []
@@ -405,7 +405,7 @@ class TestAddPaper:
 
     def test_typed_edge_is_idempotent(self, tmp_path):
         """G6: re-running with the same relationship doesn't duplicate the typed edge."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         ents = [self._entity_tuple(
             canonical_id="future method", type="method", surface="future method",
@@ -430,7 +430,7 @@ class TestAddPaper:
         a MENTIONS CREATE — that is mid-transaction after the Paper node has been
         created, exercising the ROLLBACK path.
         """
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         # The simplest reliable way to force a mid-txn failure is to pass a bad
         # entity whose Cypher will fail. Easiest: a relationship targeting a Paper
@@ -466,7 +466,7 @@ class TestAddPaper:
 
     def test_empty_entities_and_relationships(self, tmp_path):
         """G6: empty lists are valid input — only the Paper node is written."""
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         db.add_paper(
             doi="10.0/lonely",
@@ -491,7 +491,7 @@ class TestAddPaper:
         """
         import datetime as dt
 
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
 
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         known = dt.datetime(2020, 1, 2, 3, 4, 5)
@@ -537,7 +537,7 @@ class TestAddPaper:
         then add a NEW entity via add_paper, then resolve it — it must be found
         because add_paper invalidated the cache.
         """
-        from scripts.graph import GraphDB
+        from lit_monitor.graph import GraphDB
 
         db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
 
@@ -581,7 +581,7 @@ def _kuzu_absent():
     originals — so the global module table is left byte-identical.
     """
     # Re-importing scripts.graph.* under a blocked kuzu rebinds two things:
-    #   1. the sys.modules["scripts.graph*"] slots, and
+    #   1. the sys.modules["lit_monitor.graph*"] slots, and
     #   2. the submodule ATTRIBUTE on each parent package object — Python's
     #      import machinery sets ``scripts.graph = <new module>`` on the
     #      ``scripts`` package, ``scripts.graph.db`` on ``scripts.graph``, etc.
@@ -591,11 +591,11 @@ def _kuzu_absent():
     # *attributes*, not sys.modules — so it would patch the wrong object and the
     # real GraphDB would run. Restore both sys.modules and the parent attrs.
     snapshot = dict(sys.modules)
-    keys = ["kuzu"] + [k for k in sys.modules if k.startswith("scripts.graph")]
+    keys = ["kuzu"] + [k for k in sys.modules if k.startswith("lit_monitor.graph")]
     try:
         sys.modules["kuzu"] = None  # type: ignore[assignment]
         for k in keys:
-            if k.startswith("scripts.graph"):
+            if k.startswith("lit_monitor.graph"):
                 sys.modules.pop(k, None)
         yield
     finally:
@@ -618,13 +618,13 @@ class TestGraphDBImportError:
     def test_import_error_without_kuzu(self, tmp_path):
         """Instantiating GraphDB without kuzu raises a clear ImportError."""
         with _kuzu_absent():
-            from scripts.graph.db import GraphDB as FreshGraphDB
+            from lit_monitor.graph.db import GraphDB as FreshGraphDB
 
             with pytest.raises(ImportError, match="uv sync --extra graph"):
                 FreshGraphDB(persist_dir=str(tmp_path / "graph.kuzu"))
 
     def test_module_import_succeeds_without_kuzu(self):
-        """scripts.graph imports cleanly even when kuzu is absent."""
+        """lit_monitor.graph imports cleanly even when kuzu is absent."""
         with _kuzu_absent():
             # Importing the package must NOT raise — only instantiation does.
-            import scripts.graph  # noqa: F401
+            import lit_monitor.graph  # noqa: F401

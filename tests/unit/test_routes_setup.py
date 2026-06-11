@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts.server.routes.setup import (
+from lit_monitor.server.routes.setup import (
     _build_step_descriptors,
     _key_tail,
     _merge_credentials,
@@ -268,7 +268,7 @@ def test_build_step_descriptors_step2_ok_when_vault_exists(tmp_path):
         "zotero.library_id": (True, ""),
         "pubmed.email": (True, ""),
     }
-    with patch("scripts.server.routes.setup.load_config", return_value=fake_paths):
+    with patch("lit_monitor.server.routes.setup.load_config", return_value=fake_paths):
         steps = _build_step_descriptors(checks)
     step2 = next(s for s in steps if s["num"] == 2)
     assert step2["status"] == "ok"
@@ -284,7 +284,7 @@ def test_build_step_descriptors_step2_missing_when_paths_yaml_absent():
         "zotero.library_id": (True, ""),
         "pubmed.email": (True, ""),
     }
-    with patch("scripts.server.routes.setup.load_config", side_effect=FileNotFoundError):
+    with patch("lit_monitor.server.routes.setup.load_config", side_effect=FileNotFoundError):
         steps = _build_step_descriptors(checks)
     step2 = next(s for s in steps if s["num"] == 2)
     assert step2["status"] == "missing"
@@ -418,8 +418,8 @@ def test_update_collection_writes_back():
     """POST /setup/api/paths/collection rewrites only the collection_name key."""
     from fastapi.testclient import TestClient
 
-    from scripts.server.app import create_app
-    from scripts.server.runtime import reset_runtime
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
 
     reset_runtime()
     client = TestClient(create_app())
@@ -435,8 +435,8 @@ def test_update_collection_writes_back():
         saved_with["name"] = name
         saved_with["data"] = data
 
-    with patch("scripts.server.routes.setup.load_config", return_value=fake_paths), \
-         patch("scripts.server.routes.setup.save_config", side_effect=fake_save):
+    with patch("lit_monitor.server.routes.setup.load_config", return_value=fake_paths), \
+         patch("lit_monitor.server.routes.setup.save_config", side_effect=fake_save):
         resp = client.post(
             "/setup/api/paths/collection", data={"collection_name": "NEW"}
         )
@@ -455,8 +455,8 @@ def test_update_collection_writes_back():
 def test_update_collection_rejects_empty():
     from fastapi.testclient import TestClient
 
-    from scripts.server.app import create_app
-    from scripts.server.runtime import reset_runtime
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
 
     reset_runtime()
     client = TestClient(create_app())
@@ -470,13 +470,13 @@ def test_update_collection_rejects_empty():
 def test_update_collection_returns_400_when_paths_missing():
     from fastapi.testclient import TestClient
 
-    from scripts.server.app import create_app
-    from scripts.server.runtime import reset_runtime
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
 
     reset_runtime()
     client = TestClient(create_app())
     with patch(
-        "scripts.server.routes.setup.load_config", side_effect=FileNotFoundError
+        "lit_monitor.server.routes.setup.load_config", side_effect=FileNotFoundError
     ):
         resp = client.post(
             "/setup/api/paths/collection", data={"collection_name": "X"}
@@ -499,7 +499,7 @@ class TestSafeSavePreference:
 
         import yaml
 
-        from scripts.server.config_io import safe_save_preference
+        from lit_monitor.server.config_io import safe_save_preference
 
         src = Path("config/extraction.example.yaml")
         dst = tmp_path / "extraction.yaml"
@@ -514,7 +514,7 @@ class TestSafeSavePreference:
 
         import yaml
 
-        from scripts.server.config_io import safe_save_preference
+        from lit_monitor.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
         shutil.copy("config/extraction.example.yaml", dst)
@@ -528,7 +528,7 @@ class TestSafeSavePreference:
 
         import yaml
 
-        from scripts.server.config_io import safe_save_preference
+        from lit_monitor.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
         shutil.copy("config/extraction.example.yaml", dst)
@@ -539,7 +539,7 @@ class TestSafeSavePreference:
     def test_invalid_viewer_raises(self, tmp_path):
         import shutil
 
-        from scripts.server.config_io import safe_save_preference
+        from lit_monitor.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
         shutil.copy("config/extraction.example.yaml", dst)
@@ -552,7 +552,7 @@ class TestSafeSavePreference:
 
         import yaml
 
-        from scripts.server.config_io import safe_save_preference
+        from lit_monitor.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
         shutil.copy("config/extraction.example.yaml", dst)
@@ -569,7 +569,7 @@ class TestSafeSavePreference:
     def test_does_not_leave_tmp_file(self, tmp_path):
         import shutil
 
-        from scripts.server.config_io import safe_save_preference
+        from lit_monitor.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
         shutil.copy("config/extraction.example.yaml", dst)
@@ -584,7 +584,7 @@ class TestSafeSavePreference:
 
         import yaml
 
-        from scripts.server.config_io import safe_save_preference
+        from lit_monitor.server.config_io import safe_save_preference
 
         dst = tmp_path / "extraction.yaml"
         shutil.copy("config/extraction.example.yaml", dst)
@@ -605,8 +605,8 @@ class TestSetupCompleteNotifyPanel:
     def _make_client(self):
         from fastapi.testclient import TestClient
 
-        from scripts.server.app import create_app
-        from scripts.server.runtime import reset_runtime
+        from lit_monitor.server.app import create_app
+        from lit_monitor.server.runtime import reset_runtime
 
         reset_runtime()
         return TestClient(create_app())
@@ -650,7 +650,7 @@ class TestSetupCompleteNotifyPanel:
                 }
             }
         }
-        with patch("scripts.server.routes.setup.load_config", return_value=fake_extraction):
+        with patch("lit_monitor.server.routes.setup.load_config", return_value=fake_extraction):
             r = client.get("/setup/complete")
         assert r.status_code == 200
         # The selected viewer value should appear somewhere in the rendered page
@@ -661,8 +661,8 @@ class TestSetupCompleteNotifyPanel:
         client = self._make_client()
         # Both writers must be patched — the route calls safe_save_digest_auto_write
         # too, and an unpatched call would write to the real config/extraction.yaml.
-        with patch("scripts.server.routes.setup.safe_save_preference") as m, \
-             patch("scripts.server.routes.setup.safe_save_digest_auto_write"):
+        with patch("lit_monitor.server.routes.setup.safe_save_preference") as m, \
+             patch("lit_monitor.server.routes.setup.safe_save_digest_auto_write"):
             r = client.post(
                 "/setup/complete/notify",
                 data={"viewer": "browser", "enabled": "on"},
@@ -678,8 +678,8 @@ class TestSetupCompleteNotifyPanel:
     def test_post_without_enabled_flag(self):
         """P4: POST /setup/complete/notify without enabled=on sets enabled=False."""
         client = self._make_client()
-        with patch("scripts.server.routes.setup.safe_save_preference") as m, \
-             patch("scripts.server.routes.setup.safe_save_digest_auto_write"):
+        with patch("lit_monitor.server.routes.setup.safe_save_preference") as m, \
+             patch("lit_monitor.server.routes.setup.safe_save_digest_auto_write"):
             r = client.post(
                 "/setup/complete/notify",
                 data={"viewer": "obsidian"},
@@ -709,8 +709,8 @@ class TestDigestAutoWriteCheckbox:
     def _make_client(self):
         from fastapi.testclient import TestClient
 
-        from scripts.server.app import create_app
-        from scripts.server.runtime import reset_runtime
+        from lit_monitor.server.app import create_app
+        from lit_monitor.server.runtime import reset_runtime
 
         reset_runtime()
         return TestClient(create_app())
@@ -721,7 +721,7 @@ class TestDigestAutoWriteCheckbox:
 
         import yaml
 
-        from scripts.server.config_io import safe_save_digest_auto_write
+        from lit_monitor.server.config_io import safe_save_digest_auto_write
 
         dst = tmp_path / "extraction.yaml"
         shutil.copy("config/extraction.example.yaml", dst)
@@ -748,8 +748,8 @@ class TestDigestAutoWriteCheckbox:
     def test_post_persists_checkbox_value(self):
         """P10b: POST /setup/complete/notify persists digest_auto_write=True when 'on'."""
         client = self._make_client()
-        with patch("scripts.server.routes.setup.safe_save_digest_auto_write") as m, \
-             patch("scripts.server.routes.setup.safe_save_preference"):
+        with patch("lit_monitor.server.routes.setup.safe_save_digest_auto_write") as m, \
+             patch("lit_monitor.server.routes.setup.safe_save_preference"):
             r = client.post(
                 "/setup/complete/notify",
                 data={"viewer": "browser", "enabled": "on", "digest_auto_write": "on"},
@@ -766,8 +766,8 @@ class TestDigestAutoWriteCheckbox:
     def test_post_without_digest_flag_passes_false(self):
         """P10b: POST without digest_auto_write field passes False (unchecked checkbox)."""
         client = self._make_client()
-        with patch("scripts.server.routes.setup.safe_save_digest_auto_write") as m, \
-             patch("scripts.server.routes.setup.safe_save_preference"):
+        with patch("lit_monitor.server.routes.setup.safe_save_digest_auto_write") as m, \
+             patch("lit_monitor.server.routes.setup.safe_save_preference"):
             r = client.post(
                 "/setup/complete/notify",
                 data={"viewer": "browser"},
@@ -804,15 +804,15 @@ class TestRoutingAdvancedEditorComments:
     def _make_client(self):
         from fastapi.testclient import TestClient
 
-        from scripts.server.app import create_app
-        from scripts.server.runtime import reset_runtime
+        from lit_monitor.server.app import create_app
+        from lit_monitor.server.runtime import reset_runtime
 
         reset_runtime()
         return TestClient(create_app())
 
     def test_read_path_preserves_comments(self, tmp_path, monkeypatch):
         """GET /setup/step-8 renders the raw file text, comments included."""
-        from scripts.server import config_io
+        from lit_monitor.server import config_io
 
         (tmp_path / "item_routing.yaml").write_text(self._SEED, encoding="utf-8")
         monkeypatch.setattr(config_io, "CONFIG_DIR", tmp_path)
@@ -826,7 +826,7 @@ class TestRoutingAdvancedEditorComments:
 
     def test_save_path_preserves_comments(self, tmp_path, monkeypatch):
         """POST /setup/api/routing writes the raw textarea text verbatim."""
-        from scripts.server import config_io
+        from lit_monitor.server import config_io
 
         monkeypatch.setattr(config_io, "CONFIG_DIR", tmp_path)
 
@@ -842,7 +842,7 @@ class TestRoutingAdvancedEditorComments:
 
     def test_save_path_rejects_invalid_yaml(self, tmp_path, monkeypatch):
         """Malformed YAML → 4xx, and the existing file is NOT clobbered."""
-        from scripts.server import config_io
+        from lit_monitor.server import config_io
 
         (tmp_path / "item_routing.yaml").write_text(self._SEED, encoding="utf-8")
         monkeypatch.setattr(config_io, "CONFIG_DIR", tmp_path)

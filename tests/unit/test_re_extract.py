@@ -33,7 +33,7 @@ def _make_config(tmp_path: Path) -> SimpleNamespace:
 
 
 def _make_state_db(tmp_path: Path):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
     return StateDB(tmp_path / "state.db")
 
 
@@ -74,7 +74,7 @@ class TestVectorModeUnchanged:
     @pytest.mark.unit
     def test_vector_mode_calls_extract_paper(self, tmp_path):
         """vector mode routes through extract_paper, not the graph path."""
-        from scripts.obsidian_tools.re_extract import re_extract
+        from lit_monitor.obsidian_tools.re_extract import re_extract
 
         config = _make_config(tmp_path)
         state_db = _make_state_db(tmp_path)
@@ -83,10 +83,10 @@ class TestVectorModeUnchanged:
 
         with (
             patch(
-                "scripts.obsidian_tools.re_extract.extract_paper",
+                "lit_monitor.obsidian_tools.re_extract.extract_paper",
                 return_value=_MOCK_EXTRACTION,
             ) as mock_extract,
-            patch("scripts.obsidian_tools.re_extract.rerender_note"),
+            patch("lit_monitor.obsidian_tools.re_extract.rerender_note"),
         ):
             result = re_extract(
                 doi=doi,
@@ -104,7 +104,7 @@ class TestVectorModeUnchanged:
     @pytest.mark.unit
     def test_vector_mode_does_not_open_graph_db(self, tmp_path):
         """vector mode must NOT touch GraphDB at all."""
-        from scripts.obsidian_tools.re_extract import re_extract
+        from lit_monitor.obsidian_tools.re_extract import re_extract
 
         config = _make_config(tmp_path)
         state_db = _make_state_db(tmp_path)
@@ -113,12 +113,12 @@ class TestVectorModeUnchanged:
 
         with (
             patch(
-                "scripts.obsidian_tools.re_extract.extract_paper",
+                "lit_monitor.obsidian_tools.re_extract.extract_paper",
                 return_value=_MOCK_EXTRACTION,
             ),
-            patch("scripts.obsidian_tools.re_extract.rerender_note"),
+            patch("lit_monitor.obsidian_tools.re_extract.rerender_note"),
             patch(
-                "scripts.obsidian_tools.re_extract._open_graph_db_safe"
+                "lit_monitor.obsidian_tools.re_extract._open_graph_db_safe"
             ) as mock_open,
         ):
             re_extract(
@@ -179,7 +179,7 @@ class TestGraphModeInjectsContext:
     @pytest.mark.unit
     def test_graph_mode_renders_context_in_llm_prompt(self, tmp_path):
         """graph mode calls llm.complete with a user message containing graph context."""
-        from scripts.obsidian_tools.re_extract import re_extract
+        from lit_monitor.obsidian_tools.re_extract import re_extract
 
         config = _make_config(tmp_path)
         state_db = _make_state_db(tmp_path)
@@ -192,10 +192,10 @@ class TestGraphModeInjectsContext:
 
         with (
             patch(
-                "scripts.obsidian_tools.re_extract._open_graph_db_safe",
+                "lit_monitor.obsidian_tools.re_extract._open_graph_db_safe",
                 return_value=mock_graph_db,
             ),
-            patch("scripts.obsidian_tools.re_extract.rerender_note"),
+            patch("lit_monitor.obsidian_tools.re_extract.rerender_note"),
         ):
             result = re_extract(
                 doi=doi,
@@ -224,7 +224,7 @@ class TestGraphModeInjectsContext:
     @pytest.mark.unit
     def test_graph_mode_persists_merged_extraction(self, tmp_path):
         """graph mode writes merged extraction back to state_db."""
-        from scripts.obsidian_tools.re_extract import re_extract
+        from lit_monitor.obsidian_tools.re_extract import re_extract
 
         config = _make_config(tmp_path)
         state_db = _make_state_db(tmp_path)
@@ -239,10 +239,10 @@ class TestGraphModeInjectsContext:
 
         with (
             patch(
-                "scripts.obsidian_tools.re_extract._open_graph_db_safe",
+                "lit_monitor.obsidian_tools.re_extract._open_graph_db_safe",
                 return_value=mock_graph_db,
             ),
-            patch("scripts.obsidian_tools.re_extract.rerender_note"),
+            patch("lit_monitor.obsidian_tools.re_extract.rerender_note"),
         ):
             re_extract(
                 doi=doi,
@@ -266,7 +266,7 @@ class TestGraphModeFallback:
     @pytest.mark.unit
     def test_falls_back_when_graph_db_none(self, tmp_path, caplog):
         """Missing [graph] extra → fall back to vector mode with WARNING."""
-        from scripts.obsidian_tools.re_extract import re_extract
+        from lit_monitor.obsidian_tools.re_extract import re_extract
 
         config = _make_config(tmp_path)
         state_db = _make_state_db(tmp_path)
@@ -275,15 +275,15 @@ class TestGraphModeFallback:
 
         with (
             patch(
-                "scripts.obsidian_tools.re_extract._open_graph_db_safe",
+                "lit_monitor.obsidian_tools.re_extract._open_graph_db_safe",
                 return_value=None,
             ),
             patch(
-                "scripts.obsidian_tools.re_extract.extract_paper",
+                "lit_monitor.obsidian_tools.re_extract.extract_paper",
                 return_value=_MOCK_EXTRACTION,
             ) as mock_extract,
-            patch("scripts.obsidian_tools.re_extract.rerender_note"),
-            caplog.at_level(logging.WARNING, logger="scripts.obsidian_tools.re_extract"),
+            patch("lit_monitor.obsidian_tools.re_extract.rerender_note"),
+            caplog.at_level(logging.WARNING, logger="lit_monitor.obsidian_tools.re_extract"),
         ):
             result = re_extract(
                 doi=doi,
@@ -313,10 +313,10 @@ class TestGraphModeFallback:
         This is the unit test for _open_graph_db_safe's own error handling;
         re_extract treats None as a fallback signal (covered by the None test above).
         """
-        from scripts.obsidian_tools.re_extract import _open_graph_db_safe
+        from lit_monitor.obsidian_tools.re_extract import _open_graph_db_safe
 
         with patch(
-            "scripts.graph.import_citations.safe_graph_db",
+            "lit_monitor.graph.import_citations.safe_graph_db",
             side_effect=RuntimeError("kuzu database locked"),
         ):
             result = _open_graph_db_safe()

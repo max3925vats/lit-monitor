@@ -5,7 +5,7 @@ import logging
 
 import pytest
 
-import scripts.core.strict_mode as _sm
+import lit_monitor.core.strict_mode as _sm
 
 
 def _reset() -> None:

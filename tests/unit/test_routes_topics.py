@@ -21,8 +21,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.server.app import create_app
-from scripts.server.runtime import ServerRuntime
+from lit_monitor.server.app import create_app
+from lit_monitor.server.runtime import ServerRuntime
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -99,7 +99,7 @@ class TestRuntimeGraphDbProperty:
         """The property delegates to safe_graph_db() and caches the result."""
         fake = MagicMock(name="fake_graph_db")
         with patch(
-            "scripts.graph.import_citations.safe_graph_db", return_value=fake
+            "lit_monitor.graph.import_citations.safe_graph_db", return_value=fake
         ) as m:
             rt = ServerRuntime()
             assert rt.graph_db is fake
@@ -110,7 +110,7 @@ class TestRuntimeGraphDbProperty:
     def test_graph_db_caches_none(self):
         """A None result (no [graph] extra) is cached, not re-probed."""
         with patch(
-            "scripts.graph.import_citations.safe_graph_db", return_value=None
+            "lit_monitor.graph.import_citations.safe_graph_db", return_value=None
         ) as m:
             rt = ServerRuntime()
             assert rt.graph_db is None
@@ -135,7 +135,7 @@ class TestExpansionSuggestions:
         )
         rt = _runtime_with_graph(graph_db)
 
-        with patch("scripts.server.routes.topics.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.topics.get_runtime", return_value=rt):
             r = client.get("/api/topics/chromatography/expansion-suggestions?top_k=3")
 
         assert r.status_code == 200
@@ -153,7 +153,7 @@ class TestExpansionSuggestions:
         )
         rt = _runtime_with_graph(graph_db)
 
-        with patch("scripts.server.routes.topics.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.topics.get_runtime", return_value=rt):
             r = client.get("/api/topics/filtration/expansion-suggestions?top_k=1")
 
         assert r.status_code == 200
@@ -163,7 +163,7 @@ class TestExpansionSuggestions:
         """graph_db None (no [graph] extra) → empty suggestions, 200."""
         rt = _runtime_with_graph(None)
 
-        with patch("scripts.server.routes.topics.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.topics.get_runtime", return_value=rt):
             r = client.get("/api/topics/chromatography/expansion-suggestions")
 
         assert r.status_code == 200
@@ -174,7 +174,7 @@ class TestExpansionSuggestions:
         graph_db = _make_graph_db_with_entity_and_coentities(None, [])
         rt = _runtime_with_graph(graph_db)
 
-        with patch("scripts.server.routes.topics.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.topics.get_runtime", return_value=rt):
             r = client.get("/api/topics/unknown-topic/expansion-suggestions")
 
         assert r.status_code == 200
@@ -183,6 +183,6 @@ class TestExpansionSuggestions:
     def test_blank_topic_name_422(self, client):
         """Whitespace-only topic name → 422."""
         rt = _runtime_with_graph(MagicMock())
-        with patch("scripts.server.routes.topics.get_runtime", return_value=rt):
+        with patch("lit_monitor.server.routes.topics.get_runtime", return_value=rt):
             r = client.get("/api/topics/%20/expansion-suggestions")
         assert r.status_code == 422

@@ -31,7 +31,7 @@ def _make_config(tmp_path: Path) -> MagicMock:
 @pytest.mark.unit
 def test_brain_build_report_has_seven_sections(tmp_path):
     """write_brain_build_report() must produce exactly 7 markdown sections (## N)."""
-    from scripts.pipelines.brain_build import BuildSummary, write_brain_build_report
+    from lit_monitor.pipelines.brain_build import BuildSummary, write_brain_build_report
 
     cfg = _make_config(tmp_path)
     summary = BuildSummary(
@@ -55,7 +55,7 @@ def test_brain_build_report_has_seven_sections(tmp_path):
 @pytest.mark.unit
 def test_brain_build_report_crossref_and_no_doi_listed(tmp_path):
     """CrossRef resolutions and no-DOI items are rendered in the report."""
-    from scripts.pipelines.brain_build import BuildSummary, write_brain_build_report
+    from lit_monitor.pipelines.brain_build import BuildSummary, write_brain_build_report
 
     cfg = _make_config(tmp_path)
     summary = BuildSummary(

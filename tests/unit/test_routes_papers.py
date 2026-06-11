@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.server.app import create_app
+from lit_monitor.server.app import create_app
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -56,7 +56,7 @@ def client() -> TestClient:
 class TestPaperSnapshot:
     def test_known_doi_200(self, client):
         """H4: known DOI → 200 with correct snapshot body."""
-        import scripts.server.routes.papers as papers_route
+        import lit_monitor.server.routes.papers as papers_route
 
         with (
             patch.object(papers_route, "safe_graph_db", return_value=_FAKE_GRAPH_DB),
@@ -71,7 +71,7 @@ class TestPaperSnapshot:
 
     def test_known_doi_shape_has_all_keys(self, client):
         """H4: response includes all four top-level snapshot keys."""
-        import scripts.server.routes.papers as papers_route
+        import lit_monitor.server.routes.papers as papers_route
 
         with (
             patch.object(papers_route, "safe_graph_db", return_value=_FAKE_GRAPH_DB),
@@ -89,7 +89,7 @@ class TestPaperSnapshot:
         on a fresh checkout or in CI) must degrade to no Zotero linkage, not crash
         the snapshot route. Reproduces the CI FileNotFoundError without needing a
         real config on the test machine."""
-        import scripts.server.routes.papers as papers_route
+        import lit_monitor.server.routes.papers as papers_route
 
         def _boom():
             raise FileNotFoundError("config/paths.yaml not found")
@@ -113,7 +113,7 @@ class TestPaperSnapshot:
             "relationships_in": [],
             "relationships_out": [],
         }
-        import scripts.server.routes.papers as papers_route
+        import lit_monitor.server.routes.papers as papers_route
 
         with (
             patch.object(papers_route, "safe_graph_db", return_value=_FAKE_GRAPH_DB),
@@ -133,7 +133,7 @@ class TestPaperSnapshot:
 class TestPaperSnapshotNotFound:
     def test_unknown_doi_404(self, client):
         """H4: get_paper_snapshot returns empty metadata → 404."""
-        import scripts.server.routes.papers as papers_route
+        import lit_monitor.server.routes.papers as papers_route
 
         with (
             patch.object(papers_route, "safe_graph_db", return_value=_FAKE_GRAPH_DB),
@@ -145,7 +145,7 @@ class TestPaperSnapshotNotFound:
 
     def test_unknown_doi_error_detail(self, client):
         """H4: 404 detail message references the DOI."""
-        import scripts.server.routes.papers as papers_route
+        import lit_monitor.server.routes.papers as papers_route
 
         with (
             patch.object(papers_route, "safe_graph_db", return_value=_FAKE_GRAPH_DB),
@@ -181,7 +181,7 @@ class TestPaperSnapshotMalformedDOI:
 
     def test_valid_doi_format_not_422(self, client):
         """H4: sanity check — well-formed DOI passes the regex guard (may 404 or 200)."""
-        import scripts.server.routes.papers as papers_route
+        import lit_monitor.server.routes.papers as papers_route
 
         with (
             patch.object(papers_route, "safe_graph_db", return_value=_FAKE_GRAPH_DB),
@@ -202,7 +202,7 @@ class TestPaperSnapshotMalformedDOI:
 class TestPaperSnapshotBackendUnavailable:
     def test_graph_db_none_503(self, client):
         """H4: safe_graph_db() returns None → 503 (backend not installed)."""
-        import scripts.server.routes.papers as papers_route
+        import lit_monitor.server.routes.papers as papers_route
 
         with patch.object(papers_route, "safe_graph_db", return_value=None):
             r = client.get("/api/papers/10.1234/x")
@@ -211,7 +211,7 @@ class TestPaperSnapshotBackendUnavailable:
 
     def test_graph_db_none_does_not_call_snapshot(self, client):
         """H4: when graph is None, get_paper_snapshot must NOT be called."""
-        import scripts.server.routes.papers as papers_route
+        import lit_monitor.server.routes.papers as papers_route
 
         mock_snapshot = MagicMock(return_value=_GOOD_SNAPSHOT)
         with (
@@ -235,7 +235,7 @@ class TestRelatedPapers:
         from unittest.mock import patch
 
         with patch(
-            "scripts.server.routes.papers.get_related_papers",
+            "lit_monitor.server.routes.papers.get_related_papers",
             return_value=[{"doi": "10.1/r", "score": 0.9}],
         ) as m:
             r = client.get("/api/papers/10.1234/ok/related")
@@ -252,7 +252,7 @@ class TestRelatedPapers:
         from unittest.mock import patch
 
         with patch(
-            "scripts.server.routes.papers.get_related_papers",
+            "lit_monitor.server.routes.papers.get_related_papers",
             return_value=[],
         ) as m:
             r = client.get("/api/papers/10.1234/ok/related?mode=graph&k=5")
@@ -286,7 +286,7 @@ class TestRelatedPapers:
         from unittest.mock import patch
 
         with patch(
-            "scripts.server.routes.papers.get_related_papers",
+            "lit_monitor.server.routes.papers.get_related_papers",
             return_value=None,
         ):
             r = client.get("/api/papers/10.1234/missing/related")
@@ -307,11 +307,11 @@ class TestRelatedPapers:
                 closed["n"] += 1
 
         monkeypatch.setattr(
-            "scripts.server.routes.papers.safe_graph_db",
+            "lit_monitor.server.routes.papers.safe_graph_db",
             lambda *a, **k: _FakeDB(),
         )
         monkeypatch.setattr(
-            "scripts.server.routes.papers.get_related_papers",
+            "lit_monitor.server.routes.papers.get_related_papers",
             lambda *a, **k: [{"doi": "10.1/x", "score": 1.0}],
         )
         r = client.get("/api/papers/10.1234/abc/related")
@@ -333,7 +333,7 @@ class TestRelatedPapers:
                 closed["n"] += 1
 
         monkeypatch.setattr(
-            "scripts.server.routes.papers.safe_graph_db",
+            "lit_monitor.server.routes.papers.safe_graph_db",
             lambda *a, **k: _FakeDB(),
         )
 
@@ -341,7 +341,7 @@ class TestRelatedPapers:
             raise RuntimeError("kuzu boom")
 
         monkeypatch.setattr(
-            "scripts.server.routes.papers.get_related_papers", _boom
+            "lit_monitor.server.routes.papers.get_related_papers", _boom
         )
         # The route does not wrap the error in a 500-guard; the exception
         # propagates.  raise_server_exceptions=False lets us observe the 500
@@ -364,9 +364,9 @@ class TestRelink:
         from unittest.mock import patch
 
         # _doi_exists must return True for the route to invoke the tool
-        monkeypatch.setattr("scripts.server.routes.papers._doi_exists", lambda doi: True)
+        monkeypatch.setattr("lit_monitor.server.routes.papers._doi_exists", lambda doi: True)
         with patch(
-            "scripts.server.routes.papers._invoke_relink",
+            "lit_monitor.server.routes.papers._invoke_relink",
             return_value={"relinked": 3, "added": 2},
         ) as m:
             r = client.post("/api/papers/10.1234/ok/relink")
@@ -380,7 +380,7 @@ class TestRelink:
 
     def test_relink_unknown_doi_404(self, client, monkeypatch):
         """H7: DOI not found in state.db → 404."""
-        monkeypatch.setattr("scripts.server.routes.papers._doi_exists", lambda doi: False)
+        monkeypatch.setattr("lit_monitor.server.routes.papers._doi_exists", lambda doi: False)
         r = client.post("/api/papers/10.1234/missing/relink")
         assert r.status_code == 404
 
@@ -396,13 +396,13 @@ class TestRelink:
         import logging
         from unittest.mock import patch
 
-        monkeypatch.setattr("scripts.server.routes.papers._doi_exists", lambda doi: True)
+        monkeypatch.setattr("lit_monitor.server.routes.papers._doi_exists", lambda doi: True)
         # FileNotFoundError stringifies to include the offending path — exactly
         # the kind of detail that must never reach the client.
         secret_path = "/Users/secret/vault/notes/10.1234-ok.md"
-        with caplog.at_level(logging.ERROR, logger="scripts.server.routes.papers"):
+        with caplog.at_level(logging.ERROR, logger="lit_monitor.server.routes.papers"):
             with patch(
-                "scripts.server.routes.papers._invoke_relink",
+                "lit_monitor.server.routes.papers._invoke_relink",
                 side_effect=FileNotFoundError(secret_path),
             ):
                 r = client.post("/api/papers/10.1234/ok/relink")
@@ -432,9 +432,9 @@ class TestReExtract:
         """H7: valid DOI + known paper + successful tool → 200 with ok status."""
         from unittest.mock import patch
 
-        monkeypatch.setattr("scripts.server.routes.papers._doi_exists", lambda doi: True)
+        monkeypatch.setattr("lit_monitor.server.routes.papers._doi_exists", lambda doi: True)
         with patch(
-            "scripts.server.routes.papers._invoke_re_extract",
+            "lit_monitor.server.routes.papers._invoke_re_extract",
             return_value={"phase1": "ok", "phase2": "ok"},
         ):
             r = client.post("/api/papers/10.1234/ok/re-extract")
@@ -446,7 +446,7 @@ class TestReExtract:
 
     def test_re_extract_unknown_404(self, client, monkeypatch):
         """H7: DOI not found in state.db → 404."""
-        monkeypatch.setattr("scripts.server.routes.papers._doi_exists", lambda doi: False)
+        monkeypatch.setattr("lit_monitor.server.routes.papers._doi_exists", lambda doi: False)
         r = client.post("/api/papers/10.1234/missing/re-extract")
         assert r.status_code == 404
 
@@ -462,10 +462,10 @@ class TestReExtract:
         import logging
         from unittest.mock import patch
 
-        monkeypatch.setattr("scripts.server.routes.papers._doi_exists", lambda doi: True)
-        with caplog.at_level(logging.ERROR, logger="scripts.server.routes.papers"):
+        monkeypatch.setattr("lit_monitor.server.routes.papers._doi_exists", lambda doi: True)
+        with caplog.at_level(logging.ERROR, logger="lit_monitor.server.routes.papers"):
             with patch(
-                "scripts.server.routes.papers._invoke_re_extract",
+                "lit_monitor.server.routes.papers._invoke_re_extract",
                 side_effect=RuntimeError("LLM timeout at /tmp/llm/cache.db"),
             ):
                 r = client.post("/api/papers/10.1234/ok/re-extract")
@@ -491,12 +491,12 @@ class TestReExtract:
 @pytest.fixture()
 def client_with_db(tmp_path) -> TestClient:
     """TestClient backed by a real create_app() with a real (empty) StateDB."""
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     db = StateDB(tmp_path / "state.db")
 
     # Monkeypatch _get_score_breakdown_db so the route uses our temp DB
-    import scripts.server.routes.papers as _papers_mod
+    import lit_monitor.server.routes.papers as _papers_mod
     _orig = getattr(_papers_mod, "_get_score_breakdown_db", None)
 
     app = create_app()
@@ -510,8 +510,8 @@ def client_with_db(tmp_path) -> TestClient:
 def client_with_seeded_run(tmp_path) -> TestClient:
     """TestClient with a StateDB that has one run + one paper with score_breakdown."""
 
-    import scripts.server.routes.papers as _papers_mod
-    from scripts.core.state_db import StateDB
+    import lit_monitor.server.routes.papers as _papers_mod
+    from lit_monitor.core.state_db import StateDB
 
     db = StateDB(tmp_path / "state.db")
     run_id = db.start_discovery_run(run_params=None)
@@ -595,10 +595,10 @@ class TestScoreBreakdownEndpoint:
 def test_paper_snapshot_route_includes_zotero_key(monkeypatch, tmp_path):
     from fastapi.testclient import TestClient
 
-    import scripts.server.routes.papers as papers_mod
-    from scripts.core.state_db import StateDB
-    from scripts.graph import GraphDB
-    from scripts.server.app import create_app
+    import lit_monitor.server.routes.papers as papers_mod
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.graph import GraphDB
+    from lit_monitor.server.app import create_app
 
     graph = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
     graph.add_paper(

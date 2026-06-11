@@ -1,0 +1,434 @@
+"""
+Core configuration loader.
+Loads and validates config/paths.yaml and config/extraction.yaml.
+Secrets (Zotero key, API keys) are read from ~/.config/lit-monitor/config.toml
+which is never read by this module — only check_configured.py touches it.
+"""
+from __future__ import annotations
+
+import logging
+import os
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from lit_monitor.core.config_schema import ExtractionConfig, PathsConfig
+from lit_monitor.core.strict_mode import strict_fallback
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+_DEFAULT_CONFIG_DIR = Path.home() / ".config" / "lit-monitor"
+_DEFAULT_SECRETS_PATH = _DEFAULT_CONFIG_DIR / "config.toml"
+
+
+def _find_project_root() -> Path:
+    """Locate the project root containing pyproject.toml.
+
+    Search order:
+    1. LIT_MONITOR_ROOT env var (hard override for any install layout)
+    2. Walk up from CWD — works when running lit-monitor from the project dir
+    3. Walk up from __file__ — works for editable installs / venv setups
+    Raises RuntimeError if no pyproject.toml is found in either walk.
+    """
+    if root := os.environ.get("LIT_MONITOR_ROOT"):
+        return Path(root)
+    # CWD walk-up: the common case — user runs from the project directory
+    candidate = Path.cwd()
+    for _ in range(8):
+        if (candidate / "pyproject.toml").exists():
+            return candidate
+        candidate = candidate.parent
+    # __file__ walk-up: editable installs / .venv inside project root
+    candidate = Path(__file__).resolve().parent
+    for _ in range(12):
+        if (candidate / "pyproject.toml").exists():
+            return candidate
+        candidate = candidate.parent
+    raise RuntimeError(
+        "lit-monitor: could not locate project root (no pyproject.toml found).\n"
+        "Either run lit-monitor from within the project directory, or set the\n"
+        "LIT_MONITOR_ROOT environment variable to the project path."
+    )
+
+
+_PROJECT_ROOT = _find_project_root()
+_CONFIG_DIR = _PROJECT_ROOT / "config"
+# ---------------------------------------------------------------------------
+# Config classes (simple namespaces — not dataclasses to keep it lightweight)
+# ---------------------------------------------------------------------------
+class _Namespace:
+    """Dot-access dict wrapper."""
+    def __init__(self, data: dict[str, Any]) -> None:
+        for k, v in data.items():
+            setattr(self, k, _Namespace(v) if isinstance(v, dict) else v)
+    def get(self, attr: str, default: Any = None) -> Any:
+        return getattr(self, attr, default)
+class Config:
+    """
+    Top-level configuration object assembled from:
+    - config/paths.yaml      — filesystem paths (vault, zotero, state db, logs)
+    - config/extraction.yaml — LLM model selection per pipeline mode
+    - config/topics.yaml     — recurring search queries  (optional)
+    - config/researchers.yaml — tracked researchers   (optional)
+    - config/concepts.yaml   — vocabulary themes      (optional)
+    - config/domain_context.yaml — domain description (optional)
+    - ~/.config/lit-monitor/config.toml — API keys and credentials (never read here)
+    All paths are normalised (~ expanded, forward/backslash unified) at load time.
+    """
+    def __init__(
+        self,
+        paths_yaml: Path | None = None,
+        extraction_yaml: Path | None = None,
+    ) -> None:
+        paths_yaml = paths_yaml or _CONFIG_DIR / "paths.yaml"
+        extraction_yaml = extraction_yaml or _CONFIG_DIR / "extraction.yaml"
+        raw_paths = _load_yaml(paths_yaml)
+        # Validate structure; validated model provides Pydantic-coerced values.
+        validated_paths = PathsConfig.model_validate(raw_paths)
+
+        raw_extraction = _load_yaml(extraction_yaml)
+        # Validates provider, temperature ranges, etc. before any LLM call.
+        validated_extraction = ExtractionConfig.model_validate(raw_extraction)
+        # --- Zotero paths (read from validated model so defaults and types are correct) ---
+        z = validated_paths.zotero
+        self.zotero = _Namespace({
+            "library_type": z.library_type,
+            "library_id": z.library_id,
+            "local_storage_path": _expand(z.local_storage_path),
+            "collection_name": z.collection_name,
+        })
+        # --- Obsidian paths ---
+        o = validated_paths.obsidian
+        vault_path = o.vault_path
+        _validate_vault_path(vault_path)
+        self.obsidian = _Namespace({
+            "vault_path": Path(vault_path),
+            "papers_folder": o.papers_folder,
+            "books_folder": o.books_folder,
+            "digests_folder": o.digests_folder,
+            "connections_folder": o.connections_folder,
+        })
+        # --- State DB ---
+        self.state_db = _Namespace({
+            "path": Path(_expand(validated_paths.state_db.path)),
+        })
+        # --- Logs ---
+        lg = validated_paths.logs
+        self.logs = _Namespace({
+            "path": Path(_expand(lg.path)),
+            "retention_days": lg.retention_days,  # already int via Pydantic
+        })
+        # --- Extraction (LLM config per mode — use model_dump() so Pydantic
+        #     coercions like temperature→float and default values apply) ---
+        self.brain_build = _Namespace(validated_extraction.brain_build.model_dump())
+        self.ingestion = _Namespace(validated_extraction.ingestion.model_dump())
+        self.build_vocabulary = _Namespace(validated_extraction.build_vocabulary.model_dump())
+        self.embeddings = _Namespace(validated_extraction.embeddings.model_dump())
+        # Dump back to dicts so downstream code (model_compare.py) can keep
+        # using ``m.get('provider', ...)`` / ``m.get('model', ...)`` patterns.
+        self.comparison_models: list[dict] = [
+            m.model_dump() for m in validated_extraction.comparison_models
+        ]
+        # --- P10: Discovery config (notify + per-paper notes control) ---
+        # Read directly from raw_extraction so the block is optional; missing
+        # keys default to safe values.  Nested dicts become _Namespace objects
+        # so callers can use dot-access (config.discovery.notes.auto_write_per_paper).
+        raw_discovery = raw_extraction.get("discovery", {}) or {}
+        _raw_disc_notes = raw_discovery.get("notes", {}) or {}
+        _raw_disc_digest = raw_discovery.get("digest", {}) or {}
+        self.discovery = _Namespace({
+            "notify": raw_discovery.get("notify", {}) or {},
+            "notes": _Namespace({
+                # Default TRUE — preserves existing inline write behaviour.
+                "auto_write_per_paper": bool(
+                    _raw_disc_notes.get("auto_write_per_paper", True)
+                ),
+            }),
+            # P10b: controls whether the weekly digest .md is written automatically.
+            "digest": _Namespace({
+                # Default TRUE — preserves existing run-end digest write behaviour.
+                "auto_write": bool(
+                    _raw_disc_digest.get("auto_write", True)
+                ),
+            }),
+        })
+        # --- G9: Retrieval config (default_mode + graph_db location) ---
+        raw_retrieval = raw_extraction.get("retrieval", {})
+        _ret_mode = raw_retrieval.get("default_mode", "vector")
+        if _ret_mode not in {"vector", "graph", "hybrid"}:
+            import warnings
+            warnings.warn(
+                f"retrieval.default_mode {_ret_mode!r} is not one of "
+                "vector/graph/hybrid — falling back to 'vector'.",
+                stacklevel=2,
+            )
+            _ret_mode = "vector"
+        _ret_graph = raw_retrieval.get("graph_db", {}) or {}
+        self.retrieval = _Namespace({
+            "default_mode": _ret_mode,
+            "graph_db": _Namespace(_ret_graph) if isinstance(_ret_graph, dict) else _ret_graph,
+        })
+        # --- Bundle F: embedding provider config (all defaults → ollama/mxbai behavior) ---
+        # Read from raw_extraction; missing key defaults to safe values preserving
+        # the pre-Bundle-F behavior (ollama, mxbai-embed-large, 1024-dim).
+        raw_embedding = raw_extraction.get("embedding", {}) or {}
+        _raw_emb_ollama = raw_embedding.get("ollama", {}) or {}
+        _raw_emb_litellm = raw_embedding.get("litellm", {}) or {}
+        self.embedding = _Namespace({
+            # Default: ollama — preserves existing behavior for all current installs.
+            "provider": raw_embedding.get("provider", "ollama"),
+            "ollama": _Namespace({
+                "host": _raw_emb_ollama.get("host", "http://localhost:11434"),
+                "model": _raw_emb_ollama.get("model", "mxbai-embed-large"),
+                "dim": int(_raw_emb_ollama.get("dim", 1024)),
+            }),
+            "litellm": _Namespace({
+                "model": _raw_emb_litellm.get("model", "text-embedding-3-large"),
+                "dim": int(_raw_emb_litellm.get("dim", 3072)),
+            }),
+        })
+        # --- Bundle A: context-aware ranking config (all defaults → v0.8.0 behavior) ---
+        # Read from raw_extraction; missing key defaults to an empty dict so every
+        # sub-key falls through to its safe default value.
+        raw_ranking = raw_extraction.get("ranking", {}) or {}
+        _raw_weights = raw_ranking.get("weights", {}) or {}
+        _raw_domain_filter = raw_ranking.get("domain_filter", {}) or {}
+        _raw_s2_cap = raw_ranking.get("s2_supplement_cap", {}) or {}
+        self.ranking = _Namespace({
+            # Signal weight — 0.0 means "no domain_context contribution" (v0.8.0 behavior)
+            "weights": _Namespace({
+                "domain_context": float(_raw_weights.get("domain_context", 0.0)),
+            }),
+            # Pre-rank semantic filter — disabled by default (v0.8.0 behavior)
+            "domain_filter": _Namespace({
+                "enabled": bool(_raw_domain_filter.get("enabled", False)),
+                "threshold": float(_raw_domain_filter.get("threshold", 0.35)),
+                # Soft floor: fraction of digest slots always reserved for off-domain candidates
+                "minimum_off_domain_slots_pct": float(
+                    _raw_domain_filter.get("minimum_off_domain_slots_pct", 0.05)
+                ),
+            }),
+            # S2 supplement cap — disabled by default (v0.8.0 behavior)
+            "s2_supplement_cap": _Namespace({
+                "enabled": bool(_raw_s2_cap.get("enabled", False)),
+                "min_relevance": float(_raw_s2_cap.get("min_relevance", 0.4)),
+            }),
+        })
+        # --- Bundle C: clustering config (default on; all write-backs opt-in) ---
+        # Gated by min_papers_threshold — feature is a no-op below threshold.
+        raw_clustering = raw_extraction.get("clustering", {}) or {}
+        _raw_wb = raw_clustering.get("write_back", {}) or {}
+        _raw_wb_tags = _raw_wb.get("tags", {}) or {}
+        _raw_wb_cols = _raw_wb.get("collections", {}) or {}
+        _raw_priors = raw_clustering.get("use_existing_collections_as_priors", {}) or {}
+        self.clustering = _Namespace({
+            # Feature gate — disabled gracefully below threshold.
+            "enabled": bool(raw_clustering.get("enabled", True)),
+            "min_papers_threshold": int(raw_clustering.get("min_papers_threshold", 100)),
+            "k_min": int(raw_clustering.get("k_min", 5)),
+            "k_max": int(raw_clustering.get("k_max", 15)),
+            "recompute_frequency": raw_clustering.get("recompute_frequency", "nightly"),
+            # Tier-3 opt-in: use named Zotero collections as cluster seeds.
+            "use_existing_collections_as_priors": _Namespace({
+                "enabled": bool(_raw_priors.get("enabled", False)),
+                "collection_names": list(_raw_priors.get("collection_names", [])),
+            }),
+            # Write-back: all opt-in (default off).
+            "write_back": _Namespace({
+                "tags": _Namespace({
+                    "enabled": bool(_raw_wb_tags.get("enabled", False)),
+                    "namespace": str(_raw_wb_tags.get("namespace", "lm")),
+                }),
+                "collections": _Namespace({
+                    "enabled": bool(_raw_wb_cols.get("enabled", False)),
+                    "parent_collection": str(
+                        _raw_wb_cols.get("parent_collection", "lit-monitor")
+                    ),
+                }),
+            }),
+        })
+        # --- Bundle C: extend ranking weights with cluster_centroid ---
+        # Inject after self.ranking is already built so we can safely .weights
+        _raw_weights_c = raw_ranking.get("weights", {}) or {}
+        self.ranking.weights.cluster_centroid = float(
+            _raw_weights_c.get("cluster_centroid", 0.0)
+        )
+        # --- Bundle J2 (v1.0): interest-vector (feedback) signal weight ---
+        # 0.0 (default) → the active-learning loop is fully off until the user
+        # opts in AND enough feedback has accumulated (rank-time soft-gate).
+        self.ranking.weights.feedback = float(
+            _raw_weights_c.get("feedback", 0.0)
+        )
+        # --- Bundle D: extend ranking weights with graph signal weights ---
+        # All default 0.0 → byte-for-byte v0.8/A/B/C regression preserved.
+        self.ranking.weights.graph_entity_overlap = float(
+            _raw_weights_c.get("graph_entity_overlap", 0.0)
+        )
+        self.ranking.weights.graph_citation = float(
+            _raw_weights_c.get("graph_citation", 0.0)
+        )
+        self.ranking.weights.graph_shared_authors = float(
+            _raw_weights_c.get("graph_shared_authors", 0.0)
+        )
+        # --- Bundle E (v0.9): trending_concepts, query_expansion, researcher_gating ---
+        # All three default to off so existing v0.8 behavior is byte-for-byte preserved.
+        _raw_tc = (raw_extraction.get("trending_concepts") or {}) if isinstance(raw_extraction, dict) else {}
+        self.trending_concepts = _Namespace({
+            "enabled": bool(_raw_tc.get("enabled", False)),
+            "threshold_growth_rate": float(_raw_tc.get("threshold_growth_rate", 0.3)),
+            "min_recent_mentions": int(_raw_tc.get("min_recent_mentions", 5)),
+            "cooldown_days_after_dismiss": int(_raw_tc.get("cooldown_days_after_dismiss", 60)),
+        })
+        _raw_qe = (raw_extraction.get("query_expansion") or {}) if isinstance(raw_extraction, dict) else {}
+        self.query_expansion = _Namespace({
+            "enabled": bool(_raw_qe.get("enabled", False)),
+            "top_k_co_entities": int(_raw_qe.get("top_k_co_entities", 3)),
+        })
+        _raw_rg = (raw_extraction.get("researcher_gating") or {}) if isinstance(raw_extraction, dict) else {}
+        self.researcher_gating = _Namespace({
+            "enabled": bool(_raw_rg.get("enabled", False)),
+            "min_graph_overlap": int(_raw_rg.get("min_graph_overlap", 1)),
+        })
+        # --- Bundle K (v1.0): atrophy / feedback floor + exploration budget ---
+        # minimum_cluster_floor (K-a) is the lower clamp on a cluster's atrophy
+        # feedback_weight; exploration_budget_pct (K-b) is read here so both
+        # sub-bundles share one config section (K-b is inert until it lands).
+        _raw_fb = (raw_extraction.get("feedback") or {}) if isinstance(raw_extraction, dict) else {}
+        self.feedback = _Namespace({
+            "minimum_cluster_floor": float(_raw_fb.get("minimum_cluster_floor", 0.1)),
+            "exploration_budget_pct": float(_raw_fb.get("exploration_budget_pct", 0.20)),
+            # K-b: a cluster is "under-engaged" once it has surfaced no paper in a
+            # discovery run within the last cluster_quiet_weeks weeks.
+            "cluster_quiet_weeks": int(_raw_fb.get("cluster_quiet_weeks", 4)),
+        })
+        # --- Optional configs (loaded lazily if files exist) ---
+        self._topics: list[dict] | None = None
+        self._discovery_top_k: int = 20
+        self._date_window_days: int = 14
+        self._researchers: list[dict] | None = None
+        self._concepts: dict | None = None
+        self._domain_context: str = ""
+    # -- Optional config accessors --
+    @property
+    def topics(self) -> list[dict]:
+        if self._topics is None:
+            p = _CONFIG_DIR / "topics.yaml"
+            if p.exists():
+                raw = _load_yaml(p)
+                self._topics = raw.get("searches", [])
+
+                self._discovery_top_k = raw.get("discovery_top_k", 20)
+                self._date_window_days = raw.get("date_window_days", 14)
+            else:
+                self._topics = []
+                self._discovery_top_k = 20
+                self._date_window_days = 14
+        return self._topics
+    @property
+    def discovery_top_k(self) -> int:
+        self.topics  # ensure topics.yaml is loaded and cached
+        return self._discovery_top_k
+    @property
+    def date_window_days(self) -> int:
+        self.topics  # ensure topics.yaml is loaded and cached
+        return self._date_window_days
+    @property
+    def researchers(self) -> list[dict]:
+        if self._researchers is None:
+            p = _CONFIG_DIR / "researchers.yaml"
+            self._researchers = (
+                _load_yaml(p).get("researchers", []) if p.exists() else []
+            )
+        return self._researchers
+    @property
+    def concepts(self) -> dict:
+        if self._concepts is None:
+            p = _CONFIG_DIR / "concepts.yaml"
+            self._concepts = _load_yaml(p) if p.exists() else {}
+        return self._concepts
+    @property
+    def domain_context(self) -> str:
+        if not self._domain_context:
+            p = _CONFIG_DIR / "domain_context.yaml"
+            if p.exists():
+                self._domain_context = _load_yaml(p).get("domain_focus", "")
+        return self._domain_context
+    # -- Convenience helpers --
+    def obsidian_paper_dir(self) -> Path:
+        return self.obsidian.vault_path / self.obsidian.papers_folder
+    def obsidian_book_dir(self) -> Path:
+        return self.obsidian.vault_path / self.obsidian.books_folder
+    def obsidian_digest_dir(self) -> Path:
+        return self.obsidian.vault_path / self.obsidian.digests_folder
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+_config_logger = logging.getLogger(__name__)
+
+
+def _load_yaml(path: Path) -> dict:
+    if not path.exists():
+        raise FileNotFoundError(f"Config file not found: {path}")
+    try:
+        with path.open(encoding="utf-8") as fh:
+            data = yaml.safe_load(fh)
+    except yaml.YAMLError as exc:
+        # Parse failures are operator-actionable: log ERROR (not WARNING)
+        # so they show up in standard log filters, then route through
+        # strict_fallback so strict mode raises instead of swallowing.
+        _config_logger.error("YAML parse failed in %s: %s", path, exc)
+        strict_fallback(
+            _config_logger,
+            f"YAML parse failed in {path}: {exc} — treating as empty dict.",
+            exc,
+        )
+        return {}
+    if not isinstance(data, dict):
+        strict_fallback(
+            _config_logger,
+            f"Config file {path} did not parse to a dict "
+            f"(got {type(data).__name__!r}) — treating as empty. "
+            "Check for YAML syntax errors or an empty file.",
+        )
+        return {}
+    return data
+
+def _expand(raw: str) -> str:
+    """Expand ~ and environment variables; normalise to forward slashes."""
+    expanded = os.path.expandvars(os.path.expanduser(raw))
+    return str(Path(expanded))
+def _validate_vault_path(vault_path: str) -> None:
+    """
+    Raise ValueError if vault_path starts with ~ or is empty.
+    The Obsidian vault path must be a full absolute path because:
+    1. ~ is not expanded on all platforms predictably.
+    2. Obsidian syncs to iCloud on macOS, placing the vault outside the
+       home directory on some configurations.
+    """
+    if not vault_path:
+        raise ValueError(
+            "obsidian.vault_path is not set in config/paths.yaml. "
+            "Set it to the full absolute path to your Obsidian vault."
+        )
+    if vault_path.startswith("~"):
+        raise ValueError(
+            f"obsidian.vault_path must be a full absolute path, not starting "
+            f"with '~'. Got: {vault_path!r}"
+        )
+# ---------------------------------------------------------------------------
+# Singleton loader (used by scripts that need config)
+# ---------------------------------------------------------------------------
+_config_cache: Config | None = None
+def get_config(
+    paths_yaml: Path | None = None,
+    extraction_yaml: Path | None = None,
+    *,
+    force_reload: bool = False,
+) -> Config:
+    """Return cached Config, loading on first call."""
+    global _config_cache
+    if _config_cache is None or force_reload:
+        _config_cache = Config(paths_yaml=paths_yaml, extraction_yaml=extraction_yaml)
+    return _config_cache

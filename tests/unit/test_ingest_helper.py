@@ -6,7 +6,7 @@ import pytest
 
 
 def test_happy_path_marks_all_phases():
-    from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+    from lit_monitor.pipelines._ingest import index_embeddings_and_mark_phases
     state_db = MagicMock()
     embeddings_db = MagicMock()
     ok, err = index_embeddings_and_mark_phases(
@@ -31,7 +31,7 @@ def test_happy_path_marks_all_phases():
 
 
 def test_add_paper_failure_skips_phase_marks():
-    from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+    from lit_monitor.pipelines._ingest import index_embeddings_and_mark_phases
     state_db = MagicMock()
     embeddings_db = MagicMock()
     embeddings_db.add_paper.side_effect = RuntimeError("chromadb down")
@@ -53,7 +53,7 @@ def test_add_paper_failure_skips_phase_marks():
 
 def test_add_chunks_failure_still_marks_phases():
     """Non-fatal — chunks failing should NOT block phase progress (preserves prior behavior)."""
-    from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+    from lit_monitor.pipelines._ingest import index_embeddings_and_mark_phases
     state_db = MagicMock()
     embeddings_db = MagicMock()
     embeddings_db.add_chunks.side_effect = RuntimeError("chunks down")
@@ -79,8 +79,8 @@ def test_add_chunks_failure_still_marks_phases():
 def test_add_chunks_failure_raises_under_strict():
     """P4.6: an enrichment-site failure (add_chunks) raises in --strict but is
     downgraded to WARN + continue in non-strict (preserves prior behaviour)."""
-    import scripts.core.strict_mode as _sm
-    from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+    import lit_monitor.core.strict_mode as _sm
+    from lit_monitor.pipelines._ingest import index_embeddings_and_mark_phases
     state_db = MagicMock()
     embeddings_db = MagicMock()
     embeddings_db.add_chunks.side_effect = RuntimeError("chunks down")
@@ -101,8 +101,8 @@ def test_add_chunks_failure_raises_under_strict():
 
 def test_add_paper_failure_raises_under_strict():
     """P4.6: the vector add_paper correctness gate also escalates in --strict."""
-    import scripts.core.strict_mode as _sm
-    from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+    import lit_monitor.core.strict_mode as _sm
+    from lit_monitor.pipelines._ingest import index_embeddings_and_mark_phases
     state_db = MagicMock()
     embeddings_db = MagicMock()
     embeddings_db.add_paper.side_effect = RuntimeError("chromadb down")
@@ -135,7 +135,7 @@ class TestIngestWithGraph:
 
     def _call(self, *, graph_db=None, graph_entities=None, graph_relationships=None,
               embed_fail=False, graph_fail=False):
-        from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+        from lit_monitor.pipelines._ingest import index_embeddings_and_mark_phases
         state_db = MagicMock()
         embeddings_db = MagicMock()
         if embed_fail:
@@ -238,7 +238,7 @@ class TestIngestWithGraph:
     @pytest.mark.parametrize("phase_count", [0, 1, 2])
     def test_no_phases_to_mark_but_graph_still_runs(self, phase_count):
         """G6: graph write happens even when phases_to_mark is empty (e.g. re-ingest)."""
-        from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+        from lit_monitor.pipelines._ingest import index_embeddings_and_mark_phases
         graph_db = MagicMock()
         state_db = MagicMock()
         embeddings_db = MagicMock()
@@ -271,9 +271,9 @@ class TestBuildMentionEdgesFullPath:
     """N4: all three sources (schema + BioBERT + LLM) produce merged MentionEdge list."""
 
     def test_schema_plus_biobert_plus_llm(self):
-        from scripts.graph.ner import NerSpan
-        from scripts.graph.ner_pipeline import build_mention_edges
-        from scripts.graph.normalizer import EntityNormalizer
+        from lit_monitor.graph.ner import NerSpan
+        from lit_monitor.graph.ner_pipeline import build_mention_edges
+        from lit_monitor.graph.normalizer import EntityNormalizer
 
         normalizer = EntityNormalizer(aliases={})
 
@@ -315,9 +315,9 @@ class TestBuildMentionEdgesNoNlp:
     def test_falls_back_to_schema_when_biobert_import_fails(self, caplog):
         import logging
 
-        import scripts.graph.ner_pipeline as np_mod
-        from scripts.graph.ner_pipeline import build_mention_edges
-        from scripts.graph.normalizer import EntityNormalizer
+        import lit_monitor.graph.ner_pipeline as np_mod
+        from lit_monitor.graph.ner_pipeline import build_mention_edges
+        from lit_monitor.graph.normalizer import EntityNormalizer
 
         # Reset once-flag so we see the WARN in this test run.
         np_mod._NLP_MISSING_LOGGED = False
@@ -347,9 +347,9 @@ class TestBuildMentionEdgesNoNlp:
 
     def test_warn_logged_only_once_across_calls(self):
         """The [nlp]-missing WARN must fire at most once per process."""
-        import scripts.graph.ner_pipeline as np_mod
-        from scripts.graph.ner_pipeline import build_mention_edges
-        from scripts.graph.normalizer import EntityNormalizer
+        import lit_monitor.graph.ner_pipeline as np_mod
+        from lit_monitor.graph.ner_pipeline import build_mention_edges
+        from lit_monitor.graph.normalizer import EntityNormalizer
 
         np_mod._NLP_MISSING_LOGGED = False
 
@@ -381,8 +381,8 @@ class TestBuildMentionEdgesLlmDisabled:
     """N4: use_cloud_llm=False skips the LLM step entirely."""
 
     def test_use_cloud_llm_false_skips_llm_call(self):
-        from scripts.graph.ner_pipeline import build_mention_edges
-        from scripts.graph.normalizer import EntityNormalizer
+        from lit_monitor.graph.ner_pipeline import build_mention_edges
+        from lit_monitor.graph.normalizer import EntityNormalizer
 
         normalizer = EntityNormalizer(aliases={})
         called = {"n": 0}
@@ -411,8 +411,8 @@ class TestBuildMentionEdgesNoText:
     """N4: text=None or empty skips BioBERT and LLM (nothing to process)."""
 
     def test_no_text_skips_biobert_and_llm(self):
-        from scripts.graph.ner_pipeline import build_mention_edges
-        from scripts.graph.normalizer import EntityNormalizer
+        from lit_monitor.graph.ner_pipeline import build_mention_edges
+        from lit_monitor.graph.normalizer import EntityNormalizer
 
         normalizer = EntityNormalizer(aliases={})
 
@@ -446,7 +446,7 @@ class TestMaybeExtractLlmRelationships:
 
     def _make_rel(self, doi: str = "10.0/a"):
         """Build a single RelationshipTuple for use as a canned return value."""
-        from scripts.graph.relationship_extractor import RelationshipTuple
+        from lit_monitor.graph.relationship_extractor import RelationshipTuple
         return RelationshipTuple(
             source_doi=doi,
             predicate="EXTENDS",
@@ -466,14 +466,14 @@ class TestMaybeExtractLlmRelationships:
             return [self._make_rel()]
 
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.extract_llm_relationships",
             fake_extract,
         )
 
         cfg = MagicMock()
         cfg.graph.relationships.llm_enabled = False
 
-        from scripts.pipelines._ingest import maybe_extract_llm_relationships
+        from lit_monitor.pipelines._ingest import maybe_extract_llm_relationships
         result = maybe_extract_llm_relationships(
             paper_doi="10.0/a",
             fulltext="paper text",
@@ -494,14 +494,14 @@ class TestMaybeExtractLlmRelationships:
             return canned
 
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.extract_llm_relationships",
             fake_extract,
         )
 
         cfg = MagicMock()
         cfg.graph.relationships.llm_enabled = True
 
-        from scripts.pipelines._ingest import maybe_extract_llm_relationships
+        from lit_monitor.pipelines._ingest import maybe_extract_llm_relationships
         result = maybe_extract_llm_relationships(
             paper_doi="10.0/a",
             fulltext="paper text",
@@ -518,7 +518,7 @@ class TestMaybeExtractLlmRelationships:
             raise RuntimeError("network exploded")
 
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.extract_llm_relationships",
             failing,
         )
 
@@ -527,7 +527,7 @@ class TestMaybeExtractLlmRelationships:
 
         import logging
 
-        from scripts.pipelines._ingest import maybe_extract_llm_relationships
+        from lit_monitor.pipelines._ingest import maybe_extract_llm_relationships
         with caplog.at_level(logging.WARNING):
             result = maybe_extract_llm_relationships(
                 paper_doi="10.0/a",
@@ -544,19 +544,19 @@ class TestMaybeExtractLlmRelationships:
     def test_extractor_exception_raises_under_strict(self, monkeypatch):
         """P4.6: in --strict, an R2 extraction failure escalates to a raise
         instead of being downgraded to an empty list."""
-        import scripts.core.strict_mode as _sm
+        import lit_monitor.core.strict_mode as _sm
 
         def failing(*args, **kwargs):
             raise RuntimeError("network exploded")
 
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.extract_llm_relationships",
             failing,
         )
         cfg = MagicMock()
         cfg.graph.relationships.llm_enabled = True
 
-        from scripts.pipelines._ingest import maybe_extract_llm_relationships
+        from lit_monitor.pipelines._ingest import maybe_extract_llm_relationships
         _sm.set_strict(True)
         with pytest.raises(RuntimeError, match="relationship extraction failed"):
             maybe_extract_llm_relationships(
@@ -575,14 +575,14 @@ class TestMaybeExtractLlmRelationships:
             return [self._make_rel()]
 
         monkeypatch.setattr(
-            "scripts.pipelines._ingest.extract_llm_relationships",
+            "lit_monitor.pipelines._ingest.extract_llm_relationships",
             fake_extract,
         )
 
         cfg = MagicMock()
         cfg.graph.relationships.llm_enabled = True
 
-        from scripts.pipelines._ingest import maybe_extract_llm_relationships
+        from lit_monitor.pipelines._ingest import maybe_extract_llm_relationships
         result = maybe_extract_llm_relationships(
             paper_doi="10.0/a",
             fulltext="",
@@ -608,7 +608,7 @@ class TestMaybeExtractLlmRelationships:
             raising=False,
         )
 
-        from scripts.pipelines._ingest import maybe_extract_llm_relationships
+        from lit_monitor.pipelines._ingest import maybe_extract_llm_relationships
         # Must not raise; must return empty list.
         result = maybe_extract_llm_relationships(
             paper_doi="10.0/a",
@@ -632,7 +632,7 @@ class TestImplicitZoteroSave:
     def _ingest(self, db, doi, *, record_implicit_save):
         import logging as _logging
 
-        from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+        from lit_monitor.pipelines._ingest import index_embeddings_and_mark_phases
         embeddings_db = MagicMock()
         return index_embeddings_and_mark_phases(
             doi=doi,
@@ -654,9 +654,9 @@ class TestImplicitZoteroSave:
         not route through strict_fallback."""
         import logging as _logging
 
-        import scripts.core.strict_mode as _sm
-        from scripts.core.state_db import StateDB
-        from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+        import lit_monitor.core.strict_mode as _sm
+        from lit_monitor.core.state_db import StateDB
+        from lit_monitor.pipelines._ingest import index_embeddings_and_mark_phases
 
         db = StateDB(tmp_path / "state.db")
         run_id = db.start_discovery_run({})
@@ -683,7 +683,7 @@ class TestImplicitZoteroSave:
         assert ok and err is None
 
     def test_surfaced_paper_records_one_implicit_save(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         run_id = db.start_discovery_run({})
         db.add_discovery_paper(run_id, "10.1/rec", "Recommended", 0.9, "", ingested=False)
@@ -699,7 +699,7 @@ class TestImplicitZoteroSave:
 
     def test_never_surfaced_paper_records_nothing(self, tmp_path):
         """A library-baseline paper (never in any discovery run) → no event."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
 
         ok, err = self._ingest(db, "10.1/library", record_implicit_save=True)
@@ -707,7 +707,7 @@ class TestImplicitZoteroSave:
         assert db.list_feedback_events() == []
 
     def test_idempotent_reingest_keeps_one_event(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         run_id = db.start_discovery_run({})
         db.add_discovery_paper(run_id, "10.1/rec", "Recommended", 0.9, "", ingested=False)
@@ -723,7 +723,7 @@ class TestImplicitZoteroSave:
 
     def test_opt_out_records_nothing_even_when_surfaced(self, tmp_path):
         """Discovery's own auto-ingest path does NOT opt in → no implicit save."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         run_id = db.start_discovery_run({})
         db.add_discovery_paper(run_id, "10.1/rec", "Recommended", 0.9, "", ingested=True)
@@ -738,8 +738,8 @@ class TestImplicitZoteroSave:
 
         # Real DB so was_surfaced returns True, then force record_feedback_event
         # to raise — ingestion must still complete (phases marked).
-        from scripts.core.state_db import StateDB
-        from scripts.pipelines._ingest import index_embeddings_and_mark_phases
+        from lit_monitor.core.state_db import StateDB
+        from lit_monitor.pipelines._ingest import index_embeddings_and_mark_phases
         db = StateDB(tmp_path / "state.db")
         run_id = db.start_discovery_run({})
         db.add_discovery_paper(run_id, "10.1/rec", "Recommended", 0.9, "", ingested=False)

@@ -15,8 +15,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.server import runtime as runtime_mod
-from scripts.server.app import create_app
+from lit_monitor.server import runtime as runtime_mod
+from lit_monitor.server.app import create_app
 
 
 def _assert_footer(html: str) -> None:
@@ -60,7 +60,7 @@ def test_footer_appears_on_brain_build(monkeypatch: pytest.MonkeyPatch) -> None:
     def _boom() -> None:
         raise RuntimeError("no runtime in test")
 
-    from scripts.server.routes import brain_build as bb_route
+    from lit_monitor.server.routes import brain_build as bb_route
 
     monkeypatch.setattr(bb_route, "get_runtime", _boom)
 

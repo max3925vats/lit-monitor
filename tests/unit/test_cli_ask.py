@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from scripts.cli import main
+from lit_monitor.cli import main
 
 
 @pytest.fixture
@@ -22,12 +22,12 @@ def mock_graph_db() -> MagicMock:
 # ---------------------------------------------------------------------------
 # Helpers — shared patch targets
 # ---------------------------------------------------------------------------
-_SAFE_GRAPH_DB = "scripts.graph.safe_graph_db"
-_GET_CONFIG = "scripts.core.config.get_config"
-_DESCRIBE_SCHEMA = "scripts.graph.schema_describer.describe_schema"
-_GENERATE_CYPHER = "scripts.graph.ask.generate_cypher"
-_EXECUTE_CYPHER = "scripts.graph.ask.execute_cypher"
-_SUMMARIZE = "scripts.graph.ask.summarize_results"
+_SAFE_GRAPH_DB = "lit_monitor.graph.safe_graph_db"
+_GET_CONFIG = "lit_monitor.core.config.get_config"
+_DESCRIBE_SCHEMA = "lit_monitor.graph.schema_describer.describe_schema"
+_GENERATE_CYPHER = "lit_monitor.graph.ask.generate_cypher"
+_EXECUTE_CYPHER = "lit_monitor.graph.ask.execute_cypher"
+_SUMMARIZE = "lit_monitor.graph.ask.summarize_results"
 
 
 class TestHappyPath:
@@ -262,7 +262,7 @@ class TestMaxRows:
             patch(_GENERATE_CYPHER, return_value="MATCH (p) RETURN p"),
             patch(_EXECUTE_CYPHER, return_value=[{"doi": "x"}]),
             patch(_SUMMARIZE, return_value="summary"),
-            patch("scripts.graph.ask.render_rows", return_value="| doi |\n|---|\n| x |") as render_mock,
+            patch("lit_monitor.graph.ask.render_rows", return_value="| doi |\n|---|\n| x |") as render_mock,
         ):
             result = runner.invoke(main, ["ask", "--max-rows", "5", "show", "papers"])
 

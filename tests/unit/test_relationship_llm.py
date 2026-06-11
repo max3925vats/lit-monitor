@@ -18,8 +18,8 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from scripts.graph.relationship_extractor import RelationshipTuple
-from scripts.graph.relationship_llm import extract_llm_relationships
+from lit_monitor.graph.relationship_extractor import RelationshipTuple
+from lit_monitor.graph.relationship_llm import extract_llm_relationships
 
 
 # ---------------------------------------------------------------------------
@@ -472,7 +472,7 @@ class TestPromptRoundTrip:
 
     def test_prompt_loads_through_registry(self) -> None:
         """R2: registry can load the prompt without raising."""
-        from scripts.llm.prompt_registry import _reset_prompt_cache, load_prompt
+        from lit_monitor.llm.prompt_registry import _reset_prompt_cache, load_prompt
 
         _reset_prompt_cache()
         prompt = load_prompt("relationship_extraction")
@@ -490,7 +490,7 @@ class TestPromptRoundTrip:
 
 class TestValidatorExtended:
     def test_validator_accepts_extends_and_contradicts(self) -> None:
-        from scripts.graph.relationship_validator import VALID_PREDICATES
+        from lit_monitor.graph.relationship_validator import VALID_PREDICATES
 
         assert "EXTENDS" in VALID_PREDICATES
         assert "CONTRADICTS" in VALID_PREDICATES

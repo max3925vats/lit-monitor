@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from scripts.clustering.atrophy import (
+from lit_monitor.clustering.atrophy import (
     compute_per_cluster_feedback_weights,
     find_under_engaged_clusters,
 )

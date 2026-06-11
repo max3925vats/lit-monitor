@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from scripts.cli import main
+from lit_monitor.cli import main
 
 
 @pytest.fixture()
@@ -23,8 +23,8 @@ def runner():
 def _patched(mock_config, mock_state_db):
     """Patch the config + state-db factories used by the feedback command."""
     return (
-        patch("scripts.cli._make_config", return_value=mock_config),
-        patch("scripts.cli._make_state_db", return_value=mock_state_db),
+        patch("lit_monitor.cli._make_config", return_value=mock_config),
+        patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
     )
 
 
@@ -126,7 +126,7 @@ class TestFeedbackValidation:
 class TestFeedbackConfigGuard:
     def test_config_load_failure_exits_nonzero(self, runner):
         """A broken config must exit cleanly (no raw traceback)."""
-        with patch("scripts.cli._make_config", side_effect=RuntimeError("boom")):
+        with patch("lit_monitor.cli._make_config", side_effect=RuntimeError("boom")):
             result = runner.invoke(main, ["feedback", "10.1/abc", "--saved"])
         assert result.exit_code != 0
         assert "Error" in result.output

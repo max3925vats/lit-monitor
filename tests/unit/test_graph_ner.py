@@ -5,7 +5,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from scripts.graph.ner import BiobertNER, NerSpan
+from lit_monitor.graph.ner import BiobertNER, NerSpan
 
 
 class TestNerSpan:
@@ -27,7 +27,7 @@ class TestBiobertNERImport:
         """N1: importing scripts.graph.ner does NOT trigger transformers import."""
         # Importing the module should succeed even when transformers is missing.
         # The lazy import happens inside _load(), so this should be safe.
-        import scripts.graph.ner  # noqa: F401
+        import lit_monitor.graph.ner  # noqa: F401
 
     def test_extract_raises_clear_error_without_nlp_extra(self, monkeypatch):
         """N1: when transformers is unavailable, extract() raises a clear ImportError."""
@@ -64,21 +64,21 @@ class TestBiobertNERWithStub:
 class TestDeviceSelect:
     def test_device_select_prefers_mps_when_available(self, monkeypatch):
         """N1: _select_device returns 'mps' when MPS is available."""
-        import scripts.graph.ner as ner_mod
+        import lit_monitor.graph.ner as ner_mod
         monkeypatch.setattr(ner_mod, "_mps_available", lambda: True)
         monkeypatch.setattr(ner_mod, "_cuda_available", lambda: True)
         assert ner_mod._select_device() == "mps"
 
     def test_device_select_falls_back_to_cuda(self, monkeypatch):
         """N1: _select_device returns 'cuda' when MPS is absent but CUDA is present."""
-        import scripts.graph.ner as ner_mod
+        import lit_monitor.graph.ner as ner_mod
         monkeypatch.setattr(ner_mod, "_mps_available", lambda: False)
         monkeypatch.setattr(ner_mod, "_cuda_available", lambda: True)
         assert ner_mod._select_device() == "cuda"
 
     def test_device_select_falls_back_to_cpu(self, monkeypatch):
         """N1: _select_device returns 'cpu' when neither MPS nor CUDA is available."""
-        import scripts.graph.ner as ner_mod
+        import lit_monitor.graph.ner as ner_mod
         monkeypatch.setattr(ner_mod, "_mps_available", lambda: False)
         monkeypatch.setattr(ner_mod, "_cuda_available", lambda: False)
         assert ner_mod._select_device() == "cpu"

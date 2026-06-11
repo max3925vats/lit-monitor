@@ -6,9 +6,9 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.server.app import create_app
-from scripts.server.runtime import reset_runtime
-from scripts.server.scheduler import ScheduleSpec
+from lit_monitor.server.app import create_app
+from lit_monitor.server.runtime import reset_runtime
+from lit_monitor.server.scheduler import ScheduleSpec
 
 
 @pytest.fixture(autouse=True)
@@ -25,7 +25,7 @@ def client():
 
 @pytest.mark.unit
 def test_schedule_page_unsupported_platform(client):
-    with patch("scripts.server.routes.schedule.detect_platform", return_value="unsupported"):
+    with patch("lit_monitor.server.routes.schedule.detect_platform", return_value="unsupported"):
         resp = client.get("/schedule")
     assert resp.status_code == 200
     assert b"Scheduling not supported" in resp.content
@@ -34,8 +34,8 @@ def test_schedule_page_unsupported_platform(client):
 @pytest.mark.unit
 def test_schedule_page_shows_current(client):
     spec = ScheduleSpec.parse("wed", "09:15")
-    with patch("scripts.server.routes.schedule.detect_platform", return_value="macos"), \
-         patch("scripts.server.routes.schedule.read_schedule", return_value=spec):
+    with patch("lit_monitor.server.routes.schedule.detect_platform", return_value="macos"), \
+         patch("lit_monitor.server.routes.schedule.read_schedule", return_value=spec):
         resp = client.get("/schedule")
     assert resp.status_code == 200
     assert b"wed" in resp.content
@@ -47,8 +47,8 @@ def test_schedule_current_renders_as_definition_list(client):
     # AR-7: the 'Current schedule' key/value block is a <dl class="kv"> with
     # <dt>/<dd>, not a <th>-in-<tbody> table. The day/time values must survive.
     spec = ScheduleSpec.parse("wed", "09:15")
-    with patch("scripts.server.routes.schedule.detect_platform", return_value="macos"), \
-         patch("scripts.server.routes.schedule.read_schedule", return_value=spec):
+    with patch("lit_monitor.server.routes.schedule.detect_platform", return_value="macos"), \
+         patch("lit_monitor.server.routes.schedule.read_schedule", return_value=spec):
         resp = client.get("/schedule")
     assert resp.status_code == 200
     body = resp.text
@@ -61,8 +61,8 @@ def test_schedule_current_renders_as_definition_list(client):
 
 @pytest.mark.unit
 def test_create_schedule_invokes_writer(client):
-    with patch("scripts.server.routes.schedule.detect_platform", return_value="macos"), \
-         patch("scripts.server.routes.schedule.write_schedule") as mock_write:
+    with patch("lit_monitor.server.routes.schedule.detect_platform", return_value="macos"), \
+         patch("lit_monitor.server.routes.schedule.write_schedule") as mock_write:
         mock_write.return_value = "/tmp/fake.plist"
         resp = client.post("/api/schedule", data={"day_of_week": "mon", "time": "08:00"})
     assert resp.status_code == 200
@@ -75,22 +75,22 @@ def test_create_schedule_invokes_writer(client):
 
 @pytest.mark.unit
 def test_create_schedule_rejects_bad_time(client):
-    with patch("scripts.server.routes.schedule.detect_platform", return_value="macos"):
+    with patch("lit_monitor.server.routes.schedule.detect_platform", return_value="macos"):
         resp = client.post("/api/schedule", data={"day_of_week": "mon", "time": "25:99"})
     assert resp.status_code == 400
 
 
 @pytest.mark.unit
 def test_create_schedule_rejected_on_unsupported_platform(client):
-    with patch("scripts.server.routes.schedule.detect_platform", return_value="unsupported"):
+    with patch("lit_monitor.server.routes.schedule.detect_platform", return_value="unsupported"):
         resp = client.post("/api/schedule", data={"day_of_week": "mon", "time": "08:00"})
     assert resp.status_code == 400
 
 
 @pytest.mark.unit
 def test_delete_schedule_invokes_remover(client):
-    with patch("scripts.server.routes.schedule.detect_platform", return_value="macos"), \
-         patch("scripts.server.routes.schedule.remove_schedule") as mock_rm:
+    with patch("lit_monitor.server.routes.schedule.detect_platform", return_value="macos"), \
+         patch("lit_monitor.server.routes.schedule.remove_schedule") as mock_rm:
         resp = client.delete("/api/schedule")
     assert resp.status_code == 200
     mock_rm.assert_called_once()

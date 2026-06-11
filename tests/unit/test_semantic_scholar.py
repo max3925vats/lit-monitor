@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from scripts.search.semantic_scholar import (
+from lit_monitor.search.semantic_scholar import (
     _strip_findpapers_format,
     enrich_paper,
     search_semantic_scholar,
@@ -72,7 +72,7 @@ class TestEnrichPaper:
     def test_returns_all_s2_fields_on_success(self):
         mock_sch = MagicMock()
         mock_sch.get_paper.return_value = _mock_paper()
-        with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+        with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
             result = enrich_paper("10.1016/j.foo.2024.001")
         assert result["s2_paper_id"] == "abc123"
         assert result["s2_citation_count"] == 42
@@ -83,7 +83,7 @@ class TestEnrichPaper:
         """get_paper must be called with 'DOI:<doi>' not the raw DOI string."""
         mock_sch = MagicMock()
         mock_sch.get_paper.return_value = _mock_paper()
-        with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+        with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
             enrich_paper("10.1016/j.foo.2024.001")
         call_args = mock_sch.get_paper.call_args
         assert call_args.args[0] == "DOI:10.1016/j.foo.2024.001"
@@ -91,12 +91,12 @@ class TestEnrichPaper:
     def test_returns_empty_on_api_error(self):
         mock_sch = MagicMock()
         mock_sch.get_paper.side_effect = RuntimeError("connection refused")
-        with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+        with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
             result = enrich_paper("10.1016/j.foo.2024.001")
         assert result == {}
 
     def test_returns_empty_for_empty_doi(self):
-        with patch("scripts.search.semantic_scholar._SemanticScholar") as mock_cls:
+        with patch("lit_monitor.search.semantic_scholar._SemanticScholar") as mock_cls:
             assert enrich_paper("") == {}
             assert enrich_paper("   ") == {}
         mock_cls.assert_not_called()
@@ -105,14 +105,14 @@ class TestEnrichPaper:
         """get_paper returning None → empty dict (not an error)."""
         mock_sch = MagicMock()
         mock_sch.get_paper.return_value = None
-        with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+        with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
             result = enrich_paper("10.1016/j.foo.2024.001")
         assert result == {}
 
     def test_omits_open_access_pdf_when_absent(self):
         mock_sch = MagicMock()
         mock_sch.get_paper.return_value = _mock_paper(oa_pdf_url=None)
-        with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+        with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
             result = enrich_paper("10.1016/j.foo.2024.001")
         assert "s2_open_access_pdf" not in result
 
@@ -120,7 +120,7 @@ class TestEnrichPaper:
         mock_sch = MagicMock()
         mock_sch.get_paper.return_value = _mock_paper()
         with patch(
-            "scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch
+            "lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch
         ) as mock_cls:
             enrich_paper("10.1016/j.foo.2024.001", api_key="my-s2-key")
         mock_cls.assert_called_once_with(api_key="my-s2-key", timeout=30)
@@ -130,7 +130,7 @@ class TestEnrichPaper:
         mock_sch = MagicMock()
         paper = _mock_paper(citation_count=77, influential=3)
         mock_sch.get_paper.return_value = paper
-        with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+        with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
             result = enrich_paper("10.1/x")
         assert isinstance(result["s2_citation_count"], int)
         assert isinstance(result["s2_influential_citations"], int)
@@ -144,7 +144,7 @@ class TestSearchSemanticScholar:
     def test_returns_papers_in_pipeline_format(self):
         mock_sch = MagicMock()
         mock_sch.search_paper.return_value = [_mock_search_result()]
-        with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+        with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
             results = search_semantic_scholar("filtration", since_days=14)
         assert len(results) == 1
         p = results[0]
@@ -159,19 +159,19 @@ class TestSearchSemanticScholar:
         result_paper = _mock_search_result()
         result_paper.externalIds = {"DOI": "10.1016/J.FOO.2024.001"}
         mock_sch.search_paper.return_value = [result_paper]
-        with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+        with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
             results = search_semantic_scholar("query")
         assert results[0]["doi"] == "10.1016/j.foo.2024.001"
 
     def test_returns_empty_on_api_error(self):
         mock_sch = MagicMock()
         mock_sch.search_paper.side_effect = RuntimeError("timeout")
-        with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+        with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
             results = search_semantic_scholar("filtration")
         assert results == []
 
     def test_returns_empty_for_empty_query(self):
-        with patch("scripts.search.semantic_scholar._SemanticScholar") as mock_cls:
+        with patch("lit_monitor.search.semantic_scholar._SemanticScholar") as mock_cls:
             assert search_semantic_scholar("") == []
             assert search_semantic_scholar("   ") == []
         mock_cls.assert_not_called()
@@ -180,7 +180,7 @@ class TestSearchSemanticScholar:
         """publication_date_or_year should be 'YYYY-MM-DD:' based on since_days."""
         mock_sch = MagicMock()
         mock_sch.search_paper.return_value = []
-        with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+        with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
             search_semantic_scholar("query", since_days=30)
         call_kwargs = mock_sch.search_paper.call_args.kwargs
         expected_date = date.today() - timedelta(days=30)
@@ -190,7 +190,7 @@ class TestSearchSemanticScholar:
         """[term] AND [other] should become 'term other' for S2."""
         mock_sch = MagicMock()
         mock_sch.search_paper.return_value = []
-        with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+        with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
             search_semantic_scholar("[filtration] AND [model protein]")
         call_args = mock_sch.search_paper.call_args
         query_sent = call_args.args[0]
@@ -205,7 +205,7 @@ class TestSearchSemanticScholar:
         nodoi = _mock_search_result()
         nodoi.externalIds = {}
         mock_sch.search_paper.return_value = [nodoi]
-        with patch("scripts.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+        with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
             results = search_semantic_scholar("query")
         assert results[0]["doi"] == ""
 

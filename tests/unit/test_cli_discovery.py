@@ -14,7 +14,7 @@ def runner():
 
 @pytest.fixture
 def seeded_db(tmp_path, monkeypatch):
-    from scripts.core.state_db import StateDB
+    from lit_monitor.core.state_db import StateDB
 
     db = StateDB(tmp_path / "state.db")
     run_id = db.start_discovery_run({"topics": ["x"]})
@@ -29,11 +29,11 @@ def seeded_db(tmp_path, monkeypatch):
     # Make get_config return a cfg whose state_db.path points here
     fake_cfg = MagicMock()
     fake_cfg.state_db.path = str(tmp_path / "state.db")
-    # The CLI resolves config via ``from scripts.core.config import get_config``
+    # The CLI resolves config via ``from lit_monitor.core.config import get_config``
     # at call time, so patching the source symbol is what actually controls it.
-    # (A former second patch on "scripts.cli.get_config" was dead: that name is
+    # (A former second patch on "lit_monitor.cli.get_config" was dead: that name is
     # never bound on the cli module, and raising=False made it a silent no-op.)
-    monkeypatch.setattr("scripts.core.config.get_config", lambda: fake_cfg)
+    monkeypatch.setattr("lit_monitor.core.config.get_config", lambda: fake_cfg)
     return db, run_id
 
 
@@ -41,16 +41,16 @@ class TestDiscoveryView:
     def test_no_runs_friendly_message(self, runner, tmp_path, monkeypatch):
         fake_cfg = MagicMock()
         fake_cfg.state_db.path = str(tmp_path / "empty.db")
-        # Patch the source symbol only; "scripts.cli.get_config" is never bound.
-        monkeypatch.setattr("scripts.core.config.get_config", lambda: fake_cfg)
-        from scripts.cli import main
+        # Patch the source symbol only; "lit_monitor.cli.get_config" is never bound.
+        monkeypatch.setattr("lit_monitor.core.config.get_config", lambda: fake_cfg)
+        from lit_monitor.cli import main
 
         result = runner.invoke(main, ["discovery", "view"])
         assert result.exit_code == 0
         assert "no discovery runs" in result.output.lower()
 
     def test_view_with_data(self, runner, seeded_db):
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         result = runner.invoke(main, ["discovery", "view"])
         assert result.exit_code == 0, result.output
@@ -58,7 +58,7 @@ class TestDiscoveryView:
         assert "10.0/a" in result.output
 
     def test_top_k_limits_rows(self, runner, seeded_db):
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         result = runner.invoke(main, ["discovery", "view", "--top-k", "1"])
         assert result.exit_code == 0
@@ -67,7 +67,7 @@ class TestDiscoveryView:
         assert "Beta" not in result.output
 
     def test_specific_run_id(self, runner, seeded_db):
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         db, run_id = seeded_db
         result = runner.invoke(main, ["discovery", "view", "--run-id", str(run_id)])
@@ -75,7 +75,7 @@ class TestDiscoveryView:
         assert "Alpha" in result.output
 
     def test_unknown_run_id_exits_nonzero(self, runner, seeded_db):
-        from scripts.cli import main
+        from lit_monitor.cli import main
 
         result = runner.invoke(main, ["discovery", "view", "--run-id", "99999"])
         assert result.exit_code != 0

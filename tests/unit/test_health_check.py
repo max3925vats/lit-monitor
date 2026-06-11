@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from scripts.setup.check_configured import CheckResult
-from scripts.setup.diagnose import run_diagnose
-from scripts.setup.health_check import run_health_check
+from lit_monitor.setup.check_configured import CheckResult
+from lit_monitor.setup.diagnose import run_diagnose
+from lit_monitor.setup.health_check import run_health_check
 
 
 class TestRunHealthCheck:
@@ -14,16 +14,16 @@ class TestRunHealthCheck:
         cfg = {"probe": CheckResult(True, "ok", "ok")}
         ok = {"probe": (True, "ok")}
         with (
-            patch("scripts.setup.check_configured.check_configured", return_value=cfg),
-            patch("scripts.setup.check_ollama.check_ollama", return_value=ok),
-            patch("scripts.setup.check_zotero.check_zotero", return_value=ok),
-            patch("scripts.setup.check_vault.check_vault", return_value=ok),
+            patch("lit_monitor.setup.check_configured.check_configured", return_value=cfg),
+            patch("lit_monitor.setup.check_ollama.check_ollama", return_value=ok),
+            patch("lit_monitor.setup.check_zotero.check_zotero", return_value=ok),
+            patch("lit_monitor.setup.check_vault.check_vault", return_value=ok),
             patch(
-                "scripts.setup.check_graph.safe_graph_db",
+                "lit_monitor.setup.check_graph.safe_graph_db",
                 return_value=None,
             ),
             patch(
-                "scripts.setup.health_check._get_configured_ollama_model",
+                "lit_monitor.setup.health_check._get_configured_ollama_model",
                 return_value=None,
             ),
         ):
@@ -38,16 +38,16 @@ class TestRunHealthCheck:
         fake = {"foo": CheckResult(False, "bar", "fail")}
         ok = {"ok": (True, "ok")}
         with (
-            patch("scripts.setup.check_configured.check_configured", return_value=fake),
-            patch("scripts.setup.check_ollama.check_ollama", return_value=ok),
-            patch("scripts.setup.check_zotero.check_zotero", return_value=ok),
-            patch("scripts.setup.check_vault.check_vault", return_value=ok),
+            patch("lit_monitor.setup.check_configured.check_configured", return_value=fake),
+            patch("lit_monitor.setup.check_ollama.check_ollama", return_value=ok),
+            patch("lit_monitor.setup.check_zotero.check_zotero", return_value=ok),
+            patch("lit_monitor.setup.check_vault.check_vault", return_value=ok),
             patch(
-                "scripts.setup.check_graph.safe_graph_db",
+                "lit_monitor.setup.check_graph.safe_graph_db",
                 return_value=None,
             ),
             patch(
-                "scripts.setup.health_check._get_configured_ollama_model",
+                "lit_monitor.setup.health_check._get_configured_ollama_model",
                 return_value=None,
             ),
         ):
@@ -59,7 +59,7 @@ class TestRunDiagnose:
     def test_run_diagnose_config_only_skips_service_probes(self) -> None:
         """config_only=True must not call run_health_check()."""
         with patch(
-            "scripts.setup.diagnose.run_health_check",
+            "lit_monitor.setup.diagnose.run_health_check",
         ) as mock_health:
             run_diagnose(config_only=True)
         mock_health.assert_not_called()
@@ -71,7 +71,7 @@ class TestRunDiagnose:
         on the flag rather than always-off.
         """
         with patch(
-            "scripts.setup.diagnose.run_health_check",
+            "lit_monitor.setup.diagnose.run_health_check",
             return_value={"config": {"x": CheckResult(True, "y", "ok")}},
         ) as mock_health:
             result = run_diagnose(config_only=False)
@@ -101,7 +101,7 @@ class TestRunDiagnose:
             "vault": {"vault_exists": (True, "ok")},
         }
         with patch(
-            "scripts.setup.diagnose.run_health_check",
+            "lit_monitor.setup.diagnose.run_health_check",
             return_value=hc,
         ):
             # Pre-H2 this line raised ValueError.

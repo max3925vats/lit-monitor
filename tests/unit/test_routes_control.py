@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.server.app import create_app
-from scripts.server.runtime import get_runtime, reset_runtime
+from lit_monitor.server.app import create_app
+from lit_monitor.server.runtime import get_runtime, reset_runtime
 
 
 @pytest.fixture(autouse=True)

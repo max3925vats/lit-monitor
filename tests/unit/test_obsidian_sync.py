@@ -9,14 +9,14 @@ import pytest
 
 class TestNotesSyncedColumn:
     def test_column_exists(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             cols = [r[1] for r in conn.execute("PRAGMA table_info(papers)").fetchall()]
         assert "notes_synced" in cols
 
     def test_defaults_to_zero(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             conn.execute("INSERT INTO papers (doi) VALUES ('10.0/a')")
@@ -27,7 +27,7 @@ class TestNotesSyncedColumn:
 
 class TestSetNotesSynced:
     def test_updates_to_one(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             conn.execute("INSERT INTO papers (doi) VALUES ('10.0/x')")
@@ -39,12 +39,12 @@ class TestSetNotesSynced:
 
     def test_missing_doi_is_silent(self, tmp_path):
         """UPDATE on missing DOI affects 0 rows — should not raise."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         db.set_notes_synced("10.0/missing", 1)  # must not raise
 
     def test_reset_to_zero(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             conn.execute("INSERT INTO papers (doi, notes_synced) VALUES ('10.0/r', 1)")
@@ -57,7 +57,7 @@ class TestSetNotesSynced:
 
 class TestGetNotesPending:
     def test_returns_only_unsynced_and_indexed(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             # a: embeddings_indexed=1 + unsynced → PENDING
@@ -79,7 +79,7 @@ class TestGetNotesPending:
         assert "10/c" not in pending
 
     def test_limit_respected(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             for i in range(5):
@@ -91,7 +91,7 @@ class TestGetNotesPending:
         assert len(db.get_notes_pending(limit=3)) == 3
 
     def test_no_limit_returns_all(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             for i in range(4):
@@ -103,14 +103,14 @@ class TestGetNotesPending:
         assert len(db.get_notes_pending()) == 4
 
     def test_empty_db_returns_empty(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         assert db.get_notes_pending() == []
 
 
 class TestSyncNotes:
     def test_calls_rerender_and_marks_synced(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             conn.execute(
@@ -118,9 +118,9 @@ class TestSyncNotes:
             )
             conn.commit()
 
-        with patch("scripts.obsidian_tools.sync._rerender_one") as mock:
+        with patch("lit_monitor.obsidian_tools.sync._rerender_one") as mock:
             mock.return_value = None
-            from scripts.obsidian_tools.sync import sync_notes
+            from lit_monitor.obsidian_tools.sync import sync_notes
             result = sync_notes(db, MagicMock())
 
         assert result["processed"] == 1
@@ -133,7 +133,7 @@ class TestSyncNotes:
         assert row[0] == 1
 
     def test_per_paper_failure_continues(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             conn.execute(
@@ -142,10 +142,10 @@ class TestSyncNotes:
             conn.commit()
 
         with patch(
-            "scripts.obsidian_tools.sync._rerender_one",
+            "lit_monitor.obsidian_tools.sync._rerender_one",
             side_effect=RuntimeError("boom"),
         ):
-            from scripts.obsidian_tools.sync import sync_notes
+            from lit_monitor.obsidian_tools.sync import sync_notes
             result = sync_notes(db, MagicMock())
 
         assert result["failed"] == 1
@@ -159,8 +159,8 @@ class TestSyncNotes:
 
     def test_per_paper_failure_raises_under_strict(self, tmp_path):
         """P4.4: in --strict, a per-paper sync failure escalates to a raise."""
-        import scripts.core.strict_mode as _sm
-        from scripts.core.state_db import StateDB
+        import lit_monitor.core.strict_mode as _sm
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             conn.execute(
@@ -170,15 +170,15 @@ class TestSyncNotes:
 
         _sm.set_strict(True)
         with patch(
-            "scripts.obsidian_tools.sync._rerender_one",
+            "lit_monitor.obsidian_tools.sync._rerender_one",
             side_effect=RuntimeError("boom"),
         ):
-            from scripts.obsidian_tools.sync import sync_notes
+            from lit_monitor.obsidian_tools.sync import sync_notes
             with pytest.raises(RuntimeError, match="P10 sync: failed"):
                 sync_notes(db, MagicMock())
 
     def test_doi_filter(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             conn.execute(
@@ -189,15 +189,15 @@ class TestSyncNotes:
             )
             conn.commit()
 
-        with patch("scripts.obsidian_tools.sync._rerender_one"):
-            from scripts.obsidian_tools.sync import sync_notes
+        with patch("lit_monitor.obsidian_tools.sync._rerender_one"):
+            from lit_monitor.obsidian_tools.sync import sync_notes
             result = sync_notes(db, MagicMock(), doi="10/a")
 
         assert result["processed"] == 1  # only the filtered DOI
 
     def test_idempotent_rerun_on_synced(self, tmp_path):
         """Re-running sync on already-synced papers is a no-op."""
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             conn.execute(
@@ -205,8 +205,8 @@ class TestSyncNotes:
             )
             conn.commit()
 
-        with patch("scripts.obsidian_tools.sync._rerender_one") as mock:
-            from scripts.obsidian_tools.sync import sync_notes
+        with patch("lit_monitor.obsidian_tools.sync._rerender_one") as mock:
+            from lit_monitor.obsidian_tools.sync import sync_notes
             # --all path uses get_notes_pending which filters out notes_synced=1
             result = sync_notes(db, MagicMock())
 
@@ -214,7 +214,7 @@ class TestSyncNotes:
         mock.assert_not_called()
 
     def test_limit_applied_in_bulk_sync(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             for i in range(5):
@@ -224,14 +224,14 @@ class TestSyncNotes:
                 )
             conn.commit()
 
-        with patch("scripts.obsidian_tools.sync._rerender_one"):
-            from scripts.obsidian_tools.sync import sync_notes
+        with patch("lit_monitor.obsidian_tools.sync._rerender_one"):
+            from lit_monitor.obsidian_tools.sync import sync_notes
             result = sync_notes(db, MagicMock(), limit=2)
 
         assert result["processed"] == 2
 
     def test_multiple_failures_all_counted(self, tmp_path):
-        from scripts.core.state_db import StateDB
+        from lit_monitor.core.state_db import StateDB
         db = StateDB(tmp_path / "state.db")
         with db._connect() as conn:
             for i in range(3):
@@ -242,10 +242,10 @@ class TestSyncNotes:
             conn.commit()
 
         with patch(
-            "scripts.obsidian_tools.sync._rerender_one",
+            "lit_monitor.obsidian_tools.sync._rerender_one",
             side_effect=RuntimeError("oops"),
         ):
-            from scripts.obsidian_tools.sync import sync_notes
+            from lit_monitor.obsidian_tools.sync import sync_notes
             result = sync_notes(db, MagicMock())
 
         assert result["failed"] == 3
@@ -272,7 +272,7 @@ class TestCliObsidianSync:
     def test_obsidian_sync_subcommand_registered(self):
         from click.testing import CliRunner
 
-        from scripts.cli import main
+        from lit_monitor.cli import main
         runner = CliRunner()
         result = runner.invoke(main, ["obsidian", "sync", "--help"])
         assert result.exit_code == 0
@@ -282,7 +282,7 @@ class TestCliObsidianSync:
         """Without --all/--doi/--since, should exit non-zero."""
         from click.testing import CliRunner
 
-        from scripts.cli import main
+        from lit_monitor.cli import main
         runner = CliRunner()
         result = runner.invoke(main, ["obsidian", "sync"])
         assert result.exit_code != 0
