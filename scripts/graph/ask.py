@@ -22,34 +22,33 @@ from typing import Any
 import numpy as np  # Bundle I: cosine similarity for cluster-aware ask
 
 from scripts.llm.llm_client import strip_markdown_fences
+from scripts.mcp.cypher_guard import CypherSafetyError, guard
 
 logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Validator regexes.
+# Validation.
 #
-# Mutation gate — word-boundary, case-insensitive. Rejects the Cypher
-# mutation keywords. The \b anchors mean lowercase property names like
-# "creation_date" or "creator_name" do NOT match the keyword CREATE (because
-# the next char 'a' / 'o' is a word char and breaks the \b boundary).
-# Uppercase property names that happen to start with a forbidden keyword
-# (e.g. literal "CREATED") WILL match — accepted false-positive cost in
-# exchange for never letting a write query through.
+# AR-3 (audit-5 remediation): the mutation gate is now the canonical
+# scripts.graph.cypher_guard.guard() — the SAME guard the MCP `run_cypher`
+# tool and the HTTP /api/cypher route use. We dropped the former local
+# `_MUTATION_RE` copy: a duplicate read-only guard silently drifts from the
+# canonical one (a future hardening — new banned keyword, comment stripping,
+# LIMIT injection — would not reach /ask). `generate_cypher` keeps its
+# defensive-perimeter contract by catching the guard's CypherSafetyError and
+# mapping it to a None return (it never re-raises). Two side effects of the
+# unification, both intentional:
+#   - LIMIT injection now applies to /ask: guard() appends its default LIMIT
+#     when none is present, and that guarded string is what we return (so the
+#     cap reaches execute_cypher).
+#   - the guard's documented string-literal false-positive (a banned keyword
+#     inside a Cypher string literal is rejected) now applies to /ask too.
 #
-# CALL is banned (audit F19, this path): Kuzu CALL procedures can have side
-# effects, so an LLM-emitted `CALL ...` must not reach conn.execute(). This
-# mirrors the ban already enforced in scripts/mcp/cypher_guard.py. We keep the
-# regex local rather than routing through cypher_guard.guard() because that
-# guard *raises* CypherSafetyError (and injects LIMIT), whereas this path's
-# contract is a defensive perimeter that returns None on rejection and never
-# raises — reusing the guard would materially change that error-handling
-# contract. CALL is the single source-of-truth keyword shared between both.
+# The query-shape gate below is KEPT — guard() does not enforce that the query
+# STARTS with a read-only keyword (it only bans mutations), so we still need
+# _VALID_START_RE to reject prose-prefixed LLM output.
 # ---------------------------------------------------------------------------
-_MUTATION_RE = re.compile(
-    r"\b(?:CREATE|DELETE|DROP|MERGE|SET|REMOVE|ALTER|CALL|LOAD\s+CSV)\b",
-    re.IGNORECASE,
-)
 
 # Query-shape gate — output must START with one of the read-only Cypher
 # keywords. Defends against prose-prefixed responses ("Here is your query: …")
@@ -220,21 +219,25 @@ def generate_cypher(
         logger.info("A2: empty response after fence stripping")
         return None
 
-    # Mutation gate.
-    mutation = _MUTATION_RE.search(cypher)
-    if mutation is not None:
-        logger.info(
-            "A2: rejected by validator: forbidden keyword %r",
-            mutation.group(0),
-        )
-        return None
-
-    # Query-shape gate.
+    # Query-shape gate. Run BEFORE the guard so prose-prefixed output
+    # ("Here is your query: MATCH ...") is rejected on shape, not mangled by
+    # the guard's LIMIT injection. guard() does not enforce query-start shape.
     if not _VALID_START_RE.match(cypher):
         logger.info(
             "A2: rejected by validator: must start with "
             "MATCH/OPTIONAL MATCH/RETURN/WITH"
         )
+        return None
+
+    # Mutation gate — the canonical guard (AR-3). Catches every banned
+    # keyword AND injects the default LIMIT when absent; the guarded string is
+    # what we return so the LIMIT cap reaches execute_cypher. CypherSafetyError
+    # is mapped to a None return to preserve this path's defensive-perimeter
+    # contract (never re-raise).
+    try:
+        cypher = guard(cypher)
+    except CypherSafetyError as exc:
+        logger.info("A2: rejected by validator: %s", exc)
         return None
 
     return cypher

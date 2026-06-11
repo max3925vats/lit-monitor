@@ -324,3 +324,48 @@ class TestPromptRoundTrip:
         # The registry only checks user_template placeholders, so at minimum
         # {question} must be registered.
         assert "question" in req
+
+
+# ---------------------------------------------------------------------------
+# AR-3: validation routes through the canonical scripts.graph.cypher_guard
+# ---------------------------------------------------------------------------
+# generate_cypher no longer carries a duplicate _MUTATION_RE; it calls
+# guard() (the same guard /api/cypher + MCP use). Two behaviour guarantees:
+#   1. a mutation the guard would reject still surfaces as a None return
+#      (the defensive-perimeter rejection path — guard's CypherSafetyError is
+#      caught and mapped to None, never re-raised).
+#   2. the guard's LIMIT injection now applies to /ask too: a valid query
+#      without an explicit LIMIT comes back with one appended, so the LIMIT
+#      reaches execute_cypher.
+# ---------------------------------------------------------------------------
+class TestAskRoutesThroughCanonicalGuard:
+    def test_ask_rejects_mutation_via_canonical_guard(self, caplog) -> None:
+        """A mutation from the LLM is rejected (None) via the canonical guard,
+        not a local regex copy. DETACH DELETE is the classic write."""
+        mock_client = MagicMock()
+        mock_client.complete.return_value = "MATCH (p) DETACH DELETE p"
+        with caplog.at_level(logging.INFO):
+            result = generate_cypher("q", "s", client=mock_client)
+        assert result is None
+        assert any(
+            "reject" in r.message.lower() or "validator" in r.message.lower()
+            for r in caplog.records
+        )
+
+    def test_ask_injects_limit_when_absent(self) -> None:
+        """A valid MATCH...RETURN with no LIMIT comes back with the guard's
+        default LIMIT appended (so the cap reaches execute_cypher). This pins
+        NEW behaviour /ask previously lacked."""
+        mock_client = MagicMock()
+        mock_client.complete.return_value = "MATCH (p:Paper) RETURN p.doi"
+        result = generate_cypher("q", "s", client=mock_client)
+        assert result is not None
+        assert "LIMIT" in result.upper()
+
+    def test_ask_preserves_existing_limit(self) -> None:
+        """When the LLM already emits a LIMIT, the guard must not double-append."""
+        mock_client = MagicMock()
+        mock_client.complete.return_value = "MATCH (p:Paper) RETURN p.doi LIMIT 5"
+        result = generate_cypher("q", "s", client=mock_client)
+        assert result is not None
+        assert result.upper().count("LIMIT") == 1
