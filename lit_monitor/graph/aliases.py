@@ -79,7 +79,6 @@ def load_aliases(path: Path | None = None) -> dict[str, dict[str, str]]:
 def _index_aliases(raw: dict[str, Any], source: str) -> dict[str, dict[str, str]]:
     """Build the ``{type: {lower(surface): canonical}}`` index from raw YAML."""
     out: dict[str, dict[str, str]] = {}
-    out: dict[str, dict[str, str]] = {}
     for type_, mapping in raw.items():
         if not isinstance(mapping, dict):
             # Malformed YAML row (e.g. a type mapped to a scalar/list instead of
