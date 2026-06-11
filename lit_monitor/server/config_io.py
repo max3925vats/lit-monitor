@@ -26,7 +26,29 @@ from lit_monitor.setup._paths import SECRETS_PATH
 logger = logging.getLogger(__name__)
 
 # Module-level so tests can monkeypatch a tmp_path / "config" directory in.
+# The bare ``Path("config")`` value is a *sentinel default*: when it is left
+# untouched (production), write targets are resolved through
+# :func:`lit_monitor.core.config.config_dir` so a pip-installed wheel persists
+# the wizard's edits to ``~/.config/lit-monitor/`` rather than a CWD-relative
+# ``./config`` that happens to be wherever the server was launched.  Tests that
+# ``monkeypatch.setattr(config_io, "CONFIG_DIR", tmp_path)`` override this and
+# get their explicit directory (the sentinel check below honours the override).
 CONFIG_DIR = Path("config")
+_CONFIG_DIR_SENTINEL = Path("config")
+
+
+def _config_write_dir() -> Path:
+    """Directory the wizard should *write* config files into.
+
+    Honours a test/explicit override of :data:`CONFIG_DIR`; otherwise resolves
+    the active user/dev config dir via :func:`config_dir` so a wheel install
+    writes to ``~/.config/lit-monitor`` instead of a transient ``./config``.
+    """
+    if CONFIG_DIR != _CONFIG_DIR_SENTINEL:
+        return CONFIG_DIR
+    from lit_monitor.core.config import config_dir
+
+    return config_dir()
 
 
 class SettingsValidationError(ValueError):
@@ -65,7 +87,7 @@ def save_config(name: str, data: dict[str, Any]) -> Path:
     after a single-field edit. New top-level keys in ``data`` are
     appended at the bottom in insertion order.
     """
-    target = CONFIG_DIR / f"{name}.yaml"
+    target = _config_write_dir() / f"{name}.yaml"
     target.parent.mkdir(parents=True, exist_ok=True)
     yaml_rt, existing = _round_trip_load(target)
     # Replace top-level keys from ``data`` while preserving any pre-existing
@@ -225,7 +247,7 @@ def safe_save_preference(
             f"invalid viewer: {viewer!r}; must be one of {sorted(_VALID_VIEWERS)}"
         )
 
-    path = Path(config_path) if config_path is not None else CONFIG_DIR / "extraction.yaml"
+    path = Path(config_path) if config_path is not None else _config_write_dir() / "extraction.yaml"
 
     # v0.9.1: ruamel round-trip preserves user comments + quote style.
     yaml_rt, data = _round_trip_load(path)
@@ -268,7 +290,7 @@ def safe_save_digest_auto_write(
     OSError
         If the file cannot be read or written.
     """
-    path = Path(config_path) if config_path is not None else CONFIG_DIR / "extraction.yaml"
+    path = Path(config_path) if config_path is not None else _config_write_dir() / "extraction.yaml"
 
     # v0.9.1: ruamel round-trip preserves user comments + quote style.
     yaml_rt, data = _round_trip_load(path)
@@ -309,7 +331,7 @@ def safe_save_topics(
     Raises:
         OSError: If the file cannot be read or written (e.g. permissions).
     """
-    path = Path(topics_path) if topics_path is not None else CONFIG_DIR / "topics.yaml"
+    path = Path(topics_path) if topics_path is not None else _config_write_dir() / "topics.yaml"
 
     # v0.9.1: ruamel round-trip preserves any user comments / formatting on
     # the existing topics.yaml (e.g. category section headers).
@@ -443,7 +465,7 @@ def safe_save_settings_section(
     # are preserved exactly; validation is a gate, not a normalizer.
     _validate_settings_section(section, data)
 
-    path = Path(config_path) if config_path is not None else CONFIG_DIR / "extraction.yaml"
+    path = Path(config_path) if config_path is not None else _config_write_dir() / "extraction.yaml"
 
     # v0.9.1: ruamel round-trip preserves user comments + quote style.
     yaml_rt, full = _round_trip_load(path)

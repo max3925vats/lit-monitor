@@ -74,8 +74,14 @@ def test_save_config_atomic_replace(monkeypatch, tmp_path: Path) -> None:
     is purely about the atomic-rename contract.  We clean up the orphan temp
     file ourselves at the end.
     """
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / "config").mkdir()
+    # Point the wizard's write dir at an explicit tmp config dir (the same
+    # CONFIG_DIR override pattern used by the settings/setup/domain route tests).
+    # save_config now resolves its write target through config_dir() unless
+    # CONFIG_DIR is overridden, so an explicit override keeps the test
+    # CWD-independent and matches the wheel-safe write routing.
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    monkeypatch.setattr(config_io, "CONFIG_DIR", config_dir)
 
     replace_mock = MagicMock()
     # os.replace now fires from lit_monitor.core.atomic_write (config_io delegates
@@ -88,7 +94,7 @@ def test_save_config_atomic_replace(monkeypatch, tmp_path: Path) -> None:
     args, _kwargs = replace_mock.call_args
     tmp_arg, target_arg = args
     # Temp file should be a sibling of the eventual target.
-    assert Path(target_arg) == Path("config") / "foo.yaml"
+    assert Path(target_arg) == config_dir / "foo.yaml"
     # mkstemp returns an absolute path; compare just the parent's name.
     assert Path(tmp_arg).parent.name == "config"
     assert Path(tmp_arg).name.startswith(".foo.yaml.")
@@ -146,12 +152,14 @@ def test_save_secrets_creates_parent_dir(monkeypatch, tmp_path: Path) -> None:
 # guards the YAML serializer choice — kept tiny on purpose).
 @pytest.mark.unit
 def test_save_config_roundtrip(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.chdir(tmp_path)
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    monkeypatch.setattr(config_io, "CONFIG_DIR", config_dir)
 
     data = {"name": "round", "items": [1, 2, 3]}
     final = config_io.save_config("foo", data)
 
-    assert final == Path("config") / "foo.yaml"
+    assert final == config_dir / "foo.yaml"
     loaded = yaml.safe_load(final.read_text(encoding="utf-8"))
     assert loaded == data
 
@@ -166,9 +174,9 @@ def test_save_config_preserves_comments_on_unedited_sections(monkeypatch, tmp_pa
     the new value is a plain dict). But sections the wizard isn't touching
     on this save should retain their existing comments + formatting.
     """
-    monkeypatch.chdir(tmp_path)
     config_dir = tmp_path / "config"
     config_dir.mkdir()
+    monkeypatch.setattr(config_io, "CONFIG_DIR", config_dir)
     target = config_dir / "paths.yaml"
     target.write_text(
         "# user notes about their setup\n"

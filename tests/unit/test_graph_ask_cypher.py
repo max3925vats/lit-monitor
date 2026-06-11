@@ -21,6 +21,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from lit_monitor.core.path_utils import resolve_path
 from lit_monitor.graph.ask import generate_cypher
 
 
@@ -253,13 +254,13 @@ class TestEmptyAndErrorResponses:
 # ---------------------------------------------------------------------------
 class TestPromptRoundTrip:
     def test_yaml_exists(self) -> None:
-        path = Path("config/prompts/ask_cypher.example.yaml")
+        path = resolve_path(Path("config/prompts/ask_cypher.example.yaml"))
         assert path.exists(), (
             "A2 prompt YAML missing: config/prompts/ask_cypher.example.yaml"
         )
 
     def test_yaml_has_required_placeholders(self) -> None:
-        raw = Path("config/prompts/ask_cypher.example.yaml").read_text()
+        raw = resolve_path(Path("config/prompts/ask_cypher.example.yaml")).read_text()
         assert "{question}" in raw
         assert "{schema}" in raw
 
@@ -286,7 +287,7 @@ class TestPromptRoundTrip:
         Graph RAG — a regression that drops one predicate from the prompt
         silently degrades query quality.
         """
-        raw = Path("config/prompts/ask_cypher.example.yaml").read_text()
+        raw = resolve_path(Path("config/prompts/ask_cypher.example.yaml")).read_text()
         # The 9 LLM-relevant predicates (MENTIONS + CITES are schema-source
         # but ALSO listed here for query generation completeness).
         for pred in (
@@ -308,7 +309,7 @@ class TestPromptRoundTrip:
     def test_prompt_lists_all_six_entity_types(self) -> None:
         """A2: the 6 closed entity types must appear in the prompt so the
         LLM knows what `Entity {type: 'method'}` filters are valid."""
-        raw = Path("config/prompts/ask_cypher.example.yaml").read_text()
+        raw = resolve_path(Path("config/prompts/ask_cypher.example.yaml")).read_text()
         for etype in ("topic", "method", "material", "author", "journal", "keyword"):
             assert etype in raw, (
                 f"missing entity type {etype} in ask_cypher prompt"
