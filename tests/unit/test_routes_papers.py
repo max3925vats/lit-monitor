@@ -84,6 +84,27 @@ class TestPaperSnapshot:
         for key in ("metadata", "entities_by_type", "relationships_in", "relationships_out"):
             assert key in body, f"Expected key {key!r} missing from snapshot response"
 
+    def test_snapshot_survives_state_db_accessor_error(self, client):
+        """Regression: _snapshot_state_db raising (e.g. missing config/paths.yaml
+        on a fresh checkout or in CI) must degrade to no Zotero linkage, not crash
+        the snapshot route. Reproduces the CI FileNotFoundError without needing a
+        real config on the test machine."""
+        import scripts.server.routes.papers as papers_route
+
+        def _boom():
+            raise FileNotFoundError("config/paths.yaml not found")
+
+        with (
+            patch.object(papers_route, "safe_graph_db", return_value=_FAKE_GRAPH_DB),
+            patch.object(papers_route, "get_paper_snapshot", return_value=_GOOD_SNAPSHOT),
+            patch.object(papers_route, "_snapshot_state_db", side_effect=_boom),
+        ):
+            r = client.get("/api/papers/10.1234/ok")
+
+        assert r.status_code == 200, (
+            f"snapshot route crashed when the state-db accessor raised: {r.text}"
+        )
+
     def test_doi_with_slashes_accepted(self, client):
         """H4: DOIs containing multiple slashes are captured by {doi:path}."""
         deep_snapshot = {
