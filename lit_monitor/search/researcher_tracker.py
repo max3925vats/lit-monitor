@@ -22,13 +22,10 @@ import os
 import tempfile
 from typing import Any
 
-try:
-    import findpapers as _findpapers
-    from findpapers.utils.persistence_util import load as _fp_load
-except ImportError:  # pragma: no cover
-    _findpapers = None  # type: ignore[assignment]
-    _fp_load = None  # type: ignore[assignment]
-
+# findpapers is vendored (lit_monitor/_vendor/findpapers) and always available —
+# it ships with the package, so this is a plain import, not an optional dep.
+from lit_monitor._vendor import findpapers as _findpapers
+from lit_monitor._vendor.findpapers.utils.persistence_util import load as _fp_load
 from lit_monitor.search._constants import FINDPAPERS_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
@@ -69,9 +66,6 @@ def run_researcher_searches(
     if not researchers:
         logger.info("No researchers configured — skipping researcher searches")
         return []
-
-    if _findpapers is None:  # pragma: no cover
-        raise ImportError("findpapers is not installed — run: pip install findpapers")
 
     if databases is None:
         databases = _DEFAULT_DATABASES

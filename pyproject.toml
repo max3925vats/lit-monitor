@@ -32,8 +32,17 @@ classifiers = [
     "Topic :: Database :: Front-Ends",
 ]
 dependencies = [
-    # Search
-    "findpapers",
+    # Search — findpapers is vendored into lit_monitor/_vendor (MIT, 0.6.7) to
+    # drop the restrictive CLI-only metadata pin that broke `pip install
+    # lit-monitor`. These are findpapers' own runtime deps minus the CLI-only one
+    # (its removed cli.py was the sole consumer). `requests` is declared below.
+    # Loose lower bounds only — the upstream restrictive upper caps were dropped
+    # to avoid new resolver conflicts.
+    "lxml>=4.9",
+    "xmltodict>=0.12",
+    "edlib>=1.3",
+    "colorama>=0.4.3",
+    "inquirer>=2.7",
 
     # LLM providers — Ollama only (no Anthropic API key available)
     # "anthropic",  # not installed — no key
@@ -167,33 +176,22 @@ include-package-data = true
     "_data/item_routing.yaml",
     "_data/config_examples/**/*.yaml",
     "_data/config_examples/**/*.md",
+    "_vendor/README.md",
+    "_vendor/findpapers/LICENSE",
     "**/*.yaml",
     "**/*.yml",
     "**/*.j2",
     "**/*.json",
 ]
 
-# ─── uv-specific resolver overrides ──────────────────────────────────────────
-# findpapers 0.6.7 strict-pins typer<0.4.0, which in turn forces click<7.2,
-# but our project (via chromadb + Click CLI surface) needs click>=8.0 and
-# typer>=0.9.0.  findpapers doesn't actually enforce its typer version at
-# import time, so the runtime coexists fine — the conflict is metadata-only.
-#
-# pip's resolver tolerates this because we install in a specific order
-# (chromadb first, see README); uv's resolver does not.  These overrides
-# tell uv to ignore findpapers' typer pin during resolution.
-#
-# If you're using pip directly: see the README install section for the
-# chromadb-first workaround.  If you're using uv: `uv sync --extra dev --extra cloud`
-# now works as-is thanks to these overrides.
-[tool.uv]
-override-dependencies = [
-    "typer>=0.9.0",
-]
-
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# Vendored third-party source (findpapers 0.6.7) is kept as close to upstream as
+# possible — only cli.py removal and namespace-import rewrites. Don't lint it; we
+# don't want ruff auto-rewriting vendored code (it complicates re-vendoring and
+# risks behavioural drift in code we didn't author).
+extend-exclude = ["lit_monitor/_vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]

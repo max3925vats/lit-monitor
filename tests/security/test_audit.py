@@ -255,12 +255,14 @@ def test_findpapers_database_identifiers_are_lowercase():
 @pytest.mark.unit
 def test_findpapers_search_is_callable():
     """
-    Confirm that findpapers 0.6.x exposes the search() callable used by
-    search_runner.py.  The earlier audit note about Engine was wrong — 0.6.x
+    Confirm that the vendored findpapers 0.6.x exposes the search() callable used
+    by search_runner.py.  The earlier audit note about Engine was wrong — 0.6.x
     uses a functional API with findpapers.search() as the entry point.
+
+    findpapers is now vendored into lit_monitor/_vendor (no longer a PyPI dep),
+    so import the vendored copy directly — it always ships with the package, and
+    the search() entry point is what search_runner.py actually calls.
     """
-    try:
-        import findpapers as fp
-    except ImportError:
-        pytest.skip("findpapers not installed")
+    from lit_monitor._vendor import findpapers as fp
+
     assert callable(fp.search), "findpapers.search must be a callable in 0.6.x"
