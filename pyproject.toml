@@ -6,26 +6,26 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 keywords = [
-    "literature-review",
-    "research",
     "zotero",
     "obsidian",
+    "literature",
+    "research",
+    "semantic-search",
     "knowledge-graph",
-    "embeddings",
-    "rag",
     "mcp",
     "pubmed",
     "arxiv",
-    "llm",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Environment :: Console",
+    "Environment :: Web Environment",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering",
     "Topic :: Text Processing :: Indexing",
@@ -114,6 +114,7 @@ lit-monitor = "lit_monitor.cli:main"
 Homepage = "https://github.com/max3925vats/lit-monitor"
 Repository = "https://github.com/max3925vats/lit-monitor"
 Issues = "https://github.com/max3925vats/lit-monitor/issues"
+Documentation = "https://github.com/max3925vats/lit-monitor#documentation"
 
 [project.optional-dependencies]
 # Contributor tooling — ruff, pytest, mypy.
