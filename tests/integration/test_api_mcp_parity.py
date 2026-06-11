@@ -54,27 +54,36 @@ def test_http_mcp_get_paper_shape_parity(fixture_graph, monkeypatch):
 
     If this test fails after a refactor, update BOTH surfaces before merging.
     """
-    # --- HTTP surface ---
-    # papers.py binds safe_graph_db at module level; patch that binding directly.
+    # Patch BOTH surfaces to return the SAME shared ``fixture_graph`` handle.
+    # papers.py binds safe_graph_db at module level; tools.py exposes
+    # _get_graph_db as a module-level callable. Patch both bindings directly.
     import scripts.server.routes.papers as _papers_module
+    from scripts.mcp import tools as _tools_module
 
     monkeypatch.setattr(_papers_module, "safe_graph_db", lambda *a, **kw: fixture_graph)
+    monkeypatch.setattr(_tools_module, "_get_graph_db", lambda: fixture_graph)
 
     from scripts.server.app import create_app
 
+    # --- MCP surface FIRST ---
+    # Order matters: AR-2 made the HTTP route close() its graph handle in a
+    # try/finally after use (the correct production behaviour — each real
+    # request gets its own safe_graph_db() handle and releases it). Here both
+    # surfaces share ONE handle (fixture_graph), so if HTTP ran first it would
+    # close fixture_graph and the MCP call would then hit a closed connection
+    # ('NoneType' has no attribute 'execute'). The MCP surface does NOT close
+    # its handle, so calling it first leaves fixture_graph open for HTTP, which
+    # closes it last. Nothing reads the graph after the HTTP call — the
+    # assertions below only consume the returned dicts — so this ordering is safe.
+    mcp_result = _tools_module.get_paper_details("10.9999/parity")
+
+    # --- HTTP surface SECOND (closes fixture_graph via AR-2's finally) ---
     client = TestClient(create_app())
     http_response = client.get("/api/papers/10.9999/parity")
     assert http_response.status_code == 200, (
         f"HTTP GET returned {http_response.status_code}: {http_response.text}"
     )
     http_result = http_response.json()
-
-    # --- MCP surface ---
-    # tools.py exposes _get_graph_db as a module-level callable; patch it.
-    from scripts.mcp import tools as _tools_module
-
-    monkeypatch.setattr(_tools_module, "_get_graph_db", lambda: fixture_graph)
-    mcp_result = _tools_module.get_paper_details("10.9999/parity")
 
     # Both results must be non-empty dicts (not error stubs).
     assert isinstance(http_result, dict) and http_result, "HTTP result is empty"
