@@ -554,6 +554,7 @@ def first_run(ctx: click.Context) -> None:
     import time
     import webbrowser
 
+    from lit_monitor.core.seed import seed_user_config
     from lit_monitor.server.config_io import (
         load_server_config,
         save_secrets,
@@ -581,6 +582,19 @@ def first_run(ctx: click.Context) -> None:
         click.echo(f"  Wrote credentials to {SECRETS_PATH} (mode 0600).")
     else:
         click.echo(f"Found existing credentials at {SECRETS_PATH} — skipping credential prompts.")
+
+    # Step 1b: seed the user config dir from the packaged example configs.
+    # Idempotent — only writes files that don't exist yet, so re-running
+    # first-run never clobbers the user's edits.
+    seed_target = SECRETS_PATH.parent  # ~/.config/lit-monitor
+    seeded = seed_user_config(seed_target)
+    if seeded:
+        click.echo(f"  Seeded {len(seeded)} example config(s) into {seed_target}:")
+        for path in seeded:
+            click.echo(f"    - {path.name}")
+        click.echo("  Edit these (or use the web Setup wizard) to configure lit-monitor.")
+    else:
+        click.echo(f"  Config files already present in {seed_target} — nothing to seed.")
 
     # Step 2: server settings. Always prompt (re-runnable), defaults from
     # the existing [server] block if present.
