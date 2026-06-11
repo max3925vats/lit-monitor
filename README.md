@@ -7,9 +7,12 @@ paper against your existing Zotero library, extracts structured fields with an
 LLM, and writes everything into your Obsidian vault — queryable from a browser,
 the terminal, or any AI client that speaks the Model Context Protocol (MCP).
 
+[![CI](https://github.com/max3925vats/lit-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/max3925vats/lit-monitor/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/version-0.10.0-informational.svg)](https://github.com/max3925vats/lit-monitor/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Platform: macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#requirements)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![MCP compatible](https://img.shields.io/badge/MCP-compatible-blueviolet.svg)](docs/integrations.md)
 
 Your library is the signal. Each candidate paper is scored by semantic
@@ -131,6 +134,32 @@ credentials and YAML by hand instead of using the wizard, see
 | [Web UI](docs/web-ui.md) | Dashboard pages and the setup wizard |
 | [Integrations](docs/integrations.md) | MCP server and HTTP API |
 | [Development](docs/development.md) | Running tests and deployment |
+
+## Glossary
+
+A few terms used throughout the docs:
+
+- **Zotero** — reference manager that holds your library of papers; lit-monitor
+  reads it as the relevance signal.
+- **Obsidian** — Markdown-based knowledge base; lit-monitor writes one note per
+  paper into a vault (a folder of Markdown files).
+- **Embedding** — a numeric vector representing a paper's text, so similarity can
+  be measured by distance. Papers near your library's embeddings rank higher.
+- **Ollama** — runs language and embedding models locally on your machine (no
+  cloud account needed for the default setup).
+- **ChromaDB** — the local vector database that stores paper embeddings.
+- **KuzuDB** — the local graph database that stores entities (methods, authors,
+  …) and their typed relationships.
+- **LiteLLM** — an optional adapter to route LLM or embedding calls to cloud
+  providers (OpenAI, Anthropic, Vertex AI) instead of local Ollama.
+- **MCP (Model Context Protocol)** — an open standard that lets AI clients (Claude
+  Desktop, Cursor, …) call external tools; lit-monitor ships an MCP server.
+- **Cypher** — the query language for the knowledge graph; the `ask` and MCP
+  surfaces translate plain English into read-only Cypher under the hood.
+- **brain-build** — the one-time step that indexes your existing Zotero library
+  into the embedding store and graph.
+- **RRF (reciprocal-rank fusion)** — the method behind `--rag-mode hybrid` that
+  blends vector and graph rankings into one ordered list.
 
 ## License
 
