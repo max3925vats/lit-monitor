@@ -42,9 +42,13 @@ work. Same pipeline either way.
 ## Features
 
 - **Topic search with library-relative ranking.** Recurring searches across
-  PubMed, arXiv, and Scopus. Each candidate is ranked by cosine similarity to
-  embeddings of your Zotero library, computed locally via `mxbai-embed-large`
-  (or any LiteLLM-compatible provider) against a per-machine ChromaDB store.
+  PubMed, arXiv, and Scopus, powered by a bundled copy of
+  [findpapers](https://github.com/jonatasgrosman/findpapers) (see
+  [Acknowledgements](#acknowledgements)). Each candidate is ranked by cosine
+  similarity to embeddings of your Zotero library, computed locally via
+  `mxbai-embed-large` (or any LiteLLM-compatible provider) against a per-machine
+  ChromaDB store. *Explicit search coverage for individual journal publishers is
+  planned for a future release.*
 - **Obsidian-native output.** Every paper becomes a structured Markdown note
   with persist zones for your own annotations, two-phase LLM extraction, and a
   citation-graph rebuild path.
@@ -173,6 +177,22 @@ A few terms used throughout the docs:
 - **RRF (reciprocal-rank fusion)** — the method behind `--rag-mode hybrid` that
   blends vector and graph rankings into one ordered list.
 
+## Acknowledgements
+
+Multi-source literature search is powered by
+[**findpapers**](https://github.com/jonatasgrosman/findpapers) by Jonatas Grosman
+(MIT License, © 2020). A copy is bundled under
+[`lit_monitor/_vendor/findpapers`](lit_monitor/_vendor/findpapers) — with its
+license retained — so that `pip install lit-monitor` resolves cleanly without an
+upstream dependency conflict. The original project is gratefully acknowledged.
+
+Explicit search coverage for individual journal publishers (beyond the sources
+findpapers provides) is planned for a future release.
+
 ## License
 
 [MIT](LICENSE)
+
+This project bundles a copy of [findpapers](https://github.com/jonatasgrosman/findpapers)
+(MIT License) — see [Acknowledgements](#acknowledgements) and
+[`lit_monitor/_vendor/findpapers/LICENSE`](lit_monitor/_vendor/findpapers/LICENSE).
