@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from lit_monitor.core.atomic_write import atomic_write_text
+from lit_monitor.core.path_utils import sanitize_filename_component
 from lit_monitor.core.strict_mode import strict_fallback
 from lit_monitor.llm.prompt_registry import load_prompt
 from lit_monitor.llm.prompt_safety import sanitize_for_prompt
@@ -266,7 +267,10 @@ def _write_synthesis_note(
     )
     folder = vault_path / folder_rel
     folder.mkdir(parents=True, exist_ok=True)
-    slug = _slugify(topic)
+    # _slugify already strips most unsafe chars; sanitize_filename_component is
+    # the defence-in-depth guard that guarantees no separator / NUL / ".."
+    # survives into the filename built from the (tainted) synthesis topic.
+    slug = sanitize_filename_component(_slugify(topic), fallback="untitled")
     note_path = folder / f"Synthesis_{slug}.md"
     # Preserve user content below the generated section if file exists
     if note_path.exists():

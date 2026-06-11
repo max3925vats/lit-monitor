@@ -6,11 +6,61 @@ files without dragging in heavier LLM-domain imports.
 
 Public API:
   resolve_path(path) -> Path
+  sanitize_filename_component(name, ...) -> str
 """
 from __future__ import annotations
 
+import re
 from importlib.resources import files
 from pathlib import Path
+
+# Characters that must never appear in a single filename component: path
+# separators (POSIX + Windows), the NUL byte, and other control chars. We
+# replace each with an underscore rather than dropping it so two distinct
+# titles don't silently collapse to the same name.
+_UNSAFE_FILENAME_CHARS = re.compile(r"[\x00-\x1f/\\]")
+
+
+def sanitize_filename_component(
+    name: str,
+    *,
+    fallback: str = "untitled",
+    max_length: int = 200,
+) -> str:
+    """Sanitize a string for safe use as a *single* filename component.
+
+    Note paths in this codebase are built from extracted/user-supplied data
+    (paper titles, DOIs, synthesis topics) that may contain ``/``, ``..``, or
+    NUL bytes. Joining such a value onto a base directory enables path
+    traversal (``../../etc/passwd``) or absolute-path escapes. This helper
+    reduces the value to a benign leaf name so the join cannot escape the
+    intended directory.
+
+    Transformations (in order):
+      1. Replace path separators, NUL, and control characters with ``_``.
+      2. Strip leading/trailing dots and whitespace (kills ``..``, ``.`` and
+         hidden-file / trailing-space surprises).
+      3. Truncate to ``max_length`` chars.
+      4. Fall back to ``fallback`` when the result is empty or reduces to a
+         pure-dot name.
+
+    Args:
+        name:       Raw filename component (no directory parts expected).
+        fallback:   Value returned when sanitisation leaves nothing usable.
+        max_length: Hard cap on the returned length.
+
+    Returns:
+        A string safe to use as one path segment — never empty, never
+        containing a separator, never ``.`` or ``..``.
+    """
+    cleaned = _UNSAFE_FILENAME_CHARS.sub("_", str(name))
+    # Strip leading/trailing dots + whitespace so "..", ".", "  x  " don't
+    # survive. Internal dots (e.g. a DOI's "10.1234/...") are preserved.
+    cleaned = cleaned.strip().strip(".").strip()
+    cleaned = cleaned[:max_length].strip().strip(".").strip()
+    if not cleaned:
+        return fallback
+    return cleaned
 
 
 def _candidate_names(path: Path) -> list[Path]:

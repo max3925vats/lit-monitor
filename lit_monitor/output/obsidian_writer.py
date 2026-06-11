@@ -24,6 +24,7 @@ from jinja2.ext import Extension
 
 from lit_monitor.core.atomic_write import atomic_write_text
 from lit_monitor.core.config import config_dir
+from lit_monitor.core.path_utils import sanitize_filename_component
 from lit_monitor.llm.extractor import compute_confidence_score
 
 
@@ -135,7 +136,10 @@ def note_title_for(
     title = f"{last_name}{year}_{safe_title}"
     if suffix:
         title = title + suffix
-    return title
+    # Final guard: the assembled title becomes a filename component, so strip
+    # any residual path separators / NUL / leading-dot surprises that slipped
+    # through the field-level sanitisation above (e.g. a year string of "../..").
+    return sanitize_filename_component(title, fallback="Unknown")
 def _collision_suffix(base: str, existing: set[str]) -> str:
     """
     Return base + numeric suffix (_2, _3, ...) so result is not in existing.
@@ -300,7 +304,13 @@ def write_paper_note(
     folder = vault_path / config.obsidian.papers_folder
     folder.mkdir(parents=True, exist_ok=True)
     if note_path_override is not None:
-        note_path = Path(note_path_override)
+        # The override's *filename* may be derived from tainted data (title /
+        # DOI). Keep the caller-chosen directory (rerender rewrites the note in
+        # place; the dev sandbox targets its own dir) but pin the leaf to a safe
+        # component so a crafted title can't traverse out of that directory.
+        override = Path(note_path_override)
+        safe_stem = sanitize_filename_component(override.stem)
+        note_path = override.with_name(f"{safe_stem}{override.suffix or '.md'}")
         note_title = note_path.stem
     else:
         short_title = _make_short_title(paper.get("title", ""))

@@ -251,8 +251,18 @@
    *   - <input type=number> -> Number()
    *   - everything else     -> raw string
    */
+  // Keys that could pollute Object.prototype if assigned via a crafted
+  // data-path (e.g. "__proto__.polluted"). Skip the whole path if any segment
+  // is one of these — settings fields never legitimately use these names.
+  var UNSAFE_KEYS = { '__proto__': true, 'constructor': true, 'prototype': true };
+
   function setNested(obj, dottedPath, value) {
     var parts = dottedPath.split('.');
+    for (var p = 0; p < parts.length; p++) {
+      if (Object.prototype.hasOwnProperty.call(UNSAFE_KEYS, parts[p])) {
+        return;  // prototype-pollution guard: refuse the entire path
+      }
+    }
     var cur = obj;
     for (var i = 0; i < parts.length - 1; i++) {
       if (typeof cur[parts[i]] !== 'object' || cur[parts[i]] === null) {

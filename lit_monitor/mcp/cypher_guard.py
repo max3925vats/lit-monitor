@@ -7,8 +7,9 @@ custom hard_limit) if no LIMIT clause is present.
 Defense layers (each addresses a documented bypass class):
 
 1. **Comment stripping before keyword matching.**
-   ``_COMMENT`` strips ``// line-comments`` and ``/* block-comments */``
-   (re.DOTALL lets blocks span multiple lines) *before* ``_BAN`` runs.
+   ``_strip_comments`` (a linear single-pass scanner) strips
+   ``// line-comments`` and ``/* block-comments */`` (blocks may span
+   multiple lines) *before* ``_BAN`` runs.
    Effect: a keyword that lives entirely inside a comment is safe;
    ``// CREATE foo`` and ``/* DELETE x */`` both pass.
    A keyword that is *outside* every comment is still caught even if
@@ -70,9 +71,48 @@ class CypherSafetyError(ValueError):
 # Compiled patterns
 # ---------------------------------------------------------------------------
 
-# Strip both line comments (// … \\n) and block comments (/* … */).
-# re.DOTALL is required so /* … */ spans multiple lines.
-_COMMENT: re.Pattern[str] = re.compile(r"//[^\n]*|/\*.*?\*/", re.DOTALL)
+# Comment stripping is done by ``_strip_comments`` (a linear scanner) rather
+# than a regex.  The previous ``//[^\n]*|/\*.*?\*/`` pattern is O(n²) on crafted
+# input like ``(/*x)*n`` — many unterminated block-comment openers force the
+# lazy ``.*?`` to rescan to end-of-string at every position (a polynomial-ReDoS,
+# CodeQL py/polynomial-redos).  A single forward pass over the string is O(n)
+# and reproduces the exact same semantics (see ``_strip_comments`` docstring).
+
+
+def _strip_comments(query: str) -> str:
+    """Remove ``//`` line comments and ``/* */`` block comments in linear time.
+
+    Single forward scan, O(len(query)).  Semantics match the prior regex
+    (``//[^\\n]*|/\\*.*?\\*/`` with ``re.DOTALL``) exactly:
+
+      * ``// …`` is dropped up to (but not including) the next newline.
+      * ``/* … */`` (possibly multi-line) is dropped, terminator included.
+      * An **unterminated** ``/*`` (no closing ``*/``) is NOT stripped — the
+        text is preserved so any banned keyword inside it stays visible to the
+        ``_BAN`` check and is still rejected.  This mirrors the lazy regex,
+        which required a closing ``*/`` to match.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(query)
+    while i < n:
+        c = query[i]
+        if c == "/" and i + 1 < n and query[i + 1] == "/":
+            # Line comment: skip to the next newline (newline itself is kept).
+            j = query.find("\n", i + 2)
+            i = n if j == -1 else j
+        elif c == "/" and i + 1 < n and query[i + 1] == "*":
+            # Block comment: find the matching */. If absent, keep the text
+            # (matches the lazy-regex behaviour — no terminator ⇒ no strip).
+            end = query.find("*/", i + 2)
+            if end == -1:
+                out.append(query[i:])
+                break
+            i = end + 2
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
 
 # Banned mutation keywords.  \\b word boundaries prevent false matches on
 # identifier substrings (e.g. "created_at", "dropped_at", "deleted_by").
@@ -138,7 +178,7 @@ def guard(query: str, hard_limit: int = 100) -> str:
     # We run ALL safety checks against the stripped text so that keywords
     # inside comments are invisible to _BAN, but keywords *outside* comments
     # (even if surrounded by comments) are still caught.
-    stripped: str = _COMMENT.sub("", query)
+    stripped: str = _strip_comments(query)
 
     # --- 3. Keyword check (on comment-stripped text) --------------------------
     match = _BAN.search(stripped)

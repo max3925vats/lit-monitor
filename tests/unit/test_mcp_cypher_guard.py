@@ -236,6 +236,47 @@ class TestCommentStripping:
         with pytest.raises(CypherSafetyError):
             guard("MATCH (p)\n// safe\nMERGE (p)-[:R]->(q) RETURN p")
 
+    # 4b. Unterminated block comment must NOT hide a keyword (no closing */ ⇒
+    # text is preserved by the linear scanner, so the keyword stays visible).
+    def test_unterminated_block_comment_keyword_still_blocked(self) -> None:
+        with pytest.raises(CypherSafetyError):
+            guard("MATCH (p) /* unterminated CREATE (n:X) RETURN p")
+
+
+# ---------------------------------------------------------------------------
+# ReDoS regression: comment stripping must run in linear time.
+# Before the fix, the `//[^\n]*|/\*.*?\*/` regex was O(n^2) on input like
+# `(/*x)*n` — many unterminated block-comment openers forced the lazy `.*?`
+# to rescan to end-of-string at every position. The linear scanner returns
+# promptly.
+# ---------------------------------------------------------------------------
+
+
+class TestCommentStrippingReDoS:
+    def test_pathological_block_comment_openers_complete_promptly(self) -> None:
+        import time
+
+        # 200k unterminated "/*x" openers: O(n^2) regex would take minutes.
+        payload = "/*x" * 200_000 + " CREATE (n) RETURN n"
+        start = time.perf_counter()
+        # CREATE is outside any terminated comment ⇒ must still be blocked,
+        # and the call must return/raise quickly (linear time).
+        with pytest.raises(CypherSafetyError):
+            guard(payload)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 2.0, f"comment stripping too slow: {elapsed:.2f}s (ReDoS?)"
+
+    def test_pathological_input_safe_read_still_allowed_promptly(self) -> None:
+        import time
+
+        # Many terminated block comments + a valid read. Must stay linear.
+        payload = "/* c */" * 100_000 + "MATCH (n) RETURN n LIMIT 5"
+        start = time.perf_counter()
+        result = guard(payload)
+        elapsed = time.perf_counter() - start
+        assert "MATCH" in result
+        assert elapsed < 2.0, f"comment stripping too slow: {elapsed:.2f}s (ReDoS?)"
+
 
 # ---------------------------------------------------------------------------
 # 6. LIMIT injection

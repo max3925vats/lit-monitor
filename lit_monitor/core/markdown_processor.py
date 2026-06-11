@@ -37,13 +37,19 @@ _REFERENCE_HEADING = _re.compile(
 )
 
 # Headings for all end-matter: references plus acknowledgements, funding, etc.
+#
+# Quantifiers here are deliberately unambiguous to keep matching linear-time
+# (CodeQL py/polynomial-redos).  ``acknowledge?ments?`` replaces the earlier
+# ``acknowledg(?:e?ment|e?ments)`` whose two branches overlapped (both could
+# match "acknowledgement"), forcing backtracking; ``conflicts?`` / ``interests?``
+# replace ``conflict(?:s)?`` / ``interest(?:s)?`` for the same reason.
 _END_MATTER_HEADING = _re.compile(
     r"^(?:#{1,3}\s*)?"
     r"(?:references|bibliography|works\s+cited|literature\s+cited"
     r"|reference\s+list|cited\s+works|citations"
-    r"|acknowledg(?:e?ment|e?ments)"
+    r"|acknowledge?ments?"
     r"|funding(?:\s+information)?"
-    r"|conflict(?:s)?\s+of\s+interest(?:s)?"
+    r"|conflicts?\s+of\s+interests?"
     r"|competing\s+interests?"
     r"|author\s+contributions?"
     r"|data\s+availability(?:\s+statement)?"
