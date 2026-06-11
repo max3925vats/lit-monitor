@@ -39,7 +39,25 @@ _REVIEW_JOURNAL_SUBSTRINGS: frozenset[str] = frozenset({
     "annual review",
 })
 
-_CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "item_routing.yaml"
+def _resolve_item_routing_path() -> Path:
+    """Locate item_routing.yaml in a CWD/install-independent way.
+
+    The old ``Path(__file__).parent.parent.parent / "config"`` default pointed
+    at site-packages in a pip-installed wheel, so the file was never found.
+    Resolution order:
+
+    1. ``<config_dir()>/item_routing.yaml`` — dev (repo ./config) or a user
+       override under ~/.config/lit-monitor.
+    2. The packaged ``lit_monitor/_data/item_routing.yaml`` (ships in the wheel).
+    """
+    from lit_monitor.core.config import config_dir
+
+    user_path = config_dir() / "item_routing.yaml"
+    if user_path.exists():
+        return user_path
+    from importlib.resources import files
+
+    return Path(str(files("lit_monitor._data") / "item_routing.yaml"))
 
 Pipeline = Literal["brain_build", "skip"]
 # After R-10 (textbook-build removed), only "paper" is a live schema.
@@ -76,17 +94,21 @@ class ItemRoute(BaseModel):
 
 
 @lru_cache(maxsize=1)
-def load_item_routes(config_path: Path = _CONFIG_PATH) -> dict[str, ItemRoute]:
+def load_item_routes(config_path: Path | None = None) -> dict[str, ItemRoute]:
     """Load item routing table from YAML and return as {item_type: ItemRoute}.
 
     Results are cached after first load — identical to the extraction_schema.py
     singleton pattern.  Pass a different ``config_path`` in tests to inject a
-    temporary YAML without modifying the production file.
+    temporary YAML without modifying the production file.  When ``None``, the
+    path is resolved via :func:`_resolve_item_routing_path` (wheel-safe).
     """
     try:
         import yaml
     except ImportError as exc:
         raise ImportError("PyYAML is required for item routing") from exc
+
+    if config_path is None:
+        config_path = _resolve_item_routing_path()
 
     with open(config_path, encoding="utf-8") as fh:
         raw = yaml.safe_load(fh)
@@ -108,7 +130,7 @@ def load_item_routes(config_path: Path = _CONFIG_PATH) -> dict[str, ItemRoute]:
     return routes
 
 
-def get_route(item_type: str, config_path: Path = _CONFIG_PATH) -> ItemRoute:
+def get_route(item_type: str, config_path: Path | None = None) -> ItemRoute:
     """Look up routing for a specific Zotero item type.
 
     Raises

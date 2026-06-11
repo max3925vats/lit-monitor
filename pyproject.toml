@@ -163,6 +163,8 @@ include-package-data = true
     "server/static/**/*.css",
     "server/static/**/*.js",
     "server/scheduler_templates/*.j2",
+    "_data/note_templates/*.j2",
+    "_data/item_routing.yaml",
     "_data/config_examples/**/*.yaml",
     "_data/config_examples/**/*.md",
     "**/*.yaml",
