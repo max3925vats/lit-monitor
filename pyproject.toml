@@ -150,6 +150,27 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["lit_monitor*"]
 
+# ─── Non-Python package data (must ship in the wheel) ────────────────────────
+# Without these, a pip-installed wheel drops the Jinja templates, static
+# assets, scheduler templates, and packaged example/vocab/prompt YAMLs —
+# the server then 500s on first render and first-run can't seed config.
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"lit_monitor" = [
+    "server/templates/**/*.html",
+    "server/static/**/*.css",
+    "server/static/**/*.js",
+    "server/scheduler_templates/*.j2",
+    "_data/config_examples/**/*.yaml",
+    "_data/config_examples/**/*.md",
+    "**/*.yaml",
+    "**/*.yml",
+    "**/*.j2",
+    "**/*.json",
+]
+
 # ─── uv-specific resolver overrides ──────────────────────────────────────────
 # findpapers 0.6.7 strict-pins typer<0.4.0, which in turn forces click<7.2,
 # but our project (via chromadb + Click CLI surface) needs click>=8.0 and
