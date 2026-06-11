@@ -1969,7 +1969,7 @@ def obsidian_re_extract(
 )
 @click.option(
     "--max-retries",
-    default=4,
+    default=3,
     show_default=True,
     help="Maximum S2 retry attempts on rate-limit responses.",
 )
@@ -2084,7 +2084,7 @@ def obsidian_build_citation_graph(
 )
 @click.option(
     "--max-retries",
-    default=4,
+    default=3,
     show_default=True,
     help="Maximum S2 retry attempts on rate-limit responses.",
 )

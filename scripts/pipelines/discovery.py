@@ -38,6 +38,7 @@ import numpy as np
 import requests
 
 from scripts.api.queries import get_graph_signals_for_candidate
+from scripts.core.doi import normalize_doi
 from scripts.core.doi_resolver import resolve_doi
 from scripts.core.item_router import detect_review
 from scripts.core.strict_mode import strict_fallback
@@ -931,16 +932,18 @@ def _run_exploration_searches(
         # config.toml), so the shim is sufficient and reuses findpapers + S2.
         explore_cfg = SimpleNamespace(topics=list(queries))
         explore_results = run_searches(explore_cfg, since_days=since_days)
-        # Drop exploration candidates already present in the topic pool so they
-        # don't double-count against the budget or the ranked digest.
+        # AR-5 Fix 1 (Finding 5 + 4): drop exploration candidates already present
+        # in the topic pool BEFORE the budget cap, so duplicate hits never consume
+        # budget slots and the configured exploration rate is actually honoured.
+        # Compare with the canonical `normalize_doi` (not a bare `.lower()`) so
+        # URL-wrapped / `doi:`-prefixed variants of the same DOI dedup too.
         _topic_dois = {
-            (p.get("doi") or "").strip().lower()
-            for p in topic_results
-            if (p.get("doi") or "").strip()
+            nd for p in topic_results
+            if (nd := normalize_doi(p.get("doi")))
         }
         explore_results = [
             p for p in explore_results
-            if (p.get("doi") or "").strip().lower() not in _topic_dois
+            if normalize_doi(p.get("doi")) not in _topic_dois
         ]
         if not explore_results:
             # NO fake-fill: exploration found nothing new → proceed normally.

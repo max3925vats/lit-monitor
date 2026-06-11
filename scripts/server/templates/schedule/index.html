@@ -15,15 +15,15 @@
 
   <h2>Current schedule</h2>
   {% if current %}
-  <table class="runs-table">
-    <tr><th>Day of week</th><td>{{ current.day_of_week }}</td></tr>
-    <tr><th>Time</th><td>{{ current.time }}</td></tr>
-  </table>
+  <dl class="kv">
+    <dt>Day of week</dt><dd>{{ current.day_of_week }}</dd>
+    <dt>Time</dt><dd>{{ current.time }}</dd>
+  </dl>
   <form hx-delete="/api/schedule" hx-target="#schedule-result" hx-swap="innerHTML" hx-confirm="Remove the discovery schedule?">
     <button type="submit" class="button danger">Remove schedule</button>
   </form>
   {% else %}
-  <p class="field-note">No schedule installed.</p>
+  <p class="field-note">No schedule installed yet — create one below to run discovery on a cadence.</p>
   {% endif %}
 
   <h2>{% if current %}Replace{% else %}Create{% endif %} schedule</h2>
@@ -64,7 +64,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="field-note">No discovery runs in the log.</p>
+  <p class="field-note">No discovery runs in the log yet — runs appear here once discovery completes.</p>
   {% endif %}
 </section>
 {% endblock %}

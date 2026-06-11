@@ -51,6 +51,32 @@ discovery:
     meaning: "Default number of papers returned for a single discovery run (Query(20, ge=1, le=100))."
     kind: bare_literal
 
+server_security:
+  # AR-1 (Audit 5 Top Finding 1): CSRF / DNS-rebinding guard for the
+  # localhost-only web server. LocalOriginMiddleware rejects non-safe-method
+  # requests whose Host/Origin falls outside this local set.
+  csrf_allowed_hosts:
+    value: "{127.0.0.1, localhost, ::1, [::1], testserver}"
+    location: scripts/server/csrf.py:60
+    meaning: "_ALLOWED_HOSTS — the host set LocalOriginMiddleware treats as 'local' for the Host check and the Origin-host check. 'testserver' is FastAPI TestClient's default Host; '[::1]'/'::1' cover IPv6 loopback. Extended at wire-time via app.py:_resolve_allowed_hosts() when bound to a non-localhost address."
+    kind: named_constant
+
+pagination:
+  # AR-7 (Audit 5 UI Finding 2): corpus-style offset/limit pagination added to
+  # two previously-unbounded dashboard tables. These are the page sizes for the
+  # rendered tables (distinct from the discovery.runs_list_limit_* API Query
+  # defaults below, which bound the JSON API, not the dashboard table).
+  discovery_runs_page_size:
+    value: 20
+    location: scripts/server/routes/discovery.py:46
+    meaning: "_RUNS_PAGE_SIZE — page size for the paginated discovery-runs table on the /discovery dashboard."
+    kind: named_constant
+  insights_recent_events_page_size:
+    value: 100
+    location: scripts/server/routes/feedback.py:41
+    meaning: "_EVENTS_PAGE_SIZE — page size for the paginated recent-events table on the /insights page."
+    kind: named_constant
+
 graph_health:
   severity_policy:
     value: "warn-or-ok, never fail"

@@ -114,6 +114,41 @@ def test_retrieve_doi_candidates_hybrid_fuses_both():
 
 
 @pytest.mark.unit
+def test_retrieve_doi_candidates_hybrid_fuses_doi_variants_into_one():
+    """AR-4: a case/URL-format mismatch between the vector and graph legs must
+    NOT double-count the same paper. The vector leg returns ``10.0/X`` and the
+    graph leg returns the URL-wrapped ``https://doi.org/10.0/x``; after
+    normalization RRF fuses them into a SINGLE entry.
+
+    Before AR-4 the legs were fused by RAW string, so the two variants produced
+    two distinct fused rows for the same paper.
+    """
+    from scripts.retrieval.branch import retrieve_doi_candidates
+
+    embeddings_db = MagicMock()
+    embeddings_db.find_similar_to_text.return_value = [
+        {"id": "10.0/X", "score": 0.9},
+    ]
+    graph_db = MagicMock()
+    graph_db.find_similar_papers.return_value = [("https://doi.org/10.0/x", 5.0)]
+
+    results = retrieve_doi_candidates(
+        "hybrid",
+        seed_doi="10.0/seed",
+        query_text="some topic",
+        embeddings_db=embeddings_db,
+        graph_db=graph_db,
+        k=10,
+    )
+
+    dois = [d for d, _ in results]
+    assert dois == ["10.0/x"], (
+        f"variants of the same DOI must fuse into one canonical entry; got {dois!r}"
+    )
+    assert len(results) == 1
+
+
+@pytest.mark.unit
 def test_retrieve_doi_candidates_vector_empty_when_no_embeddings_db():
     """G9 branch helper: vector mode returns [] when embeddings_db is None."""
     from scripts.retrieval.branch import retrieve_doi_candidates

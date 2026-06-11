@@ -34,6 +34,7 @@ except ImportError:  # pragma: no cover
     _S2_AVAILABLE = False  # type: ignore[assignment]
     search_semantic_scholar = None  # type: ignore[assignment]
 
+from scripts.core.doi import normalize_doi
 from scripts.core.strict_mode import strict_fallback
 from scripts.search._constants import FINDPAPERS_TIMEOUT_SECONDS
 
@@ -146,7 +147,9 @@ def run_searches(
             search_result = _fp_load(tmp)
             papers = _convert_findpapers_results(search_result.papers, tracked_author=False)
             for paper in papers:
-                doi = paper.get("doi", "").strip().lower()
+                # AR-4: canonical key collapses URL-wrap + case so the same
+                # paper from different sources dedups to one entry.
+                doi = normalize_doi(paper.get("doi"))
                 if doi and doi not in all_papers:
                     all_papers[doi] = paper
                 elif not doi:
@@ -178,7 +181,9 @@ def run_searches(
                 s2_results = search_semantic_scholar(topic, since_days=since_days)
                 added = 0
                 for paper in s2_results:
-                    doi = paper.get("doi", "").strip().lower()
+                    # AR-4: same canonical key as the findpapers loop so an S2
+                    # result with a URL-wrapped DOI dedups against findpapers.
+                    doi = normalize_doi(paper.get("doi"))
                     if doi and doi not in all_papers:
                         all_papers[doi] = paper
                         added += 1
@@ -202,10 +207,12 @@ def filter_known_dois(
     Remove papers whose DOI is already in the state database.
     Papers without a DOI are always included (cannot be deduplicated).
     """
-    known = state_db.known_dois()
+    # AR-4: normalize both the stored known DOIs and the candidate so a
+    # URL-wrapped candidate matches a bare known DOI (and vice versa).
+    known = {normalize_doi(d) for d in state_db.known_dois()}
     new_papers = []
     for paper in papers:
-        doi = (paper.get("doi") or "").strip().lower()
+        doi = normalize_doi(paper.get("doi"))
         if not doi or doi not in known:
             new_papers.append(paper)
     logger.info(
@@ -310,7 +317,11 @@ def _convert_findpapers_results(papers, tracked_author: bool) -> list[dict[str, 
     result: list[dict[str, Any]] = []
     for paper in papers:
         try:
-            doi = (paper.doi or "").strip().lower()
+            # AR-4: store the canonical DOI. The system already stores bare
+            # lowercased DOIs; normalize_doi() additionally strips URL-wrapping,
+            # so the stored value stays consistent and the dedup key in
+            # run_searches() matches what lands in state.db.
+            doi = normalize_doi(paper.doi)
             year: int | None = None
             if paper.publication_date:
                 try:

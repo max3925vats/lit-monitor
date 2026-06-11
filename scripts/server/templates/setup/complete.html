@@ -3,32 +3,24 @@
 <h1>Setup complete</h1>
 <p>Verifying that everything's wired up correctly. Each row polls its own status endpoint.</p>
 
-<table class="status-grid">
-  <tr>
-    <td>Secrets file + required keys</td>
-    <td hx-get="/setup/api/check/secrets" hx-trigger="load, every 30s">
-      <span class="pill">checking…</span>
-    </td>
-  </tr>
-  <tr>
-    <td>Ollama reachable + configured model installed</td>
-    <td hx-get="/setup/api/check/ollama" hx-trigger="load, every 30s">
-      <span class="pill">checking…</span>
-    </td>
-  </tr>
-  <tr>
-    <td>Zotero credentials valid</td>
-    <td hx-get="/setup/api/check/zotero" hx-trigger="load, every 30s">
-      <span class="pill">checking…</span>
-    </td>
-  </tr>
-  <tr>
-    <td>Obsidian vault path exists</td>
-    <td hx-get="/setup/api/check/vault" hx-trigger="load, every 30s">
-      <span class="pill">checking…</span>
-    </td>
-  </tr>
-</table>
+<dl class="kv">
+  <dt>Secrets file + required keys</dt>
+  <dd hx-get="/setup/api/check/secrets" hx-trigger="load, every 30s">
+    <span class="pill">checking…</span>
+  </dd>
+  <dt>Ollama reachable + configured model installed</dt>
+  <dd hx-get="/setup/api/check/ollama" hx-trigger="load, every 30s">
+    <span class="pill">checking…</span>
+  </dd>
+  <dt>Zotero credentials valid</dt>
+  <dd hx-get="/setup/api/check/zotero" hx-trigger="load, every 30s">
+    <span class="pill">checking…</span>
+  </dd>
+  <dt>Obsidian vault path exists</dt>
+  <dd hx-get="/setup/api/check/vault" hx-trigger="load, every 30s">
+    <span class="pill">checking…</span>
+  </dd>
+</dl>
 
 <hr>
 
@@ -94,7 +86,7 @@
         >
         Auto-write weekly digest .md file
       </label>
-      <small style="color:#666;display:block;margin-top:0.25rem;">
+      <small class="field-note" style="display:block;margin-top:0.25rem;">
         Off: rely on OS notification + chooser, or run
         <code>lit-monitor discovery export-md --run latest</code> on demand.
       </small>

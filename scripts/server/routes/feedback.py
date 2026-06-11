@@ -37,6 +37,9 @@ _TIMELINE_GRANULARITIES: frozenset[str] = frozenset({"week", "day"})
 #: whitelists) so a hand-crafted ?dimension= never reaches SQL un-validated.
 _TIMELINE_DIMENSIONS: frozenset[str] = frozenset({"signal", "source"})
 
+#: AR-7: page size for the paginated recent-events table on /insights.
+_EVENTS_PAGE_SIZE: int = 100
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -240,20 +243,31 @@ def _timeline(granularity: str, weeks: int | None, dimension: str) -> list[dict]
 # ---------------------------------------------------------------------------
 
 @router.get("/insights", response_class=HTMLResponse)
-def insights_page(request: Request) -> HTMLResponse:
+def insights_page(
+    request: Request,
+    events_offset: int = Query(0, ge=0),
+) -> HTMLResponse:
     """Render the read-only Insights page.
 
     Sections: learning-state card, cluster-weights table, server-rendered
     inline-SVG signal-mix chart, and the recent-events table. All reads are
     defensive — a degenerate engine state degrades to graceful empties rather
     than 500-ing.
+
+    AR-7: the recent-events table is paginated (corpus-style offset/limit, page
+    size ``_EVENTS_PAGE_SIZE``). ``events_offset`` is clamped to >= 0 by the
+    ``Query(..., ge=0)`` bound; an offset past the end simply yields an empty
+    slice (Prev still navigates back).
     """
     db = _safe_db()
     recent: list[dict] = []
     summary: dict[str, int] = {}
+    events_total = 0
+    offset = max(events_offset, 0)
     if db is not None:
         try:
-            recent = db.list_feedback_events(limit=100)
+            recent = db.list_feedback_events(limit=_EVENTS_PAGE_SIZE, offset=offset)
+            events_total = db.count_feedback_events()
             summary = db.feedback_summary()
         except Exception as exc:  # noqa: BLE001 — DB read is non-fatal for the page
             logger.warning("insights page: DB read failed: %s", exc)
@@ -272,6 +286,13 @@ def insights_page(request: Request) -> HTMLResponse:
             "summary_by_source": summary_by_source,
             "learning": learning,
             "clusters": clusters,
+            # AR-7: recent-events pagination context.
+            "events_total": events_total,
+            "events_offset": offset,
+            "events_has_prev": offset > 0,
+            "events_has_next": offset + _EVENTS_PAGE_SIZE < events_total,
+            "events_prev_offset": max(offset - _EVENTS_PAGE_SIZE, 0),
+            "events_next_offset": offset + _EVENTS_PAGE_SIZE,
         },
     )
 

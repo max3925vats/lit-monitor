@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from scripts.server.csrf import _ALLOWED_HOSTS, LocalOriginMiddleware
 from scripts.server.routes.fs import router as fs_router
 from scripts.server.routes.zotero import router as zotero_router
 
@@ -73,6 +74,35 @@ def _safe_last_run() -> dict | None:
         return None
 
 
+def _resolve_allowed_hosts() -> frozenset[str]:
+    """Return the local-host set for the CSRF guard, plus the configured bind host.
+
+    The defaults cover loopback (and the TestClient ``testserver`` Host). If the
+    user has persisted a ``[server].host`` in the secrets TOML and bound the
+    server to a non-localhost address, that address must also count as "local"
+    so the DNS-rebinding Host check doesn't 403 legitimate requests. Reading the
+    config is best-effort: any failure degrades to the loopback-only defaults
+    rather than breaking app creation.
+
+    A wildcard bind address (``0.0.0.0`` / ``::``) is a *bind* address, not a
+    reachable ``Host`` value, so it is never added to the allow-list — doing so
+    would be inert at best and is sloppy. Real hostnames are still added.
+    """
+    try:
+        from scripts.server.config_io import load_server_config
+
+        host = str(load_server_config().get("host", "")).strip().lower()
+    except Exception as exc:  # noqa: BLE001 — never let config IO break boot
+        logger.debug("Could not read [server].host for CSRF allow-list: %s", exc)
+        host = ""
+
+    # Skip wildcard bind addresses: they bind every interface but are not a
+    # value any client sends as Host, so allow-listing them protects nothing.
+    if host and host not in ("0.0.0.0", "::") and host not in _ALLOWED_HOSTS:
+        return frozenset(_ALLOWED_HOSTS | {host})
+    return _ALLOWED_HOSTS
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """App lifespan hook.
@@ -96,6 +126,15 @@ def create_app() -> FastAPI:
     # Exposed on app.state so base.html footer can render the version on every
     # route, not just routes that explicitly pass `version` into their context.
     app.state.version = __version__
+
+    # AR-1: CSRF + DNS-rebinding guard. Installed before any router so it runs
+    # on every request. The allowed-host set is the loopback defaults plus the
+    # configured bind host -- so if the user ever binds non-localhost via
+    # [server].host, their own bind address still counts as "local" and isn't
+    # 403'd by the DNS-rebinding check. Reading the host is wrapped defensively:
+    # any failure (no/unreadable secrets file) falls back to loopback-only,
+    # which is the safe default and never breaks app boot.
+    app.add_middleware(LocalOriginMiddleware, allowed_hosts=_resolve_allowed_hosts())
 
     app.mount(
         "/static",

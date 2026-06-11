@@ -369,6 +369,37 @@ def test_fetch_s2_references_exhausted_retries():
 
 
 @pytest.mark.unit
+def test_fetch_s2_references_default_retry_count_and_backoff_sequence():
+    """AR-5 Fix 2 (Finding 6): with the DEFAULT retry policy, a persistently
+    rate-limited DOI makes exactly 1 initial + 3 backoff retries = 4 total HTTP
+    attempts, with backoff sleeps [1.0, 2.0, 4.0] seconds.
+
+    STASH-VERIFY: the off-by-one default (``max_retries=4`` over
+    ``range(max_retries + 1)``) produces 5 attempts and sleeps
+    [1.0, 2.0, 4.0, 8.0] → both assertions fail RED.
+    """
+    call_count = 0
+
+    class _FakeS2:
+        def get_paper(self, *a, **kw):
+            nonlocal call_count
+            call_count += 1
+            raise RuntimeError("429 rate limit exceeded")
+
+    sleeps: list[float] = []
+
+    with patch("scripts.search.citation_graph._SemanticScholar", return_value=_FakeS2()), \
+         patch("scripts.search.citation_graph._S2_AVAILABLE", True), \
+         patch("time.sleep", side_effect=lambda s: sleeps.append(s)):
+        # No max_retries override → exercise the default policy.
+        refs = _fetch_s2_references("10.1/test")
+
+    assert refs == []
+    assert call_count == 4  # 1 initial + 3 retries
+    assert sleeps == [1.0, 2.0, 4.0]
+
+
+@pytest.mark.unit
 def test_fetch_s2_references_non_rate_limit_error():
     """Non-rate-limit errors are not retried."""
     call_count = 0

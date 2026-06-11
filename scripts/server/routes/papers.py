@@ -81,7 +81,17 @@ def related_papers(
     if graph_db is None:
         raise HTTPException(status_code=503, detail="graph backend unavailable")
 
-    results = get_related_papers(doi, mode=mode, k=k, graph_db=graph_db)
+    # AR-2: always release the KuzuDB handle. Without this finally the handle
+    # leaked a file descriptor and held the Kuzu write lock for the lifetime of
+    # the process, contending with discovery/backfill. Mirrors corpus.py's
+    # _get_related_graph defensive-close pattern.
+    try:
+        results = get_related_papers(doi, mode=mode, k=k, graph_db=graph_db)
+    finally:
+        try:
+            graph_db.close()
+        except Exception:  # noqa: BLE001 — defensive close, never fatal
+            pass
     if results is None:
         raise HTTPException(status_code=404, detail=f"paper {doi!r} not found")
     return results
@@ -173,7 +183,14 @@ def paper_snapshot(doi: str) -> dict:
     if graph_db is None:
         raise HTTPException(status_code=503, detail="graph backend unavailable")
 
-    snapshot = get_paper_snapshot(doi, graph_db)
+    # AR-2: same leak class as /related — always release the KuzuDB handle.
+    try:
+        snapshot = get_paper_snapshot(doi, graph_db)
+    finally:
+        try:
+            graph_db.close()
+        except Exception:  # noqa: BLE001 — defensive close, never fatal
+            pass
 
     # H1 convention: empty metadata dict means the DOI was not found.
     if not snapshot.get("metadata"):

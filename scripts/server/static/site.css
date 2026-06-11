@@ -19,6 +19,86 @@
   --chart-5: #f2c200;
   --chart-6: #6a4cff;
   --chart-grid: #e3e3df;
+
+  /* AR-7: tokenised use-site colours (lifted from scattered literals). Names
+     describe the use site; the resolved colours are unchanged from before. */
+  /* Success accent (step-card "ok" left-border, success card border). */
+  --accent-success: #2a8a3a;
+  --card-success-bg: #e6f6ea;
+  --card-success-fg: #1c5a26;
+  /* Warn accent (step-card "missing" left-border). */
+  --accent-warn: #c47a00;
+  /* Status pills (success / warning / danger). */
+  --pill-success-bg: #efe;
+  --pill-success-fg: #060;
+  --pill-success-border: #6c6;
+  --pill-warn-bg: #ffe;
+  --pill-warn-fg: #960;
+  --pill-warn-border: #cc6;
+  --pill-danger-bg: #fee;
+  --pill-danger-fg: #c00;
+  --pill-danger-border: #c66;
+  /* Inline warning banner + warning card. */
+  --warn-banner-bg: #ffe;
+  --warn-banner-border: #cb6;
+  --warn-card-border: #cc6;
+  --warn-card-bg: #ffe;
+  /* Error rows / blocks in the papers table. */
+  --row-error-bg: #fef4f4;
+  --error-block-border: #c66;
+  --error-fg: #c00;
+  /* SSE log pane (dark console surface). */
+  --log-pane-bg: #111;
+  --log-pane-fg: #eee;
+  --log-hint-fg: #888;
+  --log-row-border: #1f1f1f;
+  --log-ts-fg: #888;
+  --log-logger-fg: #6ab0ff;
+  --log-info-fg: #6ee0a0;
+  --log-info-bg: #07331c;
+  --log-debug-fg: #777;
+  --log-debug-bg: #1a1a1a;
+  --log-debug-line-fg: #999;
+  --log-warning-fg: #ffcc66;
+  --log-warning-bg: #3a2c00;
+  --log-warning-line-fg: #f0d08a;
+  --log-error-fg: #ff8888;
+  --log-error-bg: #3a0e0e;
+  --log-error-line-fg: #ffa0a0;
+  --log-critical-fg: #fff;
+  --log-critical-bg: #aa1010;
+  --log-raw-fg: #aaa;
+  /* Health badge states. */
+  --badge-healthy-bg: #efe;
+  --badge-healthy-fg: #060;
+  --badge-healthy-border: #6c6;
+  --badge-degraded-bg: #ffe;
+  --badge-degraded-fg: #960;
+  --badge-degraded-border: #cc6;
+  --badge-misconfigured-bg: #fee;
+  --badge-misconfigured-fg: #c00;
+  --badge-misconfigured-border: #c66;
+  --badge-unconfigured-bg: #eee;
+  --badge-unconfigured-fg: #555;
+  --badge-unconfigured-border: #aaa;
+  --badge-loading-bg: #f0f0f0;
+  --badge-loading-fg: #888;
+  --badge-loading-border: #ccc;
+  --health-detail-bg: #fafafa;
+  /* Dev-mode banner + dev panel output. */
+  --dev-banner-bg: #fff3cd;
+  --dev-banner-fg: #6b4f00;
+  --dev-banner-border: #f5d77a;
+  --dev-output-bg: #f8f8f8;
+  --dev-output-err-bg: #fff4f4;
+  /* Paper-card badges (ingested / distance). */
+  --badge-ingested-bg: #e6f6ea;
+  --badge-ingested-fg: #1c5a26;
+  --badge-ingested-border: #6c6;
+  --badge-distance-bg: #e8eeff;
+  --badge-distance-fg: #1a3a8a;
+  --badge-distance-border: #8af;
+
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
   --radius: 8px;
@@ -276,10 +356,10 @@ a:hover {
   color: var(--muted);
 }
 .step-card.ok {
-  border-left: 4px solid #2a8a3a;
+  border-left: 4px solid var(--accent-success);
 }
 .step-card.missing {
-  border-left: 4px solid #c47a00;
+  border-left: 4px solid var(--accent-warn);
 }
 .step-card.todo {
   border-left: 4px solid var(--muted);
@@ -312,9 +392,9 @@ a:hover {
   color: var(--danger-fg);
 }
 .card.success {
-  border-color: #2a8a3a;
-  background: #e6f6ea;
-  color: #1c5a26;
+  border-color: var(--accent-success);
+  background: var(--card-success-bg);
+  color: var(--card-success-fg);
 }
 .button {
   display: inline-block;
@@ -425,8 +505,8 @@ a:hover {
   flex: 1;
 }
 .banner.warning {
-  background: #ffe;
-  border: 1px solid #cb6;
+  background: var(--warn-banner-bg);
+  border: 1px solid var(--warn-banner-border);
   padding: 0.5rem;
   border-radius: var(--radius);
   margin-top: 0.25rem;
@@ -435,9 +515,9 @@ a:hover {
 /* --- Status pills (live-test feedback in wizard) --- */
 .pill { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px;
   font-size: 0.85em; margin-left: 0.5rem; }
-.pill.success { background: #efe; color: #060; border: 1px solid #6c6; }
-.pill.warning { background: #ffe; color: #960; border: 1px solid #cc6; }
-.pill.danger  { background: #fee; color: #c00; border: 1px solid #c66; }
+.pill.success { background: var(--pill-success-bg); color: var(--pill-success-fg); border: 1px solid var(--pill-success-border); }
+.pill.warning { background: var(--pill-warn-bg); color: var(--pill-warn-fg); border: 1px solid var(--pill-warn-border); }
+.pill.danger  { background: var(--pill-danger-bg); color: var(--pill-danger-fg); border: 1px solid var(--pill-danger-border); }
 
 /* --- Collapsible mode sections in setup form --- */
 .setup-form details { margin: 0.5rem 0; border: 1px solid var(--border); border-radius: var(--radius); }
@@ -461,7 +541,7 @@ a:hover {
 .concepts-tree ul { padding-left: 1rem; margin-top: 0.5rem; }
 
 /* --- Card variants --- */
-.card.warning { border-color: #cc6; background: #ffe; }
+.card.warning { border-color: var(--warn-card-border); background: var(--warn-card-bg); }
 
 /* --- Routes table (F2.11) --- */
 .routes-table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
@@ -502,15 +582,15 @@ a:hover {
   text-align: left;
 }
 .papers-table .row-done { color: var(--muted); }
-.papers-table .row-error { background: #fef4f4; }
+.papers-table .row-error { background: var(--row-error-bg); }
 .failed-block {
   margin: 1rem 0;
   padding: 0.5rem;
-  border: 1px solid #c66;
+  border: 1px solid var(--error-block-border);
   border-radius: var(--radius);
-  background: #fef4f4;
+  background: var(--row-error-bg);
 }
-.field-note.error { color: #c00; }
+.field-note.error { color: var(--error-fg); }
 
 /* --- Live progress panel (brain-build SSE stream) --- */
 .live-progress { margin: 1rem 0; }
@@ -525,14 +605,14 @@ a:hover {
   overflow-x: auto;        /* long log lines scroll horizontally rather than
                               wrap; the auto sizing on the last grid column
                               lets rows extend as wide as their content */
-  background: #111;
-  color: #eee;
+  background: var(--log-pane-bg);
+  color: var(--log-pane-fg);
   padding: 0.5rem;
   border-radius: var(--radius);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.85em;
 }
-.live-progress-hint { color: #888; }
+.live-progress-hint { color: var(--log-hint-fg); }
 
 /* --- Collection switcher --- */
 .collection-switcher { margin: 1rem 0; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); }
@@ -552,22 +632,22 @@ a:hover {
                 padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.82em;
                 cursor: pointer; text-decoration: none; }
 .status-badge::before { content: "●"; }
-.status-badge.healthy { background: #efe; color: #060; border: 1px solid #6c6; }
-.status-badge.degraded { background: #ffe; color: #960; border: 1px solid #cc6; }
-.status-badge.misconfigured { background: #fee; color: #c00; border: 1px solid #c66; }
-.status-badge.unconfigured { background: #eee; color: #555; border: 1px solid #aaa; }
-.status-badge.loading { background: #f0f0f0; color: #888; border: 1px solid #ccc; }
+.status-badge.healthy { background: var(--badge-healthy-bg); color: var(--badge-healthy-fg); border: 1px solid var(--badge-healthy-border); }
+.status-badge.degraded { background: var(--badge-degraded-bg); color: var(--badge-degraded-fg); border: 1px solid var(--badge-degraded-border); }
+.status-badge.misconfigured { background: var(--badge-misconfigured-bg); color: var(--badge-misconfigured-fg); border: 1px solid var(--badge-misconfigured-border); }
+.status-badge.unconfigured { background: var(--badge-unconfigured-bg); color: var(--badge-unconfigured-fg); border: 1px solid var(--badge-unconfigured-border); }
+.status-badge.loading { background: var(--badge-loading-bg); color: var(--badge-loading-fg); border: 1px solid var(--badge-loading-border); }
 #health-detail { padding: 0.5rem 1.25rem; border-bottom: 1px solid var(--border);
-                 background: #fafafa; }
+                 background: var(--health-detail-bg); }
 #health-detail[hidden] { display: none; }
 .health-detail-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
 .health-detail-table td { padding: 0.2rem 0.5rem; }
 .health-detail-error { color: var(--danger-fg); padding: 0.5rem 1rem; }
 
 /* Dev-mode banner (rendered only when LIT_MONITOR_DEV=1). */
-.dev-banner { background: #fff3cd; color: #6b4f00; padding: 0.4rem 1rem;
-              text-align: center; font-size: 0.85em; border-bottom: 1px solid #f5d77a; }
-.dev-banner a { color: #6b4f00; font-weight: 600; }
+.dev-banner { background: var(--dev-banner-bg); color: var(--dev-banner-fg); padding: 0.4rem 1rem;
+              text-align: center; font-size: 0.85em; border-bottom: 1px solid var(--dev-banner-border); }
+.dev-banner a { color: var(--dev-banner-fg); font-weight: 600; }
 
 /* /dev page panels (Task #67). */
 /* Inline checkbox+label group (used by the dev page Panel 4 Re-extract form). */
@@ -577,9 +657,9 @@ a:hover {
 /* Make .button-row work as a sibling of dashboard h2s, not only inside dev-panel. */
 .dashboard .button-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0; align-items: center; }
 .dev-result { margin-top: 0.75rem; }
-.dev-output { background: #f8f8f8; padding: 0.5rem; border-radius: 3px; font-size: 0.85em;
+.dev-output { background: var(--dev-output-bg); padding: 0.5rem; border-radius: 3px; font-size: 0.85em;
               max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
-.dev-output-err { background: #fff4f4; padding: 0.5rem; border-radius: 3px; font-size: 0.85em;
+.dev-output-err { background: var(--dev-output-err-bg); padding: 0.5rem; border-radius: 3px; font-size: 0.85em;
                   white-space: pre-wrap; }
 .dev-checks-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
 .dev-checks-table td { padding: 0.25rem 0.5rem; }
@@ -615,26 +695,26 @@ a:hover {
   grid-template-columns: 5em 6em 14em auto;
   gap: 0.5rem;
   padding: 0.05rem 0;
-  border-bottom: 1px solid #1f1f1f;
+  border-bottom: 1px solid var(--log-row-border);
 }
-.log-ts { color: #888; }
+.log-ts { color: var(--log-ts-fg); }
 .log-level {
   text-align: center;
   font-weight: 600;
   border-radius: 3px;
   padding: 0 0.3rem;
 }
-.log-logger { color: #6ab0ff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-logger { color: var(--log-logger-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-msg { white-space: nowrap; }  /* horizontal scroll inside .live-progress-pane */
-.log-INFO .log-level    { color: #6ee0a0; background: #07331c; }
-.log-DEBUG .log-level   { color: #777;    background: #1a1a1a; }
-.log-DEBUG              { color: #999; }
-.log-WARNING .log-level { color: #ffcc66; background: #3a2c00; }
-.log-WARNING            { color: #f0d08a; }
-.log-ERROR .log-level   { color: #ff8888; background: #3a0e0e; }
-.log-ERROR              { color: #ffa0a0; }
-.log-CRITICAL .log-level { color: #fff; background: #aa1010; }
-.log-raw { color: #aaa; font-style: italic; grid-template-columns: 1fr; }
+.log-INFO .log-level    { color: var(--log-info-fg); background: var(--log-info-bg); }
+.log-DEBUG .log-level   { color: var(--log-debug-fg);    background: var(--log-debug-bg); }
+.log-DEBUG              { color: var(--log-debug-line-fg); }
+.log-WARNING .log-level { color: var(--log-warning-fg); background: var(--log-warning-bg); }
+.log-WARNING            { color: var(--log-warning-line-fg); }
+.log-ERROR .log-level   { color: var(--log-error-fg); background: var(--log-error-bg); }
+.log-ERROR              { color: var(--log-error-line-fg); }
+.log-CRITICAL .log-level { color: var(--log-critical-fg); background: var(--log-critical-bg); }
+.log-raw { color: var(--log-raw-fg); font-style: italic; grid-template-columns: 1fr; }
 
 /* --- Bundle H: button utilities (.btn, .btn-secondary, .btn-sm, .btn-action) --- */
 /*
@@ -674,8 +754,8 @@ a:hover {
 .doi { font-family: var(--font-mono); font-size: 0.85em; }
 .score { font-variant-numeric: tabular-nums; }
 .badge { display: inline-block; padding: 0 0.4em; border-radius: 999px; font-size: 0.8em; }
-.badge.ingested { background: #e6f6ea; color: #1c5a26; border: 1px solid #6c6; }
-.badge.distance { background: #e8eeff; color: #1a3a8a; border: 1px solid #8af; }
+.badge.ingested { background: var(--badge-ingested-bg); color: var(--badge-ingested-fg); border: 1px solid var(--badge-ingested-border); }
+.badge.distance { background: var(--badge-distance-bg); color: var(--badge-distance-fg); border: 1px solid var(--badge-distance-border); }
 .rationale { margin: 0.3rem 0; font-size: 0.9rem; color: var(--fg); }
 
 /* score-breakdown details panel (Bundle B) */
@@ -736,6 +816,25 @@ a:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.5rem;
+}
+
+/* --- AR-7: key/value definition lists --- */
+/* Semantically-correct element for key/value pairs (replaces the prior
+   <th>-in-<tbody> tables). A two-column grid: bold term, value beside it. */
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.3rem 1rem;
+  margin: 0.5rem 0;
+  max-width: 540px;
+  font-size: 0.9em;
+}
+.kv dt {
+  font-weight: 600;
+  color: var(--fg);
+}
+.kv dd {
+  margin: 0;
 }
 
 /* --- CU-2: Chart.js canvas wrapper --- */

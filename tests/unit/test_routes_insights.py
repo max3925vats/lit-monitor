@@ -134,6 +134,32 @@ def test_insights_learning_state_card(client, monkeypatch):
     assert "42" in r.text and "0.58" in r.text
 
 
+def test_insights_learning_state_uses_definition_list(client, monkeypatch):
+    # AR-7: the learning-state key/value block is a <dl class="kv"> with <dt>/<dd>,
+    # not a <th>-in-<tbody> table. The labels must survive verbatim.
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._learning_state",
+        lambda: {
+            "available": True,
+            "n_events": 7,
+            "soft_gate": 0.12,
+            "inert": True,
+            "computed_at": "2026-06-02",
+            "dim": 384,
+            "top_papers": [],
+        },
+    )
+    r = client.get("/insights")
+    assert '<dl class="kv">' in r.text
+    # Labels are now <dt> terms, not <th> headers.
+    assert "<dt>Feedback events</dt>" in r.text
+    assert "<dt>Soft-gate</dt>" in r.text
+    assert "<dt>Interest-vector dim</dt>" in r.text
+    assert "<dt>Computed at</dt>" in r.text
+    # The INERT pill text must survive the conversion.
+    assert "INERT" in r.text
+
+
 def test_insights_first_run_no_vector(client, monkeypatch):
     monkeypatch.setattr(
         "scripts.server.routes.feedback._learning_state",
@@ -409,3 +435,75 @@ def test_timeline_invalid_dimension_falls_back(client, monkeypatch):
     )
     client.get("/insights/timeline?dimension=bogus")
     assert seen["d"] == "signal"  # route whitelists before passing to backend
+
+
+# ---------------------------------------------------------------------------
+# AR-7: recent-events pagination (page size 100, corpus-style prev/next)
+# ---------------------------------------------------------------------------
+
+def _seed_events(db, n: int) -> None:
+    """Record *n* feedback events with monotonically-increasing created_at so the
+    newest-first ordering is deterministic across pages."""
+    for i in range(n):
+        # created_at is stamped server-side; record_feedback_event accepts the
+        # closed signal vocabulary. Alternate DOIs so rows are distinguishable.
+        db.record_feedback_event(f"10.1/p{i:04d}", "saved", source="discovery")
+
+
+def test_recent_events_prev_hidden_at_offset_zero(client, real_db, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._learning_state", lambda: {"available": False}
+    )
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._cluster_weights",
+        lambda: {"floor": 0.1, "clusters": []},
+    )
+    _seed_events(real_db, 150)
+    r = client.get("/insights")
+    assert r.status_code == 200
+    # Page 1: a Next link (more than 100 events) but NO Prev link.
+    assert "events_offset=100" in r.text       # Next → page 2
+    assert "events_offset=0" not in r.text      # no Prev back to page 1
+    assert "of 150" in r.text                   # total count surfaced
+
+
+def test_recent_events_page_two_renders_next_slice(client, real_db, monkeypatch):
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._learning_state", lambda: {"available": False}
+    )
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._cluster_weights",
+        lambda: {"floor": 0.1, "clusters": []},
+    )
+    _seed_events(real_db, 150)
+    # Newest-first: page 1 holds p0149..p0050, page 2 holds p0049..p0000.
+    page1 = client.get("/insights").text
+    assert "10.1/p0149" in page1 and "10.1/p0000" not in page1
+
+    page2 = client.get("/insights?events_offset=100")
+    assert page2.status_code == 200
+    body = page2.text
+    assert "10.1/p0000" in body         # the older slice is now visible
+    assert "10.1/p0149" not in body     # the newest rows are not on page 2
+    # On the last page: a Prev link, no Next.
+    assert "events_offset=0" in body    # Prev → page 1
+    assert "events_offset=200" not in body  # no Next past the end
+
+
+def test_recent_events_over_the_end_offset_keeps_prev(client, real_db, monkeypatch):
+    # AR-7 follow-up: a hand-crafted offset past the end yields an empty slice,
+    # but the pager renders whenever any events exist so Prev still navigates back.
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._learning_state", lambda: {"available": False}
+    )
+    monkeypatch.setattr(
+        "scripts.server.routes.feedback._cluster_weights",
+        lambda: {"floor": 0.1, "clusters": []},
+    )
+    _seed_events(real_db, 150)
+    r = client.get("/insights?events_offset=300")
+    assert r.status_code == 200
+    body = r.text
+    assert "No events on this page." in body   # empty-slice copy, not "No recent events yet"
+    assert "No recent events yet" not in body  # there ARE events, just not on this page
+    assert "events_offset=200" in body         # Prev still reachable

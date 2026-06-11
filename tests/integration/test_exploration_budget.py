@@ -279,6 +279,55 @@ def test_near_floor_dismissed_cluster_excluded(db, monkeypatch):
     assert out == []
 
 
+def test_url_wrapped_duplicates_dedup_before_cap_budget_buys_unique(db, monkeypatch):
+    """AR-5 Fix 1 (Finding 5 + 4): exploration candidates are deduped against the
+    topic pool with canonical ``normalize_doi`` (URL/case variants too) BEFORE the
+    ``ceil(pct * topic_pool)`` cap is applied. So URL-wrapped duplicates do not
+    consume budget slots — the cap is fully spent on UNIQUE papers.
+
+    Topic pool: 10 papers (bare DOIs). Exploration returns 2 URL-wrapped
+    duplicates of topic DOIs + 3 genuinely-new candidates. cap = ceil(0.20*10) = 2.
+    With canonical dedup-before-cap, the 2 duplicates are dropped first and the
+    cap selects 2 of the 3 unique candidates → 2 appended, all unique/new.
+
+    STASH-VERIFY: with the inline ``.strip().lower()`` (non-canonical) comparison,
+    the URL-wrapped duplicates survive dedup, land at the front of the list, and
+    consume both budget slots → 0 unique candidates appended → assertion fails RED.
+    """
+    _seed_two_clusters(db)
+    monkeypatch.setattr(
+        discovery, "safe_graph_db",
+        lambda: _FakeGraph(central_rows=[["ultrafiltration", 2]]),
+    )
+
+    topic_results = [{"doi": f"10.1/t{i}", "title": f"t{i}"} for i in range(10)]
+
+    def _fake_run_searches(cfg, since_days=14):
+        # 2 URL-wrapped duplicates of topic DOIs FIRST (front of the list, so a
+        # cap-first or non-canonical-dedup order would let them eat the budget),
+        # then 3 genuinely-new candidates.
+        return [
+            {"doi": "https://doi.org/10.1/T0", "title": "url-dup of t0"},
+            {"doi": "HTTPS://DOI.ORG/10.1/t1", "title": "url-dup of t1"},
+            {"doi": "10.9/new0", "title": "new 0"},
+            {"doi": "10.9/new1", "title": "new 1"},
+            {"doi": "10.9/new2", "title": "new 2"},
+        ]
+
+    monkeypatch.setattr(discovery, "run_searches", _fake_run_searches)
+
+    out = discovery._run_exploration_searches(
+        _cfg(pct=0.20), db, topic_results, since_days=14
+    )
+
+    # cap = ceil(0.20 * 10) = 2; the budget is fully spent on UNIQUE papers.
+    assert len(out) == 2
+    returned_dois = {p["doi"] for p in out}
+    # Only genuinely-new DOIs were appended — no URL-wrapped topic-pool duplicates.
+    assert returned_dois <= {"10.9/new0", "10.9/new1", "10.9/new2"}
+    assert all(p.get("_exploration") is True for p in out)
+
+
 def test_non_fatal_on_search_error(db, monkeypatch):
     _seed_two_clusters(db)
     monkeypatch.setattr(
