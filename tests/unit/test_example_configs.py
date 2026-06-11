@@ -156,11 +156,16 @@ def test_pyproject_metadata_present() -> None:
     assert project["description"].strip()
     assert project["readme"] == "README.md"
     assert project["license"]  # { file = "LICENSE" }
-    assert project["keywords"]
+    keywords = project["keywords"]
+    assert keywords
+    # PyPI-discoverability keywords promised in the packaging milestone.
+    for kw in ("zotero", "obsidian", "semantic-search", "knowledge-graph", "mcp"):
+        assert kw in keywords
     classifiers = project["classifiers"]
-    assert "Development Status :: 3 - Alpha" in classifiers
+    assert "Development Status :: 4 - Beta" in classifiers
     assert "License :: OSI Approved :: MIT License" in classifiers
     assert "Programming Language :: Python :: 3.11" in classifiers
+    assert "Programming Language :: Python :: 3.12" in classifiers
     urls = project["urls"]
-    for key in ("Homepage", "Repository", "Issues"):
+    for key in ("Homepage", "Repository", "Issues", "Documentation"):
         assert urls[key].startswith("https://github.com/max3925vats/lit-monitor")

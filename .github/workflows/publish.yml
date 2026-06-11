@@ -1,0 +1,81 @@
+name: Publish
+
+# Trusted Publishing (OIDC) — no API tokens stored anywhere. PyPI / TestPyPI
+# are configured as pending publishers for this repo + workflow filename
+# (publish.yml) + the `testpypi` / `pypi` GitHub environments below.
+#
+# Triggers:
+#   - release: [published]  → full path: build → TestPyPI → PyPI.
+#   - workflow_dispatch     → build → TestPyPI only (dry run; PyPI job is gated
+#                             on the event being a real release).
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Build wheel + sdist
+        run: uv build
+
+      - name: Clean-room wheel smoke
+        run: ./scripts/clean_room_smoke.sh
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  testpypi:
+    name: Publish to TestPyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write          # OIDC token for trusted publishing
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  pypi:
+    name: Publish to PyPI
+    needs: testpypi
+    # Only a real published release reaches PyPI. A manual workflow_dispatch run
+    # stops after the TestPyPI dry run above.
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write          # OIDC token for trusted publishing
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

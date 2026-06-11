@@ -76,3 +76,47 @@ jobs:
         # is belt-and-braces protection against accidental @pytest.mark.integration
         # tags in tests/unit/ or tests/llm/.
         run: uv run pytest tests/unit/ tests/llm/ -m "not integration" -q
+
+  package:
+    # Build the wheel and prove it is pip-installable from scratch. Guards the
+    # "works on my checkout, 500s on pip install" regression class — package-data
+    # omissions, hardcoded repo-relative paths, a missing vendored library, etc.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Build wheel + sdist
+        run: uv build
+
+      - name: Assert wheel ships package data + LICENSE
+        # The wheel must carry the Jinja templates, the packaged config examples,
+        # the vendored findpapers library, and the MIT LICENSE — without these a
+        # pip install drops first-run seeding / the web UI / search / licensing.
+        run: |
+          WHEEL="$(ls dist/lit_monitor-*.whl | head -1)"
+          echo "Inspecting ${WHEEL}"
+          contents="$(python -m zipfile -l "${WHEEL}")"
+          check() {
+            if echo "${contents}" | grep -q "$1"; then
+              echo "  OK   $1"
+            else
+              echo "  FAIL missing: $1" >&2
+              exit 1
+            fi
+          }
+          check "lit_monitor/server/templates/.*\.html"
+          check "lit_monitor/_data/config_examples/"
+          check "lit_monitor/_vendor/findpapers/__init__.py"
+          check "lit_monitor-.*\.dist-info/licenses/LICENSE"
+
+      - name: Clean-room wheel smoke
+        run: ./scripts/clean_room_smoke.sh
+
+      - name: Twine metadata check
+        run: uv run --with twine twine check dist/*

@@ -8,7 +8,7 @@ LLM, and writes everything into your Obsidian vault — queryable from a browser
 the terminal, or any AI client that speaks the Model Context Protocol (MCP).
 
 [![CI](https://github.com/max3925vats/lit-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/max3925vats/lit-monitor/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.10.0-informational.svg)](https://github.com/max3925vats/lit-monitor/releases)
+[![Version](https://img.shields.io/badge/version-0.11.0-informational.svg)](https://github.com/max3925vats/lit-monitor/releases)
 [![Downloads](https://img.shields.io/github/downloads/max3925vats/lit-monitor/total)](https://github.com/max3925vats/lit-monitor/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
@@ -42,9 +42,13 @@ work. Same pipeline either way.
 ## Features
 
 - **Topic search with library-relative ranking.** Recurring searches across
-  PubMed, arXiv, and Scopus. Each candidate is ranked by cosine similarity to
-  embeddings of your Zotero library, computed locally via `mxbai-embed-large`
-  (or any LiteLLM-compatible provider) against a per-machine ChromaDB store.
+  PubMed, arXiv, and Scopus, powered by a bundled copy of
+  [findpapers](https://github.com/jonatasgrosman/findpapers) (see
+  [Acknowledgements](#acknowledgements)). Each candidate is ranked by cosine
+  similarity to embeddings of your Zotero library, computed locally via
+  `mxbai-embed-large` (or any LiteLLM-compatible provider) against a per-machine
+  ChromaDB store. *Explicit search coverage for individual journal publishers is
+  planned for a future release.*
 - **Obsidian-native output.** Every paper becomes a structured Markdown note
   with persist zones for your own annotations, two-phase LLM extraction, and a
   citation-graph rebuild path.
@@ -81,6 +85,22 @@ For the scoring model and the design behind each signal, see
 ## Install
 
 ```bash
+pip install lit-monitor        # or: uvx lit-monitor / pipx install lit-monitor
+lit-monitor first-run
+```
+
+That's the whole install. `lit-monitor first-run` walks you through interactive
+setup and then launches the web UI. [Ollama](https://ollama.com) is a separate
+prerequisite for local embeddings (`ollama pull mxbai-embed-large`) — see
+[Requirements](#requirements).
+
+For optional extras — `[nlp]` (BioBERT entity extraction) and `[litellm]`
+(multi-provider cloud LLM routing) — and the from-source / development install,
+see the [Installation guide](docs/installation.md).
+
+### From source (development)
+
+```bash
 git clone https://github.com/max3925vats/lit-monitor.git
 cd lit-monitor
 ./install.sh
@@ -89,10 +109,6 @@ cd lit-monitor
 The script installs [`uv`](https://docs.astral.sh/uv/) if needed, creates a
 project-local `.venv`, resolves all dependencies, and seeds working configs
 from `config/*.example.yaml`.
-
-Starting from a non-biopharma field, adding optional extras (NLP entity
-extraction, multi-provider LLM routing), or prefer to drive `uv` yourself? See
-the [Installation guide](docs/installation.md).
 
 ## Quickstart
 
@@ -161,6 +177,22 @@ A few terms used throughout the docs:
 - **RRF (reciprocal-rank fusion)** — the method behind `--rag-mode hybrid` that
   blends vector and graph rankings into one ordered list.
 
+## Acknowledgements
+
+Multi-source literature search is powered by
+[**findpapers**](https://github.com/jonatasgrosman/findpapers) by Jonatas Grosman
+(MIT License, © 2020). A copy is bundled under
+[`lit_monitor/_vendor/findpapers`](lit_monitor/_vendor/findpapers) — with its
+license retained — so that `pip install lit-monitor` resolves cleanly without an
+upstream dependency conflict. The original project is gratefully acknowledged.
+
+Explicit search coverage for individual journal publishers (beyond the sources
+findpapers provides) is planned for a future release.
+
 ## License
 
 [MIT](LICENSE)
+
+This project bundles a copy of [findpapers](https://github.com/jonatasgrosman/findpapers)
+(MIT License) — see [Acknowledgements](#acknowledgements) and
+[`lit_monitor/_vendor/findpapers/LICENSE`](lit_monitor/_vendor/findpapers/LICENSE).
