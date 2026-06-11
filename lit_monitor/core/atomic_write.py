@@ -39,11 +39,24 @@ def atomic_write_text(path: Path, content: str, encoding: str = "utf-8") -> Path
 
     Raises
     ------
+    ValueError
+        If ``path`` (or any component) contains an embedded NUL byte — a
+        classic path-injection smuggling vector that ``open``/``os.replace``
+        would otherwise reject deep in the C layer with a confusing error.
     OSError
         Any I/O error from the write or rename is re-raised after best-effort
         cleanup of the temp file.
     """
     path = Path(path)
+    # Reject NUL bytes up front: a path component derived from tainted data
+    # (paper title / DOI / topic) must never smuggle a NUL into the syscall.
+    if "\x00" in str(path):
+        raise ValueError("atomic_write_text: path contains an embedded NUL byte")
+    # Normalise to an absolute path so callers operate on a single canonical
+    # form (collapses redundant separators / "." segments). We do NOT reparent
+    # the path — legitimate callers pass absolute vault/config destinations and
+    # the path-component sanitisation happens at those call sites.
+    path = Path(os.path.abspath(path))
     fd, tmp = tempfile.mkstemp(
         dir=str(path.parent),
         prefix=f".{path.name}.",

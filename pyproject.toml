@@ -38,7 +38,7 @@ dependencies = [
     # (its removed cli.py was the sole consumer). `requests` is declared below.
     # Loose lower bounds only — the upstream restrictive upper caps were dropped
     # to avoid new resolver conflicts.
-    "lxml>=4.9",
+    "lxml>=6.1.0",   # security floor: <6.1.0 has an XXE in iterparse()/ETCompatXMLParser (GHSA / CVE)
     "xmltodict>=0.12",
     "edlib>=1.3",
     "colorama>=0.4.3",
@@ -60,6 +60,8 @@ dependencies = [
     # HTTP
     "requests",
     "tenacity",
+    "aiohttp>=3.14.0",   # security floor (transitive via chromadb/litellm): <3.14.0 has
+                          # cross-origin cookie redirect + untrusted-data deserialization fixes
 
     # Embeddings and reranking
     "chromadb>=0.5.3",     # 0.5.x rewrote Settings to not use pydantic, enabling pydantic v2 coexistence

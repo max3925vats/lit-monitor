@@ -152,8 +152,11 @@ async def health_badge_detail() -> str:
     """Return the detail panel — full per-check table."""
     try:
         results = _cached_health_check()
-    except Exception as exc:  # noqa: BLE001
-        return f'<div class="health-detail-error">Could not compute health: {escape(str(exc))}</div>'
+    except Exception:  # noqa: BLE001
+        # Info-leak guard: the underlying exception can embed config paths /
+        # credentials. Log it server-side; the client gets a generic notice.
+        logger.warning("health detail panel: health check failed", exc_info=True)
+        return '<div class="health-detail-error">Could not compute health — check server logs.</div>'
     rows = []
     for section_name, checks in results.items():
         for check_name, result in checks.items():

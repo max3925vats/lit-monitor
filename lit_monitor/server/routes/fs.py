@@ -26,7 +26,15 @@ def _normalize(raw: str) -> Path:
     Raises ``HTTPException(403)`` if the resolved path escapes ``$HOME``.
     """
 
+    # Reject NUL bytes up front — they can truncate the path at the OS layer
+    # (embedded-NUL path-injection) and Path() would raise ValueError anyway.
+    if "\x00" in raw:
+        raise HTTPException(status_code=400, detail="invalid path")
+
     home = Path.home().resolve()
+    # Explicit normalization step: expand ``~`` and collapse ``..``/symlinks to
+    # an absolute real path before any check or filesystem access. All callers
+    # operate on this resolved Path, never on the raw user string.
     candidate = Path(raw).expanduser().resolve(strict=False)
     # Allow exactly $HOME and any descendant; refuse everything else.
     if candidate != home and home not in candidate.parents:

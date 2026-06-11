@@ -55,7 +55,7 @@ def test_collections_returns_rows_from_zotero_client(client, monkeypatch):
 
 
 @pytest.mark.unit
-def test_test_endpoint_handles_api_error(client, monkeypatch):
+def test_test_endpoint_handles_api_error(client, monkeypatch, caplog):
     """If the ZoteroClient probe raises, ``/test`` returns ``{ok: False, message}``."""
     monkeypatch.setattr(
         "lit_monitor.server.routes.zotero.load_secrets",
@@ -67,9 +67,17 @@ def test_test_endpoint_handles_api_error(client, monkeypatch):
         "lit_monitor.server.routes.zotero._build_client",
         lambda: mock_client,
     )
-    resp = client.get("/api/zotero/test")
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.server.routes.zotero"):
+        resp = client.get("/api/zotero/test")
     # Endpoint always returns 200, even when the API rejects creds.
     assert resp.status_code == 200
     body = resp.json()
     assert body["ok"] is False
-    assert "401" in body["message"]
+    # Info-leak guard: the client message is generic — the raw pyzotero error
+    # (which can embed the API key / library id / URL) must NOT be reflected.
+    assert body["message"] == "credential check failed"
+    assert "401" not in body["message"]
+    # ...but the real error is still captured server-side for diagnosis.
+    assert any("probe failed" in rec.getMessage() for rec in caplog.records)

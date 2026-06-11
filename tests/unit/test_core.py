@@ -612,6 +612,33 @@ def test_strip_end_matter_long_review_window_constant(monkeypatch):
     assert "Review body paragraph with citations [1]." in stripped
 
 
+@pytest.mark.unit
+def test_strip_end_matter_pathological_input_completes_promptly():
+    """ReDoS regression: heading regex stays linear on crafted input.
+
+    The end-matter heading regex previously used ambiguous quantifiers
+    (``acknowledg(?:e?ment|e?ments)``, ``conflict(?:s)?``). After the de-ReDoS
+    rewrite (``acknowledge?ments?``, ``conflicts?``) a pathological string —
+    a near-heading prefix followed by a long run that never completes the
+    heading — must return promptly and correctly (input unchanged: no heading
+    matched).
+    """
+    import time
+
+    from lit_monitor.core.markdown_processor import strip_end_matter
+
+    # A long run that looks like it's starting a heading but never closes it,
+    # placed in the last-30% window. Must not trigger catastrophic backtracking.
+    body = "Paper body text.\n" * 100
+    payload = body + "\nacknowledge" + "e" * 200_000
+    start = time.perf_counter()
+    result = strip_end_matter(payload)
+    elapsed = time.perf_counter() - start
+    # No valid end-matter heading line ⇒ text returned unchanged.
+    assert result == payload
+    assert elapsed < 2.0, f"strip_end_matter too slow: {elapsed:.2f}s (ReDoS?)"
+
+
 # ---------------------------------------------------------------------------
 # N13 — StateDB: N7 cleanup logs WARNING on failure instead of silently passing
 # ---------------------------------------------------------------------------

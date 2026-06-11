@@ -75,11 +75,13 @@ def notify_discovery_complete(
             # plyer doesn't standardize click-action across platforms; the
             # notification body itself directs the user to the URL.
         )
+        # Do not log the full click URL: ``app_url`` is user-configured and may
+        # embed credentials (e.g. http://user:pass@host). Log only the
+        # non-sensitive identifiers needed for debugging.
         logger.info(
-            "P2: notification fired (run_id=%d, paper_count=%d, url=%s)",
+            "P2: notification fired (run_id=%d, paper_count=%d)",
             run_id,
             paper_count,
-            click_url,
         )
     except Exception as exc:
         # Notification failures must NEVER abort the pipeline.

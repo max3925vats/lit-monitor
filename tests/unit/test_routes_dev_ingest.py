@@ -427,5 +427,9 @@ def test_ingest_extraction_failure_reports_stage_failure(
     # Stage 1 (chunk) still succeeded; stage 2 failure shows up.
     assert 'class="pill success"' in body  # chunk_markdown stage
     assert 'class="pill danger"' in body
+    # The failing stage is surfaced by exception class name (safe + useful)...
     assert "BoomError" in body
-    assert "LLM exploded" in body
+    # ...but the raw exception message is NOT reflected (info-leak guard); it is
+    # logged server-side instead.
+    assert "LLM exploded" not in body
+    assert "see server logs" in body
