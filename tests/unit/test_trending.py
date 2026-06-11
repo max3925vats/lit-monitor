@@ -113,6 +113,27 @@ class TestLoadExistingTopicTerms:
         result = _load_existing_topic_terms()
         assert isinstance(result, set)
 
+    def test_logical_path_resolves_via_config_dir(self, tmp_path, monkeypatch):
+        """Phase 2: the default logical config/topics.yaml routes through
+        resolve_path → config_dir, so a wheel run from an arbitrary CWD finds
+        the user's topics.yaml. LIT_MONITOR_ROOT redirects config_dir to tmp
+        (never the real config). _TOPICS_PATH is left at its logical default."""
+        cfg_dir = tmp_path / "config"
+        cfg_dir.mkdir()
+        (cfg_dir / "topics.yaml").write_text(
+            "searches:\n  - name: Downstream Processing\n    query: chromatography\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("LIT_MONITOR_ROOT", str(tmp_path))
+        # Park CWD with no config/ so a CWD-relative read would find nothing.
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+        from lit_monitor.graph.trending import _load_existing_topic_terms
+        terms = _load_existing_topic_terms()
+        assert "downstream processing" in terms
+        assert "chromatography" in terms
+
 
 # ---------------------------------------------------------------------------
 # Unit tests for in_existing_topics flag

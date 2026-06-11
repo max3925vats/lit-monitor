@@ -29,9 +29,14 @@ from typing import Any
 
 import yaml
 
+from lit_monitor.core.path_utils import resolve_path as _resolve_path
+
 logger = logging.getLogger(__name__)
 
-# Module-level path allows tests to monkeypatch for isolation.
+# Module-level *logical* config path; the read below routes it through
+# resolve_path() so a wheel run from an arbitrary CWD still finds the user's
+# topics.yaml (the dev/editable case still resolves ./config). Tests may
+# monkeypatch this for isolation.
 _TOPICS_PATH = Path("config/topics.yaml")
 
 # Window lengths in days for growth-rate calculation.
@@ -210,9 +215,20 @@ def _load_existing_topic_terms() -> set[str]:
     Used by _check_in_existing_topics() for the in_existing_topics flag.
     Returns an empty set on any failure (missing file, malformed YAML).
     """
-    path = _TOPICS_PATH
-    if not path.exists():
-        return set()
+    # Route the logical config/ path through resolve_path so a wheel run finds
+    # the user config dir / packaged default (dev/editable still resolves
+    # ./config). An absolute override (e.g. a test monkeypatch pointing at a
+    # tmp file) is honoured as-is — resolve_path's read-fallback tiers must NOT
+    # rescue a deliberately-nonexistent absolute path back to the real config.
+    if _TOPICS_PATH.is_absolute():
+        path = _TOPICS_PATH
+        if not path.exists():
+            return set()
+    else:
+        try:
+            path = _resolve_path(_TOPICS_PATH)
+        except FileNotFoundError:
+            return set()
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         terms: set[str] = set()

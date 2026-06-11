@@ -30,10 +30,6 @@ from lit_monitor.core.strict_mode import strict_fallback
 
 logger = logging.getLogger(__name__)
 
-# Default paths — override in tests via the *_path parameters.
-_TOPICS_PATH = Path("config/topics.yaml")
-_CONCEPTS_PATH = Path("config/concepts.yaml")
-
 # Minimum rapidfuzz ratio to consider a topic "already present".
 _NOVELTY_THRESHOLD: float = 85.0
 
@@ -243,8 +239,8 @@ def _append_concepts_entry(concepts_path: Path, topic: str, doi: str, today: str
 def merge_discovered_topics(
     doi_topics: list[tuple[str, list[str]]],
     *,
-    topics_path: Path = _TOPICS_PATH,
-    concepts_path: Path = _CONCEPTS_PATH,
+    topics_path: Path | None = None,
+    concepts_path: Path | None = None,
 ) -> list[str]:
     """Append novel discovered_topics from a completed run to vocabulary files.
 
@@ -255,9 +251,12 @@ def merge_discovered_topics(
         Each discovered_topics entry is the list of 3–7 noun phrases returned
         by the complex-phase LLM extraction for that paper.
     topics_path:
-        Path to topics.yaml.  Defaults to config/topics.yaml.
+        Path to topics.yaml.  Defaults (``None``) to the active config dir's
+        ``topics.yaml`` so a wheel run read-modify-writes the *user's* file
+        rather than a CWD-relative ``config/topics.yaml`` that won't exist.
     concepts_path:
-        Path to concepts.yaml.  Defaults to config/concepts.yaml.
+        Path to concepts.yaml.  Defaults (``None``) to the active config dir's
+        ``concepts.yaml`` (same rationale).
 
     Returns
     -------
@@ -267,6 +266,19 @@ def merge_discovered_topics(
     """
     if not doi_topics:
         return []
+
+    # Resolve None defaults at call time (not def time) so HOME/CWD/env changes
+    # — including test monkeypatching of config_dir — take effect. This is a
+    # read-modify-append on existing user config, so it must anchor on the WRITE
+    # location (config_dir), not resolve_path's read-fallback tiers.
+    if topics_path is None or concepts_path is None:
+        from lit_monitor.core.config import config_dir
+
+        active_config_dir = config_dir()
+        if topics_path is None:
+            topics_path = active_config_dir / "topics.yaml"
+        if concepts_path is None:
+            concepts_path = active_config_dir / "concepts.yaml"
 
     today = str(date.today())
 

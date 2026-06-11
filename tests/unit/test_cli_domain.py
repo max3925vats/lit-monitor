@@ -74,7 +74,18 @@ class TestDomainAnalyze:
     ) -> None:
         from lit_monitor.cli import main
 
-        # Use isolated FS so config/domain_context.yaml is genuinely absent
+        # _load_domain_text now routes through resolve_path, whose dev-fallback
+        # ancestor-walk would otherwise find the repo's real
+        # config/domain_context.yaml even from an isolated CWD. Force a genuine
+        # "absent everywhere" by making the resolver raise — this is the only
+        # faithful way to test the missing-file branch without depending on (or
+        # reading) the real on-disk config.
+        def _missing(_path):
+            raise FileNotFoundError(_path)
+
+        monkeypatch.setattr(
+            "lit_monitor.core.path_utils.resolve_path", _missing
+        )
         with runner.isolated_filesystem():
             result = runner.invoke(main, ["domain", "analyze"])
         assert result.exit_code != 0

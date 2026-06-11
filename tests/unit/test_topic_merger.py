@@ -501,3 +501,39 @@ def test_all_writes_fail_raises_under_strict(tmp_path, monkeypatch):
             topics_path=topics_path,
             concepts_path=concepts_path,
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 (PyPI packaging): None-default path resolution targets config_dir.
+# A wheel run from an arbitrary CWD must read-modify-append the USER's
+# topics.yaml/concepts.yaml under config_dir(), NOT a CWD-relative config/.
+# LIT_MONITOR_ROOT redirects config_dir() to tmp so this never touches real
+# config.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_default_paths_resolve_to_config_dir(tmp_path, monkeypatch):
+    import lit_monitor.vocabulary.topic_merger as tm
+
+    # Redirect the active config dir to tmp/config via LIT_MONITOR_ROOT.
+    cfg_dir = tmp_path / "config"
+    cfg_dir.mkdir()
+    monkeypatch.setenv("LIT_MONITOR_ROOT", str(tmp_path))
+    # Park the CWD somewhere with NO config/ dir so a CWD-relative fallback
+    # would no-op (proving the append really went to config_dir, not CWD).
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    _make_topics_yaml(cfg_dir / "topics.yaml", ["filtration"])
+    _make_concepts_yaml(cfg_dir / "concepts.yaml", ["Filtration"])
+
+    # No explicit *_path kwargs → must resolve to config_dir()'s files.
+    result = tm.merge_discovered_topics([("10.1/test", ["system fouling"])])
+
+    assert result == ["system fouling"]
+    # The novel topic must have been appended to the config_dir copy.
+    appended = (cfg_dir / "topics.yaml").read_text(encoding="utf-8")
+    assert "system fouling" in appended
+    # And nothing was created under the CWD.
+    assert not (elsewhere / "config").exists()
