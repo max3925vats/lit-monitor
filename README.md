@@ -39,6 +39,12 @@ work. Same pipeline either way.
 > PubMed, arXiv, and Scopus. Routing extraction or embeddings to a cloud provider
 > (Anthropic, OpenAI, Vertex AI, Ollama Cloud) is opt-in.
 
+> **Beta.** lit-monitor is feature-complete and in active daily use, but still
+> maturing toward 1.0 — interfaces and on-disk formats may change between
+> releases, and you may hit rough edges. Bug reports and feedback are very
+> welcome via [GitHub Issues](https://github.com/max3925vats/lit-monitor/issues).
+> Provided under the MIT License, **without warranty** (see [License](#license)).
+
 ## Features
 
 - **Topic search with library-relative ranking.** Recurring searches across
