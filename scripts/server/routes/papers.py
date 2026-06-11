@@ -115,6 +115,17 @@ def _get_score_breakdown_db():
     return get_runtime().state_db
 
 
+def _snapshot_state_db():
+    """StateDB handle for the paper-snapshot zotero-key enrichment.
+
+    Module-level so tests can monkeypatch it without standing up the full
+    server runtime (mirrors _get_score_breakdown_db).
+    """
+    from scripts.server.runtime import get_runtime  # noqa: PLC0415
+
+    return get_runtime().state_db
+
+
 @router.get("/api/papers/{doi:path}/score-breakdown")
 def get_score_breakdown(doi: str) -> dict:
     """Bundle B: return the most recent per-signal score decomposition for a paper.
@@ -185,7 +196,7 @@ def paper_snapshot(doi: str) -> dict:
 
     # AR-2: same leak class as /related — always release the KuzuDB handle.
     try:
-        snapshot = get_paper_snapshot(doi, graph_db)
+        snapshot = get_paper_snapshot(doi, graph_db, _snapshot_state_db())
     finally:
         try:
             graph_db.close()
