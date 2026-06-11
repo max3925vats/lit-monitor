@@ -13,6 +13,7 @@ import logging
 import re
 from typing import Any
 
+from scripts.core.doi import normalize_doi
 from scripts.graph.migrations import (
     TYPED_PAPER_TO_PAPER_PREDS as _PAPER_TO_PAPER_PREDS,
 )
@@ -100,7 +101,9 @@ def _zotero_deeplink(zotero_key: str | None) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def get_paper_snapshot(doi: str, graph_db: Any) -> dict[str, Any]:
+def get_paper_snapshot(
+    doi: str, graph_db: Any, state_db: Any = None
+) -> dict[str, Any]:
     """Return a full snapshot of one paper.
 
     Intended callers: HTTP /api/papers/{doi} (H2) and MCP get_paper_details
@@ -109,6 +112,8 @@ def get_paper_snapshot(doi: str, graph_db: Any) -> dict[str, Any]:
     Args:
         doi:      DOI of the target paper.
         graph_db: GraphDB instance.
+        state_db: Optional StateDB. When provided, metadata is enriched with
+            zotero_key/zotero_deeplink. When omitted, those keys are None.
 
     Returns:
         Dict with keys: metadata, entities_by_type, relationships_in,
@@ -140,6 +145,26 @@ def get_paper_snapshot(doi: str, graph_db: Any) -> dict[str, Any]:
         logger.warning(
             "get_paper_snapshot: metadata query failed for %s: %s", doi, exc
         )
+
+    # Enrich with Zotero linkage (lives in state.db, not the graph). Guarded by
+    # `if metadata:` so the empty-metadata -> 404 contract is preserved (adding
+    # keys to an empty dict would make it truthy). Keys are ALWAYS set when
+    # metadata exists, so the cross-surface parity key-set stays stable.
+    if metadata:
+        zkey = None
+        if state_db is not None:
+            try:
+                # Audit Top Finding #4: normalize to the canonical form the
+                # ingest path used as the state.db key before the lookup.
+                zkey = state_db.get_zotero_key(normalize_doi(doi))
+            except Exception as exc:  # noqa: BLE001 — linkage is best-effort
+                logger.warning(
+                    "get_paper_snapshot: zotero_key lookup failed for %s: %s",
+                    doi,
+                    exc,
+                )
+        metadata["zotero_key"] = zkey
+        metadata["zotero_deeplink"] = _zotero_deeplink(zkey)
 
     # --- Entities grouped by type via MENTIONS edges ------------------------
     entities_by_type: dict[str, list[dict[str, Any]]] = {}
