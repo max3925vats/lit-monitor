@@ -10,7 +10,7 @@
       {% if cluster.cohesion_score is not none %}
         &middot; cohesion {{ "%.3f" | format(cluster.cohesion_score | float) }}
       {% endif %}
-      &middot; computed {{ (cluster.computed_at or "")[:10] or "&mdash;" }}
+      &middot; computed {{ (cluster.computed_at or "")[:10] or "—" }}
     </p>
     <div class="button-row">
       <a href="/themes" class="btn btn-secondary">&larr; All themes</a>
