@@ -43,6 +43,23 @@ def test_schedule_page_shows_current(client):
 
 
 @pytest.mark.unit
+def test_schedule_current_renders_as_definition_list(client):
+    # AR-7: the 'Current schedule' key/value block is a <dl class="kv"> with
+    # <dt>/<dd>, not a <th>-in-<tbody> table. The day/time values must survive.
+    spec = ScheduleSpec.parse("wed", "09:15")
+    with patch("scripts.server.routes.schedule.detect_platform", return_value="macos"), \
+         patch("scripts.server.routes.schedule.read_schedule", return_value=spec):
+        resp = client.get("/schedule")
+    assert resp.status_code == 200
+    body = resp.text
+    assert '<dl class="kv">' in body
+    assert "<dt>Day of week</dt>" in body
+    assert "<dt>Time</dt>" in body
+    # Values preserved verbatim (same as test_schedule_page_shows_current).
+    assert "wed" in body and "09:15" in body
+
+
+@pytest.mark.unit
 def test_create_schedule_invokes_writer(client):
     with patch("scripts.server.routes.schedule.detect_platform", return_value="macos"), \
          patch("scripts.server.routes.schedule.write_schedule") as mock_write:

@@ -2300,35 +2300,45 @@ class StateDB:
         self,
         *,
         limit: int = 50,
+        offset: int = 0,
         since: str | None = None,
     ) -> list[dict]:
         """Bundle H: return recent feedback events, newest first.
 
         Args:
-            limit: Max rows to return (default 50).
-            since: ISO date/datetime string; when provided, only rows with
-                   created_at >= since are returned.
+            limit:  Max rows to return (default 50).
+            offset: Row offset for pagination (AR-7; default 0).
+            since:  ISO date/datetime string; when provided, only rows with
+                    created_at >= since are returned.
 
         Returns:
             List of row dicts with keys: id, doi, signal_type, weight,
             rating, source, created_at.
         """
+        # AR-7: id DESC is a stable tiebreaker. created_at has only 1-second
+        # resolution, so events recorded in the same second would otherwise
+        # order non-deterministically across pages — breaking pagination.
         if since is not None:
             with self._connect() as conn:
                 rows = conn.execute(
                     "SELECT * FROM feedback_events "
                     "WHERE created_at >= ? "
-                    "ORDER BY created_at DESC LIMIT ?",
-                    (since, limit),
+                    "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+                    (since, limit, offset),
                 ).fetchall()
         else:
             with self._connect() as conn:
                 rows = conn.execute(
                     "SELECT * FROM feedback_events "
-                    "ORDER BY created_at DESC LIMIT ?",
-                    (limit,),
+                    "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+                    (limit, offset),
                 ).fetchall()
         return [dict(r) for r in rows]
+
+    def count_feedback_events(self) -> int:
+        """AR-7: total number of feedback events (for recent-events pagination)."""
+        with self._connect() as conn:
+            return conn.execute("SELECT COUNT(*) FROM feedback_events").fetchone()[0]
 
     def feedback_summary(self) -> dict[str, int]:
         """Bundle H: count feedback events per signal_type over all time.

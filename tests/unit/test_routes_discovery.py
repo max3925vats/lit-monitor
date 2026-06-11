@@ -494,6 +494,86 @@ class TestDiscoveryRunDetailPage:
 # ---------------------------------------------------------------------------
 
 
+class TestDiscoveryLastRunKvSemantics:
+    """AR-7: the 'Last run' key/value block is a <dl class="kv">, not a
+    <th>-in-<tbody> table. Labels + the run_id value must survive verbatim."""
+
+    def test_last_run_renders_as_definition_list(self, client):
+        # The 'Last run' block is driven by get_recent_runs_by_type → last_run.
+        fake_db = MagicMock()
+        fake_db.get_recent_runs_by_type.return_value = [
+            {"run_id": "abc123", "started_at": "2026-06-01", "status": "complete",
+             "papers_processed": 5, "papers_skipped": 1, "papers_failed": 0,
+             "finished_at": "2026-06-01 12:00:00"},
+        ]
+        fake_rt = MagicMock()
+        fake_rt.state_db = fake_db
+        fake_rt.config.obsidian.vault_path = ""
+        with patch("scripts.server.routes.discovery.get_runtime", return_value=fake_rt):
+            r = client.get("/discovery")
+        assert r.status_code == 200
+        assert '<dl class="kv">' in r.text
+        assert "<dt>Run ID</dt>" in r.text
+        assert "<dt>Status</dt>" in r.text
+        assert "<dt>Papers processed</dt>" in r.text
+        # The run_id value must survive the table→dl conversion verbatim.
+        assert "abc123" in r.text
+
+
+@pytest.fixture
+def seeded_many_runs_db(tmp_path):
+    """Real StateDB with 25 discovery_runs so the runs table spans >1 page (20)."""
+    from scripts.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    ids = []
+    for i in range(25):
+        rid = db.start_discovery_run({"topics": [f"t{i}"]})
+        db.finish_discovery_run(rid, status="success", total_found=i, total_ingested=i)
+        ids.append(rid)
+    return db, ids
+
+
+@pytest.fixture
+def client_with_many_runs(seeded_many_runs_db):
+    db, ids = seeded_many_runs_db
+    rt = _make_fake_runtime(db)
+    with patch("scripts.server.routes.discovery.get_runtime", return_value=rt):
+        yield TestClient(create_app()), ids
+
+
+class TestDiscoveryRunsPagination:
+    """AR-7: corpus-style prev/next pagination on the discovery-runs table."""
+
+    def test_page_one_has_next_no_prev(self, client_with_many_runs):
+        client, ids = client_with_many_runs
+        r = client.get("/discovery")
+        assert r.status_code == 200
+        body = r.text
+        assert "runs_offset=20" in body       # Next → page 2
+        assert "runs_offset=0" not in body     # no Prev on page 1
+        assert "of 25" in body                 # total surfaced
+
+    def test_page_two_renders_next_slice_and_prev(self, client_with_many_runs):
+        client, ids = client_with_many_runs
+        # Newest-first (id DESC): page 1 = ids[24..5], page 2 = ids[4..0].
+        oldest_run = ids[0]
+        # Match the exact table link (trailing quote) so /discovery/1 does not
+        # spuriously match /discovery/19, /discovery/10, etc.
+        oldest_link = f'/discovery/{oldest_run}"'
+        # The oldest run's table link is on page 2 only (not page 1).
+        page1 = client.get("/discovery").text
+        assert oldest_link not in page1
+
+        r = client.get("/discovery?runs_offset=20")
+        assert r.status_code == 200
+        body = r.text
+        assert oldest_link in body
+        # Last page: a Prev link, no Next.
+        assert "runs_offset=0" in body          # Prev → page 1
+        assert "runs_offset=40" not in body     # no Next past the end
+
+
 class TestRouteOrderingSafety:
     def test_notify_handler_not_shadowed_by_run_detail(self, client_with_db):
         """P3 /discovery/notify-handler must still be reachable after P8 ships.

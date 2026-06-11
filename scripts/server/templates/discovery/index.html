@@ -20,9 +20,8 @@
     <div id="discovery-progress-lines"
          sse-swap="progress"
          hx-swap="beforeend scroll:bottom"
-         class="live-progress-pane"
-         style="max-height: 30vh; overflow-y: auto; background: #111; color: #eee; padding: 0.5rem; border-radius: var(--radius); font-family: monospace; font-size: 0.85em;">
-      <div class="field-note live-progress-hint" style="color: #888;">
+         class="live-progress-pane">
+      <div class="field-note live-progress-hint">
         Streaming from the newest <code>discovery</code> JSONL log.
         New lines appear here as the pipeline runs.
       </div>
@@ -31,15 +30,15 @@
 
   {% if last_run %}
   <h2>Last run</h2>
-  <table class="runs-table">
-    <tr><th>Run ID</th><td><code>{{ last_run.run_id }}</code></td></tr>
-    <tr><th>Started</th><td>{{ last_run.started_at }}</td></tr>
-    <tr><th>Finished</th><td>{{ last_run.finished_at or "—" }}</td></tr>
-    <tr><th>Status</th><td>{{ last_run.status or "—" }}</td></tr>
-    <tr><th>Papers processed</th><td>{{ last_run.papers_processed or 0 }}</td></tr>
-    <tr><th>Papers skipped</th><td>{{ last_run.papers_skipped or 0 }}</td></tr>
-    <tr><th>Papers failed</th><td>{{ last_run.papers_failed or 0 }}</td></tr>
-  </table>
+  <dl class="kv">
+    <dt>Run ID</dt><dd><code>{{ last_run.run_id }}</code></dd>
+    <dt>Started</dt><dd>{{ last_run.started_at }}</dd>
+    <dt>Finished</dt><dd>{{ last_run.finished_at or "—" }}</dd>
+    <dt>Status</dt><dd>{{ last_run.status or "—" }}</dd>
+    <dt>Papers processed</dt><dd>{{ last_run.papers_processed or 0 }}</dd>
+    <dt>Papers skipped</dt><dd>{{ last_run.papers_skipped or 0 }}</dd>
+    <dt>Papers failed</dt><dd>{{ last_run.papers_failed or 0 }}</dd>
+  </dl>
   {% else %}
   <p class="field-note">No discovery runs in the log yet.</p>
   {% endif %}
@@ -63,7 +62,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="field-note">No history.</p>
+  <p class="field-note">No run history yet — runs appear here once discovery completes.</p>
   {% endif %}
 
   {# P8: discovery runs table with links to per-run paper cards (/discovery/{id}) #}
@@ -101,6 +100,24 @@
       {% endfor %}
     </tbody>
   </table>
+
+  {# AR-7: corpus-style prev/next pagination for the discovery-runs table.
+     Prev is hidden at offset 0; Next is hidden on the last page. #}
+  <div class="button-row" style="margin-top: 0.75rem;">
+    <span class="field-note">
+      {{ runs_offset + 1 }}&ndash;{{ runs_offset + discovery_runs|length }} of {{ runs_total }}
+    </span>
+    {% if runs_has_prev %}
+    <a class="btn btn-secondary btn-sm" href="/discovery?runs_offset={{ runs_prev_offset }}">
+      &larr; Prev
+    </a>
+    {% endif %}
+    {% if runs_has_next %}
+    <a class="btn btn-secondary btn-sm" href="/discovery?runs_offset={{ runs_next_offset }}">
+      Next &rarr;
+    </a>
+    {% endif %}
+  </div>
   {% endif %}
 
   <h2>Today's digest</h2>

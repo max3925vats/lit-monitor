@@ -24,22 +24,18 @@
   {# ----------------------------------------------------------------- #}
   <h2>Learning state</h2>
   {% if learning.available %}
-  <table class="papers-table" style="max-width: 540px;">
-    <tbody>
-      <tr><th>Feedback events</th><td>{{ learning.n_events }}</td></tr>
-      <tr>
-        <th>Soft-gate</th>
-        <td>
-          {{ "%.2f" | format(learning.soft_gate | float) }}
-          {% if learning.inert %}
-          <span class="pill warning">INERT — below cold-start floor (10)</span>
-          {% endif %}
-        </td>
-      </tr>
-      <tr><th>Interest-vector dim</th><td>{{ learning.dim }}</td></tr>
-      <tr><th>Computed at</th><td class="field-note">{{ learning.computed_at }}</td></tr>
-    </tbody>
-  </table>
+  <dl class="kv">
+    <dt>Feedback events</dt><dd>{{ learning.n_events }}</dd>
+    <dt>Soft-gate</dt>
+    <dd>
+      {{ "%.2f" | format(learning.soft_gate | float) }}
+      {% if learning.inert %}
+      <span class="pill warning">INERT — below cold-start floor (10)</span>
+      {% endif %}
+    </dd>
+    <dt>Interest-vector dim</dt><dd>{{ learning.dim }}</dd>
+    <dt>Computed at</dt><dd class="field-note">{{ learning.computed_at }}</dd>
+  </dl>
   {% if learning.inert %}
   <p class="field-note">
     The interest vector exists but is gated to zero influence until at least
@@ -138,7 +134,7 @@
     </table>
   </div>
   {% else %}
-  <p class="field-note">No feedback events recorded yet.</p>
+  <p class="field-note">No feedback events yet — give feedback (save / dismiss) on discoveries to build the signal mix.</p>
   {% endif %}
 
   {# ----------------------------------------------------------------- #}
@@ -219,8 +215,32 @@
       {% endfor %}
     </tbody>
   </table>
+  {% elif events_total %}
+  <p class="field-note">No events on this page.</p>
   {% else %}
-  <p class="field-note">No recent events.</p>
+  <p class="field-note">No recent events yet — give feedback (save / dismiss / rate) on discoveries to populate this log.</p>
+  {% endif %}
+
+  {# AR-7: corpus-style prev/next pagination for recent events (page size 100).
+     Rendered whenever any events exist (not gated on the current slice) so an
+     over-the-end offset still shows Prev to navigate back. Prev is hidden at
+     offset 0; Next is hidden on the last page. #}
+  {% if events_total %}
+  <div class="button-row" style="margin-top: 0.75rem;">
+    <span class="field-note">
+      {{ events_offset + 1 }}&ndash;{{ events_offset + recent|length }} of {{ events_total }}
+    </span>
+    {% if events_has_prev %}
+    <a class="btn btn-secondary btn-sm" href="/insights?events_offset={{ events_prev_offset }}">
+      &larr; Prev
+    </a>
+    {% endif %}
+    {% if events_has_next %}
+    <a class="btn btn-secondary btn-sm" href="/insights?events_offset={{ events_next_offset }}">
+      Next &rarr;
+    </a>
+    {% endif %}
+  </div>
   {% endif %}
 
   {# FI-3: feedback timeline chart. Lazy HTMX load — the fragment replaces this

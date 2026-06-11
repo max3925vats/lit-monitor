@@ -42,6 +42,9 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 # FG-3: valid retrieval modes for the discovery start form's rag_mode select.
 _VALID_RAG_MODES = ("vector", "graph", "hybrid")
 
+# AR-7: page size for the paginated discovery-runs table on the dashboard.
+_RUNS_PAGE_SIZE = 20
+
 
 def _graph_extra_available() -> bool:
     """True when the optional [graph] extra (kuzu) is importable.
@@ -146,7 +149,10 @@ def _todays_digest() -> tuple[Path | None, str | None]:
 
 
 @router.get("/discovery", response_class=HTMLResponse)
-def dashboard(request: Request) -> HTMLResponse:
+def dashboard(
+    request: Request,
+    runs_offset: int = Query(0, ge=0),
+) -> HTMLResponse:
     db = _safe_db()
     recent_runs: list[dict] = []
     last_run: dict | None = None
@@ -160,14 +166,36 @@ def dashboard(request: Request) -> HTMLResponse:
 
     # P8: also fetch structured discovery_runs (have id, total_found, total_ingested)
     # to populate the run-history table with links to /discovery/{run_id}.
+    # AR-7: this table is now paginated (corpus-style offset/limit) so a long run
+    # history no longer renders unbounded. The "latest run" summary always shows
+    # the newest run (offset 0) independent of the table's current page.
     discovery_runs: list[dict] = []
     latest_discovery_run: dict | None = None
+    runs_total = 0
+    # AR-7: clamp the requested offset to >= 0. A hand-crafted ?runs_offset= past
+    # the end yields an empty table, but the runs pager renders unconditionally so
+    # Prev (shown whenever offset > 0) still navigates back to a valid page.
+    offset = max(runs_offset, 0)
     if db is not None:
         try:
-            result = get_discovery_runs(get_runtime().state_db, limit=10, offset=0)
+            state_db = get_runtime().state_db
+            result = get_discovery_runs(
+                state_db, limit=_RUNS_PAGE_SIZE, offset=offset
+            )
             discovery_runs = result.get("runs", [])
-            if discovery_runs:
-                latest_discovery_run = discovery_runs[0]
+            # Coerce defensively: a non-int total (e.g. a partial test double)
+            # would break the has_next arithmetic at render time.
+            try:
+                runs_total = int(result.get("total", 0))
+            except (TypeError, ValueError):
+                runs_total = len(discovery_runs)
+            # The latest run is always the newest row (offset 0), shown in the
+            # summary card regardless of which page the table is on.
+            if offset == 0:
+                latest_discovery_run = discovery_runs[0] if discovery_runs else None
+            else:
+                head = get_discovery_runs(state_db, limit=1, offset=0).get("runs", [])
+                latest_discovery_run = head[0] if head else None
         except Exception:
             logger.warning("get_discovery_runs failed", exc_info=True)
 
@@ -181,6 +209,13 @@ def dashboard(request: Request) -> HTMLResponse:
             # P8: structured discovery_runs with id field for linking
             "discovery_runs": discovery_runs,
             "latest_discovery_run": latest_discovery_run,
+            # AR-7: pagination context for the discovery-runs table.
+            "runs_total": runs_total,
+            "runs_offset": offset,
+            "runs_has_prev": offset > 0,
+            "runs_has_next": offset + _RUNS_PAGE_SIZE < runs_total,
+            "runs_prev_offset": max(offset - _RUNS_PAGE_SIZE, 0),
+            "runs_next_offset": offset + _RUNS_PAGE_SIZE,
             "digest_path": str(digest_path) if digest_path else None,
             "digest_content": digest_content,
             "db_unavailable": db is None,

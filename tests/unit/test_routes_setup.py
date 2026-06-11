@@ -622,6 +622,22 @@ class TestSetupCompleteNotifyPanel:
         for opt in ("browser", "obsidian", "none"):
             assert opt in body
 
+    def test_status_checklist_renders_as_definition_list(self):
+        """AR-7: the setup status checklist is a <dl class="kv"> with <dt>/<dd>
+        (key=check label, value=live status pill), not a <td>/<td> table. The
+        per-check hx-get poll endpoints must survive on the <dd> value cells."""
+        client = self._make_client()
+        r = client.get("/setup/complete")
+        assert r.status_code == 200
+        body = r.text
+        assert '<dl class="kv">' in body
+        # Check labels survive as <dt> terms.
+        assert "<dt>Secrets file + required keys</dt>" in body
+        assert "<dt>Obsidian vault path exists</dt>" in body
+        # The live-status poll endpoints stay wired on the <dd> value cells.
+        assert "/setup/api/check/secrets" in body
+        assert "/setup/api/check/vault" in body
+
     def test_panel_reflects_current_config(self):
         """P4: GET /setup/complete reflects the current extraction.yaml values."""
         client = self._make_client()
