@@ -127,6 +127,11 @@ dev = [
     "responses",
     "mypy",
 ]
+# Documentation site (MkDocs Material). Preview locally with:
+#   uv run --extra docs mkdocs serve
+docs = [
+    "mkdocs-material>=9.5",
+]
 # Multi-provider LLM routing (Anthropic, OpenAI, Vertex AI, etc.).
 # Default LLM provider is local Ollama; install this extra only to route
 # through cloud providers. See README "LLM providers" section.

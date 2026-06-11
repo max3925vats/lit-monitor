@@ -1,6 +1,6 @@
 # Integrations
 
-[← Back to README](../README.md)
+[← Home](index.md)
 
 lit-monitor exposes the same query layer over two programmatic surfaces: an MCP
 server for AI clients and an HTTP API.

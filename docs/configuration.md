@@ -1,6 +1,6 @@
 # Configuration
 
-[← Back to README](../README.md)
+[← Home](index.md)
 
 This guide covers configuring lit-monitor by hand, the three common setup
 recipes, provider routing, notifications, and strict mode. To configure through

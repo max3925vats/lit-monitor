@@ -84,3 +84,4 @@ test_pass_extraction.py
 .coverage.*
 coverage.xml
 htmlcov/
+site/

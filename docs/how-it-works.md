@@ -1,6 +1,6 @@
 # How it works
 
-[← Back to README](../README.md)
+[← Home](index.md)
 
 lit-monitor ranks new papers by how close they are to the literature you already
 keep, then enriches and files each one. This page explains the signals behind

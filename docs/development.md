@@ -1,6 +1,6 @@
 # Development
 
-[← Back to README](../README.md)
+[← Home](index.md)
 
 ## Running tests
 

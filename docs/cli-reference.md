@@ -1,6 +1,6 @@
 # CLI reference
 
-[← Back to README](../README.md)
+[← Home](index.md)
 
 Run `lit-monitor --help` for the full command surface. Top-level `-v` /
 `--verbose` enables DEBUG console output; a full DEBUG log is always written to

@@ -1,6 +1,6 @@
 # Web UI
 
-[← Back to README](../README.md)
+[← Home](index.md)
 
 ```bash
 lit-monitor first-run   # interactive first-time setup, then launches the server

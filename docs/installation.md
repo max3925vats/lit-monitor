@@ -1,6 +1,6 @@
 # Installation
 
-[← Back to README](../README.md)
+[← Home](index.md)
 
 ## Requirements
 
@@ -47,8 +47,8 @@ cp config/examples/ml-research/*.yaml config/   # or bioprocessing/ climate-scie
 ```
 
 The non-domain configs (`paths.yaml`, `extraction.yaml`) still come from
-`config/*.example.yaml`. See
-[`config/examples/README.md`](../config/examples/README.md).
+`config/*.example.yaml`. See the
+[bundled example configs](https://github.com/max3925vats/lit-monitor/tree/main/lit_monitor/_data/config_examples/examples).
 
 ## Manual install
 
@@ -85,4 +85,4 @@ uv sync --extra nlp --extra litellm
 ## Next steps
 
 - [Configuration](configuration.md) — credentials and the three setup recipes
-- [Quickstart in the README](../README.md#quickstart) — first run, web or CLI
+- [Quickstart](index.md#quickstart) — first run, web or CLI
