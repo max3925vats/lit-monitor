@@ -4,7 +4,11 @@ Returns a dict of {check_name: (ok: bool, message: str)}.
 """
 from __future__ import annotations
 
+import logging
+
 import requests
+
+logger = logging.getLogger(__name__)
 
 # Literal fallback used only when config is unavailable. The probe normally
 # targets the configured Ollama host (see _resolve_ollama_host).
@@ -82,8 +86,11 @@ def check_ollama(model: str | None = None) -> dict[str, tuple[bool, str]]:
         if model:
             results["model_available"] = (False, "Ollama not running")
         return results
-    except Exception as exc:
-        results["ollama_running"] = (False, f"Ollama check failed: {exc}")
+    except Exception:
+        # Info-leak guard: log the detail; surface a constant message so no
+        # exception text reaches the response (py/stack-trace-exposure).
+        logger.warning("check_ollama: Ollama check failed", exc_info=True)
+        results["ollama_running"] = (False, "Ollama check failed — see server logs.")
         if model:
             results["model_available"] = (False, "Ollama not running")
         return results

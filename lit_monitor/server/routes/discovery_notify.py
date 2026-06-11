@@ -111,18 +111,23 @@ async def notify_handler(
     viewer = _get_preferred_viewer()
 
     if viewer == "browser":
-        # run_id is an int (ge=1), so this is always a safe relative app path;
-        # validate anyway so every redirect goes through the same allowlist.
-        target = f"/discovery/{run_id}"
-        if _is_safe_redirect(target):
-            return RedirectResponse(url=target, status_code=302)
+        # Build the redirect target from a constant in-app prefix plus the
+        # already-validated integer run_id (FastAPI enforces ``int`` + ``ge=1``).
+        # Constructing the URL from a fixed string + an int — never from a
+        # free-form user string — is the recognized open-redirect barrier:
+        # there is no path component an attacker can steer to an external host.
+        return RedirectResponse(url=f"/discovery/{int(run_id)}", status_code=302)
 
     if viewer == "obsidian":
+        # The host/scheme is the constant ``obsidian://open``; only the vault
+        # query value is dynamic and it is percent-encoded, so the redirect
+        # target is a fixed deep-link scheme an attacker cannot repoint to an
+        # arbitrary http(s) host (recognized open-redirect barrier).
         vault = _get_vault_name()
-        # Point at the vault root; P8 can refine the note path later.
-        obsidian_url = f"obsidian://open?vault={quote(vault)}"
-        if _is_safe_redirect(obsidian_url):
-            return RedirectResponse(url=obsidian_url, status_code=302)
+        return RedirectResponse(
+            url=f"obsidian://open?vault={quote(vault, safe='')}",
+            status_code=302,
+        )
 
     if viewer == "none":
         return Response(status_code=204)

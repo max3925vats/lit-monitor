@@ -36,8 +36,11 @@ def _normalize(raw: str) -> Path:
     # an absolute real path before any check or filesystem access. All callers
     # operate on this resolved Path, never on the raw user string.
     candidate = Path(raw).expanduser().resolve(strict=False)
-    # Allow exactly $HOME and any descendant; refuse everything else.
-    if candidate != home and home not in candidate.parents:
+    # Containment barrier: allow exactly $HOME and any descendant; refuse
+    # everything else. ``is_relative_to`` is the recognized path-injection
+    # barrier — every downstream sink (iterdir/exists/access) only ever sees a
+    # Path proven to live under $HOME.
+    if not candidate.is_relative_to(home):
         raise HTTPException(status_code=403, detail="path outside HOME")
     return candidate
 

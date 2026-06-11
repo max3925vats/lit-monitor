@@ -46,8 +46,16 @@ def _validate_yaml_file(path: Path) -> tuple[bool, str]:
         if data is None:
             raise ValueError("file is empty or contains only comments")
         return (True, str(path))
-    except Exception as exc:
-        return (False, str(exc))
+    except FileNotFoundError:
+        # "not found" carries no tainted/exception text beyond the config path
+        # we constructed ourselves — safe and useful to surface.
+        return (False, f"not found: {path}")
+    except Exception:
+        # Info-leak guard: a YAML parse error can echo file content / offsets.
+        # Log the detail; surface a constant message so no exception text
+        # reaches the dev diagnostics panel (py/stack-trace-exposure).
+        logger.warning("diagnose: failed to validate %s", path, exc_info=True)
+        return (False, "invalid or unreadable — see server logs")
 
 
 def check_core_configs() -> dict[str, tuple[bool, str]]:
@@ -73,8 +81,11 @@ def check_schemas() -> dict[str, tuple[bool, str]]:
             if resolved.name.endswith(".example.yaml"):
                 label += " (using .example.yaml fallback)"
             results[label] = _validate_yaml_file(resolved)
-        except Exception as exc:
-            results[schema_name] = (False, str(exc))
+        except Exception:
+            # Info-leak guard: log the detail; surface a constant message so
+            # no exception text reaches the response (py/stack-trace-exposure).
+            logger.warning("diagnose: failed to resolve %s", schema_name, exc_info=True)
+            results[schema_name] = (False, "could not resolve — see server logs")
     return results
 
 

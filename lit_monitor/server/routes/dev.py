@@ -555,7 +555,11 @@ def _sandbox_note_path_for(doi: str) -> Path:
     slug = slug.replace("..", "_")  # belt-and-suspenders against ``..`` runs
     sandbox_dir = sandbox_vault_subfolder().resolve()
     candidate = (sandbox_dir / f"sandbox_{slug}.md").resolve()
-    if sandbox_dir not in candidate.parents:
+    # Containment barrier (recognized): the resolved candidate must live under
+    # the sandbox dir. ``is_relative_to`` is the form CodeQL accepts as a
+    # path-injection barrier; every write that uses this path is now provably
+    # confined to Literature/_Dev/.
+    if not candidate.is_relative_to(sandbox_dir):
         # A crafted DOI tried to escape the sandbox subfolder — refuse.
         raise HTTPException(status_code=400, detail="invalid DOI")
     return candidate
@@ -643,7 +647,25 @@ async def dev_rerender(request: Request) -> str:
     try:
         from lit_monitor.core.config import get_config
         from lit_monitor.obsidian_tools.rerender import rerender_note
-        from lit_monitor.server.dev_sandbox import sandbox_state_db
+        from lit_monitor.server.dev_sandbox import (
+            sandbox_state_db,
+            sandbox_vault_subfolder,
+        )
+
+        sandbox_dir = sandbox_vault_subfolder().resolve()
+
+        def _contained_in_sandbox(raw_path: str) -> Path | None:
+            """Resolve ``raw_path`` and return it only if it lives inside the
+            sandbox dir. Returns ``None`` otherwise. ``is_relative_to`` is the
+            recognized path-injection barrier — the DB-sourced note_path is
+            untrusted, so every stat()/write only ever touches a path proven to
+            be inside Literature/_Dev/."""
+            if not raw_path:
+                return None
+            resolved = Path(raw_path).resolve()
+            if not resolved.is_relative_to(sandbox_dir):
+                return None
+            return resolved
 
         sdb = sandbox_state_db()
         record = sdb.get_paper(doi)
@@ -656,16 +678,18 @@ async def dev_rerender(request: Request) -> str:
                 {"doi": doi, "note_path": str(_sandbox_note_path_for(doi))}
             )
         before_size = 0
-        try:
-            existing_path = Path(
-                (sdb.get_paper(doi) or {}).get("note_path") or ""
-            )
-            if existing_path.exists():
-                before_size = existing_path.stat().st_size
-        except Exception:
-            pass
+        existing_path = _contained_in_sandbox(
+            (sdb.get_paper(doi) or {}).get("note_path") or ""
+        )
+        if existing_path is not None and existing_path.exists():
+            before_size = existing_path.stat().st_size
         note_path = rerender_note(doi, get_config(), sdb)
-        after_size = Path(note_path).stat().st_size if Path(note_path).exists() else 0
+        rendered_path = _contained_in_sandbox(str(note_path))
+        after_size = (
+            rendered_path.stat().st_size
+            if rendered_path is not None and rendered_path.exists()
+            else 0
+        )
         delta = after_size - before_size
         sign = "+" if delta >= 0 else ""
         return _ok(

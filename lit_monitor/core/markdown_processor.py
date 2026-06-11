@@ -28,11 +28,18 @@ _END_MATTER_SEARCH_WINDOW = 0.30
 # ---------------------------------------------------------------------------
 
 # Headings that mark the start of a references/bibliography section only.
+#
+# Whitespace classes are restricted to horizontal whitespace ``[ \t]`` (never
+# the newline-matching ``\s``) and the trailing run is written as a single
+# ``[ \t]*(?::[ \t]*)?`` so no two quantifiers can match the same characters.
+# Both choices keep matching provably linear-time (CodeQL py/polynomial-redos):
+# under ``\s`` + MULTILINE a crafted line of trailing whitespace could force
+# superlinear backtracking against the ``$`` anchor.
 _REFERENCE_HEADING = _re.compile(
-    r"^(?:#{1,3}\s*)?"
-    r"(?:references|bibliography|works\s+cited|literature\s+cited"
-    r"|reference\s+list|cited\s+works|citations)"
-    r"\s*:?\s*$",
+    r"^(?:#{1,3}[ \t]*)?"
+    r"(?:references|bibliography|works[ \t]+cited|literature[ \t]+cited"
+    r"|reference[ \t]+list|cited[ \t]+works|citations)"
+    r"[ \t]*(?::[ \t]*)?$",
     _re.IGNORECASE | _re.MULTILINE,
 )
 
@@ -42,22 +49,24 @@ _REFERENCE_HEADING = _re.compile(
 # (CodeQL py/polynomial-redos).  ``acknowledge?ments?`` replaces the earlier
 # ``acknowledg(?:e?ment|e?ments)`` whose two branches overlapped (both could
 # match "acknowledgement"), forcing backtracking; ``conflicts?`` / ``interests?``
-# replace ``conflict(?:s)?`` / ``interest(?:s)?`` for the same reason.
+# replace ``conflict(?:s)?`` / ``interest(?:s)?`` for the same reason. All
+# whitespace is horizontal-only ``[ \t]`` and the trailing run is a single
+# non-overlapping ``[ \t]*(?::[ \t]*)?`` (see _REFERENCE_HEADING).
 _END_MATTER_HEADING = _re.compile(
-    r"^(?:#{1,3}\s*)?"
-    r"(?:references|bibliography|works\s+cited|literature\s+cited"
-    r"|reference\s+list|cited\s+works|citations"
+    r"^(?:#{1,3}[ \t]*)?"
+    r"(?:references|bibliography|works[ \t]+cited|literature[ \t]+cited"
+    r"|reference[ \t]+list|cited[ \t]+works|citations"
     r"|acknowledge?ments?"
-    r"|funding(?:\s+information)?"
-    r"|conflicts?\s+of\s+interests?"
-    r"|competing\s+interests?"
-    r"|author\s+contributions?"
-    r"|data\s+availability(?:\s+statement)?"
-    r"|code\s+availability(?:\s+statement)?"
-    r"|supplementary\s+(?:information|material|data)"
-    r"|supporting\s+information"
+    r"|funding(?:[ \t]+information)?"
+    r"|conflicts?[ \t]+of[ \t]+interests?"
+    r"|competing[ \t]+interests?"
+    r"|author[ \t]+contributions?"
+    r"|data[ \t]+availability(?:[ \t]+statement)?"
+    r"|code[ \t]+availability(?:[ \t]+statement)?"
+    r"|supplementary[ \t]+(?:information|material|data)"
+    r"|supporting[ \t]+information"
     r")"
-    r"\s*:?\s*$",
+    r"[ \t]*(?::[ \t]*)?$",
     _re.IGNORECASE | _re.MULTILINE,
 )
 

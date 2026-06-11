@@ -10,10 +10,13 @@ takes only the first two fields. New severity-aware callers can read
 """
 from __future__ import annotations
 
+import logging
 import tomllib
 from typing import Literal, NamedTuple
 
 from lit_monitor.setup._paths import SECRETS_PATH as _SECRETS_PATH
+
+logger = logging.getLogger(__name__)
 
 
 class CheckResult(NamedTuple):
@@ -75,9 +78,12 @@ def check_configured() -> dict[str, CheckResult]:
     try:
         with _SECRETS_PATH.open("rb") as fh:
             data = tomllib.load(fh)
-    except Exception as exc:
+    except Exception:
+        # Info-leak guard: a TOML parse error can echo secret file content.
+        # Log it; surface a constant message (py/stack-trace-exposure).
+        logger.warning("check_configured: failed to parse secrets TOML", exc_info=True)
         results["secrets_parse"] = CheckResult(
-            False, f"Failed to parse TOML: {exc}", severity="fail"
+            False, "Failed to parse TOML — see server logs.", severity="fail"
         )
         return results
     results["secrets_parse"] = CheckResult(True, "Parsed OK", severity="ok")
