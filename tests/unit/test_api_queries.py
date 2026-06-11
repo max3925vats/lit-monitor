@@ -519,23 +519,27 @@ def test_snapshot_normalizes_doi_for_zotero_lookup(tmp_path):
     from scripts.core.state_db import StateDB
     from scripts.graph import GraphDB
 
-    # Graph node + state row both stored under the canonical lowercase DOI.
+    # The graph node is stored under the NON-canonical (mixed-case) DOI so that
+    # the raw-DOI graph metadata lookup still resolves when the caller passes the
+    # mixed-case form. The state.db row, however, is stored under the CANONICAL
+    # (lowercased) DOI — the form the ingest path uses as the key. The only way
+    # the zotero lookup can succeed is if get_paper_snapshot normalizes the input
+    # DOI before the state read. Delete the normalize_doi() call and this fails
+    # (zotero_key -> None), so the test is non-vacuous on the §4 trap.
     graph = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
     graph.add_paper(
-        doi="10.1/case",
+        doi="10.1/CASE",  # graph keyed on the mixed-case input
         paper_metadata={"title": "Case", "year": 2024, "journal": "J"},
         entities=[],
         relationships=[],
     )
     state = StateDB(tmp_path / "state.db")
+    # state keyed on the canonical (lowercased) DOI — normalize_doi("10.1/CASE")
     state.upsert_paper({"doi": "10.1/case", "title": "Case", "zotero_key": "ZKCASE"})
 
-    # Caller passes a URL-wrapped, mixed-case variant. The graph node is keyed on
-    # this exact string in the test, so use the canonical DOI for the graph match
-    # but prove the STATE lookup survives normalization: pass the canonical DOI to
-    # the graph (so metadata is found) and assert the zotero lookup used normalize.
-    snap = get_paper_snapshot("10.1/case", graph, state)
+    snap = get_paper_snapshot("10.1/CASE", graph, state)  # mixed-case input
     assert snap["metadata"]["zotero_key"] == "ZKCASE"
+    assert snap["metadata"]["zotero_deeplink"] == "zotero://select/library/items/ZKCASE"
 
 
 def test_snapshot_without_state_db_keeps_keys_none(tmp_path):
