@@ -80,6 +80,21 @@ def _coerce_jsonable(value: Any) -> Any:
     return str(value)
 
 
+def _zotero_deeplink(zotero_key: str | None) -> str | None:
+    """Build a Zotero deep-link for a paper's item key, or None when unlinked.
+
+    v1 emits the personal (user) library form, matching the hardcoded link in
+    scripts/server/templates/corpus/detail.html and the default
+    config.zotero.library_type == "user". Group libraries use a different URL
+    shape (zotero://select/groups/{group_id}/items/{key}); supporting them needs
+    the library type + id threaded in.
+    # TODO(zotero-group-library): branch on config.zotero.library_type/library_id.
+    """
+    if not zotero_key:
+        return None
+    return f"zotero://select/library/items/{zotero_key}"
+
+
 # ---------------------------------------------------------------------------
 # Public API — six named functions
 # ---------------------------------------------------------------------------

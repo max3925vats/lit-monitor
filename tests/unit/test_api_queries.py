@@ -457,3 +457,15 @@ class TestGetPapersByQuery:
 
         get_papers_by_query("antibody", mode="graph", k=5, graph_db=mock_gdb)
         mock_gdb.close.assert_not_called()
+
+
+def test_zotero_deeplink_builds_user_library_form():
+    from scripts.api.queries import _zotero_deeplink
+
+    assert _zotero_deeplink("ZKEY123") == "zotero://select/library/items/ZKEY123"
+
+
+def test_zotero_deeplink_none_for_none_key():
+    from scripts.api.queries import _zotero_deeplink
+
+    assert _zotero_deeplink(None) is None
