@@ -8,8 +8,8 @@ LLM, and writes everything into your Obsidian vault — queryable from a browser
 the terminal, or any AI client that speaks the Model Context Protocol (MCP).
 
 [![CI](https://github.com/max3925vats/lit-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/max3925vats/lit-monitor/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.11.0-informational.svg)](https://github.com/max3925vats/lit-monitor/releases)
-[![Downloads](https://img.shields.io/github/downloads/max3925vats/lit-monitor/total)](https://github.com/max3925vats/lit-monitor/releases)
+[![PyPI version](https://img.shields.io/pypi/v/lit-monitor)](https://pypi.org/project/lit-monitor/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/lit-monitor)](https://pypi.org/project/lit-monitor/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Platform: macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#requirements)
@@ -43,7 +43,7 @@ work. Same pipeline either way.
 > maturing toward 1.0 — interfaces and on-disk formats may change between
 > releases, and you may hit rough edges. Bug reports and feedback are very
 > welcome via [GitHub Issues](https://github.com/max3925vats/lit-monitor/issues).
-> Provided under the MIT License, **without warranty** (see [License](#license)).
+> Provided under the [MIT License](#license).
 
 ## Features
 
