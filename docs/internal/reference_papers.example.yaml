@@ -6,7 +6,7 @@
 #      eyeball regressions.
 #
 #   2. The null-honesty score in `lit-monitor compare-models`
-#      (scripts/pipelines/model_compare.py). For each paper, `expected_null`
+#      (lit_monitor/pipelines/model_compare.py). For each paper, `expected_null`
 #      lists extraction fields the paper GENUINELY LACKS. A model that emits a
 #      non-null value for one of those fields has fabricated content — that
 #      counts as a null-honesty violation (lower is better).
