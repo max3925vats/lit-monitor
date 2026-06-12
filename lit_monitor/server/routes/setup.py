@@ -1475,9 +1475,12 @@ def setup_check(request: Request, name: str) -> HTMLResponse:
             status_code=404,
         )
 
-    # Aggregate the sub-checks into one pill.
-    all_ok = all(ok for ok, _msg in results.values())
-    failing = [n for n, (ok, _msg) in results.items() if not ok]
+    # Aggregate the sub-checks into one pill. Tolerate both plain (ok, msg)
+    # 2-tuples (ollama/zotero/vault checks) AND the 3-field CheckResult
+    # NamedTuple (ok, message, severity) returned by check_configured() — the
+    # latter previously raised "too many values to unpack" and 500'd this row.
+    all_ok = all(ok for ok, *_rest in results.values())
+    failing = [n for n, (ok, *_rest) in results.items() if not ok]
     if all_ok:
         return HTMLResponse(
             f'<span class="pill success">all OK ({len(results)} checks)</span>'

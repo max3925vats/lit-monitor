@@ -1140,3 +1140,19 @@ def test_topics_prefilled_query_uses_value_attr_not_slot_text():
     assert f">{known_query}</sl-textarea>" not in html, (
         "query found as slot text content — sl-textarea ignores this (data-loss bug)"
     )
+
+
+@pytest.mark.unit
+def test_setup_check_secrets_row_does_not_500():
+    """Regression: check_configured() returns 3-field CheckResult NamedTuples;
+    the setup_check aggregator must not unpack them as 2-tuples (was a 500)."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    r = client.get("/setup/api/check/secrets")
+    assert r.status_code == 200, r.text
+    assert "pill" in r.text  # renders a status pill, not a 500
