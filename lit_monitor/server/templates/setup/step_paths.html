@@ -22,11 +22,11 @@
         required
         style="flex: 1"
       ></sl-input>
-      <button type="button" class="button"
+      <sl-button variant="default" type="button"
         hx-get="/setup/fs-modal?path={{ home | urlencode }}"
         hx-target="#fs-modal" hx-swap="innerHTML">
         Browse…
-      </button>
+      </sl-button>
     </div>
   </div>
 

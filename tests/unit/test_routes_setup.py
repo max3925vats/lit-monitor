@@ -986,6 +986,119 @@ def test_researchers_new_row_is_shoelace():
     assert 'name="name_2"' in html
 
 
+# ---------------------------------------------------------------------------
+# Shoelace migration: remaining native controls (A-E)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_complete_notification_form_uses_shoelace():
+    """A: /setup/complete — notification-prefs form must use Shoelace controls only.
+
+    The form has 2 checkboxes (enabled, digest_auto_write) → sl-switch,
+    3 radios (viewer) → sl-radio-group/sl-radio, and a submit button → sl-button.
+    No native <button> or <input> should survive inside the form.
+    """
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/complete").text
+    assert "<sl-button" in html
+    # The two checkboxes must be sl-switch
+    assert "<sl-switch" in html
+    # The viewer radios must be sl-radio (or sl-radio-group)
+    assert "<sl-radio" in html
+    # No native <button> anywhere on the page (incl. the form)
+    assert "<button" not in html
+
+
+@pytest.mark.unit
+def test_setup_step_save_buttons_are_shoelace():
+    """B/D: step-4, step-6, step-7 must have no native <button> elements."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    for url in ("/setup/step-4", "/setup/step-7", "/setup/step-6"):
+        html = client.get(url).text
+        assert "<button" not in html, f"native <button> left in {url}"
+
+
+@pytest.mark.unit
+def test_complete_notify_enabled_switch_renders_checked():
+    """A value/checked assertion: when notify_enabled=True the sl-switch renders checked.
+
+    This test goes RED without the template change because the original <input
+    type='checkbox'> uses checked= but <sl-switch> requires the same attribute.
+    After conversion, 'checked' must appear on <sl-switch name="enabled">.
+    """
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    fake_extraction = {
+        "discovery": {
+            "notify": {"enabled": True, "preferred_viewer": "browser"},
+            "digest": {"auto_write": True},
+        }
+    }
+    with patch(
+        "lit_monitor.server.routes.setup.load_config", return_value=fake_extraction
+    ):
+        html = client.get("/setup/complete").text
+
+    import re
+
+    # Find the sl-switch for the 'enabled' name attribute and check it carries 'checked'
+    m = re.search(r"<sl-switch\b[^>]*\bname=\"enabled\"[^>]*>", html)
+    assert m, "sl-switch name='enabled' not found in /setup/complete"
+    assert "checked" in m.group(0), (
+        f"sl-switch name='enabled' missing 'checked' when notify_enabled=True: {m.group(0)}"
+    )
+
+
+@pytest.mark.unit
+def test_concepts_progress_stop_button_is_shoelace():
+    """C: _concepts_progress.html Stop build button must be sl-button variant=danger."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/step-6/progress").text
+    assert "<button" not in html, "native <button> left in step-6/progress"
+    assert 'variant="danger"' in html
+
+
+@pytest.mark.unit
+def test_paths_browse_button_is_shoelace():
+    """E: step-2 Browse… button must be sl-button, not native <button>."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/step-2").text
+    # The Browse button must be sl-button
+    assert "Browse" in html
+    # No native <button> tags on the page
+    assert "<button" not in html, "native <button> left in step-2"
+
+
 @pytest.mark.unit
 def test_topics_prefilled_query_uses_value_attr_not_slot_text():
     """Regression: sl-textarea ignores slot text — query must appear as value= on the

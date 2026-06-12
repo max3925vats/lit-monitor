@@ -32,67 +32,33 @@
 
   <form method="post" action="/setup/complete/notify">
     <div class="field-row">
-      <label>
-        <input
-          type="checkbox"
-          name="enabled"
-          value="on"
-          {% if notify_enabled %}checked{% endif %}
-        >
-        Enable desktop notifications when new papers are found
-      </label>
+      <sl-switch
+        name="enabled"
+        {% if notify_enabled %}checked{% endif %}
+      >Enable desktop notifications when new papers are found</sl-switch>
     </div>
 
     <fieldset>
       <legend>Preferred viewer</legend>
-
-      <label>
-        <input
-          type="radio"
-          name="viewer"
-          value="browser"
-          {% if preferred_viewer == "browser" %}checked{% endif %}
-        >
-        Browser — open papers in your default web browser
-      </label>
-
-      <label>
-        <input
-          type="radio"
-          name="viewer"
-          value="obsidian"
-          {% if preferred_viewer == "obsidian" %}checked{% endif %}
-        >
-        Obsidian — open notes in the Obsidian vault
-      </label>
-
-      <label>
-        <input
-          type="radio"
-          name="viewer"
-          value="none"
-          {% if preferred_viewer == "none" or not preferred_viewer %}checked{% endif %}
-        >
-        None — just notify, don't open anything automatically
-      </label>
+      <sl-radio-group name="viewer" value="{{ preferred_viewer if preferred_viewer else 'none' }}">
+        <sl-radio value="browser">Browser — open papers in your default web browser</sl-radio>
+        <sl-radio value="obsidian">Obsidian — open notes in the Obsidian vault</sl-radio>
+        <sl-radio value="none">None — just notify, don't open anything automatically</sl-radio>
+      </sl-radio-group>
     </fieldset>
 
     <div class="field-row" style="margin-top:1rem;">
-      <label>
-        <input
-          type="checkbox"
-          name="digest_auto_write"
-          {% if digest_auto_write %}checked{% endif %}
-        >
-        Auto-write weekly digest .md file
-      </label>
+      <sl-switch
+        name="digest_auto_write"
+        {% if digest_auto_write %}checked{% endif %}
+      >Auto-write weekly digest .md file</sl-switch>
       <small class="field-note" style="display:block;margin-top:0.25rem;">
         Off: rely on OS notification + chooser, or run
         <code>lit-monitor discovery export-md --run latest</code> on demand.
       </small>
     </div>
 
-    <button type="submit" class="button">Save notification preferences</button>
+    <sl-button variant="primary" type="submit">Save notification preferences</sl-button>
     <a href="/" class="button-secondary">Skip</a>
   </form>
 </section>

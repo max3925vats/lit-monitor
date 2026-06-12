@@ -57,10 +57,10 @@
   <p>Build vocabulary from Zotero keywords. This calls the LLM many times
   and can take a long time (minutes to tens of minutes).</p>
   {% if is_running %}
-    <button type="submit" disabled>Build in progress…</button>
+    <sl-button type="submit" disabled>Build in progress…</sl-button>
     <a href="/setup/step-6/progress" class="button">View live progress →</a>
   {% else %}
-    <button type="submit" class="button">Regenerate</button>
+    <sl-button variant="primary" type="submit">Regenerate</sl-button>
   {% endif %}
 </form>
 <div id="result"></div>
