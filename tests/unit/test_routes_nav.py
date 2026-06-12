@@ -56,3 +56,9 @@ def test_breadcrumbs_render_on_section_page(client):
 
 def test_no_breadcrumbs_on_home(client):
     assert 'class="app-crumbs"' not in client.get("/").text
+
+
+def test_home_cards_use_sl_card_and_cta(client):
+    html = client.get("/").text
+    assert "<sl-card" in html
+    assert "<sl-button" in html

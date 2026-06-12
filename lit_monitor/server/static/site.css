@@ -1344,3 +1344,5 @@ button:not([class]):disabled { opacity: 0.55; cursor: default; }
 sl-card.paper-card { width: 100%; display: block; }
 sl-card.paper-card::part(base) { width: 100%; }
 .rate-summary { cursor: pointer; display: inline-block; font-size: 0.82rem; }
+.home-card { width: 100%; }
+.home-card a { text-decoration: none; color: inherit; display: block; }

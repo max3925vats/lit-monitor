@@ -11,8 +11,8 @@
       your Zotero library — extracted into Obsidian and queryable right here.
     </p>
     <div class="lm-cta">
-      <a class="btn btn-cta" href="/discovery">Run discovery &rarr;</a>
-      <a class="btn btn-secondary" href="/setup">Setup</a>
+      <sl-button variant="danger" href="/discovery" size="medium">Run discovery</sl-button>
+      <sl-button variant="default" href="/setup" size="medium">Setup</sl-button>
     </div>
     <p class="last-run">
       {% if last_run %}
@@ -27,23 +27,31 @@
   </section>
 
   <section class="cards">
-    <a class="card" href="/discovery">
-      <h2>Discovery</h2>
-      <p>Search, rank, and ingest new papers. Run ad-hoc or on a schedule.</p>
-    </a>
-    <a class="card" href="/schedule">
-      <h2>Schedule</h2>
-      <p>Automate discovery on a recurring cadence. Weekly is a sensible
-         default.</p>
-    </a>
-    <a class="card" href="/brain-build">
-      <h2>Brain-Build</h2>
-      <p>Batch-ingest your existing Zotero library to front-load the
-         embedding index. Costs LLM tokens.</p>
-    </a>
-    <a class="card" href="/setup">
-      <h2>Setup</h2>
-      <p>Configure Zotero credentials, vault path, topics, and providers.</p>
-    </a>
+    <sl-card class="home-card">
+      <a href="/discovery">
+        <h2>Discovery</h2>
+        <p>Search, rank, and ingest new papers. Run ad-hoc or on a schedule.</p>
+      </a>
+    </sl-card>
+    <sl-card class="home-card">
+      <a href="/schedule">
+        <h2>Schedule</h2>
+        <p>Automate discovery on a recurring cadence. Weekly is a sensible
+           default.</p>
+      </a>
+    </sl-card>
+    <sl-card class="home-card">
+      <a href="/brain-build">
+        <h2>Brain-Build</h2>
+        <p>Batch-ingest your existing Zotero library to front-load the
+           embedding index. Costs LLM tokens.</p>
+      </a>
+    </sl-card>
+    <sl-card class="home-card">
+      <a href="/setup">
+        <h2>Setup</h2>
+        <p>Configure Zotero credentials, vault path, topics, and providers.</p>
+      </a>
+    </sl-card>
   </section>
 {% endblock %}
