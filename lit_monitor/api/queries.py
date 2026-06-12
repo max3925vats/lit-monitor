@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from lit_monitor.core.doi import normalize_doi
@@ -905,13 +906,12 @@ def _relative_time(iso_ts: str | None) -> str:
     UTC timestamp. Returns 'never' for None/unparseable."""
     if not iso_ts:
         return "never"
-    from datetime import datetime, timezone
     try:
         dt = datetime.strptime(iso_ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
     except (ValueError, TypeError):
         return "never"
     delta = datetime.now(timezone.utc) - dt
-    secs = int(delta.total_seconds())
+    secs = max(0, int(delta.total_seconds()))
     if secs < 60:
         return "just now"
     if secs < 3600:
@@ -957,13 +957,14 @@ def get_dashboard_stats(state_db: Any, graph_db: Any) -> dict[str, Any]:
 
     try:
         snaps = state_db.get_recent_snapshots(limit=2)
-    except Exception:
+    except Exception as exc:
+        logger.warning("dashboard_stats: snapshots fetch failed: %s", exc)
         snaps = []
 
     def _delta(field: str) -> int | None:
         if len(snaps) < 2:
             return None
-        return int(snaps[0][field]) - int(snaps[1][field])
+        return int(snaps[0].get(field, 0)) - int(snaps[1].get(field, 0))
 
     last_relative, last_status = "never", None
     try:
@@ -975,12 +976,21 @@ def get_dashboard_stats(state_db: Any, graph_db: Any) -> dict[str, Any]:
     except Exception as exc:
         logger.warning("dashboard_stats: last run failed: %s", exc)
 
-    return _coerce_jsonable({
-        "papers": {"value": papers_val, "delta": _delta("papers")},
-        "graph_nodes": {"value": graph_val, "delta": _delta("graph_nodes")},
-        "themes": {"value": themes_val, "delta": _delta("themes")},
-        "last_run": {"relative": last_relative, "status": last_status},
-    })
+    try:
+        return _coerce_jsonable({
+            "papers": {"value": papers_val, "delta": _delta("papers")},
+            "graph_nodes": {"value": graph_val, "delta": _delta("graph_nodes")},
+            "themes": {"value": themes_val, "delta": _delta("themes")},
+            "last_run": {"relative": last_relative, "status": last_status},
+        })
+    except Exception as exc:
+        logger.warning("dashboard_stats: final assembly failed: %s", exc)
+        return {
+            "papers": {"value": papers_val, "delta": None},
+            "graph_nodes": {"value": graph_val, "delta": None},
+            "themes": {"value": themes_val, "delta": None},
+            "last_run": {"relative": last_relative, "status": last_status},
+        }
 
 
 def _parse_author_names(authors_str: str) -> set[str]:

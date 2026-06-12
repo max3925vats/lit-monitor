@@ -583,3 +583,24 @@ def test_get_dashboard_stats_single_snapshot_has_no_delta(tmp_path):
     db.write_corpus_snapshot(papers=5, graph_nodes=0, themes=1)
     stats = get_dashboard_stats(db, None)
     assert stats["papers"]["delta"] is None   # only one snapshot → no delta
+
+
+def test_get_dashboard_stats_last_run_status(tmp_path):
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.api.queries import get_dashboard_stats
+    db = StateDB(tmp_path / "state.db")
+    # start_run(run_id: str, run_type: str) / finish_run(run_id: str, status: str)
+    run_id = "test-run-001"
+    db.start_run(run_id, "discovery")
+    db.finish_run(run_id, status="complete")
+    stats = get_dashboard_stats(db, None)
+    assert isinstance(stats["last_run"]["relative"], str)
+    assert stats["last_run"]["status"] == "complete"
+
+
+def test_relative_time_branches():
+    from lit_monitor.api.queries import _relative_time
+    assert _relative_time(None) == "never"
+    assert _relative_time("not-a-date") == "never"
+    # a clearly-old timestamp formats as an 'ago' string, never raises
+    assert _relative_time("2000-01-01 00:00:00").endswith("ago")
