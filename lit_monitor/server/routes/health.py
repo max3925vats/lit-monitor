@@ -125,6 +125,14 @@ _STATE_TOOLTIPS = {
 }
 
 
+_STATE_VARIANT = {
+    "healthy": "success",
+    "degraded": "warning",
+    "misconfigured": "danger",
+    "unconfigured": "neutral",
+}
+
+
 @router.get("/api/health/badge", response_class=HTMLResponse)
 async def health_badge() -> str:
     """Return the badge HTML fragment for HTMX swap-in."""
@@ -138,12 +146,13 @@ async def health_badge() -> str:
     label = _STATE_LABELS[state]
     tooltip = _STATE_TOOLTIPS[state]
     # Clickable; toggles the detail panel and lazy-loads its content.
+    variant = _STATE_VARIANT.get(state, "neutral")
     return (
-        f'<a class="status-badge {state}" href="#" title="{tooltip}" '
-        f'hx-get="/api/health/badge/detail" hx-target="#health-detail" '
-        f'hx-swap="innerHTML" '
-        f'onclick="document.getElementById(\'health-detail\').toggleAttribute(\'hidden\'); return false;">'
-        f'{label}</a>'
+        f'<sl-badge class="health-badge" variant="{variant}" pill '
+        f'title="{tooltip}" style="cursor:pointer" '
+        f'hx-get="/api/health/badge/detail" hx-target="#health-detail" hx-swap="innerHTML" '
+        f"onclick=\"document.getElementById('health-detail').toggleAttribute('hidden'); return false;\">"
+        f"{label}</sl-badge>"
     )
 
 

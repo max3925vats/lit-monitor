@@ -1337,3 +1337,5 @@ button:not([class]):disabled { opacity: 0.55; cursor: default; }
   .app-body { flex-direction: column; }
   .app-rail { width: auto; border-right: none; border-bottom: 1px solid var(--border); }
 }
+
+.health-badge { font-size: 0.8rem; }
