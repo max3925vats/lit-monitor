@@ -1339,3 +1339,8 @@ button:not([class]):disabled { opacity: 0.55; cursor: default; }
 }
 
 .health-badge { font-size: 0.8rem; }
+
+/* paper-card as sl-card */
+sl-card.paper-card { width: 100%; display: block; }
+sl-card.paper-card::part(base) { width: 100%; }
+.rate-summary { cursor: pointer; display: inline-block; font-size: 0.82rem; }

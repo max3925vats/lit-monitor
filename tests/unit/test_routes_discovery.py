@@ -474,6 +474,15 @@ class TestDiscoveryRunDetailPage:
         assert "/api/feedback" in r.text
         assert '"signal_type": "saved"' in r.text
 
+    def test_paper_card_uses_sl_card(self, client_with_seeded_run):
+        """P1 Shoelace: the shared paper-card partial renders as <sl-card> while
+        keeping the .paper-card class hook for CSS/test selectors."""
+        client, run_id = client_with_seeded_run
+        r = client.get(f"/discovery/{run_id}")
+        assert r.status_code == 200
+        assert "<sl-card" in r.text
+        assert 'class="paper-card' in r.text
+
     def test_feedback_buttons_suppressed_when_explicitly_disabled(
         self, client_with_seeded_run, monkeypatch
     ):
