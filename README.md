@@ -46,17 +46,18 @@ work. Same pipeline either way.
 
 ## Features
 
-- **Topic search with library-relative ranking.** Recurring searches across
-  PubMed, arXiv, and Scopus, powered by a bundled copy of
+- **Library-relative ranking, augmentable with the knowledge graph.** Recurring
+  searches across PubMed, arXiv, and Scopus, powered by a bundled copy of
   [findpapers](https://github.com/jonatasgrosman/findpapers) (see
-  [Acknowledgements](#acknowledgements)). Each candidate is ranked by cosine
-  similarity to embeddings of your Zotero library, computed locally via
-  `mxbai-embed-large` (or any LiteLLM-compatible provider) against a per-machine
-  ChromaDB store. *Explicit search coverage for individual journal publishers is
+  [Acknowledgements](#acknowledgements)). Every candidate is scored against your
+  Zotero library: semantic cosine similarity to local embeddings
+  (`mxbai-embed-large`, or any LiteLLM-compatible provider, in a per-machine
+  ChromaDB store) is the baseline — which you can layer **graph-derived signals**
+  on top of (shared entities, citation overlap, shared authors) along with a
+  free-text domain-focus paragraph, each weighted in config (opt-in). Vector
+  search is table stakes; the graph is where the ranking gets opinionated about
+  *your* corpus. *Explicit search coverage for individual journal publishers is
   planned for a future release.*
-- **Obsidian-native output.** Every paper becomes a structured Markdown note
-  with persist zones for your own annotations, two-phase LLM extraction, and a
-  citation-graph rebuild path.
 - **Knowledge graph with an ask interface.** A KuzuDB graph stores entities
   (topics, methods, materials, authors, journals, keywords) and ten typed
   relationships across the corpus. Ask questions in plain English from the CLI,
@@ -65,6 +66,9 @@ work. Same pipeline either way.
 - **Three retrieval modes** — vector (semantic), graph (entity-typed), and
   hybrid (reciprocal-rank fusion), selectable per command with
   `--rag-mode {vector,graph,hybrid}`.
+- **Obsidian-native output.** Every paper becomes a structured Markdown note
+  with persist zones for your own annotations, two-phase LLM extraction, and a
+  citation-graph rebuild path.
 - **MCP server for AI clients.** Twelve tools that Claude Desktop, Cursor,
   Continue, and any other MCP-capable agent can call to query the graph and
   vector index, including a read-only Cypher escape hatch with a safety guard.
