@@ -10,8 +10,9 @@
     label="domain_focus"
     rows="8"
     maxlength="6000"
+    value="{{ domain_focus }}"
     hx-on:sl-input="document.getElementById('word-count').innerText = event.target.value.trim().split(/\s+/).filter(Boolean).length"
-  >{{ domain_focus }}</sl-textarea>
+  ></sl-textarea>
   <p class="field-note">words: <span id="word-count">0</span> (soft target: under 400)</p>
 
   <sl-button variant="primary" type="submit">Save</sl-button>

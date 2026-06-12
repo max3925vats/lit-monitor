@@ -32,14 +32,16 @@
 
   <div class="field-group">
     <label class="sl-label">Zotero collection name</label>
-    <!-- Options are loaded via HTMX from /setup/api/collections-options,
-         which emits <sl-option> elements after the Task 3 endpoint update. -->
-    <sl-select name="collection_name" id="collection-select"
-      hx-get="/setup/api/collections-options?current={{ collection_name | urlencode }}"
-      hx-trigger="load"
-      hx-target="this" hx-swap="innerHTML">
-      <sl-option value="{{ collection_name }}">Loading collections…</sl-option>
-    </sl-select>
+    <!-- The entire sl-select (or sl-input fallback) is swapped in by the
+         collections-options endpoint so the value= attribute can be set on
+         the host element (innerHTML-swap cannot reach the host attribute). -->
+    <div id="collection-field"
+         hx-get="/setup/api/collections-options?current={{ collection_name | urlencode }}"
+         hx-trigger="load"
+         hx-target="#collection-field"
+         hx-swap="innerHTML">
+      {# server fills this with the full sl-select (or fallback sl-input) #}
+    </div>
     <noscript>(Enter manually:) <input type="text" name="collection_name" value="{{ collection_name }}"></noscript>
   </div>
 
@@ -50,9 +52,9 @@
     required
   ></sl-input>
 
-  <sl-select name="library_type" label="Library type">
-    <sl-option value="user" {% if library_type == "user" %}selected{% endif %}>user</sl-option>
-    <sl-option value="group" {% if library_type == "group" %}selected{% endif %}>group</sl-option>
+  <sl-select name="library_type" label="Library type" value="{{ library_type }}">
+    <sl-option value="user">user</sl-option>
+    <sl-option value="group">group</sl-option>
   </sl-select>
 
   <sl-input

@@ -671,22 +671,31 @@ def collections_options(request: Request, current: str = "") -> HTMLResponse:
 
     from html import escape
 
+    current_esc = escape(current, quote=True)
+
     if not names:
-        current_esc = escape(current, quote=True)
-        # Fallback: native text input + warning banner (no collections available yet).
+        # Fallback: sl-input (valid form-associated element) + warning banner.
+        # Using sl-input (not raw <input>) keeps the name="collection_name"
+        # field consistent and avoids invalid DOM (bare <input> inside <sl-select>).
         html = (
-            f'<input type="text" name="collection_name" value="{current_esc}">'
+            f'<sl-input name="collection_name" value="{current_esc}"'
+            f' label="Collection name"></sl-input>'
             '<div class="banner warning">Complete step 1 first to see your collections, '
             'or type a name manually.</div>'
         )
     else:
-        # Emit sl-option elements so they are valid children of <sl-select>.
+        # Emit the full sl-select so value= can be set on the host element.
+        # innerHTML-swap cannot reach the host's attributes, so the wrapper div
+        # in step_paths.html is the hx-target and we return the whole control.
         opts = "\n".join(
-            f'<sl-option value="{escape(n, quote=True)}"'
-            f'{" selected" if n == current else ""}>{escape(n)}</sl-option>'
+            f'  <sl-option value="{escape(n, quote=True)}">{escape(n)}</sl-option>'
             for n in names
         )
-        html = opts
+        html = (
+            f'<sl-select name="collection_name" value="{current_esc}">\n'
+            f'{opts}\n'
+            f'</sl-select>'
+        )
 
     return HTMLResponse(html)
 

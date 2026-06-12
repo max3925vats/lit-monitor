@@ -884,3 +884,68 @@ def test_setup_steps_use_shoelace_controls():
     assert "<sl-input" in client.get("/setup/step-1").text
     assert "<sl-select" in client.get("/setup/step-2").text
     assert "<sl-textarea" in client.get("/setup/step-5").text
+
+
+@pytest.mark.unit
+def test_domain_textarea_renders_initial_value_as_attribute():
+    """Regression: sl-textarea ignores slot text — the saved domain_focus must be
+    rendered via value=, not as element content (else it shows blank → save wipes it)."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    with patch(
+        "lit_monitor.server.routes.setup.load_config",
+        return_value={"domain_focus": "MEMBRANE FILTRATION FOCUS"},
+    ):
+        html = client.get("/setup/step-5").text
+    assert 'value="MEMBRANE FILTRATION FOCUS"' in html
+    assert ">MEMBRANE FILTRATION FOCUS</sl-textarea>" not in html  # not as slot text
+
+
+@pytest.mark.unit
+def test_routing_textarea_renders_initial_value_as_attribute():
+    """Regression: step-8 raw_yaml must render via value= on sl-textarea."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    with patch(
+        "lit_monitor.server.routes.setup._read_routing_raw",
+        return_value="journalArticle: brain_build\n",
+    ):
+        html = client.get("/setup/step-8").text
+    assert 'value="journalArticle: brain_build' in html
+    assert ">journalArticle: brain_build" not in html.split("</sl-textarea>")[0].split(
+        "<sl-textarea"
+    )[-1]
+
+
+@pytest.mark.unit
+def test_library_type_select_preselects_via_value_attr():
+    """Regression: sl-select pre-selects via value= on the host, not `selected` on options."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    import re
+
+    fake_paths = {"zotero": {"library_type": "group"}, "obsidian": {}}
+    with patch(
+        "lit_monitor.server.routes.setup.load_config", return_value=fake_paths
+    ):
+        html = client.get("/setup/step-2").text
+    # The value= must be on the <sl-select> HOST (its pre-selection mechanism), NOT
+    # merely on an <sl-option> (which `value="group"` would also match — vacuous).
+    m = re.search(r"<sl-select\b[^>]*\bname=\"library_type\"[^>]*>", html)
+    assert m, "library_type sl-select not found"
+    assert 'value="group"' in m.group(0), m.group(0)
