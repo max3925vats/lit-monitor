@@ -29,6 +29,9 @@ def test_settings_sl_input_roundtrips(live_server):
         pg.goto(f"{base}/settings", wait_until="networkidle")
         # Shoelace migration: sl-input must be present (not native input)
         assert pg.locator("sl-input[data-path='weights.domain_context']").count() == 1
+        # P2-polish: settings sections are collapsed by default — open the ranking
+        # <details> so its controls + submit button are visible/clickable.
+        pg.eval_on_selector("details#ranking", "el => { el.open = true; }")
         # Wait for Shoelace to hydrate before interacting
         pg.wait_for_timeout(800)
         pg.eval_on_selector(
