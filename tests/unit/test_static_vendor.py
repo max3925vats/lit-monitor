@@ -15,3 +15,13 @@ def test_shoelace_themes_vendored():
 def test_shoelace_chunks_present():
     chunks = VENDOR / "chunks"
     assert chunks.is_dir() and any(chunks.glob("*.js")), "component chunks missing"
+
+
+THEME = Path("lit_monitor/server/static/shoelace-theme.css")
+
+
+def test_shoelace_theme_maps_brand_tokens():
+    css = THEME.read_text()
+    assert "--sl-color-primary-600" in css         # purple primary mapped
+    assert "--sl-font-sans" in css                 # IBM Plex mapped
+    assert ":not(:defined)" in css                 # FOUC hide present

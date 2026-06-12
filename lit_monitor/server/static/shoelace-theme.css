@@ -1,0 +1,38 @@
+/* lit_monitor/server/static/shoelace-theme.css
+   Maps the brand (see site.css :root) onto Shoelace's design tokens. Loaded AFTER
+   Shoelace's own light.css/dark.css so these win. Theme-dependent values live under the
+   two scheme selectors so light/dark both track the brand. */
+
+:root,
+:host {
+  --sl-font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sl-border-radius-small: 6px;
+  --sl-border-radius-medium: 10px;
+  --sl-border-radius-large: 14px;
+  /* Purple (Obsidian-family) primary — the working accent */
+  --sl-color-primary-300: #c4b6fb;
+  --sl-color-primary-400: #a78bfa;
+  --sl-color-primary-500: #8f7cf3;
+  --sl-color-primary-600: #7c6cf0;
+  --sl-color-primary-700: #5b4bd6;
+  --sl-color-primary-800: #4a3db0;
+  /* Zotero red as the danger/CTA accent */
+  --sl-color-danger-500: #e8503c;
+  --sl-color-danger-600: #d6402f;
+}
+
+/* Dark canvas to match the docs + the merged baseline (#141019 family). */
+html.sl-theme-dark {
+  --sl-color-neutral-0: #1b1626;            /* card / panel surface */
+  --sl-panel-background-color: #1b1626;
+  --sl-color-neutral-50: #221d30;
+  --sl-input-background-color: #221d30;
+  --sl-input-border-color: #2c2640;
+  --sl-color-neutral-1000: #ece9f6;          /* text on dark */
+}
+
+/* FOUC: hide Shoelace custom elements until their definition has hydrated. */
+:not(:defined) {
+  visibility: hidden;
+}
