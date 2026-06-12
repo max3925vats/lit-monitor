@@ -35,20 +35,11 @@ The script installs [`uv`](https://docs.astral.sh/uv/) if needed, creates a
 project-local `.venv`, resolves all dependencies, and seeds working configs from
 `config/*.example.yaml`.
 
-## Starting from a non-biopharma field
-
-`config/examples/` ships filled-in, synthetic config sets for `bioprocessing/`,
-`ml-research/`, and `climate-science/`. Pick the closest one and copy its
-`topics.yaml`, `domain_context.yaml`, `concepts.yaml`, and `researchers.yaml`
-into `config/` as a head start, then edit:
-
-```bash
-cp config/examples/ml-research/*.yaml config/   # or bioprocessing/ climate-science/
-```
-
-The non-domain configs (`paths.yaml`, `extraction.yaml`) still come from
-`config/*.example.yaml`. See the
-[bundled example configs](https://github.com/max3925vats/lit-monitor/tree/main/lit_monitor/_data/config_examples/examples).
+!!! tip "Not in biopharma?"
+    lit-monitor ranks against *your* library, whatever the field — and ships
+    synthetic starter configs for `ml-research`, `climate-science`, and
+    `bioprocessing`. See
+    [Starting from a non-biopharma field](configuration.md#starting-from-a-non-biopharma-field).
 
 ## Manual install
 

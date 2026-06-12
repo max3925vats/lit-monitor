@@ -130,7 +130,11 @@ dev = [
 # Documentation site (MkDocs Material). Preview locally with:
 #   uv run --extra docs mkdocs serve
 docs = [
-    "mkdocs-material>=9.5",
+    # Pinned to the 9.x line. The "MkDocs 2.0" notice Material prints during a
+    # build is an upstream maintainer announcement (about a future major), not an
+    # error — it never appears on the published site. Pinning keeps local + CI
+    # builds reproducible until we deliberately move to the next major.
+    "mkdocs-material>=9.5,<10",
 ]
 # Multi-provider LLM routing (Anthropic, OpenAI, Vertex AI, etc.).
 # Default LLM provider is local Ollama; install this extra only to route

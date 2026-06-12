@@ -12,7 +12,7 @@ the terminal, or any AI client that speaks the Model Context Protocol (MCP).
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![Platform: macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#requirements)
-[![MCP compatible](https://img.shields.io/badge/MCP-compatible-blueviolet.svg)](docs/integrations.md)
+[![MCP compatible](https://img.shields.io/badge/MCP-compatible-blueviolet.svg)](docs/mcp.md)
 
 Your library is the signal. Each candidate paper is scored by semantic
 similarity to embeddings of what you already keep in Zotero, so the feed adapts
@@ -100,8 +100,9 @@ prerequisite for local embeddings (`ollama pull mxbai-embed-large`) — see
 [Requirements](#requirements).
 
 For optional extras — `[nlp]` (BioBERT entity extraction) and `[litellm]`
-(multi-provider cloud LLM routing) — and the from-source / development install,
-see the [Installation guide](docs/installation.md).
+(multi-provider cloud LLM routing — *under testing; feedback appreciated*) — and
+the from-source / development install, see the
+[Installation guide](docs/installation.md).
 
 ### From source (development)
 
@@ -150,11 +151,12 @@ credentials and YAML by hand instead of using the wizard, see
 |---|---|
 | [Installation](docs/installation.md) | Install paths, optional extras, field-specific starter configs |
 | [How it works](docs/how-it-works.md) | Library-as-signal, score decomposition, clustering, domain extraction, trending, embeddings |
-| [Configuration](docs/configuration.md) | Three setup recipes, LLM and embedding providers, notifications, strict mode |
-| [CLI reference](docs/cli-reference.md) | Every day-to-day command |
+| [Configuration](docs/configuration.md) | The config files, three setup recipes, LLM and embedding providers, notifications, strict mode, scheduled deployment |
 | [Web UI](docs/web-ui.md) | Dashboard pages and the setup wizard |
-| [Integrations](docs/integrations.md) | MCP server and HTTP API |
-| [Development](docs/development.md) | Running tests and deployment |
+| [CLI reference](docs/cli-reference.md) | Every day-to-day command |
+| [MCP server](docs/mcp.md) | The twelve MCP tools for AI clients |
+| [HTTP API](docs/http-api.md) | The HTTP query and ingestion surface |
+| [Development](docs/development.md) | Running tests and contributing |
 
 ## Glossary
 

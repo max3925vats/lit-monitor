@@ -17,6 +17,12 @@ in the nav polls `/api/health` and shows pipeline status at a glance. An optiona
 developer page is mounted at `/dev` when you start the server with
 `lit-monitor serve --dev`.
 
+!!! tip "Set a schedule — that's what makes it a *monitor*"
+    The single highest-value thing to do after setup is install a recurring
+    schedule from the **`/schedule`** page (launchd / systemd). With it, new
+    papers arrive already searched, ranked, extracted, and filed between visits —
+    see [Scheduling — the monitor loop](how-it-works.md#scheduling-the-monitor-loop).
+
 ## Setup wizard
 
 Open **`http://127.0.0.1:8765/setup`** in any browser. An 8-step wizard covers

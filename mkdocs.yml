@@ -83,10 +83,17 @@ nav:
   - Installation: installation.md
   - How it works: how-it-works.md
   - Configuration: configuration.md
-  - CLI reference: cli-reference.md
   - Web UI: web-ui.md
-  - Integrations: integrations.md
+  - CLI reference: cli-reference.md
+  - MCP server: mcp.md
+  - HTTP API: http-api.md
   - Development: development.md
+
+# integrations.md is intentionally out of nav — it is a redirect stub pointing at
+# the split MCP server / HTTP API pages. Suppress the "not in nav" notice so a
+# --strict build stays clean.
+not_in_nav: |
+  integrations.md
 
 extra:
   social:

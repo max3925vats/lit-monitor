@@ -199,3 +199,30 @@
 }
 .md-typeset .grid.cards > ul > li > :first-child { color: var(--lm-purple-bright); }
 [data-md-color-scheme="default"] .md-typeset .grid.cards > ul > li > :first-child { color: var(--lm-purple-deep); }
+
+/* Whole-card-clickable (.lm-linked grids): the card title's link stretches to
+   cover the entire card, so the whole tile is the click target — not just the
+   word. The title link MUST stay statically positioned so its ::after maps to
+   the (relative) <li>, not to the link's own inline box. Any *additional* links
+   (e.g. a second link in the title line) are lifted above the overlay so they
+   stay independently clickable. */
+.md-typeset .grid.cards.lm-linked > ul > li { position: relative; cursor: pointer; }
+.md-typeset .grid.cards.lm-linked > ul > li > :first-child a:first-of-type::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+}
+/* A non-first link in the same line sits above the stretched overlay. */
+.md-typeset .grid.cards.lm-linked > ul > li > :first-child a:not(:first-of-type) {
+  position: relative;
+  z-index: 2;
+}
+/* Card titles read as links (colour) but without underline clutter. */
+.md-typeset .grid.cards.lm-linked > ul > li > :first-child a {
+  color: inherit;
+  text-decoration: none;
+}
+.md-typeset .grid.cards.lm-linked > ul > li:hover > :first-child a { color: var(--lm-purple-bright); }
+[data-md-color-scheme="default"] .md-typeset .grid.cards.lm-linked > ul > li:hover > :first-child a { color: var(--lm-purple-deep); }

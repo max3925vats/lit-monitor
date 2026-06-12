@@ -32,40 +32,44 @@ browser, or any MCP client.
 
 ## What it does
 
-<div class="grid cards" markdown>
+<div class="grid cards lm-linked" markdown>
 
--   :material-target:{ .lg } **Library-relative ranking**
+-   :material-bell-ring:{ .lg } **[A monitor that runs itself](how-it-works.md#scheduling-the-monitor-loop)**
 
-    Every candidate is scored by cosine similarity to embeddings of your Zotero
-    library. Papers close to what you already keep rank higher — embeddings run
-    locally via Ollama against a per-machine ChromaDB store.
+    Schedule it (launchd / systemd) and new papers arrive already searched,
+    ranked, extracted, and filed — with a dated digest and an OS notification when
+    each run finishes. Open your vault and the work is already done.
 
--   :material-notebook-edit:{ .lg } **Obsidian-native output**
+-   :material-target:{ .lg } **[Library-relative ranking](how-it-works.md#score-decomposition)**
 
-    Each paper becomes a structured Markdown note with persist zones for your own
-    annotations, two-phase LLM extraction, and a citation-graph rebuild path.
+    Your library *is* the relevance signal. Each candidate is scored by a
+    transparent six-signal mix — semantic similarity to your Zotero library plus
+    graph signals (shared entities, citation edges, shared authors) — and every
+    paper shows the decomposition, so you see exactly why it ranked where it did.
 
--   :material-graph:{ .lg } **Knowledge graph + ask**
+-   :material-graph:{ .lg } **[Knowledge graph you can talk to](how-it-works.md#knowledge-graph-and-query-surfaces)**
 
-    A KuzuDB graph stores entities and ten typed relationships. Ask in plain
-    English from the CLI, HTTP, or MCP — *"what methods extend Carta 2009?"* —
-    with vector, graph, or hybrid retrieval.
+    A real KuzuDB graph of entities and typed relationships — not just embeddings.
+    Hold a conversation grounded in *your* corpus from the CLI (`ask`), an AI
+    client (MCP), or HTTP, with vector, graph, or hybrid retrieval.
 
--   :material-robot-happy:{ .lg } **MCP server for AI clients**
+-   :material-notebook-edit:{ .lg } **[Obsidian-native output](how-it-works.md#obsidian-output)**
+
+    Every kept paper becomes a structured Markdown note in your vault — plain
+    `.md` files you own, with Dataview front matter and persist zones that protect
+    your own annotations across rebuilds. An Obsidian companion plugin is planned.
+
+-   :material-robot-happy:{ .lg } **[MCP server for AI clients](mcp.md)**
 
     Twelve tools that Claude Desktop, Cursor, and any MCP-capable agent can call
     to query the graph and vector index, including a guarded read-only Cypher
     escape hatch.
 
--   :material-shield-lock:{ .lg } **Local-first & free by default**
+-   :material-heart:{ .lg } **[Local-first, open, and free](how-it-works.md#local-first-and-open-source)**
 
-    Your library is embedded and stored on your machine — no per-call API costs.
-    Only outbound paper searches go out. Cloud providers are strictly opt-in.
-
--   :material-bell-ring:{ .lg } **Runs on your schedule**
-
-    One-command install for launchd (macOS) or systemd user timers (Linux), an OS
-    notification when a run finishes, and on-demand runs from the dashboard.
+    MIT-licensed and built for researchers: your library is embedded and stored
+    on your machine with no per-call costs and no account — open formats, no
+    lock-in. Cloud providers are strictly opt-in. Contributions welcome.
 
 </div>
 
@@ -84,14 +88,32 @@ New here? Start with the **[Installation guide](installation.md)**, then
 
 ## Explore
 
-<div class="grid cards" markdown>
+<div class="grid cards lm-linked" markdown>
 
-- :material-download: **[Installation](installation.md)** — install paths, extras, field-specific starter configs
-- :material-cog: **[Configuration](configuration.md)** — setup recipes, providers, notifications, strict mode
-- :material-console: **[CLI reference](cli-reference.md)** — every day-to-day command
-- :material-monitor-dashboard: **[Web UI](web-ui.md)** — dashboards and the setup wizard
-- :material-connection: **[Integrations](integrations.md)** — MCP server and HTTP API
-- :material-flask: **[How it works](how-it-works.md)** — library-as-signal, score decomposition, clustering
+-   :material-download:{ .lg } **[Installation](installation.md)**
+
+    Install paths, optional extras, and the prerequisites.
+
+-   :material-cog:{ .lg } **[Configuration](configuration.md)**
+
+    Config files, setup recipes, providers, notifications, strict mode, deployment.
+
+-   :material-flask:{ .lg } **[How it works](how-it-works.md)**
+
+    Library-as-signal, the knowledge graph, scheduling, the six ranking signals,
+    and the local-first philosophy.
+
+-   :material-monitor-dashboard:{ .lg } **[Web UI](web-ui.md)**
+
+    The dashboards and the 8-step setup wizard.
+
+-   :material-robot-happy:{ .lg } **[MCP server](mcp.md)**
+
+    Twelve MCP tools for AI clients, each described.
+
+-   :material-api:{ .lg } **[HTTP API](http-api.md)**
+
+    The HTTP query and ingestion surface.
 
 </div>
 
