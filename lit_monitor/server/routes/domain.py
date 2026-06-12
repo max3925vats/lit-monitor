@@ -18,6 +18,7 @@ from typing import Any
 import yaml
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 
 from lit_monitor.domain.extract import analyze_domain
 from lit_monitor.server import config_io
@@ -26,6 +27,33 @@ from lit_monitor.server.runtime import get_runtime
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+class DomainItem(BaseModel):
+    """One extracted domain-focus item row."""
+
+    id: int
+    value: str
+    user_confirmed: bool
+    last_analyzed_at: str | None
+
+    model_config = {"extra": "allow"}
+
+
+class DomainExtractionResponse(BaseModel):
+    """Response shape for GET /api/domain.
+
+    Five fixed keys, each a list of DomainItem rows.
+    Always present even when empty.
+    """
+
+    topics: list[DomainItem] = []
+    methods: list[DomainItem] = []
+    materials: list[DomainItem] = []
+    adjacent_fields: list[DomainItem] = []
+    exclusions: list[DomainItem] = []
+
+    model_config = {"extra": "allow"}
 
 
 def _read_domain_text() -> str:
@@ -72,7 +100,7 @@ def _read_domain_text() -> str:
     return text
 
 
-@router.get("/api/domain")
+@router.get("/api/domain", response_model=DomainExtractionResponse, tags=["Domain"])
 def get_domain_extraction() -> dict:
     """Return current domain focus extraction grouped by plural field_type.
 

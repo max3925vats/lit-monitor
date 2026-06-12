@@ -246,6 +246,17 @@ class TestConfirmReject:
 
 
 @pytest.mark.unit
+def test_domain_endpoint_has_openapi_tag():
+    from fastapi.testclient import TestClient
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+    reset_runtime(); client = TestClient(create_app())
+    schema = client.get("/openapi.json").json()
+    op = schema["paths"]["/api/domain"]["get"]
+    assert "Domain" in op.get("tags", [])
+
+
+@pytest.mark.unit
 def test_domain_actions_use_sl_button():
     from fastapi.testclient import TestClient
     from lit_monitor.server.app import create_app
