@@ -1156,3 +1156,51 @@ def test_setup_check_secrets_row_does_not_500():
     r = client.get("/setup/api/check/secrets")
     assert r.status_code == 200, r.text
     assert "pill" in r.text  # renders a status pill, not a 500
+
+
+# ---------------------------------------------------------------------------
+# Task B: setup steps 3/6/8 — collapse modes, keyword paragraphs, spacing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_step3_modes_collapsed_by_default():
+    import re
+
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/step-3").text
+    # no extraction-mode <details ... open>
+    assert not re.search(r"<details[^>]*\bopen\b", html), "step-3 mode cards should start collapsed"
+
+
+@pytest.mark.unit
+def test_step6_keywords_render_as_paragraph_not_bullets():
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+
+    # Patch _load_concepts to inject a theme with keywords ["alpha", "beta"]
+    fake_data = {
+        "themes": [{"name": "Test Theme", "keywords": ["alpha", "beta"]}],
+        "unclustered": [],
+    }
+    with patch(
+        "lit_monitor.server.routes.setup._load_concepts",
+        return_value=(fake_data, "concepts"),
+    ):
+        html = client.get("/setup/step-6").text
+
+    assert 'class="keyword-cloud"' in html, "keyword-cloud paragraph class not found"
+    assert "alpha · beta" in html, "joined keyword paragraph text not found"
+    # Must NOT render as list items
+    assert "<li>alpha</li>" not in html, "keywords still rendered as <li> items"

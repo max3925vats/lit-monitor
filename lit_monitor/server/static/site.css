@@ -1388,3 +1388,12 @@ sl-card.paper-card::part(base) { width: 100%; }
 .setup-form sl-textarea { display: block; width: 100%; max-width: none; }
 .setup-form { display: flex; flex-direction: column; gap: 1.1rem; }
 .settings-section .setup-form { gap: 1.1rem; }
+
+/* Step 6: keyword cloud paragraph inside concepts theme/unclustered details */
+.keyword-cloud { color: var(--muted); line-height: 1.7; margin: 0.5rem 0 0; }
+
+/* Step 6: spacing between warning card and "Showing:" field-note */
+.showing-line { margin-top: 1.25rem; }
+
+/* Step 8: vertical spacing around the advanced YAML editor textarea */
+.yaml-editor-block { margin: 1rem 0; }

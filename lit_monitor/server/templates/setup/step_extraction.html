@@ -9,7 +9,7 @@
   hx-target="#result"
   hx-swap="innerHTML">
   {% for mode, vals in modes %}
-  <details {% if loop.first %}open{% endif %}>
+  <details>
     <summary><strong>{{ mode }}</strong> — {{ vals.model or "no model set" }}</summary>
     <fieldset>
       <sl-select name="{{ mode }}__provider" label="provider" value="{{ vals.provider }}">
