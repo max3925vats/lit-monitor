@@ -107,16 +107,17 @@ class TestSettingsPage:
             "show_feedback_buttons sl-switch must carry `checked` when config is True"
         )
 
-    def test_settings_has_subsection_rail(self):
+    def test_settings_sections_collapsed_by_default(self):
         with patch(
             "lit_monitor.server.routes.settings._load_extraction_config",
             return_value={"ranking": {"semantic_weight": 0.5}},
         ):
             client = _make_client()
             html = client.get("/settings").text
-        assert 'href="#ranking"' in html
-        assert 'href="#clustering"' in html
-        assert 'href="#feedback"' in html
+        import re
+        # the ranking section must NOT be open by default
+        assert not re.search(r'<details[^>]*id="ranking"[^>]*\bopen\b', html), "ranking section should start collapsed"
+        assert 'class="settings-rail"' not in html  # rail removed
 
     def test_checkbox_unchecked_when_config_false(self):
         """Inverse of test_reflects_current_config: False config → no `checked`."""
