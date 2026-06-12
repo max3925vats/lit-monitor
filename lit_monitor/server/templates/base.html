@@ -38,7 +38,10 @@
     <div class="app-main-col">
       <header class="app-topbar">
         <sl-icon-button class="app-sidebar-toggle" name="list" label="Menu"></sl-icon-button>
-        <div class="app-topbar-crumbs">{% block breadcrumbs %}{% endblock %}</div>
+        <div class="app-topbar-crumbs">
+          {% set _trail = breadcrumb_trail(request.url.path, detail_crumb) %}
+          {% if _trail %}{% from "_partials/breadcrumbs.html" import breadcrumbs %}{{ breadcrumbs(_trail) }}{% endif %}
+        </div>
         <sl-button class="app-ask-btn" variant="primary" size="small" pill>
           <sl-icon slot="prefix" name="stars"></sl-icon> Ask
         </sl-button>

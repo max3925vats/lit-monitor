@@ -523,7 +523,12 @@ def corpus_detail(request: Request, doi: str) -> HTMLResponse:
     note_path = row.get("note_path")
     obsidian_uri = _obsidian_uri(note_path) if note_path else None
 
-    ctx = {"paper": row, "breakdown": breakdown, "obsidian_uri": obsidian_uri}
+    ctx = {
+        "paper": row,
+        "breakdown": breakdown,
+        "obsidian_uri": obsidian_uri,
+        "detail_crumb": (row.get("title") or doi)[:60],
+    }
     return _get_templates().TemplateResponse(request, "corpus/detail.html", ctx)
 
 

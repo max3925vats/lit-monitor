@@ -279,5 +279,6 @@ def themes_detail(request: Request, cluster_id: int) -> HTMLResponse:
             "cluster": cluster,
             "papers": papers,
             "show_feedback_buttons": show_feedback_buttons,
+            "detail_crumb": f"Theme {cluster_id}",
         },
     )

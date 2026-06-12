@@ -46,6 +46,9 @@ def configure_templates(t):
     from lit_monitor.server.nav import NAV_GROUPS, active_group_for_path
     t.env.globals["nav_groups"] = NAV_GROUPS
     t.env.globals["active_group_for_path"] = active_group_for_path
+    from lit_monitor.server.nav import breadcrumb_trail
+    t.env.globals["breadcrumb_trail"] = breadcrumb_trail
+    t.env.globals["detail_crumb"] = None
     t.env.filters["fromjson"] = _json.loads
     return t
 

@@ -267,7 +267,12 @@ def discovery_run_detail(request: Request, run_id: int) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "discovery/run_detail.html",
-        {"run": run, "papers": papers, "show_feedback_buttons": show_feedback_buttons},
+        {
+            "run": run,
+            "papers": papers,
+            "show_feedback_buttons": show_feedback_buttons,
+            "detail_crumb": f"Run {run_id}",
+        },
     )
 
 

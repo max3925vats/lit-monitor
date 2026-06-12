@@ -60,3 +60,19 @@ def active_group_for_path(path: str) -> str | None:
                 if best is None or len(item.href) > best[0]:
                     best = (len(item.href), group.label)
     return best[1] if best else None
+
+
+def breadcrumb_trail(path: str, detail: str | None = None) -> list[tuple[str, str | None]]:
+    """Top-bar breadcrumb trail for `path`.
+
+    List page (`/corpus`)  -> [(group, None), (item, None)]
+    Detail (`/corpus/x`)   -> [(group, None), (item, item.href), (detail or "Detail", None)]
+    Home/unknown           -> []  (no breadcrumbs)
+    """
+    for group in NAV_GROUPS:
+        for item in group.items:
+            if path == item.href:
+                return [(group.label, None), (item.label, None)]
+            if path.startswith(item.href.rstrip("/") + "/"):
+                return [(group.label, None), (item.label, item.href), (detail or "Detail", None)]
+    return []

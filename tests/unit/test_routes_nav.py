@@ -46,3 +46,13 @@ def test_ask_button_and_health_badge_present(client):
     html = client.get("/").text
     assert "app-ask-btn" in html
     assert 'id="health-badge"' in html
+
+
+def test_breadcrumbs_render_on_section_page(client):
+    html = client.get("/discovery").text
+    assert 'class="app-crumbs"' in html
+    assert "Monitor" in html and "Discovery" in html
+
+
+def test_no_breadcrumbs_on_home(client):
+    assert 'class="app-crumbs"' not in client.get("/").text
