@@ -332,6 +332,8 @@ def run_discovery(
                 total_found=summary.new_papers_found,
                 total_ingested=summary.papers_ingested,
             )
+            from lit_monitor.api._stats_snapshot import record_corpus_snapshot
+            record_corpus_snapshot(state_db, run_type="discovery", run_id=str(_disc_run_id))
         # P2: fire OS notification after the run row is committed.
         # Wrapped in try/except so any failure here is non-fatal.
         try:
