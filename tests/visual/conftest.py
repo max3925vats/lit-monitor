@@ -21,6 +21,14 @@ def _free_port():
 @pytest.fixture(scope="session")
 def live_server():
     # --- CONFIG SAFETY: isolate to a temp copy of the real config ----------
+    # NOTE: LIT_MONITOR_ROOT redirects the CONFIG DIR only (config/*.yaml). It does
+    # NOT redirect the secrets path (~/.config/lit-monitor/config.toml — hard-wired
+    # to Path.home() in setup/_paths.py + runtime.py). The visual suite is safe
+    # because no test drives a write route (only /settings + /setup step-1 write,
+    # and neither is submitted here — Playwright form tests target /settings, whose
+    # extraction.yaml save IS under the redirected config dir). If a future visual
+    # test ever drives the Setup credentials step, it would write the user's REAL
+    # config.toml — isolate the secrets path too before adding such a test.
     from lit_monitor.core.config import config_dir
 
     real_cfg = config_dir()
@@ -30,6 +38,7 @@ def live_server():
         for f in real_cfg.glob("*.yaml"):
             shutil.copy2(f, tmp_root / "config" / f.name)
     prev_root = os.environ.get("LIT_MONITOR_ROOT")
+    prev_dev = os.environ.get("LIT_MONITOR_DEV")
     os.environ["LIT_MONITOR_ROOT"] = str(tmp_root)
     os.environ["LIT_MONITOR_DEV"] = "1"  # enables /dev + the gallery spike routes
 
@@ -56,5 +65,9 @@ def live_server():
             os.environ.pop("LIT_MONITOR_ROOT", None)
         else:
             os.environ["LIT_MONITOR_ROOT"] = prev_root
+        if prev_dev is None:
+            os.environ.pop("LIT_MONITOR_DEV", None)
+        else:
+            os.environ["LIT_MONITOR_DEV"] = prev_dev
         reset_runtime()
         shutil.rmtree(tmp_root, ignore_errors=True)
