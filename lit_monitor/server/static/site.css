@@ -1391,6 +1391,10 @@ sl-card.paper-card::part(base) { width: 100%; }
 .setup-form sl-textarea { display: block; width: 100%; max-width: none; }
 .setup-form { display: flex; flex-direction: column; gap: 1.1rem; }
 .settings-section .setup-form { gap: 1.1rem; }
+/* P2-polish: action buttons size to their content, not full-width stretch.
+   (Covers Save / Save and test / + Add search / Add researcher and the per-card
+   Remove buttons — the flex column otherwise stretches them edge-to-edge.) */
+.setup-form sl-button, .topics-row sl-button { align-self: flex-start; }
 
 /* Step 6: keyword cloud paragraph inside concepts theme/unclustered details */
 .keyword-cloud { color: var(--muted); line-height: 1.7; margin: 0.5rem 0 0; }
