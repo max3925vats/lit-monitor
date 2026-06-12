@@ -1375,3 +1375,4 @@ sl-card.paper-card::part(base) { width: 100%; }
 .settings-rail a { color: var(--muted); text-decoration: none; padding: 0.25rem 0.5rem; border-radius: var(--radius); }
 .settings-rail a:hover { color: var(--accent); background: var(--card-bg); }
 .stat-delta.muted { color: var(--muted); }
+.mono { font-family: var(--font-mono); }

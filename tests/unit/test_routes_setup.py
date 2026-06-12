@@ -863,3 +863,24 @@ class TestRoutingAdvancedEditorComments:
         # The pre-existing good file must be untouched.
         after = (tmp_path / "item_routing.yaml").read_text(encoding="utf-8")
         assert after == self._SEED
+
+
+# ---------------------------------------------------------------------------
+# Task 3: setup wizard → Shoelace controls
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_setup_steps_use_shoelace_controls():
+    """Setup wizard simple-field steps render Shoelace web components."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+
+    assert "<sl-input" in client.get("/setup/step-1").text
+    assert "<sl-select" in client.get("/setup/step-2").text
+    assert "<sl-textarea" in client.get("/setup/step-5").text

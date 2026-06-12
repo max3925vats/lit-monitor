@@ -673,15 +673,17 @@ def collections_options(request: Request, current: str = "") -> HTMLResponse:
 
     if not names:
         current_esc = escape(current, quote=True)
+        # Fallback: native text input + warning banner (no collections available yet).
         html = (
             f'<input type="text" name="collection_name" value="{current_esc}">'
             '<div class="banner warning">Complete step 1 first to see your collections, '
             'or type a name manually.</div>'
         )
     else:
+        # Emit sl-option elements so they are valid children of <sl-select>.
         opts = "\n".join(
-            f'<option value="{escape(n, quote=True)}"'
-            f'{" selected" if n == current else ""}>{escape(n)}</option>'
+            f'<sl-option value="{escape(n, quote=True)}"'
+            f'{" selected" if n == current else ""}>{escape(n)}</sl-option>'
             for n in names
         )
         html = opts

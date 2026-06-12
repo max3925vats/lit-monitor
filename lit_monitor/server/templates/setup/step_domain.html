@@ -4,13 +4,17 @@
 <p>A short paragraph telling the LLM what kind of papers you're studying. Stored at <code>config/domain_context.yaml</code>. Used in extractor prompts to bias <code>relevance_to_domain</code> and friends.</p>
 
 <form class="setup-form" hx-post="/setup/api/domain" hx-target="#result" hx-swap="innerHTML">
-  <label>domain_focus
-    <textarea id="domain_focus" name="domain_focus" rows="8" maxlength="6000"
-      oninput="document.getElementById('word-count').innerText = this.value.trim().split(/\s+/).filter(Boolean).length">{{ domain_focus }}</textarea>
-  </label>
+  <sl-textarea
+    id="domain_focus"
+    name="domain_focus"
+    label="domain_focus"
+    rows="8"
+    maxlength="6000"
+    hx-on:sl-input="document.getElementById('word-count').innerText = event.target.value.trim().split(/\s+/).filter(Boolean).length"
+  >{{ domain_focus }}</sl-textarea>
   <p class="field-note">words: <span id="word-count">0</span> (soft target: under 400)</p>
 
-  <button type="submit">Save</button>
+  <sl-button variant="primary" type="submit">Save</sl-button>
 </form>
 
 <div id="result"></div>
@@ -18,11 +22,23 @@
 <p><a href="/setup">← Back to setup overview</a></p>
 
 <script>
-// Initialize word count on page load.
+// Initialize word count on page load once sl-textarea is defined/ready.
 (function() {
-  var t = document.getElementById('domain_focus');
-  var c = document.getElementById('word-count');
-  if (t && c) c.innerText = t.value.trim().split(/\s+/).filter(Boolean).length;
+  var el = document.getElementById('domain_focus');
+  var counter = document.getElementById('word-count');
+  if (!el || !counter) return;
+  // sl-textarea exposes .value after upgrade; use a small delay if not yet ready.
+  function init() {
+    var v = el.value || '';
+    counter.innerText = v.trim().split(/\s+/).filter(Boolean).length;
+  }
+  if (typeof el.value !== 'undefined') {
+    init();
+  } else {
+    el.addEventListener('sl-ready', init);
+    // Fallback: try after a tick in case sl-ready already fired.
+    setTimeout(init, 50);
+  }
 })();
 </script>
 {% endblock %}
