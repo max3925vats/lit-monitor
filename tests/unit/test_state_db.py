@@ -1166,3 +1166,14 @@ def test_get_zotero_key_none_for_unlinked_paper(tmp_path):
     db = StateDB(tmp_path / "state.db")
     db.upsert_paper({"doi": "10.1/nolink", "title": "T"})  # no zotero_key
     assert db.get_zotero_key("10.1/nolink") is None
+
+
+def test_corpus_snapshot_roundtrip(tmp_path):
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(tmp_path / "state.db")
+    db.write_corpus_snapshot(papers=10, graph_nodes=20, themes=3, run_type="discovery", run_id="r1")
+    db.write_corpus_snapshot(papers=14, graph_nodes=28, themes=3, run_type="discovery", run_id="r2")
+    snaps = db.get_recent_snapshots(limit=2)
+    assert len(snaps) == 2
+    assert snaps[0]["papers"] == 14 and snaps[0]["graph_nodes"] == 28  # newest first
+    assert snaps[1]["papers"] == 10

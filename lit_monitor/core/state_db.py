@@ -264,6 +264,15 @@ CREATE TABLE IF NOT EXISTS interest_vectors (
     n_events     INTEGER NOT NULL DEFAULT 0,
     computed_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS corpus_stat_snapshots (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    papers        INTEGER NOT NULL DEFAULT 0,
+    graph_nodes   INTEGER NOT NULL DEFAULT 0,
+    themes        INTEGER NOT NULL DEFAULT 0,
+    run_type      TEXT,
+    run_id        TEXT
+);
 """
 # ---------------------------------------------------------------------------
 # StateDB class
@@ -1552,6 +1561,34 @@ class StateDB:
             rows = conn.execute(
                 "SELECT * FROM run_log WHERE run_type = ? ORDER BY started_at DESC LIMIT ?",
                 (run_type, limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def write_corpus_snapshot(
+        self,
+        *,
+        papers: int,
+        graph_nodes: int,
+        themes: int,
+        run_type: str | None = None,
+        run_id: str | None = None,
+    ) -> None:
+        """Record one corpus-state snapshot (papers/graph_nodes/themes) for the
+        stats-banner deltas. Called at run completion only."""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO corpus_stat_snapshots "
+                "(papers, graph_nodes, themes, run_type, run_id) VALUES (?, ?, ?, ?, ?)",
+                (int(papers), int(graph_nodes), int(themes), run_type, run_id),
+            )
+
+    def get_recent_snapshots(self, limit: int = 2) -> list[dict]:
+        """Return the most recent corpus snapshots, newest first."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, snapshot_at, papers, graph_nodes, themes, run_type, run_id "
+                "FROM corpus_stat_snapshots ORDER BY id DESC LIMIT ?",
+                (limit,),
             ).fetchall()
         return [dict(r) for r in rows]
 
