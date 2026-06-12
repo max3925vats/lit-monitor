@@ -54,6 +54,15 @@ def test_breadcrumbs_render_on_section_page(client):
     assert "Monitor" in html and "Discovery" in html
 
 
+def test_breadcrumb_separator_between_group_and_item(client):
+    # Regression: the group label (e.g. "Monitor") has no href, so the old macro
+    # skipped the separator after it — "Monitor Discovery" rendered with no "›".
+    # The separator must appear between every crumb pair, link or not.
+    html = client.get("/discovery").text
+    crumbs = html.split('class="app-crumbs"', 1)[1].split("</nav>", 1)[0]
+    assert '<span class="sep">' in crumbs
+
+
 def test_no_breadcrumbs_on_home(client):
     assert 'class="app-crumbs"' not in client.get("/").text
 
