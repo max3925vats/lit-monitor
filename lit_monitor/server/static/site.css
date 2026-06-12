@@ -1083,3 +1083,65 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .progress-fill {
   background: linear-gradient(90deg, var(--accent-strong), var(--accent));
 }
+
+/* ===========================================================================
+   Brand redesign — Phase 3: landing hero + page-header polish (both themes).
+   =========================================================================== */
+
+/* Landing hero — branded, docs-flavoured but app-appropriate. The radial tints
+   layer over surface-2 via color-mix so they read in light and dark. */
+.lm-hero {
+  position: relative;
+  text-align: center;
+  padding: 3.5rem 1.5rem 2.75rem;
+  margin-bottom: 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  background:
+    radial-gradient(60% 80% at 24% 8%, color-mix(in srgb, var(--brand-purple) 24%, transparent), transparent 60%),
+    radial-gradient(52% 70% at 86% 14%, color-mix(in srgb, var(--brand-red) 13%, transparent), transparent 62%),
+    var(--surface-2);
+}
+.lm-eyebrow {
+  margin: 0 0 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.lm-hero h1 {
+  margin: 0 auto 0.75rem;
+  max-width: 20ch;
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1.05;
+}
+.lm-sub {
+  max-width: 54ch;
+  margin: 0 auto 1.6rem;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+.lm-cta {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.lm-cta .btn { padding: 0.6rem 1.25rem; font-weight: 600; }
+.lm-hero .last-run { margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--muted); }
+.lm-hero .last-run code { background: var(--card-bg); }
+
+/* Cards: arrow affordance + accent title on hover. */
+.cards .card h2 { transition: color 0.15s ease; }
+.cards .card:hover h2 { color: var(--accent); }
+
+/* Page-header utility — a subtle hairline under the title for rhythm. */
+.page-header {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.page-header .field-note { color: var(--muted); }

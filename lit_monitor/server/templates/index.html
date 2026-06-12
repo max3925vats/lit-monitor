@@ -3,18 +3,23 @@
 {% block title %}lit-monitor — Home{% endblock %}
 
 {% block content %}
-  <section class="hero">
-    <h1>lit-monitor</h1>
-    <p class="muted">
-      Track new papers, ranked by semantic similarity to your existing
-      Zotero library. Run discovery on whatever schedule fits.
+  <section class="lm-hero">
+    <p class="lm-eyebrow">for Zotero · into Obsidian</p>
+    <h1>Your library is the signal.</h1>
+    <p class="lm-sub">
+      Track new papers across PubMed, arXiv &amp; Scopus, ranked by similarity to
+      your Zotero library — extracted into Obsidian and queryable right here.
     </p>
+    <div class="lm-cta">
+      <a class="btn btn-cta" href="/discovery">Run discovery &rarr;</a>
+      <a class="btn btn-secondary" href="/setup">Setup</a>
+    </div>
     <p class="last-run">
       {% if last_run %}
         Last run:
         <code>{{ last_run.run_type | default("run") }}</code>
         at <code>{{ last_run.started_at }}</code>
-        {% if last_run.status %}— <code>{{ last_run.status }}</code>{% endif %}
+        {% if last_run.status %}&mdash; <code>{{ last_run.status }}</code>{% endif %}
       {% else %}
         No runs yet.
       {% endif %}
