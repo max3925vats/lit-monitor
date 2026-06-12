@@ -183,6 +183,7 @@ include-package-data = true
     "server/templates/**/*.html",
     "server/static/**/*.css",
     "server/static/**/*.js",
+    "server/static/vendor/**/*",
     "server/scheduler_templates/*.j2",
     "_data/note_templates/*.j2",
     "_data/item_routing.yaml",
