@@ -202,3 +202,48 @@
     _initInsightsCharts(target);
   });
 })();
+
+// Theme toggle: dark is the default; the topnav button flips to light and back,
+// persisting the choice in localStorage. The no-flash <head> bootstrap reads the
+// same key on load, so the choice survives navigations and full reloads.
+(function () {
+  "use strict";
+
+  var KEY = "lit_theme";
+
+  function currentTheme() {
+    return document.documentElement.getAttribute("data-theme") === "light"
+      ? "light"
+      : "dark";
+  }
+
+  function paintGlyph(btn) {
+    if (btn) btn.textContent = currentTheme() === "light" ? "☀" : "🌙";
+  }
+
+  function init() {
+    var btn = document.getElementById("theme-toggle");
+    if (!btn) return;
+    paintGlyph(btn);
+    btn.addEventListener("click", function () {
+      var next = currentTheme() === "light" ? "dark" : "light";
+      if (next === "light") {
+        document.documentElement.setAttribute("data-theme", "light");
+      } else {
+        document.documentElement.removeAttribute("data-theme");
+      }
+      try {
+        window.localStorage.setItem(KEY, next);
+      } catch (e) {
+        /* storage blocked — theme still applies for this session */
+      }
+      paintGlyph(btn);
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();

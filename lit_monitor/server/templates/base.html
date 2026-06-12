@@ -4,6 +4,26 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}lit-monitor{% endblock %}</title>
+    {# No-flash theme bootstrap: dark is the default; opt into light before the
+       stylesheet paints so there's no flash of the wrong theme. #}
+    <script>
+      (function () {
+        try {
+          if (localStorage.getItem("lit_theme") === "light") {
+            document.documentElement.setAttribute("data-theme", "light");
+          }
+        } catch (e) {}
+      })();
+    </script>
+    {# Favicon: the Material "library" book glyph (brand purple), matching the
+       brand mark + the docs logo. Inline SVG data URI — no extra asset to ship. #}
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%237c6cf0%22%20d%3D%22M12%208a3%203%200%200%200%203-3%203%203%200%200%200-3-3%203%203%200%200%200-3%203%203%203%200%200%200%203%203m0%203.54C9.64%209.35%206.5%208%203%208v11c3.5%200%206.64%201.35%209%203.54%202.36-2.19%205.5-3.54%209-3.54V8c-3.5%200-6.64%201.35-9%203.54%22%2F%3E%3C%2Fsvg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+    />
     <link rel="stylesheet" href="/static/site.css" />
     <!-- HTMX 2.x + SSE extension via CDN; no JS framework. -->
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
@@ -21,7 +41,11 @@
     {% set _explore = ["/corpus", "/graph", "/themes", "/trending"] %}
     {% set _tune = ["/domain", "/insights", "/settings"] %}
     <header class="topnav">
-      <a class="brand" href="/">lit-monitor</a>
+      <div class="topnav-inner">
+      <a class="brand" href="/">
+        <svg class="brand-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+        <span>lit-monitor</span>
+      </a>
       <nav>
         <div class="navgroup">
           <button type="button" class="navgroup-label{% if _path in _run %} active{% endif %}" aria-haspopup="true" aria-expanded="false">Run ▾</button>
@@ -53,6 +77,8 @@
       </nav>
       <div id="health-badge" hx-get="/api/health/badge" hx-trigger="load, every 30s" hx-swap="innerHTML">
         <span class="status-badge loading">checking…</span>
+      </div>
+      <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Switch light / dark theme" title="Switch light / dark theme">🌙</button>
       </div>
     </header>
 
