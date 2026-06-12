@@ -565,8 +565,8 @@ def test_snapshot_without_state_db_keeps_keys_none(tmp_path):
 
 
 def test_get_dashboard_stats_no_graph(tmp_path):
-    from lit_monitor.core.state_db import StateDB
     from lit_monitor.api.queries import get_dashboard_stats
+    from lit_monitor.core.state_db import StateDB
     db = StateDB(tmp_path / "state.db")
     db.write_corpus_snapshot(papers=10, graph_nodes=0, themes=2, run_type="discovery", run_id="r1")
     db.write_corpus_snapshot(papers=14, graph_nodes=0, themes=3, run_type="discovery", run_id="r2")
@@ -577,8 +577,8 @@ def test_get_dashboard_stats_no_graph(tmp_path):
     assert "last_run" in stats
 
 def test_get_dashboard_stats_single_snapshot_has_no_delta(tmp_path):
-    from lit_monitor.core.state_db import StateDB
     from lit_monitor.api.queries import get_dashboard_stats
+    from lit_monitor.core.state_db import StateDB
     db = StateDB(tmp_path / "state.db")
     db.write_corpus_snapshot(papers=5, graph_nodes=0, themes=1)
     stats = get_dashboard_stats(db, None)
@@ -586,8 +586,8 @@ def test_get_dashboard_stats_single_snapshot_has_no_delta(tmp_path):
 
 
 def test_get_dashboard_stats_last_run_status(tmp_path):
-    from lit_monitor.core.state_db import StateDB
     from lit_monitor.api.queries import get_dashboard_stats
+    from lit_monitor.core.state_db import StateDB
     db = StateDB(tmp_path / "state.db")
     # start_run(run_id: str, run_type: str) / finish_run(run_id: str, status: str)
     run_id = "test-run-001"

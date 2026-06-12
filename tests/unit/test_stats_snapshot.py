@@ -1,6 +1,6 @@
 def test_record_corpus_snapshot_writes_one_row(tmp_path):
-    from lit_monitor.core.state_db import StateDB
     from lit_monitor.api._stats_snapshot import record_corpus_snapshot
+    from lit_monitor.core.state_db import StateDB
     db = StateDB(tmp_path / "state.db")
     record_corpus_snapshot(db, run_type="discovery", run_id="r1")  # graph absent → 0, no raise
     assert len(db.get_recent_snapshots(limit=5)) == 1

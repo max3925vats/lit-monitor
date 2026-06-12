@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from lit_monitor.core.doi import normalize_doi
@@ -907,10 +907,10 @@ def _relative_time(iso_ts: str | None) -> str:
     if not iso_ts:
         return "never"
     try:
-        dt = datetime.strptime(iso_ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        dt = datetime.strptime(iso_ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
     except (ValueError, TypeError):
         return "never"
-    delta = datetime.now(timezone.utc) - dt
+    delta = datetime.now(UTC) - dt
     secs = max(0, int(delta.total_seconds()))
     if secs < 60:
         return "just now"
