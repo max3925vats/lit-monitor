@@ -9,8 +9,13 @@
 </div>
 <p class="field-note">For each entry, set <code>orcid</code> or <code>scopus_id</code> to enable lookups &mdash; plain-name search is unreliable across databases.</p>
 
-<form class="setup-form" hx-post="/setup/api/researchers" hx-target="#result" hx-swap="innerHTML">
-  <div id="researchers-rows">
+<form class="setup-form researchers-intro-gap" hx-post="/setup/api/researchers" hx-target="#result" hx-swap="innerHTML">
+  <sl-button type="button"
+    hx-get="/setup/api/researchers/new-row?idx={{ researchers | length }}"
+    hx-target="#researchers-rows"
+    hx-swap="beforeend">+ Add researcher</sl-button>
+
+  <div id="researchers-rows" class="card-grid">
     {% for r in researchers %}
     <fieldset class="topics-row">
       <sl-input name="name_{{ loop.index0 }}" label="Name" value="{{ r.name }}"></sl-input>
@@ -23,11 +28,6 @@
     </fieldset>
     {% endfor %}
   </div>
-
-  <sl-button type="button"
-    hx-get="/setup/api/researchers/new-row?idx={{ researchers | length }}"
-    hx-target="#researchers-rows"
-    hx-swap="beforeend">+ Add researcher</sl-button>
 
   <hr>
   <sl-button variant="primary" type="submit">Save</sl-button>

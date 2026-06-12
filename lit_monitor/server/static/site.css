@@ -1397,3 +1397,11 @@ sl-card.paper-card::part(base) { width: 100%; }
 
 /* Step 8: vertical spacing around the advanced YAML editor textarea */
 .yaml-editor-block { margin: 1rem 0; }
+
+/* P2-polish: responsive card grid for the topics/researchers row editors.
+   Legibility-first: min 22rem per card, so it drops to fewer columns rather than cramming. */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr)); gap: 1rem; margin: 1rem 0; }
+.card-grid .topics-row { margin: 0; }
+
+/* Step 7: top margin so the form doesn't cramp against the Optional warning card */
+.researchers-intro-gap { margin-top: 1rem; }

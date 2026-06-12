@@ -5,7 +5,12 @@
 <p class="field-note">Note: comments in topics.yaml are stripped on save (PyYAML limitation). Use git to track history if needed.</p>
 
 <form class="setup-form" hx-post="/setup/api/topics" hx-target="#result" hx-swap="innerHTML">
-  <div id="topics-rows">
+  <sl-button type="button"
+    hx-get="/setup/api/topics/new-row?idx={{ searches | length }}"
+    hx-target="#topics-rows"
+    hx-swap="beforeend">+ Add search</sl-button>
+
+  <div id="topics-rows" class="card-grid">
     {% for s in searches %}
     <fieldset class="topics-row">
       <sl-input name="name_{{ loop.index0 }}" label="Search name" value="{{ s.name }}"></sl-input>
@@ -22,11 +27,6 @@
     </fieldset>
     {% endfor %}
   </div>
-
-  <sl-button type="button"
-    hx-get="/setup/api/topics/new-row?idx={{ searches | length }}"
-    hx-target="#topics-rows"
-    hx-swap="beforeend">+ Add search</sl-button>
 
   <hr>
   <sl-button variant="primary" type="submit">Save</sl-button>

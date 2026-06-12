@@ -1204,3 +1204,36 @@ def test_step6_keywords_render_as_paragraph_not_bullets():
     assert "alpha · beta" in html, "joined keyword paragraph text not found"
     # Must NOT render as list items
     assert "<li>alpha</li>" not in html, "keywords still rendered as <li> items"
+
+
+@pytest.mark.unit
+def test_step4_add_button_precedes_rows_and_grid():
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/step-4").text
+    assert 'class="card-grid"' in html
+    # the add-search button appears BEFORE the rows container in source order
+    add_idx = html.find("/setup/api/topics/new-row")
+    rows_idx = html.find('id="topics-rows"')
+    assert add_idx != -1 and rows_idx != -1 and add_idx < rows_idx, "add button must precede the rows grid"
+
+
+@pytest.mark.unit
+def test_step7_add_button_precedes_rows_and_grid():
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/step-7").text
+    assert 'class="card-grid"' in html
+    add_idx = html.find("/setup/api/researchers/new-row")
+    rows_idx = html.find('id="researchers-rows"')
+    assert add_idx != -1 and rows_idx != -1 and add_idx < rows_idx
