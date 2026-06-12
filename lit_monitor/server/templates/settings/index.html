@@ -61,6 +61,12 @@
                 label="graph_shared_authors"
                 help-text="Shared author names (case-insensitive, deduped)."
                 value="{{ ranking.get('weights', {}).get('graph_shared_authors', 0.0) }}"></sl-input>
+      {# Preserve weights.feedback on save: this section POST replaces the WHOLE
+         ranking section, so without carrying feedback through, saving here would
+         reset the active-learning weight to 0 and silently disable the loop.
+         Hidden + data-num so it serialises as a number, not a string. #}
+      <input type="hidden" data-path="weights.feedback" data-num
+             value="{{ ranking.get('weights', {}).get('feedback', 0.0) }}">
 
       <h3 class="field-label">Domain filter</h3>
       <sl-switch data-path="domain_filter.enabled"
@@ -238,8 +244,11 @@
     if (el.getAttribute('data-json') === 'list') {
       try { return JSON.parse(el.value); } catch (e) { return []; }
     }
-    // Numeric inputs: sl-input[type=number] exposes .getAttribute('type'), not .type
-    var isNumber = el.getAttribute('type') === 'number' || el.type === 'number';
+    // Numeric inputs: sl-input[type=number] exposes .getAttribute('type'), not .type.
+    // data-num marks a hidden field whose value must serialize as a number (e.g. the
+    // preserved weights.feedback carry-through, which would otherwise post as a string).
+    var isNumber = el.getAttribute('type') === 'number' || el.type === 'number'
+                   || el.getAttribute('data-num') !== null;
     if (isNumber) {
       var num = Number(el.value);
       return isNaN(num) ? el.value : num;

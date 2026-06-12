@@ -50,6 +50,11 @@ def test_settings_sl_input_roundtrips(live_server):
         body = json.loads(req.post_data)
         assert body["weights"]["domain_context"] == 0.37, body
         assert isinstance(body["weights"]["domain_context"], float), body
+        # weights.feedback must be CARRIED THROUGH (hidden field) so saving the
+        # ranking section never resets the active-learning weight to 0. It must
+        # serialise as a number (data-num), not a string.
+        assert "feedback" in body["weights"], body
+        assert isinstance(body["weights"]["feedback"], (int, float)), body
         # Also confirm the server accepted the payload
         resp = req.response()
         assert resp.status == 200, (
