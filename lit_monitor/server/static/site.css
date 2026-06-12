@@ -880,6 +880,9 @@ a:hover {
 .page-header h1 { margin: 0 0 0.3rem; }
 .page-header .field-note { margin: 0.25rem 0 0.75rem; }
 
+/* --- /ask page question field — fills full content width (D1) --- */
+.ask-question { display: block; width: 100%; max-width: none; }
+
 /* --- /ask page (WA1/WA2): prose answer + mono Cypher panel --- */
 /* Matches the existing mono-panel convention (.digest-pre): card-bg surface,
  * border, radius, mono font — all via tokens, no color literals. */

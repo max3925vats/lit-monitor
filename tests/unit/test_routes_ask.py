@@ -81,6 +81,22 @@ class TestAskHistory:
         assert "Recent questions" not in r.text  # heading gated with the form too
 
 
+class TestAskFullWidthAndEmptyState:
+    """Task D: D1 full-width class + D2 empty-state default text."""
+
+    def test_ask_question_field_full_width_class(self, client):
+        # The question textarea carries the full-width class when graph is available.
+        with patch("lit_monitor.server.routes.ask.safe_graph_db", return_value=object()):
+            r = client.get("/ask")
+        assert "ask-question" in r.text
+
+    def test_ask_history_empty_state_default(self, client):
+        # The #ask-history div ships with an empty-state paragraph as default content.
+        with patch("lit_monitor.server.routes.ask.safe_graph_db", return_value=object()):
+            r = client.get("/ask")
+        assert "No questions asked yet" in r.text
+
+
 class TestAskAnswer:
     def _result(self):
         from lit_monitor.graph.ask import AskResult  # noqa: PLC0415

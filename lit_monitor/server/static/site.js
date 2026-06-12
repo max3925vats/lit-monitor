@@ -33,7 +33,9 @@
 
   var list = document.getElementById("ask-history");
   var form = list && list.closest("section").querySelector("form");
-  var textarea = form && form.querySelector('textarea[name="question"]');
+  // sl-textarea is a custom element; select by tag name + attribute, not the
+  // native textarea tag (the Shoelace migration replaced the native element).
+  var textarea = form && form.querySelector('sl-textarea[name="question"]');
   if (!list || !form || !textarea) return; // not the /ask page
 
   function load() {
@@ -67,6 +69,11 @@
   }
 
   function render(arr) {
+    if (!arr || arr.length === 0) {
+      // Show a muted empty-state line that matches the server-rendered default.
+      list.innerHTML = '<p class="field-note">No questions asked yet.</p>';
+      return;
+    }
     list.textContent = "";
     arr.forEach(function (q) {
       var btn = document.createElement("button");
@@ -74,6 +81,7 @@
       btn.className = "btn btn-action btn-sm";
       btn.textContent = q;
       btn.addEventListener("click", function () {
+        // sl-textarea exposes .value as a property (Shoelace mirrors the attribute).
         textarea.value = q;
         // Re-run through the existing HTMX flow.
         if (window.htmx) window.htmx.trigger(form, "submit");
