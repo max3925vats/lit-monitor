@@ -8,28 +8,25 @@
   <div id="topics-rows">
     {% for s in searches %}
     <fieldset class="topics-row">
-      <label>name <input type="text" name="name_{{ loop.index0 }}" value="{{ s.name }}"></label>
-      <label>query <textarea name="query_{{ loop.index0 }}" rows="2">{{ s.query }}</textarea></label>
+      <sl-input name="name_{{ loop.index0 }}" label="Search name" value="{{ s.name }}"></sl-input>
+      <sl-textarea name="query_{{ loop.index0 }}" rows="2" label="Query" value="{{ s.query }}"></sl-textarea>
       <div class="field-group">
         <span class="field-label">databases</span>
         {% for db in all_databases %}
-        <label class="checkbox-inline">
-          <input type="checkbox" name="databases_{{ loop.index0 }}" value="{{ db }}"
-            {% if db in s.databases %}checked{% endif %}>
-          {{ db }}
-        </label>
+        <sl-checkbox name="databases_{{ loop.index0 }}" value="{{ db }}"
+          {% if db in s.databases %}checked{% endif %}>{{ db }}</sl-checkbox>
         {% endfor %}
       </div>
-      <button type="button" class="button danger"
-        onclick="this.closest('fieldset').remove()">Remove</button>
+      <sl-button variant="danger" size="small"
+        onclick="this.closest('fieldset').remove()">Remove</sl-button>
     </fieldset>
     {% endfor %}
   </div>
 
-  <button type="button" class="button"
+  <sl-button type="button"
     hx-get="/setup/api/topics/new-row?idx={{ searches | length }}"
     hx-target="#topics-rows"
-    hx-swap="beforeend">+ Add search</button>
+    hx-swap="beforeend">+ Add search</sl-button>
 
   <hr>
   <button type="submit">Save</button>

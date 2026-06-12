@@ -13,21 +13,21 @@
   <div id="researchers-rows">
     {% for r in researchers %}
     <fieldset class="topics-row">
-      <label>name <input type="text" name="name_{{ loop.index0 }}" value="{{ r.name }}"></label>
-      <label>affiliation <input type="text" name="affiliation_{{ loop.index0 }}" value="{{ r.affiliation }}"></label>
-      <label>orcid <input type="text" name="orcid_{{ loop.index0 }}" value="{{ r.orcid }}" placeholder="0000-0000-0000-0000"></label>
-      <label>scopus_id <input type="text" name="scopus_id_{{ loop.index0 }}" value="{{ r.scopus_id }}"></label>
-      <label>notes <textarea name="notes_{{ loop.index0 }}" rows="2">{{ r.notes }}</textarea></label>
-      <button type="button" class="button danger"
-        onclick="this.closest('fieldset').remove()">Remove</button>
+      <sl-input name="name_{{ loop.index0 }}" label="Name" value="{{ r.name }}"></sl-input>
+      <sl-input name="affiliation_{{ loop.index0 }}" label="Affiliation" value="{{ r.affiliation }}"></sl-input>
+      <sl-input name="orcid_{{ loop.index0 }}" label="ORCID" value="{{ r.orcid }}" placeholder="0000-0000-0000-0000"></sl-input>
+      <sl-input name="scopus_id_{{ loop.index0 }}" label="Scopus ID" value="{{ r.scopus_id }}"></sl-input>
+      <sl-textarea name="notes_{{ loop.index0 }}" rows="2" label="Notes" value="{{ r.notes }}"></sl-textarea>
+      <sl-button variant="danger" size="small"
+        onclick="this.closest('fieldset').remove()">Remove</sl-button>
     </fieldset>
     {% endfor %}
   </div>
 
-  <button type="button" class="button"
+  <sl-button type="button"
     hx-get="/setup/api/researchers/new-row?idx={{ researchers | length }}"
     hx-target="#researchers-rows"
-    hx-swap="beforeend">+ Add researcher</button>
+    hx-swap="beforeend">+ Add researcher</sl-button>
 
   <hr>
   <button type="submit">Save</button>

@@ -1,18 +1,15 @@
 {# Partial: a single topics row. Server-rendered for the HTMX add-row case.
    The initial-render rows are inlined in step_topics.html. #}
 <fieldset class="topics-row">
-  <label>name <input type="text" name="name_{{ idx }}" value="{{ search.name }}"></label>
-  <label>query <textarea name="query_{{ idx }}" rows="2">{{ search.query }}</textarea></label>
+  <sl-input name="name_{{ idx }}" label="Search name" value="{{ search.name }}"></sl-input>
+  <sl-textarea name="query_{{ idx }}" rows="2" label="Query" value="{{ search.query }}"></sl-textarea>
   <div class="field-group">
     <span class="field-label">databases</span>
     {% for db in all_databases %}
-    <label class="checkbox-inline">
-      <input type="checkbox" name="databases_{{ idx }}" value="{{ db }}"
-        {% if db in search.databases %}checked{% endif %}>
-      {{ db }}
-    </label>
+    <sl-checkbox name="databases_{{ idx }}" value="{{ db }}"
+      {% if db in search.databases %}checked{% endif %}>{{ db }}</sl-checkbox>
     {% endfor %}
   </div>
-  <button type="button" class="button danger"
-    onclick="this.closest('fieldset').remove()">Remove</button>
+  <sl-button variant="danger" size="small"
+    onclick="this.closest('fieldset').remove()">Remove</sl-button>
 </fieldset>

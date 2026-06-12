@@ -949,3 +949,81 @@ def test_library_type_select_preselects_via_value_attr():
     m = re.search(r"<sl-select\b[^>]*\bname=\"library_type\"[^>]*>", html)
     assert m, "library_type sl-select not found"
     assert 'value="group"' in m.group(0), m.group(0)
+
+
+# ---------------------------------------------------------------------------
+# Task 4: setup wizard row editors (topics + researchers) → Shoelace
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_topics_new_row_is_shoelace():
+    """GET /setup/api/topics/new-row returns a row rendered with sl-input/sl-textarea."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/api/topics/new-row?idx=3").text
+    assert "<sl-input" in html
+    assert 'name="name_3"' in html
+
+
+@pytest.mark.unit
+def test_researchers_new_row_is_shoelace():
+    """GET /setup/api/researchers/new-row returns a row rendered with sl-input."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/api/researchers/new-row?idx=2").text
+    assert "<sl-input" in html
+    assert 'name="name_2"' in html
+
+
+@pytest.mark.unit
+def test_topics_prefilled_query_uses_value_attr_not_slot_text():
+    """Regression: sl-textarea ignores slot text — query must appear as value= on the
+    sl-textarea tag, NOT as text content between the tags.
+
+    This is the data-loss bug: if the query is rendered as slot content
+    (e.g. <sl-textarea>my query</sl-textarea>) the field displays empty → saving
+    wipes it.  Only value="my query" on the host element works.
+    """
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+
+    known_query = "chromatography AND purification"
+    fake_topics = {
+        "searches": [
+            {
+                "name": "chroma-test",
+                "query": known_query,
+                "databases": ["pubmed"],
+            }
+        ]
+    }
+
+    with patch(
+        "lit_monitor.server.routes.setup.load_config", return_value=fake_topics
+    ):
+        html = client.get("/setup/step-4").text
+
+    # The known query MUST appear as a value= attribute on the sl-textarea tag.
+    assert f'value="{known_query}"' in html, (
+        "query not found as value= attribute — prefilled rows would render blank"
+    )
+    # It must NOT appear as slot text content (that would be the broken form).
+    assert f">{known_query}</sl-textarea>" not in html, (
+        "query found as slot text content — sl-textarea ignores this (data-loss bug)"
+    )
