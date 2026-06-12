@@ -1,6 +1,6 @@
 # Web UI
 
-[← Back to README](../README.md)
+[← Home](index.md)
 
 ```bash
 lit-monitor first-run   # interactive first-time setup, then launches the server
@@ -16,6 +16,12 @@ access; the server has no authentication of its own. A persistent health badge
 in the nav polls `/api/health` and shows pipeline status at a glance. An optional
 developer page is mounted at `/dev` when you start the server with
 `lit-monitor serve --dev`.
+
+!!! tip "Set a schedule — that's what makes it a *monitor*"
+    The single highest-value thing to do after setup is install a recurring
+    schedule from the **`/schedule`** page (launchd / systemd). With it, new
+    papers arrive already searched, ranked, extracted, and filed between visits —
+    see [Scheduling — the monitor loop](how-it-works.md#scheduling-the-monitor-loop).
 
 ## Setup wizard
 

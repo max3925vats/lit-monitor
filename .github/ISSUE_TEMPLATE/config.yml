@@ -1,0 +1,7 @@
+# Keep the two structured forms as the front door, but still allow a blank issue
+# for anything that doesn't fit a template.
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://max3925vats.github.io/lit-monitor/
+    about: Setup, configuration, and how it works — check here before filing.

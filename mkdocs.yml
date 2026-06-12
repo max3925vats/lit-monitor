@@ -1,0 +1,105 @@
+site_name: lit-monitor for Zotero
+site_description: >-
+  Semantic literature discovery for Zotero — ranks new PubMed/arXiv/Scopus papers
+  against your library, extracts them with an LLM into Obsidian, and exposes a
+  knowledge graph and MCP server.
+site_url: https://max3925vats.github.io/lit-monitor/
+site_author: Mayank Vats
+repo_url: https://github.com/max3925vats/lit-monitor
+repo_name: max3925vats/lit-monitor
+edit_uri: edit/main/docs/
+copyright: >-
+  Built around <span class="lm-zotero">Zotero</span> and
+  <span class="lm-obsidian">Obsidian</span> · MIT Licensed
+
+theme:
+  name: material
+  language: en
+  font:
+    text: IBM Plex Sans
+    code: IBM Plex Mono
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - toc.follow
+  palette:
+    # Dark is the default — the Obsidian-native canvas folks recognize.
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to light
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark
+
+# Keep the gitignored internal dev-journals and superpowers plans out of the site.
+exclude_docs: |
+  internal/
+  superpowers/
+
+extra_css:
+  - stylesheets/extra.css
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - How it works: how-it-works.md
+  - Configuration: configuration.md
+  - Web UI: web-ui.md
+  - CLI reference: cli-reference.md
+  - MCP server: mcp.md
+  - HTTP API: http-api.md
+  - Development: development.md
+
+# integrations.md is intentionally out of nav — it is a redirect stub pointing at
+# the split MCP server / HTTP API pages. Suppress the "not in nav" notice so a
+# --strict build stays clean.
+not_in_nav: |
+  integrations.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/max3925vats/lit-monitor
+      name: lit-monitor on GitHub
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/lit-monitor/
+      name: lit-monitor on PyPI
