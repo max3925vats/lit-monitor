@@ -4,7 +4,7 @@
   --bg: #fafaf7;
   --fg: #1a1a1a;
   --muted: #6b6b6b;
-  --accent: #2a6df4;
+  --accent: #5b4bd6;
   --accent-fg: #ffffff;
   --card-bg: #ffffff;
   --border: #e3e3df;
@@ -12,7 +12,7 @@
   --danger-fg: #8a1a1a;
   /* CU-2: categorical chart palette (distinct, accessible hues). JS reads these
      via getComputedStyle; never duplicate these literals into templates/JS. */
-  --chart-1: #2a6df4;
+  --chart-1: #5b4bd6;
   --chart-2: #e8710a;
   --chart-3: #1a9e5c;
   --chart-4: #b5179e;
@@ -99,10 +99,79 @@
   --badge-distance-fg: #1a3a8a;
   --badge-distance-border: #8af;
 
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
-  --radius: 8px;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  --radius: 10px;
   --space: 1rem;
+  --content-max: 960px;   /* shared page width: body, topnav row, and footer all align to this */
+
+  /* Brand + surfaces (LIGHT baseline; the dark default overrides these below).
+     Zotero red is reserved for the single primary CTA + the brand mark; purple
+     (Obsidian-family) is the working accent. */
+  --surface-2: #f4f1fe;
+  --hover-overlay: rgba(20, 16, 25, 0.03);
+  --accent-strong: #5b4bd6;
+  --brand-purple: #7c6cf0;
+  --brand-purple-bright: #5b4bd6;
+  --brand-red: #d6402f;
+  --cta-bg: #d6402f;
+  --cta-bg-hover: #b8311f;
+  --cta-fg: #ffffff;
+}
+
+/* ===========================================================================
+   DARK is the default theme (matches the docs site). The selector targets the
+   absence of an explicit light opt-in, so a fresh visitor lands in dark; the
+   topnav toggle sets data-theme="light" to fall back to the :root values above.
+   Only theme-DEPENDENT tokens are overridden here — fonts, scale, the chart
+   palette, and the SSE log console stay shared.
+   =========================================================================== */
+:root:not([data-theme="light"]) {
+  --bg: #141019;
+  --fg: #ece9f6;
+  --muted: #9a91b5;
+  --card-bg: #1b1626;
+  --surface-2: #221d30;
+  --border: #2c2640;
+  --hover-overlay: rgba(255, 255, 255, 0.045);
+  --accent: #a78bfa;
+  --accent-strong: #7c6cf0;
+  --brand-purple-bright: #a78bfa;
+  --danger-bg: #36161a;
+  --danger-fg: #ff9c8f;
+
+  --chart-1: #a78bfa;
+  --chart-3: #36c389;
+  --chart-6: #6aa0ff;
+  --chart-grid: #2c2640;
+
+  --accent-success: #34b36b;
+  --card-success-bg: #11301f;
+  --card-success-fg: #8fe6b0;
+  --accent-warn: #d99a2b;
+
+  --pill-success-bg: #11301f; --pill-success-fg: #8fe6b0; --pill-success-border: #2f6e46;
+  --pill-warn-bg: #2e2410;    --pill-warn-fg: #e6c06a;    --pill-warn-border: #5a4a1e;
+  --pill-danger-bg: #36161a;  --pill-danger-fg: #ff9c8f;  --pill-danger-border: #7a2f33;
+
+  --warn-banner-bg: #2e2410; --warn-banner-border: #5a4a1e;
+  --warn-card-border: #5a4a1e; --warn-card-bg: #2e2410;
+
+  --row-error-bg: #2a1519; --error-block-border: #7a2f33; --error-fg: #ff9c8f;
+
+  --badge-healthy-bg: #11301f;      --badge-healthy-fg: #8fe6b0;      --badge-healthy-border: #2f6e46;
+  --badge-degraded-bg: #2e2410;     --badge-degraded-fg: #e6c06a;     --badge-degraded-border: #5a4a1e;
+  --badge-misconfigured-bg: #36161a; --badge-misconfigured-fg: #ff9c8f; --badge-misconfigured-border: #7a2f33;
+  --badge-unconfigured-bg: #221d30; --badge-unconfigured-fg: #9a91b5; --badge-unconfigured-border: #2c2640;
+  --badge-loading-bg: #1b1626;      --badge-loading-fg: #9a91b5;      --badge-loading-border: #2c2640;
+  --health-detail-bg: #221d30;
+
+  --dev-banner-bg: #2e2410; --dev-banner-fg: #e6c06a; --dev-banner-border: #5a4a1e;
+  --dev-output-bg: #221d30; --dev-output-err-bg: #2a1519;
+
+  --badge-ingested-bg: #11301f; --badge-ingested-fg: #8fe6b0; --badge-ingested-border: #2f6e46;
+  --badge-distance-bg: #1a2150; --badge-distance-fg: #a9b6ff; --badge-distance-border: #3a458f;
 }
 
 * {
@@ -136,12 +205,18 @@ a:hover {
 }
 
 .topnav {
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+}
+/* Full-width bar, but the row of items is centered to the same width as the
+   page body so the brand/nav align with the content margins (matches the docs). */
+.topnav-inner {
   display: flex;
   align-items: center;
   gap: 1.5rem;
+  max-width: var(--content-max);
+  margin: 0 auto;
   padding: 0.75rem 1.25rem;
-  background: var(--card-bg);
-  border-bottom: 1px solid var(--border);
 }
 
 .topnav .brand {
@@ -220,7 +295,7 @@ a:hover {
 }
 
 .content {
-  max-width: 960px;
+  max-width: var(--content-max);
   margin: 0 auto;
   padding: 2rem 1.25rem;
 }
@@ -340,7 +415,7 @@ a:hover {
 }
 .step-card a:hover {
   text-decoration: none;
-  background: rgba(0, 0, 0, 0.02);
+  background: var(--hover-overlay);
 }
 .step-card .step-num {
   font-family: var(--font-mono);
@@ -668,8 +743,9 @@ a:hover {
 
 /* Footer (GitHub / Issues / README) */
 .site-footer {
+  max-width: var(--content-max);
+  margin: 2rem auto 0;
   padding: 0.75rem 1.25rem;
-  margin-top: 2rem;
   border-top: 1px solid var(--border);
   font-size: 0.85em;
   color: var(--muted);
@@ -846,3 +922,365 @@ a:hover {
   max-width: 520px;
   margin: 0.5rem 0 1rem;
 }
+
+/* ===========================================================================
+   Brand redesign — chrome polish (dark-first, docs-matched). Appended last so
+   it wins by source order. Every colour resolves through a :root token.
+   =========================================================================== */
+body {
+  font-feature-settings: "kern" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Editorial serif headings (Fraunces), matching the docs site. */
+.content h1,
+.hero h1,
+.page-header h1,
+.dashboard > h1 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.hero h1 {
+  font-size: clamp(1.9rem, 4vw, 2.7rem);
+  line-height: 1.05;
+}
+
+/* Sticky topnav with the one Zotero-red hairline (the single place red meets
+   the chrome — mirrors the docs header). */
+.topnav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  box-shadow: inset 0 -2px 0 0 var(--brand-red);
+}
+.topnav .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.18rem;
+  letter-spacing: -0.01em;
+}
+/* Brand mark — the Material "library" book glyph, matching the docs site logo. */
+.brand-logo {
+  width: 1.3em;
+  height: 1.3em;
+  fill: currentColor;
+  flex-shrink: 0;
+}
+
+/* Cards lift on hover (purple glow), like the docs landing cards. */
+.card {
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px -18px rgba(124, 108, 240, 0.5);
+}
+
+/* Primary CTA in Zotero red — reserved for the single most important action on
+   a page (e.g. "Run discovery now"). Everything else uses the purple .btn-primary. */
+.btn-cta {
+  background: var(--cta-bg);
+  color: var(--cta-fg);
+  border: 1px solid var(--cta-bg);
+  font-weight: 600;
+}
+.btn-cta:hover {
+  background: var(--cta-bg-hover);
+  border-color: var(--cta-bg-hover);
+  filter: none;
+}
+
+/* Theme toggle pill in the topnav. */
+.theme-toggle {
+  appearance: none;
+  cursor: pointer;
+  width: 2rem;
+  height: 2rem;
+  margin-left: 0.6rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--fg);
+  font-size: 0.95rem;
+  line-height: 1;
+}
+.theme-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ===========================================================================
+   Brand redesign — Phase 2: component polish (both themes, token-driven).
+   Appended last so it wins by source order. No colour literals — tokens only;
+   color-mix tints degrade gracefully on the rare browser that lacks it.
+   =========================================================================== */
+
+/* Text selection + a consistent keyboard focus ring. */
+::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Inline code chips (not the log/console panes). */
+:not(pre) > code {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.05em 0.35em;
+}
+
+/* Form controls — consistent surface + accent focus glow. */
+input[type="text"], input[type="search"], input[type="email"],
+input[type="number"], input[type="password"], input:not([type]),
+select, textarea, .ask-cypher-edit {
+  background: var(--surface-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: inherit;
+}
+input:focus, select:focus, textarea:focus,
+.setup-form input:focus, .ask-cypher-edit:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+
+/* Data tables — tinted headers, row hover, framed + rounded. */
+.papers-table, .runs-table, .routes-table,
+.dev-checks-table, .health-detail-table {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.papers-table th, .runs-table th, .routes-table th {
+  background: var(--surface-2);
+  font-weight: 600;
+  color: var(--fg);
+  border-bottom: 1px solid var(--border);
+}
+.papers-table tbody tr:hover,
+.runs-table tbody tr:hover,
+.routes-table tbody tr:hover { background: var(--hover-overlay); }
+.score, .score-breakdown-table td:last-child { font-variant-numeric: tabular-nums; }
+
+/* Modals — depth + a soft backdrop blur. */
+.modal { box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.6); }
+.modal-backdrop { backdrop-filter: blur(2px); }
+
+/* Collapsibles (settings / setup details / why-panel) — hover affordance. */
+.settings-section > summary:hover,
+.setup-form details > summary:hover { background: var(--hover-overlay); }
+
+/* Progress fill picks up the accent gradient. */
+.progress-fill {
+  background: linear-gradient(90deg, var(--accent-strong), var(--accent));
+}
+
+/* ===========================================================================
+   Brand redesign — Phase 3: landing hero + page-header polish (both themes).
+   =========================================================================== */
+
+/* Landing hero — branded, docs-flavoured but app-appropriate. The radial tints
+   layer over surface-2 via color-mix so they read in light and dark. */
+.lm-hero {
+  position: relative;
+  text-align: center;
+  padding: 3.5rem 1.5rem 2.75rem;
+  margin-bottom: 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  background:
+    radial-gradient(60% 80% at 24% 8%, color-mix(in srgb, var(--brand-purple) 24%, transparent), transparent 60%),
+    radial-gradient(52% 70% at 86% 14%, color-mix(in srgb, var(--brand-red) 13%, transparent), transparent 62%),
+    var(--surface-2);
+}
+.lm-eyebrow {
+  margin: 0 0 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.lm-hero h1 {
+  margin: 0 auto 0.75rem;
+  max-width: 20ch;
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1.05;
+}
+.lm-sub {
+  max-width: 54ch;
+  margin: 0 auto 1.6rem;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+.lm-cta {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.lm-cta .btn { padding: 0.6rem 1.25rem; font-weight: 600; }
+.lm-hero .last-run { margin: 0.4rem 0 0; font-size: 0.85rem; color: var(--muted); }
+.lm-hero .last-run code { background: var(--card-bg); }
+
+/* Cards: arrow affordance + accent title on hover. */
+.cards .card h2 { transition: color 0.15s ease; }
+.cards .card:hover h2 { color: var(--accent); }
+
+/* Page-header utility — a subtle hairline under the title for rhythm. */
+.page-header {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.page-header .field-note { color: var(--muted); }
+
+/* ===========================================================================
+   Brand redesign — Phase 3.1: polish pass (checkbox alignment, dropdowns,
+   form spacing rhythm). Fixes the "rashly put together" feel. Tokens only.
+   =========================================================================== */
+
+/* --- Checkboxes / radios ---------------------------------------------------
+   The broad `.setup-form input { display:block; width:100% }` rule was inflating
+   checkboxes into full-width blocks. Restore their natural size and lay the
+   label + box out on one baseline-aligned row (covers .checkbox-inline,
+   .checkbox-row, .inline-check, and bare <label><input type=checkbox> ...). */
+input[type="checkbox"], input[type="radio"],
+.setup-form input[type="checkbox"], .setup-form input[type="radio"] {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  flex: none;
+  vertical-align: middle;
+}
+.checkbox-inline, .checkbox-row, .inline-check,
+label:has(> input[type="checkbox"]),
+label:has(> input[type="radio"]) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  font-weight: normal;
+  margin-bottom: 0.35rem;
+}
+
+/* --- Dropdown menus --------------------------------------------------------
+   Was a flat bordered rectangle flush to the bar. Make it a proper floating
+   menu: raised surface, shadow, padding, rounded rows with hover. */
+.navmenu {
+  min-width: 12rem;
+  padding: 0.3rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 14px 32px -14px rgba(0, 0, 0, 0.55);
+}
+.navmenu a {
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+}
+.navmenu a:hover {
+  background: var(--hover-overlay);
+  color: var(--accent);
+}
+.navmenu a.active {
+  color: var(--accent);
+  background: var(--hover-overlay);
+}
+.navgroup-label { display: inline-flex; align-items: center; gap: 0.25em; }
+
+/* --- Form spacing rhythm ---------------------------------------------------- */
+.field-group { gap: 0.3rem; margin-bottom: 0.95rem; }
+.field-note { margin-top: 0.1rem; line-height: 1.45; }
+.setup-form label { margin-bottom: 0.6rem; }
+/* h3 used as a sub-section heading inside forms — give it air + a quiet style. */
+h3.field-label {
+  margin: 1.6rem 0 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+h3.field-label:first-child { margin-top: 0.25rem; }
+
+/* --- Heading + section rhythm (gentle, page-wide) -------------------------- */
+.content h2 { margin-top: 2rem; margin-bottom: 0.6rem; }
+.content h3 { margin-top: 1.3rem; margin-bottom: 0.4rem; }
+.content h1:first-child, .content h2:first-child,
+.page-header h1, .dashboard > h1 { margin-top: 0; }
+.settings-section { margin-bottom: 1.25rem; }
+
+/* Settings-section forms are flex-column, which stretches the submit button to
+   full width — pin it to its natural size, left-aligned. (The setup wizard
+   forms aren't flex, so they're unaffected.) */
+.settings-section .setup-form button { align-self: flex-start; }
+
+/* ===========================================================================
+   Brand redesign — Phase 3.2: page-by-page fixes found in screenshot review.
+   =========================================================================== */
+
+/* Button modifiers used WITHOUT the base `.btn` (e.g. class="btn-primary" on
+   /ask and the discovery chooser) were missing all box styling. Give the
+   modifiers the base box themselves — border-WIDTH/STYLE only, so each variant's
+   own border-COLOR + background still win. (.btn-sm excluded: it's a size
+   modifier always paired with .btn.) */
+.btn-primary, .btn-secondary, .btn-cta, .btn-action {
+  display: inline-block;
+  padding: 0.45rem 0.9rem;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+/* Textareas: full width + a comfortable min height (the /ask question box was
+   collapsing to a tiny intrinsic size inside its flex row). */
+textarea {
+  width: 100%;
+  min-height: 4rem;
+  resize: vertical;
+}
+.input-row textarea { flex: 1; }
+/* Breathing room below an input-row so a following submit button isn't crammed. */
+.input-row { margin-bottom: 0.6rem; }
+
+/* Bare <button>/<input type=submit> with NO class were rendering as raw browser
+   buttons (e.g. the trending "Re-detect", several setup-step "Save" buttons).
+   Give unclassed buttons a clean neutral style — classed buttons (.btn*,
+   .button, .navgroup-label, .theme-toggle, .rate-btn) are untouched. */
+button:not([class]),
+input[type="submit"]:not([class]),
+input[type="button"]:not([class]) {
+  display: inline-block;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+button:not([class]):hover,
+input[type="submit"]:not([class]):hover,
+input[type="button"]:not([class]):hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+button:not([class]):disabled { opacity: 0.55; cursor: default; }
