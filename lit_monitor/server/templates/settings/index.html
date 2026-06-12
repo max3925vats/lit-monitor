@@ -1,6 +1,13 @@
 {# Bundle H: /settings — post-onboarding Advanced Settings panel. #}
 {% extends "base.html" %}
 {% block title %}Advanced Settings — lit-monitor{% endblock %}
+{% block rail %}
+<nav class="settings-rail" aria-label="Settings sections">
+  <a href="#ranking">Ranking weights</a>
+  <a href="#clustering">Clustering</a>
+  <a href="#feedback">Feedback &amp; UI</a>
+</nav>
+{% endblock %}
 {% block content %}
 <section class="dashboard">
   <div class="page-header">
@@ -21,7 +28,7 @@
      write replaces the whole section, so a complete valid body is posted. #}
 
   <!-- Section: Ranking weights & filters -->
-  <details class="settings-section" open>
+  <details class="settings-section" id="ranking" open>
     <summary><h2>Ranking weights</h2></summary>
     <form class="setup-form"
           hx-post="/api/settings/ranking"
@@ -110,7 +117,7 @@
   </details>
 
   <!-- Section: Clustering -->
-  <details class="settings-section">
+  <details class="settings-section" id="clustering">
     <summary><h2>Clustering</h2></summary>
     <form class="setup-form"
           hx-post="/api/settings/clustering"
@@ -208,7 +215,7 @@
   </details>
 
   <!-- Section: Feedback / UI -->
-  <details class="settings-section">
+  <details class="settings-section" id="feedback">
     <summary><h2>Feedback &amp; UI</h2></summary>
     <form class="setup-form"
           hx-post="/api/settings/web_ui"
