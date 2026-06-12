@@ -224,4 +224,5 @@ python_functions = ["test_*"]
 markers = [
     "unit: fast unit tests, no external services",
     "integration: live-service tests requiring Ollama + Zotero + Obsidian vault. Run with: pytest -m integration",
+    "visual: Playwright headless-chromium visual/behavior tests (need the [dev] extra)",
 ]

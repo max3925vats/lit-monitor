@@ -267,7 +267,6 @@
         var value = readControlValue(el);
         setNested(obj, path, value);
       });
-      xhr.overrideMimeType('text/json');
       return JSON.stringify(obj);
     }
   });

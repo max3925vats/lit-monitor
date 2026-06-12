@@ -1,16 +1,20 @@
 """P2: the settings page uses a custom data-path JSON serializer. After the
 Shoelace migration the serializer must read sl-* controls correctly. pytest
 cannot exercise browser JS, so this drives real headless Chromium: set an
-sl-input value, submit, and assert the server accepted the JSON (200 + "Saved."
-status text). The sl-input value is also verified to have been read by the
-serializer (i.e. the value we set is preserved in the DOM while the form is
-still on the page).
+sl-input value, submit, and assert the edited value reached the server with the
+correct type and nesting.
+
+The test intercepts the POST *request* body (not just the response) — this
+proves the serializer's value-read + number coercion + nesting all work. A
+response-body check (`ok: true`) is kept for belt-and-suspenders.
 
 Config-safe: live_server is isolated to a temp config copy (conftest). The GET
 /settings re-render reads through resolve_path which may fall back to the
 CWD-relative config/ in development; the POST (write path) always targets the
 isolated tmp dir via _config_write_dir(). The round-trip is therefore verified
-via the 200 + "Saved." response rather than a page-reload value check."""
+via the request body + 200 response rather than a page-reload value check."""
+import json
+
 import pytest
 from playwright.sync_api import sync_playwright
 
@@ -36,16 +40,20 @@ def test_settings_sl_input_roundtrips(live_server):
             "sl-input[data-path='weights.domain_context']", "el => el.value"
         )
         assert val_before == "0.37", f"sl-input did not accept value: {val_before!r}"
-        # Submit the ranking form via the sl-button; intercept the response
-        with pg.expect_response("**/api/settings/ranking") as resp_info:
+        # Submit the ranking form; intercept the *request* body to prove the
+        # serializer read the sl-input value, coerced it to float, and nested
+        # it correctly under `weights.domain_context`.  A response-only check
+        # (200 OK) would pass even if the serializer sent the wrong value.
+        with pg.expect_request("**/api/settings/ranking") as req_info:
             pg.locator("#ranking sl-button[type='submit']").first.click()
-        resp = resp_info.value
-        # The settings-json extension must have serialized the form to valid JSON
-        # and the server must have accepted it with 200 OK
+        req = req_info.value
+        body = json.loads(req.post_data)
+        assert body["weights"]["domain_context"] == 0.37, body
+        assert isinstance(body["weights"]["domain_context"], float), body
+        # Also confirm the server accepted the payload
+        resp = req.response()
         assert resp.status == 200, (
             f"Expected 200 but got {resp.status} — "
             "the settings-json extension likely did not send valid JSON"
         )
-        body = resp.json()
-        assert body.get("ok") is True
         b.close()
