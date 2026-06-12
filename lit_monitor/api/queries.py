@@ -902,8 +902,11 @@ def get_graph_signals_for_candidate(
 
 
 def _relative_time(iso_ts: str | None) -> str:
-    """Human 'Nh ago' / 'Nm ago' / 'Nd ago' from a SQLite 'YYYY-MM-DD HH:MM:SS'
-    UTC timestamp. Returns 'never' for None/unparseable."""
+    """Human relative age from a SQLite 'YYYY-MM-DD HH:MM:SS' UTC timestamp.
+
+    Rolls over through units as the age grows: 'just now' / 'Nm ago' (minutes) /
+    'Nh ago' (hours) / 'Nd ago' (< 1 week) / 'Nw ago' (weeks) / 'Nmo ago'
+    (months, ~30d) / 'Ny ago' (years, 365d). Returns 'never' for None/unparseable."""
     if not iso_ts:
         return "never"
     try:
@@ -912,13 +915,20 @@ def _relative_time(iso_ts: str | None) -> str:
         return "never"
     delta = datetime.now(UTC) - dt
     secs = max(0, int(delta.total_seconds()))
+    DAY = 86400
     if secs < 60:
         return "just now"
     if secs < 3600:
         return f"{secs // 60}m ago"
-    if secs < 86400:
+    if secs < DAY:
         return f"{secs // 3600}h ago"
-    return f"{secs // 86400}d ago"
+    if secs < 7 * DAY:
+        return f"{secs // DAY}d ago"
+    if secs < 30 * DAY:
+        return f"{secs // (7 * DAY)}w ago"
+    if secs < 365 * DAY:
+        return f"{secs // (30 * DAY)}mo ago"
+    return f"{secs // (365 * DAY)}y ago"
 
 
 def get_dashboard_stats(state_db: Any, graph_db: Any) -> dict[str, Any]:

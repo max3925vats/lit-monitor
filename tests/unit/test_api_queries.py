@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import UTC
 
 import pytest
 
@@ -604,3 +605,18 @@ def test_relative_time_branches():
     assert _relative_time("not-a-date") == "never"
     # a clearly-old timestamp formats as an 'ago' string, never raises
     assert _relative_time("2000-01-01 00:00:00").endswith("ago")
+
+
+def test_relative_time_rolls_over_units():
+    from datetime import datetime, timedelta
+
+    from lit_monitor.api.queries import _relative_time
+
+    def ago(**kw):
+        ts = datetime.now(UTC) - timedelta(**kw)
+        return _relative_time(ts.strftime("%Y-%m-%d %H:%M:%S"))
+
+    assert ago(days=3) == "3d ago"        # < 1 week → days
+    assert ago(days=14) == "2w ago"        # 14 // 7 → weeks
+    assert ago(days=60) == "2mo ago"       # 60 // 30 → months
+    assert ago(days=800) == "2y ago"       # 800 // 365 → years
