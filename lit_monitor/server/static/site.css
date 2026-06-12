@@ -1226,3 +1226,35 @@ h3.field-label:first-child { margin-top: 0.25rem; }
    full width — pin it to its natural size, left-aligned. (The setup wizard
    forms aren't flex, so they're unaffected.) */
 .settings-section .setup-form button { align-self: flex-start; }
+
+/* ===========================================================================
+   Brand redesign — Phase 3.2: page-by-page fixes found in screenshot review.
+   =========================================================================== */
+
+/* Button modifiers used WITHOUT the base `.btn` (e.g. class="btn-primary" on
+   /ask and the discovery chooser) were missing all box styling. Give the
+   modifiers the base box themselves — border-WIDTH/STYLE only, so each variant's
+   own border-COLOR + background still win. (.btn-sm excluded: it's a size
+   modifier always paired with .btn.) */
+.btn-primary, .btn-secondary, .btn-cta, .btn-action {
+  display: inline-block;
+  padding: 0.45rem 0.9rem;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+/* Textareas: full width + a comfortable min height (the /ask question box was
+   collapsing to a tiny intrinsic size inside its flex row). */
+textarea {
+  width: 100%;
+  min-height: 4rem;
+  resize: vertical;
+}
+.input-row textarea { flex: 1; }
+/* Breathing room below an input-row so a following submit button isn't crammed. */
+.input-row { margin-bottom: 0.6rem; }
