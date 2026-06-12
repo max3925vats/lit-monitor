@@ -126,6 +126,8 @@ dev = [
     "pytest-cov",
     "responses",
     "mypy",
+    "playwright",
+    "pytest-playwright",
 ]
 # Documentation site (MkDocs Material). Preview locally with:
 #   uv run --extra docs mkdocs serve

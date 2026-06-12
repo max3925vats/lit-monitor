@@ -288,6 +288,9 @@ def create_app() -> FastAPI:
             from lit_monitor.server.routes import dev as dev_routes
 
             app.include_router(dev_routes.router)
+            from lit_monitor.server.routes import gallery as _gallery  # noqa: PLC0415
+
+            app.include_router(_gallery.router)
             logger.info("Dev mode enabled — /dev router mounted.")
         except Exception as exc:  # pragma: no cover — defensive boot path
             logger.warning("Failed to mount /dev router: %s", exc)
