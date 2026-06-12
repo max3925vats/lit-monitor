@@ -1,0 +1,24 @@
+{% set active_group = active_group_for_path(request.url.path) %}
+<aside class="app-sidebar" id="app-sidebar">
+  <a class="app-brand" href="/">
+    <svg class="brand-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+    <span>lit-monitor</span>
+  </a>
+  <nav class="app-nav">
+    {% for group in nav_groups %}
+    <div class="app-nav-group{% if group.label == active_group %} is-active-group{% endif %}">
+      <div class="app-nav-label">{{ group.label }}</div>
+      {% for item in group.items %}
+      <a href="{{ item.href }}" class="app-nav-link{% if request.url.path == item.href or request.url.path.startswith(item.href ~ '/') %} active{% endif %}">
+        <sl-icon name="{{ item.icon }}"></sl-icon><span>{{ item.label }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </nav>
+  <div class="app-sidebar-foot">
+    <span id="health-badge" hx-get="/api/health/badge" hx-trigger="load, every 30s" hx-swap="innerHTML">
+      <span class="status-badge loading">checking…</span>
+    </span>
+  </div>
+</aside>

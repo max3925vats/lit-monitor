@@ -1,0 +1,13 @@
+<sl-drawer label="Ask your library" class="ask-drawer" id="ask-drawer">
+  <p class="field-note">Ask a question while you browse — your place is kept.</p>
+  <form hx-post="/ask/answer" hx-target="#ask-drawer-result" hx-swap="innerHTML" hx-indicator="#ask-drawer-spin">
+    <sl-textarea name="question" rows="3" resize="auto"
+                 placeholder="e.g. Which papers extend the Bolton model?"></sl-textarea>
+    <div class="ask-drawer-actions">
+      <sl-button type="submit" variant="primary" size="small">Ask</sl-button>
+      <sl-spinner id="ask-drawer-spin" class="htmx-indicator"></sl-spinner>
+      <a href="/ask" class="field-note">Open full Ask page →</a>
+    </div>
+  </form>
+  <div id="ask-drawer-result" class="ask-drawer-result"></div>
+</sl-drawer>

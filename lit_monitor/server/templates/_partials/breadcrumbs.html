@@ -1,0 +1,8 @@
+{% macro breadcrumbs(trail) -%}
+<nav class="app-crumbs" aria-label="Breadcrumb">
+  {% for label, href in trail %}
+    {%- if not loop.last and href %}<a href="{{ href }}">{{ label }}</a><span class="sep">›</span>
+    {%- else %}<span class="cur">{{ label }}</span>{% endif %}
+  {% endfor %}
+</nav>
+{%- endmacro %}
