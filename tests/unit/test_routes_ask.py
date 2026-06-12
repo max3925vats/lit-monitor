@@ -38,7 +38,12 @@ class TestAskPage:
             r = client.get("/ask")
         assert r.status_code == 200
         assert "graph backfill" in r.text  # the build-graph-first hint
-        assert 'name="question"' not in r.text  # form NOT shown
+        # The page's own Ask form is gated on has_graph. The global Ask drawer in
+        # the app-shell always renders an <sl-textarea name="question">, so assert
+        # against the page form's plain <textarea> (and its #ask-result mount),
+        # which is what's actually hidden when the graph is absent.
+        assert "<textarea name=\"question\"" not in r.text
+        assert 'id="ask-result"' not in r.text
 
     def test_nav_has_ask_link(self, client):
         r = client.get("/")

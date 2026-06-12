@@ -26,6 +26,7 @@ def app(tmp_path):
     from fastapi import FastAPI
     from fastapi.templating import Jinja2Templates
 
+    import lit_monitor.server.app as app_mod
     from lit_monitor.server.routes.trending import router as trending_router
 
     app = FastAPI()
@@ -33,7 +34,9 @@ def app(tmp_path):
 
     # Provide templates at app-level so route handlers can access request.app.state
     templates_dir = Path(__file__).parents[2] / "lit_monitor" / "server" / "templates"
-    app.state.templates = Jinja2Templates(directory=str(templates_dir))
+    app.state.templates = app_mod.configure_templates(
+        Jinja2Templates(directory=str(templates_dir))
+    )
     app.state.dev_mode = False
     app.state.version = "test"
     return app

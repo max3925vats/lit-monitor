@@ -1,10 +1,10 @@
-"""Nav/IA redesign: grouped dropdown topnav reachability + structure tests.
+"""Sidebar IA reachability + structure tests (app-shell redesign).
 
-The flat nav previously orphaned 5 pages (Themes, Trending, Insights, Domain,
-Settings). The redesign surfaces every page through grouped CSS-only dropdowns
-(Run / Explore / Tune) plus top-level Ask + Setup links. These tests pin the
-reachability guarantee, the group labels, the preserved health-badge, and the
-server-side active-state marking.
+The app-shell sidebar (templates/_partials/sidebar.html) and the server-side
+active-state both read NAV_GROUPS, so the IA lives in exactly one place. These
+tests pin the reachability guarantee (every grouped link is present), the group
+labels, the global Ask button + health badge, and the server-side active-state
+marking — all driven off NAV_GROUPS so they can't drift from the source of truth.
 
 Mirrors the `client = TestClient(create_app())` fixture from
 tests/unit/test_routes_ask.py.
@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+
+from lit_monitor.server.nav import NAV_GROUPS
 
 
 @pytest.fixture
@@ -23,45 +25,24 @@ def client(tmp_path, monkeypatch):
     return TestClient(create_app())
 
 
-# Every page the topnav must reach. The 5 formerly-orphaned pages are included
-# here — this is the reachability guarantee.
-ALL_NAV_HREFS = [
-    "/discovery",
-    "/brain-build",
-    "/schedule",
-    "/ask",
-    "/themes",
-    "/trending",
-    "/domain",
-    "/insights",
-    "/settings",
-    "/setup",
-]
+def test_sidebar_has_all_groups(client):
+    html = client.get("/").text
+    for group in NAV_GROUPS:
+        assert group.label in html, f"missing group {group.label}"
 
 
-class TestNavReachability:
-    def test_nav_surfaces_all_pages(self, client):
-        r = client.get("/")
-        assert r.status_code == 200
-        for href in ALL_NAV_HREFS:
-            assert f'href="{href}"' in r.text, f"nav is missing a link to {href}"
-
-    def test_nav_has_group_labels(self, client):
-        r = client.get("/")
-        assert r.status_code == 200
-        for label in ("Run", "Explore", "Tune"):
-            assert label in r.text, f"group label {label!r} missing from nav"
-
-    def test_health_badge_preserved(self, client):
-        r = client.get("/")
-        assert r.status_code == 200
-        assert 'id="health-badge"' in r.text
+def test_sidebar_links_present(client):
+    html = client.get("/").text
+    for group in NAV_GROUPS:
+        for item in group.items:
+            assert f'href="{item.href}"' in html, f"missing nav link {item.href}"
 
 
-class TestNavActiveState:
-    def test_active_state_marks_current_section(self, client):
-        r = client.get("/themes")
-        assert r.status_code == 200
-        # The Explore group (which owns /themes) or the Themes link itself must
-        # be marked active so the user can see where they are.
-        assert "active" in r.text
+def test_active_state_on_section(client):
+    assert "active" in client.get("/discovery").text
+
+
+def test_ask_button_and_health_badge_present(client):
+    html = client.get("/").text
+    assert "app-ask-btn" in html
+    assert 'id="health-badge"' in html

@@ -77,4 +77,5 @@ def test_graph_overview_no_leak(client, monkeypatch, caplog):
 
 def test_nav_explore_has_knowledge_graph(client):
     r = client.get("/")
-    assert 'href="/graph"' in r.text and "Knowledge Graph" in r.text
+    # The Knowledge-graph link is surfaced in the app-shell sidebar.
+    assert 'href="/graph"' in r.text

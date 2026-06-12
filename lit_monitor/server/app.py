@@ -35,16 +35,22 @@ STATIC_DIR = HERE / "static"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-from lit_monitor.server.nav import NAV_GROUPS, active_group_for_path  # noqa: E402
 
-templates.env.globals["nav_groups"] = NAV_GROUPS
-templates.env.globals["active_group_for_path"] = active_group_for_path
+def configure_templates(t):
+    """Register the shared Jinja globals + filters on a Jinja2Templates instance.
 
-# Bundle B: register a fromjson filter so run_detail.html can decode the
-# score_breakdown_json column inline without a dedicated route round-trip.
-import json as _json  # noqa: E402 — intentionally after globals block
+    Centralised so production AND test-local templates stay in sync (the app-shell
+    sidebar needs nav_groups / active_group_for_path on every render)."""
+    import json as _json
 
-templates.env.filters["fromjson"] = _json.loads
+    from lit_monitor.server.nav import NAV_GROUPS, active_group_for_path
+    t.env.globals["nav_groups"] = NAV_GROUPS
+    t.env.globals["active_group_for_path"] = active_group_for_path
+    t.env.filters["fromjson"] = _json.loads
+    return t
+
+
+configure_templates(templates)
 
 
 def _read_version() -> str:

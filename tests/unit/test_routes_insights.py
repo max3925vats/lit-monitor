@@ -16,7 +16,6 @@ patched per-test to exercise the template without a live engine.
 """
 from __future__ import annotations
 
-import json as _json
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -55,7 +54,7 @@ def client(real_db, monkeypatch):
     import lit_monitor.server.app as app_mod
 
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-    templates.env.filters["fromjson"] = _json.loads
+    app_mod.configure_templates(templates)
     monkeypatch.setattr(app_mod, "templates", templates)
 
     rt = MagicMock()

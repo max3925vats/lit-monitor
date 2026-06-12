@@ -52,12 +52,10 @@ def restore_app_templates():
 
 
 def _make_client(config_path=None) -> TestClient:
-    import json as _json
-
     import lit_monitor.server.app as app_mod
 
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-    templates.env.filters["fromjson"] = _json.loads
+    app_mod.configure_templates(templates)
     app_mod.templates = templates
 
     app = FastAPI()

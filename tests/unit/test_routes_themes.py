@@ -15,7 +15,6 @@ Covers:
 """
 from __future__ import annotations
 
-import json as _json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -95,7 +94,7 @@ def _make_html_client(db, monkeypatch) -> TestClient:
     import lit_monitor.server.app as app_mod
 
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-    templates.env.filters["fromjson"] = _json.loads
+    app_mod.configure_templates(templates)
     # monkeypatch auto-restores app.templates after the test so this test-local
     # templates object does not leak into sibling tests (order-dependent flakiness).
     monkeypatch.setattr(app_mod, "templates", templates)
