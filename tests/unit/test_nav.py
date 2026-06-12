@@ -30,3 +30,15 @@ def test_breadcrumb_detail_page_links_section():
 
 def test_breadcrumb_home_is_empty():
     assert breadcrumb_trail("/") == []
+
+
+def test_show_stats_banner_excludes_home_setup_settings_dev():
+    from lit_monitor.server.nav import show_stats_banner
+    assert show_stats_banner("/discovery") is True
+    assert show_stats_banner("/corpus/10.1/x") is True
+    assert show_stats_banner("/") is False
+    assert show_stats_banner("/setup") is False
+    assert show_stats_banner("/setup/step-1") is False
+    assert show_stats_banner("/settings") is False
+    assert show_stats_banner("/dev") is False
+    assert show_stats_banner("/dev/anything") is False

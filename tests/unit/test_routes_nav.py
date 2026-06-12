@@ -71,3 +71,15 @@ def test_home_cards_use_sl_card_and_cta(client):
     html = client.get("/").text
     assert "<sl-card" in html
     assert "<sl-button" in html
+
+
+def test_stats_banner_on_section_page(client):
+    html = client.get("/discovery").text
+    assert 'class="stats-banner"' in html
+    assert "Papers Indexed" in html
+
+
+def test_no_stats_banner_on_home_settings_setup(client):
+    assert 'class="stats-banner"' not in client.get("/").text
+    assert 'class="stats-banner"' not in client.get("/settings").text
+    assert 'class="stats-banner"' not in client.get("/setup").text

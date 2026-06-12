@@ -46,10 +46,45 @@ def configure_templates(t):
     from lit_monitor.server.nav import NAV_GROUPS, active_group_for_path
     t.env.globals["nav_groups"] = NAV_GROUPS
     t.env.globals["active_group_for_path"] = active_group_for_path
-    from lit_monitor.server.nav import breadcrumb_trail
+    from lit_monitor.server.nav import breadcrumb_trail, show_stats_banner
     t.env.globals["breadcrumb_trail"] = breadcrumb_trail
+    t.env.globals["show_stats_banner"] = show_stats_banner
     t.env.globals["detail_crumb"] = None
     t.env.filters["fromjson"] = _json.loads
+
+    def _banner_stats() -> dict:
+        """Lazy, read-only stats for the banner. Returns a safe-default dict on
+        any failure so the banner always renders."""
+        try:
+            from lit_monitor.api.queries import get_dashboard_stats
+            from lit_monitor.server.runtime import get_runtime  # real singleton accessor
+
+            rt = get_runtime()
+            state_db = rt.state_db  # lazy property — constructs StateDB on first access
+            graph_db = None
+            try:
+                from lit_monitor.graph import safe_graph_db
+
+                graph_db = safe_graph_db()
+            except Exception:
+                graph_db = None
+            try:
+                return get_dashboard_stats(state_db, graph_db)
+            finally:
+                if graph_db is not None:
+                    try:
+                        graph_db.close()
+                    except Exception:
+                        pass
+        except Exception:
+            return {
+                "papers": {"value": 0, "delta": None},
+                "graph_nodes": {"value": 0, "delta": None},
+                "themes": {"value": 0, "delta": None},
+                "last_run": {"relative": "never", "status": None},
+            }
+
+    t.env.globals["banner_stats"] = _banner_stats
     return t
 
 

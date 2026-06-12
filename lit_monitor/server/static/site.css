@@ -1352,3 +1352,14 @@ sl-card.paper-card::part(base) { width: 100%; }
 .rate-summary { cursor: pointer; display: inline-block; font-size: 0.82rem; }
 .home-card { width: 100%; }
 .home-card a { text-decoration: none; color: inherit; display: block; }
+
+/* Stats banner — four-stat corpus overview, shown on all non-excluded pages */
+.stats-banner { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+@media (max-width: 900px) { .stats-banner { grid-template-columns: repeat(2, 1fr); } }
+.stat-card::part(base) { width: 100%; }
+.stat-card { display: block; }
+.stat-eyebrow { display: block; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.stat-value { display: block; font-family: var(--font-display); font-size: 2rem; font-weight: 600; line-height: 1.1; margin: 0.35rem 0 0.25rem; }
+.stat-delta { font-size: 0.82rem; }
+.stat-delta.up { color: var(--accent); }
+.stat-delta.muted { color: var(--muted); }

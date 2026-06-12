@@ -48,6 +48,21 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
 )
 
 
+_NO_BANNER_PREFIXES = ("/setup", "/settings", "/dev")
+
+
+def show_stats_banner(path: str) -> bool:
+    """True for pages that should display the corpus stats banner.
+
+    Excluded: Home, Setup, Settings, Dev (per the 2026-06-12 decision)."""
+    if path in ("/", ""):
+        return False
+    for prefix in _NO_BANNER_PREFIXES:
+        if path == prefix or path.startswith(prefix + "/"):
+            return False
+    return True
+
+
 def active_group_for_path(path: str) -> str | None:
     """Return the label of the group whose any item is a prefix of `path`.
 

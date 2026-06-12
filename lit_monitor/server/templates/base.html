@@ -54,6 +54,7 @@
       <div class="app-body">
         {% block rail %}{% endblock %}
         <main class="app-main content">
+          {% if show_stats_banner(request.url.path) %}{% include "_partials/stats_banner.html" %}{% endif %}
           {% block content %}{% endblock %}
         </main>
       </div>
