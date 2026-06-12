@@ -1145,3 +1145,84 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
   border-bottom: 1px solid var(--border);
 }
 .page-header .field-note { color: var(--muted); }
+
+/* ===========================================================================
+   Brand redesign — Phase 3.1: polish pass (checkbox alignment, dropdowns,
+   form spacing rhythm). Fixes the "rashly put together" feel. Tokens only.
+   =========================================================================== */
+
+/* --- Checkboxes / radios ---------------------------------------------------
+   The broad `.setup-form input { display:block; width:100% }` rule was inflating
+   checkboxes into full-width blocks. Restore their natural size and lay the
+   label + box out on one baseline-aligned row (covers .checkbox-inline,
+   .checkbox-row, .inline-check, and bare <label><input type=checkbox> ...). */
+input[type="checkbox"], input[type="radio"],
+.setup-form input[type="checkbox"], .setup-form input[type="radio"] {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  flex: none;
+  vertical-align: middle;
+}
+.checkbox-inline, .checkbox-row, .inline-check,
+label:has(> input[type="checkbox"]),
+label:has(> input[type="radio"]) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  font-weight: normal;
+  margin-bottom: 0.35rem;
+}
+
+/* --- Dropdown menus --------------------------------------------------------
+   Was a flat bordered rectangle flush to the bar. Make it a proper floating
+   menu: raised surface, shadow, padding, rounded rows with hover. */
+.navmenu {
+  min-width: 12rem;
+  padding: 0.3rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 14px 32px -14px rgba(0, 0, 0, 0.55);
+}
+.navmenu a {
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+}
+.navmenu a:hover {
+  background: var(--hover-overlay);
+  color: var(--accent);
+}
+.navmenu a.active {
+  color: var(--accent);
+  background: var(--hover-overlay);
+}
+.navgroup-label { display: inline-flex; align-items: center; gap: 0.25em; }
+
+/* --- Form spacing rhythm ---------------------------------------------------- */
+.field-group { gap: 0.3rem; margin-bottom: 0.95rem; }
+.field-note { margin-top: 0.1rem; line-height: 1.45; }
+.setup-form label { margin-bottom: 0.6rem; }
+/* h3 used as a sub-section heading inside forms — give it air + a quiet style. */
+h3.field-label {
+  margin: 1.6rem 0 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+h3.field-label:first-child { margin-top: 0.25rem; }
+
+/* --- Heading + section rhythm (gentle, page-wide) -------------------------- */
+.content h2 { margin-top: 2rem; margin-bottom: 0.6rem; }
+.content h3 { margin-top: 1.3rem; margin-bottom: 0.4rem; }
+.content h1:first-child, .content h2:first-child,
+.page-header h1, .dashboard > h1 { margin-top: 0; }
+.settings-section { margin-bottom: 1.25rem; }
+
+/* Settings-section forms are flex-column, which stretches the submit button to
+   full width — pin it to its natural size, left-aligned. (The setup wizard
+   forms aren't flex, so they're unaffected.) */
+.settings-section .setup-form button { align-self: flex-start; }
