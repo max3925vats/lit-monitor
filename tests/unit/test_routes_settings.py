@@ -92,15 +92,19 @@ class TestSettingsPage:
             client = _make_client()
             r = client.get("/settings")
         assert r.status_code == 200
-        # The SPECIFIC show_feedback_buttons checkbox must carry `checked` when the
-        # config value is True — a bare `"checked" in r.text` would also match any
-        # other checked control on the page, so pin the input by name.
-        feedback_input = re.search(
-            r'<input[^>]*name="show_feedback_buttons"[^>]*>', r.text, re.DOTALL
+        html = r.text
+        # After the Shoelace migration the feedback toggle is an sl-switch (not
+        # <input type=checkbox>).  Pin by data-path so the check is precise.
+        assert 'data-path="show_feedback_buttons"' in html
+        assert "<sl-switch" in html
+        m = re.search(
+            r'<sl-switch[^>]*data-path="show_feedback_buttons"[^>]*>',
+            html,
+            re.DOTALL,
         )
-        assert feedback_input is not None, "show_feedback_buttons checkbox not rendered"
-        assert "checked" in feedback_input.group(0), (
-            "show_feedback_buttons checkbox must be `checked` when config is True"
+        assert m is not None, "show_feedback_buttons sl-switch not rendered"
+        assert "checked" in m.group(0), (
+            "show_feedback_buttons sl-switch must carry `checked` when config is True"
         )
 
     def test_settings_has_subsection_rail(self):
@@ -127,12 +131,17 @@ class TestSettingsPage:
             client = _make_client()
             r = client.get("/settings")
         assert r.status_code == 200
-        feedback_input = re.search(
-            r'<input[^>]*name="show_feedback_buttons"[^>]*>', r.text, re.DOTALL
+        html = r.text
+        # After the Shoelace migration the feedback toggle is an sl-switch.
+        assert 'data-path="show_feedback_buttons"' in html
+        m = re.search(
+            r'<sl-switch[^>]*data-path="show_feedback_buttons"[^>]*>',
+            html,
+            re.DOTALL,
         )
-        assert feedback_input is not None, "show_feedback_buttons checkbox not rendered"
-        assert "checked" not in feedback_input.group(0), (
-            "show_feedback_buttons checkbox must NOT be `checked` when config is False"
+        assert m is not None, "show_feedback_buttons sl-switch not rendered"
+        assert "checked" not in m.group(0), (
+            "show_feedback_buttons sl-switch must NOT carry `checked` when config is False"
         )
 
 
