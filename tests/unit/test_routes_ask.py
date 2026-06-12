@@ -30,7 +30,12 @@ class TestAskPage:
         with patch("lit_monitor.server.routes.ask.safe_graph_db", return_value=object()):
             r = client.get("/ask")
         assert r.status_code == 200
-        assert 'name="question"' in r.text  # the form is present
+        # The page form should use sl-textarea (Shoelace), not the native textarea.
+        # Assert sl-button variant="primary" with id="ask-spin" — both unique to
+        # the page form after migration (drawer uses ask-drawer-spin, not ask-spin).
+        assert 'name="question"' in r.text  # question field present
+        assert '<textarea name="question"' not in r.text  # native replaced
+        assert 'id="ask-spin"' in r.text  # page-form spinner present
         assert "/ask/answer" in r.text  # hx-post target
 
     def test_get_ask_shows_no_graph_notice_when_absent(self, client):
@@ -39,10 +44,11 @@ class TestAskPage:
         assert r.status_code == 200
         assert "graph backfill" in r.text  # the build-graph-first hint
         # The page's own Ask form is gated on has_graph. The global Ask drawer in
-        # the app-shell always renders an <sl-textarea name="question">, so assert
-        # against the page form's plain <textarea> (and its #ask-result mount),
-        # which is what's actually hidden when the graph is absent.
-        assert "<textarea name=\"question\"" not in r.text
+        # the app-shell always renders an <sl-textarea name="question">, so we
+        # cannot assert <sl-textarea absent page-wide. Instead assert the PAGE
+        # form's HTMX target (#ask-result) is absent — that target is unique to
+        # the page form (the drawer uses #ask-drawer-result).
+        assert 'hx-target="#ask-result"' not in r.text
         assert 'id="ask-result"' not in r.text
 
     def test_nav_has_ask_link(self, client):
