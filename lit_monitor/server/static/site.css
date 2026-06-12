@@ -1258,3 +1258,29 @@ textarea {
 .input-row textarea { flex: 1; }
 /* Breathing room below an input-row so a following submit button isn't crammed. */
 .input-row { margin-bottom: 0.6rem; }
+
+/* Bare <button>/<input type=submit> with NO class were rendering as raw browser
+   buttons (e.g. the trending "Re-detect", several setup-step "Save" buttons).
+   Give unclassed buttons a clean neutral style — classed buttons (.btn*,
+   .button, .navgroup-label, .theme-toggle, .rate-btn) are untouched. */
+button:not([class]),
+input[type="submit"]:not([class]),
+input[type="button"]:not([class]) {
+  display: inline-block;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+button:not([class]):hover,
+input[type="submit"]:not([class]):hover,
+input[type="button"]:not([class]):hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+button:not([class]):disabled { opacity: 0.55; cursor: default; }
