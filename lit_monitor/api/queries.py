@@ -900,6 +900,89 @@ def get_graph_signals_for_candidate(
     return result
 
 
+def _relative_time(iso_ts: str | None) -> str:
+    """Human 'Nh ago' / 'Nm ago' / 'Nd ago' from a SQLite 'YYYY-MM-DD HH:MM:SS'
+    UTC timestamp. Returns 'never' for None/unparseable."""
+    if not iso_ts:
+        return "never"
+    from datetime import datetime, timezone
+    try:
+        dt = datetime.strptime(iso_ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return "never"
+    delta = datetime.now(timezone.utc) - dt
+    secs = int(delta.total_seconds())
+    if secs < 60:
+        return "just now"
+    if secs < 3600:
+        return f"{secs // 60}m ago"
+    if secs < 86400:
+        return f"{secs // 3600}h ago"
+    return f"{secs // 86400}d ago"
+
+
+def get_dashboard_stats(state_db: Any, graph_db: Any) -> dict[str, Any]:
+    """Assemble the four-stat banner payload (pure read — never writes).
+
+    Returns dict with keys papers/graph_nodes/themes (each {value:int,
+    delta:int|None}) and last_run ({relative:str, status:str|None}). Every
+    field degrades to a safe default; never raises.
+
+    Args:
+        state_db: StateDB instance.
+        graph_db: Optional GraphDB instance (None for graph-absent degradation).
+
+    Returns:
+        Dict with keys: papers, graph_nodes, themes, last_run. All values
+        JSON-serializable.
+    """
+    try:
+        papers_val = int(state_db.count_with_extraction())
+    except Exception as exc:
+        logger.warning("dashboard_stats: papers count failed: %s", exc)
+        papers_val = 0
+    try:
+        themes_val = len(state_db.list_active_clusters())
+    except Exception as exc:
+        logger.warning("dashboard_stats: themes count failed: %s", exc)
+        themes_val = 0
+    graph_val = 0
+    if graph_db is not None:
+        try:
+            gs = get_corpus_stats(graph_db)
+            graph_val = int(gs.get("paper_count", 0)) + int(gs.get("entity_count", 0))
+        except Exception as exc:
+            logger.warning("dashboard_stats: graph count failed: %s", exc)
+            graph_val = 0
+
+    try:
+        snaps = state_db.get_recent_snapshots(limit=2)
+    except Exception:
+        snaps = []
+
+    def _delta(field: str) -> int | None:
+        if len(snaps) < 2:
+            return None
+        return int(snaps[0][field]) - int(snaps[1][field])
+
+    last_relative, last_status = "never", None
+    try:
+        runs = state_db.get_recent_runs(limit=1)
+        if runs:
+            r = runs[0]
+            last_relative = _relative_time(r.get("finished_at") or r.get("started_at"))
+            last_status = r.get("status")
+    except Exception as exc:
+        logger.warning("dashboard_stats: last run failed: %s", exc)
+
+    return _coerce_jsonable({
+        "papers": {"value": papers_val, "delta": _delta("papers")},
+        "graph_nodes": {"value": graph_val, "delta": _delta("graph_nodes")},
+        "themes": {"value": themes_val, "delta": _delta("themes")},
+        "last_run": {"relative": last_relative, "status": last_status},
+    })
+
+
 def _parse_author_names(authors_str: str) -> set[str]:
     """Parse a semicolon-separated authors string into a deduplicated set of names.
 

@@ -557,3 +557,29 @@ def test_snapshot_without_state_db_keeps_keys_none(tmp_path):
     snap = get_paper_snapshot("10.1/nostate", graph)  # no state_db arg
     assert snap["metadata"]["zotero_key"] is None
     assert snap["metadata"]["zotero_deeplink"] is None
+
+
+# ---------------------------------------------------------------------------
+# Task 2: get_dashboard_stats assembler
+# ---------------------------------------------------------------------------
+
+
+def test_get_dashboard_stats_no_graph(tmp_path):
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.api.queries import get_dashboard_stats
+    db = StateDB(tmp_path / "state.db")
+    db.write_corpus_snapshot(papers=10, graph_nodes=0, themes=2, run_type="discovery", run_id="r1")
+    db.write_corpus_snapshot(papers=14, graph_nodes=0, themes=3, run_type="discovery", run_id="r2")
+    stats = get_dashboard_stats(db, None)  # graph absent
+    assert stats["papers"]["delta"] == 4      # 14 - 10
+    assert stats["themes"]["delta"] == 1       # 3 - 2
+    assert stats["graph_nodes"]["value"] == 0
+    assert "last_run" in stats
+
+def test_get_dashboard_stats_single_snapshot_has_no_delta(tmp_path):
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.api.queries import get_dashboard_stats
+    db = StateDB(tmp_path / "state.db")
+    db.write_corpus_snapshot(papers=5, graph_nodes=0, themes=1)
+    stats = get_dashboard_stats(db, None)
+    assert stats["papers"]["delta"] is None   # only one snapshot → no delta
