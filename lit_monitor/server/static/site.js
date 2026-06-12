@@ -203,47 +203,51 @@
   });
 })();
 
-// Theme toggle: dark is the default; the topnav button flips to light and back,
-// persisting the choice in localStorage. The no-flash <head> bootstrap reads the
-// same key on load, so the choice survives navigations and full reloads.
+// Theme toggle: dark default; flips data-theme + Shoelace's sl-theme-dark class,
+// persisted in localStorage. The <head> bootstrap reads the same key on load.
 (function () {
   "use strict";
-
   var KEY = "lit_theme";
-
   function currentTheme() {
-    return document.documentElement.getAttribute("data-theme") === "light"
-      ? "light"
-      : "dark";
+    return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
   }
-
+  function applyTheme(next) {
+    if (next === "light") {
+      document.documentElement.setAttribute("data-theme", "light");
+      document.documentElement.classList.remove("sl-theme-dark");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+      document.documentElement.classList.add("sl-theme-dark");
+    }
+    try { window.localStorage.setItem(KEY, next); } catch (e) {}
+  }
   function paintGlyph(btn) {
-    if (btn) btn.textContent = currentTheme() === "light" ? "☀" : "🌙";
+    if (btn) btn.setAttribute("name", currentTheme() === "light" ? "sun" : "moon");
   }
-
   function init() {
     var btn = document.getElementById("theme-toggle");
     if (!btn) return;
     paintGlyph(btn);
     btn.addEventListener("click", function () {
-      var next = currentTheme() === "light" ? "dark" : "light";
-      if (next === "light") {
-        document.documentElement.setAttribute("data-theme", "light");
-      } else {
-        document.documentElement.removeAttribute("data-theme");
-      }
-      try {
-        window.localStorage.setItem(KEY, next);
-      } catch (e) {
-        /* storage blocked — theme still applies for this session */
-      }
+      applyTheme(currentTheme() === "light" ? "dark" : "light");
       paintGlyph(btn);
     });
   }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
+// App-shell: mobile sidebar toggle + global Ask drawer open.
+(function () {
+  "use strict";
+  function init() {
+    var shell = document.querySelector(".app-shell");
+    var sb = document.querySelector(".app-sidebar-toggle");
+    if (sb && shell) sb.addEventListener("click", function () { shell.classList.toggle("sidebar-open"); });
+    var ask = document.querySelector(".app-ask-btn");
+    var drawer = document.getElementById("ask-drawer");
+    if (ask && drawer) ask.addEventListener("click", function () { drawer.show(); });
   }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
 })();
