@@ -153,6 +153,18 @@ def dashboard(
         logger.debug("get_recent_runs_by_type failed", exc_info=True)
         recent_runs = []
 
+    # Brain-build runs live only in run_log (no integer id), so the table shows
+    # a DISPLAY ORDINAL instead of the uuid: oldest brain_build run = "Run 1".
+    # We count ALL brain_build runs, then number the 10 newest top-down: the
+    # newest visible row gets the highest number, the oldest gets `total - i`.
+    try:
+        total_bb = len(db.get_recent_runs_by_type("brain_build", limit=100000))
+    except Exception:
+        logger.debug("counting brain_build runs failed", exc_info=True)
+        total_bb = len(recent_runs)
+    for i, run in enumerate(recent_runs):  # i=0 is the newest row
+        run["run_no"] = total_bb - i
+
     return templates.TemplateResponse(
         request,
         "brain_build/index.html",

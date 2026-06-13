@@ -17,7 +17,7 @@
     <p class="field-note">Loading controls…</p>
   </section>
 
-  <section class="collection-switcher">
+  <section class="collection-switcher card">
     {# Plain-text current collection (no <code> — it's a name, not a code token). #}
     <p class="field-note">Current collection:
       <span class="collection-current">{{ collection_name or "(not set — see setup step 2)" }}</span>
@@ -155,13 +155,15 @@
   {% endif %}
 
   {# Recent runs — collapsed by default (Task D). brain_build runs only.
-     Type column dropped; Run ID truncated w/ full id on hover; Completed added. #}
+     Type column dropped; Completed added. brain_build runs have no integer id,
+     so the Run column is a DISPLAY ORDINAL (run_no, oldest = 1) set in the
+     route — NOT the uuid run_id (review 2026-06-13). #}
   <sl-details summary="Recent runs">
     {% if recent_runs %}
     <table class="runs-table">
       <thead>
         <tr>
-          <th>Run ID</th>
+          <th>Run</th>
           <th>Started</th>
           <th>Completed</th>
           <th>Status</th>
@@ -171,7 +173,7 @@
       <tbody>
         {% for run in recent_runs %}
         <tr>
-          <td><code title="{{ run.run_id }}">{{ run.run_id[:8] }}…</code></td>
+          <td>Run {{ run.run_no }}</td>
           <td>{{ run.started_at or "—" }}</td>
           <td>{{ run.finished_at or "—" }}</td>
           <td>{{ run.status or "—" }}</td>

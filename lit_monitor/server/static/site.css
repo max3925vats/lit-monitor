@@ -721,9 +721,16 @@ a:hover {
 
 /* --- Collection switcher (inline, non-collapsible) --- */
 /* overflow:visible so the sl-select listbox popup is NOT clipped by the card. */
-.collection-switcher { margin: 1rem 0; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius); overflow: visible; }
-.collection-current { color: var(--fg); }
+/* The collection box is a `.card` (it gets .card's padding/border/radius +
+   hover lift+glow). We only keep the bits .card doesn't provide: a sensible
+   margin and `overflow: visible` so the sl-select dropdown isn't clipped. */
+.collection-switcher { margin: 1rem 0; overflow: visible; }
+.collection-current { color: var(--fg); font-weight: 600; }
 .collection-switch-heading { margin: 0.5rem 0 0.5rem; font-size: 1rem; }
+
+/* Separate adjacent content cards on the dashboard so the Per-paper status and
+   Recent runs <sl-details> don't sit flush (applies collapsed AND expanded). */
+.dashboard sl-details + sl-details { margin-top: 1.25rem; }
 /* Column layout: cap the single-line select ~28rem (rubric #1), button to content. */
 .collection-switcher form { display: flex; flex-direction: column; gap: 0.5rem; align-items: stretch; }
 .collection-switcher #collection-field { max-width: 28rem; }

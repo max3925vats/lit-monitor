@@ -71,7 +71,12 @@ def _fake_runtime(rows: list[dict], runs: list[dict] | None = None):
         def get_recent_runs_by_type(
             self, run_type: str, limit: int = 10
         ) -> list[dict]:
+            # The route makes two calls now: the 10-row display fetch AND a
+            # full-count fetch for the display-ordinal total. Record every call
+            # so tests can assert the display fetch happened (the count call
+            # uses a large limit and would otherwise clobber a single slot).
             calls["by_type"] = (run_type, limit)
+            calls.setdefault("by_type_calls", []).append((run_type, limit))
             return list(runs)
 
     class _FakeZotero:
@@ -206,7 +211,10 @@ def test_recent_runs_uses_by_type_brain_build(monkeypatch) -> None:
     client = TestClient(create_app())
     resp = client.get("/brain-build")
     assert resp.status_code == 200
-    assert calls.get("by_type") == ("brain_build", 10)
+    # The 10-row display fetch must use the brain_build type with limit=10.
+    assert ("brain_build", 10) in calls.get("by_type_calls", [])
+    # Only brain_build runs are ever requested by type.
+    assert all(rt == "brain_build" for rt, _ in calls.get("by_type_calls", []))
     assert "called_recent_runs" not in calls
 
 
@@ -228,10 +236,59 @@ def test_recent_runs_table_columns_and_card(monkeypatch) -> None:
     # Type column dropped; Completed column added.
     assert "<th>Type</th>" not in html
     assert "<th>Completed</th>" in html
-    # Run ID truncated to 8 chars with full id in title.
-    assert "abcdef12" in html
-    assert 'title="abcdef1234567890"' in html
+    # Review 2026-06-13: uuid Run ID replaced by a display ordinal "Run N".
+    # The truncated uuid must no longer appear.
+    assert "abcdef12" not in html
+    assert 'title="abcdef1234567890"' not in html
+    assert "abcdef1234567890" not in html
+    # A single brain_build run renders as "Run 1" under a "Run" header.
+    assert "<th>Run</th>" in html
+    assert "Run 1" in html
     assert "2026-06-01 10:30" in html  # finished_at
+
+
+@pytest.mark.unit
+def test_recent_runs_use_display_ordinals_oldest_is_one(monkeypatch) -> None:
+    """Brain-build runs have no integer id, so the table shows a DISPLAY ORDINAL.
+
+    ``get_recent_runs_by_type`` returns newest-first. With 3 total runs, the
+    newest row is "Run 3" and the oldest is "Run 1". No uuid leaks into the page.
+    """
+    runs = [
+        {
+            "run_id": "newest-uuid-aaaa",
+            "started_at": "2026-06-03",
+            "finished_at": "2026-06-03",
+            "status": "complete",
+            "papers_processed": 3,
+            "papers_failed": 0,
+        },
+        {
+            "run_id": "middle-uuid-bbbb",
+            "started_at": "2026-06-02",
+            "finished_at": "2026-06-02",
+            "status": "complete",
+            "papers_processed": 2,
+            "papers_failed": 0,
+        },
+        {
+            "run_id": "oldest-uuid-cccc",
+            "started_at": "2026-06-01",
+            "finished_at": "2026-06-01",
+            "status": "complete",
+            "papers_processed": 1,
+            "papers_failed": 0,
+        },
+    ]
+    html = _get(monkeypatch, _make_rows(0), runs=runs)
+    # Newest row = highest ordinal; oldest = 1.
+    assert "Run 3" in html
+    assert "Run 1" in html
+    # Ordering: "Run 3" must appear before "Run 1" in newest-first table.
+    assert html.index("Run 3") < html.index("Run 1")
+    # No uuid leaks through.
+    assert "newest-uuid-aaaa" not in html
+    assert "oldest-uuid-cccc" not in html
 
 
 # ---------------------------------------------------------------------------
@@ -275,3 +332,55 @@ def test_discovery_last_run_omits_run_id(monkeypatch) -> None:
     # The one-line summary + its other fields still render.
     assert "last-run-line" in html
     assert "complete" in html
+
+
+# ---------------------------------------------------------------------------
+# Review 2026-06-13 — four cosmetic fixes on the Brain-build dashboard.
+# ---------------------------------------------------------------------------
+import re  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_SITE_CSS = (
+    Path(__file__).resolve().parents[2]
+    / "lit_monitor"
+    / "server"
+    / "static"
+    / "site.css"
+)
+
+
+@pytest.mark.unit
+def test_collection_box_is_a_card(monkeypatch) -> None:
+    """The collection switcher <section> carries the ``card`` class so it
+    inherits the .card:hover lift+glow (it previously lost the effect)."""
+    html = _get(monkeypatch, _make_rows(0))
+    assert 'class="collection-switcher card"' in html
+
+
+@pytest.mark.unit
+def test_collection_current_is_bold_in_css() -> None:
+    """``.collection-current`` is bold (font-weight: 600) so the active
+    collection name matches the 'Change collection' heading weight."""
+    css = _SITE_CSS.read_text(encoding="utf-8")
+    # Find the .collection-current rule body and assert it declares 600 weight.
+    match = re.search(r"\.collection-current\s*\{([^}]*)\}", css)
+    assert match is not None, ".collection-current rule must exist"
+    body = match.group(1)
+    assert re.search(r"font-weight\s*:\s*600", body), (
+        ".collection-current must set font-weight: 600"
+    )
+
+
+@pytest.mark.unit
+def test_sl_details_spacing_rule_exists_in_css() -> None:
+    """A CSS rule separates adjacent dashboard <sl-details> cards (so the
+    Per-paper status and Recent runs cards don't sit flush, collapsed or open)."""
+    css = _SITE_CSS.read_text(encoding="utf-8")
+    # Adjacent-sibling selector on sl-details within the dashboard, with a
+    # positive top margin. Whitespace-tolerant.
+    pattern = re.compile(
+        r"\.dashboard\s+sl-details\s*\+\s*sl-details\s*\{[^}]*margin-top\s*:",
+    )
+    assert pattern.search(css), (
+        "expected a `.dashboard sl-details + sl-details { margin-top: … }` rule"
+    )
