@@ -28,9 +28,9 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
         NavItem("Schedule", "/schedule", "clock"),
     )),
     NavGroup("Semantics", (
-        NavItem("Corpus", "/corpus", "collection"),
-        NavItem("Brain-build", "/brain-build", "cpu"),
         NavItem("Ask", "/ask", "stars"),
+        NavItem("Brain-build", "/brain-build", "cpu"),
+        NavItem("Corpus Health", "/corpus", "collection"),
     )),
     NavGroup("Explore", (
         NavItem("Knowledge graph", "/graph", "diagram-3"),

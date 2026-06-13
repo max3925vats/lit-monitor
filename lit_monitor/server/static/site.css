@@ -1466,32 +1466,52 @@ sl-card.paper-card::part(base) { width: 100%; }
    of sitting flush against each other. */
 .paper-detail { display: flex; flex-direction: column; gap: 1rem; }
 
-/* --- Corpus list: left filter rail + results (P4) --- */
-/* Two-column grid: a fixed ~17rem filter rail on the left, results fill the
-   rest. Stacks vertically on narrow screens so the rail sits above the table. */
-.corpus-layout {
-  display: grid;
-  grid-template-columns: 17rem minmax(0, 1fr);
-  gap: 1.5rem;
-  align-items: start;
+/* --- Corpus Health: inline filter toolbar + frozen-header table (P4) --- */
+/* Single horizontal toolbar above the table; wraps on narrow screens. Each
+   control is capped ~13rem so several fit on one line (rubric #1). */
+.corpus-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+  margin-bottom: 1rem;
 }
-.corpus-rail { min-width: 0; }
-.corpus-filters { display: flex; flex-direction: column; gap: 1rem; }
-/* Action button sized to content (rubric #1) — not a full-width stretch. */
-.corpus-filters sl-button { align-self: flex-start; }
+.corpus-toolbar sl-input,
+.corpus-toolbar sl-select { width: 13rem; max-width: 13rem; }
+.corpus-toolbar sl-input[name="search"] { width: 16rem; max-width: 16rem; }
+
 /* rubric #15: cap the corpus results height so the (long) paper list scrolls
    inside its own region instead of stretching the whole page (like the digest
    box). Sticky header keeps the column labels visible while scrolling. */
 .corpus-results { min-width: 0; overflow: auto; max-height: 40rem; }
+/* table-layout:fixed + per-cell nowrap/ellipsis keep every row on ONE line. */
+.corpus-results table.corpus-table { table-layout: fixed; width: 100%; }
+.corpus-results table.corpus-table td,
+.corpus-results table.corpus-table th {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The Updated column shows the full date on one line (no truncation). */
+.corpus-results table.corpus-table td.updated-cell { overflow: visible; }
+/* Frozen header: solid background + z-index so it stays opaque while scrolling
+   inside .corpus-results (which is the scroll container — sticky resolves
+   against it). */
 .corpus-results table thead th {
   position: sticky;
   top: 0;
   background: var(--card-bg);
   z-index: 1;
 }
-@media (max-width: 820px) {
-  .corpus-layout { grid-template-columns: 1fr; }
-}
+/* Column widths: Title widest (truncated), Updated wide enough for the date,
+   the status-dot columns narrow. */
+.corpus-table col.col-title { width: 32%; }
+.corpus-table col.col-doi { width: 16%; }
+.corpus-table col.col-year { width: 5rem; }
+.corpus-table col.col-source { width: 6rem; }
+.corpus-table col.col-conf { width: 6rem; }
+.corpus-table col.col-dot { width: 5.5rem; }
+.corpus-table col.col-updated { width: 7rem; }
 
 /* rubric #15: cap the extraction list height so one section can't stretch the
    page; it scrolls inside the card instead (100+ extraction fields are common). */

@@ -742,6 +742,7 @@ class StateDB:
         order: str = "desc",
         limit: int = 50,
         offset: int = 0,
+        exclude_status: tuple[str, ...] = ("discovered",),
     ) -> tuple[list[dict], int]:
         """FE2-1: search / filter / sort / paginate the processed papers corpus.
 
@@ -798,6 +799,17 @@ class StateDB:
         if source_type:
             where.append("source_type = ?")
             params.append(source_type)
+
+        # P4: exclude un-ingested 'discovered' candidates by default. Discovery
+        # surfaces hundreds of candidates per run; only the top-K get ingested.
+        # The corpus list is a read lens over INGESTED papers, so those rows are
+        # filtered out of both the rows WHERE and the COUNT WHERE. One ? per
+        # value — exclude_status is a trusted code-default, but parameterising
+        # keeps the SQL-safety invariant uniform. exclude_status=() disables it.
+        if exclude_status:
+            placeholders = ", ".join("?" for _ in exclude_status)
+            where.append(f"status NOT IN ({placeholders})")
+            params.extend(exclude_status)
 
         # Column-based status gaps map to a trusted predicate; low_confidence is
         # handled in Python below (its predicate lives inside extraction_json).

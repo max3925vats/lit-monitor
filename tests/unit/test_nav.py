@@ -12,6 +12,16 @@ def test_monitor_holds_discovery_and_schedule():
     assert hrefs == ["/discovery", "/schedule"]
 
 
+def test_semantics_order_ask_brainbuild_corpushealth():
+    # P4: Semantics renders Ask, Brain-build, Corpus Health in that exact order
+    # with the renamed final label (hrefs unchanged).
+    semantics = next(g for g in NAV_GROUPS if g.label == "Semantics")
+    assert [i.label for i in semantics.items] == [
+        "Ask", "Brain-build", "Corpus Health"
+    ]
+    assert [i.href for i in semantics.items] == ["/ask", "/brain-build", "/corpus"]
+
+
 def test_active_group_resolves_nested_paths():
     assert active_group_for_path("/discovery/2") == "Monitor"
     assert active_group_for_path("/corpus/10.1/x") == "Semantics"
@@ -19,12 +29,14 @@ def test_active_group_resolves_nested_paths():
 
 
 def test_breadcrumb_list_page():
-    assert breadcrumb_trail("/corpus") == [("Semantics", None), ("Corpus", None)]
+    assert breadcrumb_trail("/corpus") == [
+        ("Semantics", None), ("Corpus Health", None)
+    ]
 
 
 def test_breadcrumb_detail_page_links_section():
     assert breadcrumb_trail("/corpus/10.1/x", detail="A paper") == [
-        ("Semantics", None), ("Corpus", "/corpus"), ("A paper", None)
+        ("Semantics", None), ("Corpus Health", "/corpus"), ("A paper", None)
     ]
 
 

@@ -1,83 +1,93 @@
-{# FE2-2: /corpus — a read lens over the processed-papers corpus (state DB).
+{# P4: /corpus — "Corpus Health": a read lens over the INGESTED papers (state DB).
 
-   P4 (Shoelace): two-column layout — a left filter rail (Shoelace controls) +
-   the results region on the right. The filter form keeps its ORIGINAL HTMX
-   wiring: hx-get="/corpus" swaps only the #corpus-table region. The route reads
-   the EXACT param names below (search, source_type, status_gap, theme, sort);
+   list_papers() excludes un-ingested 'discovered' discovery candidates by
+   default, so this shows what brain-build has actually ingested — not the
+   hundreds of candidates discovery surfaces per run.
+
+   Layout: a single inline filter TOOLBAR above the results (no left rail). The
+   form auto-applies — there is NO Apply button. It HTMX-swaps only the
+   #corpus-table region: selects fire on sl-change, search fires debounced on
+   sl-input (and on Enter via submit). The route reads the EXACT param names
+   below (search, source_type, status_gap, theme, sort, limit, order, offset);
    pre-selection is via value= on the sl-input/sl-select HOST (the Shoelace
    initial-value gotcha — selected= on <sl-option> is a no-op). #}
 {% extends "base.html" %}
-{% block title %}Corpus — lit-monitor{% endblock %}
+{% block title %}Corpus Health — lit-monitor{% endblock %}
 {% block content %}
 <section class="dashboard">
   <div class="page-header">
-    <h1>Corpus</h1>
+    <h1>Corpus Health</h1>
     <p class="field-note">
-      Every paper and review processed into the state DB. This is a read lens
-      over what brain-build has indexed &mdash; not your full Zotero library.
+      Papers brain-build has ingested into the knowledge base, and the health of
+      each &mdash; what's embedded, graph-indexed, and noted. Not your full
+      Zotero library, and not discovery's un-ingested candidates.
     </p>
   </div>
 
-  <div class="corpus-layout">
-    {# Left filter rail. The hx-get form refreshes only the #corpus-table region.
-       New filters reset to offset 0 (hidden offset starts at 0; pagination links
-       carry the current filters forward). hx-trigger keeps the submit + select
-       wiring; sl-select fires `sl-change`, so we listen for that too. #}
-    <aside class="corpus-rail">
-      <form class="corpus-filters"
-            hx-get="/corpus"
-            hx-target="#corpus-table"
-            hx-swap="innerHTML"
-            hx-trigger="submit, sl-change">
-        <sl-input type="search" name="search" value="{{ search }}"
-                  label="Search" placeholder="Title or DOI…"
-                  clearable></sl-input>
+  {# Inline filter toolbar. The hx-get form refreshes only the #corpus-table
+     region and auto-applies: selects on sl-change, search debounced on
+     sl-input, plus submit (Enter). New filters reset to offset 0. #}
+  <form class="corpus-toolbar"
+        hx-get="/corpus"
+        hx-target="#corpus-table"
+        hx-select="#corpus-table"
+        hx-swap="outerHTML"
+        hx-trigger="sl-change from:sl-select, sl-input delay:400ms from:sl-input, submit">
+    <sl-input type="search" name="search" value="{{ search }}"
+              label="Search" placeholder="Title or DOI…"
+              clearable></sl-input>
 
-        <sl-select name="source_type" label="Source type" value="{{ source_type }}">
-          <sl-option value="">All sources</sl-option>
-          <sl-option value="paper">paper</sl-option>
-          <sl-option value="review">review</sl-option>
-        </sl-select>
+    <sl-select name="source_type" label="Source type" value="{{ source_type }}">
+      <sl-option value="">All sources</sl-option>
+      <sl-option value="paper">paper</sl-option>
+      <sl-option value="review">review</sl-option>
+    </sl-select>
 
-        <sl-select name="status_gap" label="Status gap" value="{{ status_gap }}">
-          {% for opt in status_gap_options %}
-          <sl-option value="{{ opt }}">{{ opt if opt else "(any)" }}</sl-option>
-          {% endfor %}
-        </sl-select>
+    <sl-select name="status_gap" label="Status gap" value="{{ status_gap }}">
+      {% for opt in status_gap_options %}
+      <sl-option value="{{ opt }}">{{ opt if opt else "(any)" }}</sl-option>
+      {% endfor %}
+    </sl-select>
 
-        {# PF-3: theme/cluster filter. On a fresh install there are no clusters
-           yet, so render a "no themes" note instead of an empty/broken select. #}
-        {% if themes %}
-        <sl-select name="theme" label="Theme" value="{{ theme }}">
-          <sl-option value="">(any theme)</sl-option>
-          {% for t in themes %}
-          <sl-option value="{{ t.display_name }}">{{ t.display_name }}</sl-option>
-          {% endfor %}
-        </sl-select>
-        {% else %}
-        <input type="hidden" name="theme" value="{{ theme }}" />
-        <span class="field-note">No themes yet &mdash; run a brain-build to cluster papers.</span>
-        {% endif %}
+    {# PF-3: theme/cluster filter. On a fresh install there are no clusters yet,
+       so render a "no themes" note instead of an empty/broken select. #}
+    {% if themes %}
+    <sl-select name="theme" label="Theme" value="{{ theme }}">
+      <sl-option value="">(any theme)</sl-option>
+      {% for t in themes %}
+      <sl-option value="{{ t.display_name }}">{{ t.display_name }}</sl-option>
+      {% endfor %}
+    </sl-select>
+    {% else %}
+    <input type="hidden" name="theme" value="{{ theme }}" />
+    {% endif %}
 
-        <sl-select name="sort" label="Sort by" value="{{ sort }}">
-          <sl-option value="last_updated">Last updated</sl-option>
-          <sl-option value="year">Year</sl-option>
-          <sl-option value="title">Title</sl-option>
-          <sl-option value="status">Status</sl-option>
-        </sl-select>
+    <sl-select name="sort" label="Sort by" value="{{ sort }}">
+      <sl-option value="last_updated">Last updated</sl-option>
+      <sl-option value="year">Year</sl-option>
+      <sl-option value="title">Title</sl-option>
+      <sl-option value="status">Status</sl-option>
+    </sl-select>
 
-        {# order/limit/offset are carried as hidden fields (no rail control). #}
-        <input type="hidden" name="order" value="{{ order }}" />
-        <input type="hidden" name="limit" value="{{ limit }}" />
-        <input type="hidden" name="offset" value="0" />
+    {# Page-size selector drives the route's `limit` param; value preserved on
+       the host. Changing it re-fetches via the same HTMX swap. #}
+    <sl-select name="limit" label="Per page" value="{{ limit }}">
+      <sl-option value="10">10</sl-option>
+      <sl-option value="20">20</sl-option>
+      <sl-option value="50">50</sl-option>
+      <sl-option value="100">100</sl-option>
+    </sl-select>
 
-        <sl-button type="submit" variant="primary">Apply</sl-button>
-      </form>
-    </aside>
+    {# order/offset are carried as hidden fields (no toolbar control). New
+       filters reset paging to offset 0. #}
+    <input type="hidden" name="order" value="{{ order }}" />
+    <input type="hidden" name="offset" value="0" />
+  </form>
 
-    <div id="corpus-table" class="corpus-results">
-      {% include "corpus/_table.html" %}
-    </div>
-  </div>
+  {% if not themes %}
+  <p class="field-note">No themes yet &mdash; run a brain-build to cluster papers.</p>
+  {% endif %}
+
+  {% include "corpus/_table.html" %}
 </section>
 {% endblock %}

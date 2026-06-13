@@ -47,14 +47,25 @@ def test_get_corpus_renders_table(client, monkeypatch):
     assert "Chromatography study" in r.text and 'href="/corpus/10.1/a"' in r.text
 
 
-# --- P4: Shoelace filter rail + status-dot table ------------------------------
+# --- P4: Corpus Health — inline toolbar + auto-apply + status-dot table -------
 
 
-def test_corpus_list_has_filter_rail_with_shoelace_controls(client, monkeypatch):
-    # P4: the list page is a two-column layout with a left filter rail. The rail
-    # holds Shoelace form controls (search input + the select filters) and an
-    # Apply submit button. The active filter values are preserved on the HOST
-    # (value="…") per the Shoelace initial-value gotcha — NOT selected= on options.
+def test_corpus_page_is_corpus_health(client, monkeypatch):
+    # P4: rename to "Corpus Health" — the h1 changes, the /corpus URL stays.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._list_papers", lambda **k: ([], 0)
+    )
+    r = client.get("/corpus")
+    assert r.status_code == 200
+    assert "<h1>Corpus Health</h1>" in r.text
+
+
+def test_corpus_list_has_inline_toolbar_no_rail(client, monkeypatch):
+    # P4: the left filter rail is GONE — filters live in a single inline toolbar
+    # above the table. The toolbar holds Shoelace controls (search input + the
+    # select filters + a page-size select). Active values are preserved on the
+    # HOST (value="…") per the Shoelace initial-value gotcha. There is NO Apply
+    # button — filters auto-apply via the form's hx-trigger.
     monkeypatch.setattr(
         "lit_monitor.server.routes.corpus._list_themes",
         lambda: [{"id": 1, "display_name": "Chromatography"}],
@@ -64,26 +75,41 @@ def test_corpus_list_has_filter_rail_with_shoelace_controls(client, monkeypatch)
     )
     r = client.get(
         "/corpus?search=carta&source_type=review&status_gap=missing_graph"
-        "&theme=Chromatography&sort=year"
+        "&theme=Chromatography&sort=year&limit=50"
     )
     assert r.status_code == 200
-    # Two-column layout wrapper + the rail aside.
-    assert 'class="corpus-layout"' in r.text
-    assert '<aside class="corpus-rail"' in r.text
+    # The two-column rail layout is removed.
+    assert "corpus-layout" not in r.text
+    assert "corpus-rail" not in r.text
+    # The inline toolbar replaces it.
+    assert 'class="corpus-toolbar"' in r.text
     # Shoelace search input bound to the route's EXACT param name (search, not q).
     assert "<sl-input" in r.text
-    assert 'name="search"' in r.text
+    assert 'name="search"' in r.text and 'value="carta"' in r.text
     # Shoelace selects for the filters, each pre-selected via value= on the HOST.
     assert "<sl-select" in r.text
     assert 'name="source_type"' in r.text and 'value="review"' in r.text
     assert 'name="status_gap"' in r.text and 'value="missing_graph"' in r.text
     assert 'name="theme"' in r.text and 'value="Chromatography"' in r.text
     assert 'name="sort"' in r.text and 'value="year"' in r.text
-    # The search value is reflected on the host too.
-    assert 'value="carta"' in r.text
-    # A Shoelace submit button, no native <button>/<select>/<input> form controls.
-    assert "<sl-button" in r.text
+    # A page-size select driving the route's `limit` param, value preserved.
+    assert 'name="limit"' in r.text and 'value="50"' in r.text
+    # NO Apply button (filters auto-apply); no native form controls.
+    assert "Apply" not in r.text
     assert "<select" not in r.text
+
+
+def test_corpus_form_auto_applies_on_change(client, monkeypatch):
+    # P4: removing Apply means the form must auto-fire on sl-change (selects) and
+    # debounced sl-input (search). Assert the hx-trigger wiring is present.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._list_papers", lambda **k: ([], 0)
+    )
+    r = client.get("/corpus")
+    assert r.status_code == 200
+    assert 'hx-get="/corpus"' in r.text
+    assert "sl-change" in r.text
+    assert "sl-input" in r.text  # debounced search trigger source
 
 
 def test_corpus_table_status_dot_and_doi_link(client, monkeypatch):
@@ -303,6 +329,54 @@ def test_corpus_results_table_height_capped(client):
     # Sticky header keeps the column labels visible while scrolling.
     assert ".corpus-results table thead th" in css
     assert "position: sticky" in css
+
+
+def test_corpus_table_one_line_rows_css(client):
+    # P4: every row stays on ONE line — the corpus table is table-layout:fixed
+    # and cells truncate with ellipsis. Assert the CSS rules ship.
+    css = client.get("/static/site.css").text
+    assert ".corpus-results table" in css
+    assert "table-layout: fixed" in css
+    # The inline toolbar wraps on narrow screens.
+    assert ".corpus-toolbar" in css
+    assert "flex-wrap" in css
+
+
+def test_corpus_table_fragment_markup(client, monkeypatch):
+    # P4: the _table.html fragment uses table-layout:fixed, truncates the title
+    # with a title= tooltip, and the pager swaps #corpus-table via hx-select.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._list_papers",
+        lambda **k: (
+            [
+                {
+                    "doi": "10.1/a",
+                    "title": "A long chromatography membrane study title",
+                    "year": 2021,
+                    "source_type": "paper",
+                    "confidence": 0.8,
+                    "embeddings_indexed": 1,
+                    "graph_indexed": 1,
+                    "notes_synced": 1,
+                    "last_updated": "2026-06-01",
+                }
+            ],
+            45,  # > limit so Next pagination shows
+        ),
+    )
+    # HTMX fragment request returns _table.html standalone.
+    r = client.get("/corpus?limit=20", headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    # Title truncated with a full-title tooltip (same treatment as DOI).
+    assert 'title="A long chromatography membrane study title"' in r.text
+    # Pager re-targets the swap region in place via hx-select/outerHTML.
+    assert 'hx-target="#corpus-table"' in r.text
+    assert 'hx-select="#corpus-table"' in r.text
+    assert 'hx-swap="outerHTML"' in r.text
+    # The "X–Y of Z" count is shown.
+    assert "of 45" in r.text
+    # Next is reachable (offset 0 + limit 20 < 45); href fallback present.
+    assert "offset=20" in r.text
 
 
 def test_corpus_detail_404_when_absent(client, monkeypatch):

@@ -91,7 +91,7 @@ def corpus_index(
     theme: str = Query(""),
     sort: str = Query("last_updated"),
     order: str = Query("desc"),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> HTMLResponse:
     """Render the corpus list page (full page) or its table fragment (HTMX)."""

@@ -1,11 +1,12 @@
-{# FE2-2: corpus table fragment — returned standalone on HTMX requests and
-   included inside #corpus-table on the full page.
+{# P4: corpus table fragment — IS the #corpus-table swap target (returned
+   standalone on HTMX requests and included on the full page). The toolbar form
+   and the pager both swap this whole element via hx-select="#corpus-table" +
+   hx-swap="outerHTML", so the id MUST live here, not on a wrapper in index.html.
 
-   P4 (Shoelace/rubric): the per-item ingestion state is shown as a coloured
-   .status-dot (green=indexed / grey=pending) with an accessible title — not the
-   old ✓/✗ pill glyphs (rubric #16). The DOI is a .doi-cell link to the internal
-   detail page (truncated + title= tooltip, rubric #15/#17); the title also links
-   to the detail page. #}
+   Per-item ingestion state is a coloured .status-dot (green=indexed /
+   grey=pending) with an accessible title (rubric #16) — not ✓/✗ glyphs. The DOI
+   and the title both link to the internal detail page; both truncate with a
+   title= tooltip (table-layout:fixed keeps every row on ONE line). #}
 {# Status-dot helper: green when the stage is done, grey (pending) otherwise. #}
 {% macro stage_dot(done, label) %}
   {%- if done -%}
@@ -14,13 +15,25 @@
     <span class="status-dot pending" title="{{ label }}: not yet" aria-label="{{ label }}: not yet"></span>
   {%- endif -%}
 {% endmacro %}
+<div id="corpus-table" class="corpus-results">
 {% if not rows %}
 <p class="field-note">
   No papers match these filters. Run a brain-build (<code>lit-monitor
-  brain-build</code>) to populate the corpus.
+  brain-build</code>) to ingest papers into the corpus.
 </p>
 {% else %}
-<table class="papers-table">
+<table class="papers-table corpus-table">
+  <colgroup>
+    <col class="col-title" />
+    <col class="col-doi" />
+    <col class="col-year" />
+    <col class="col-source" />
+    <col class="col-conf" />
+    <col class="col-dot" />
+    <col class="col-dot" />
+    <col class="col-dot" />
+    <col class="col-updated" />
+  </colgroup>
   <thead>
     <tr>
       <th>Title</th>
@@ -37,7 +50,9 @@
   <tbody>
     {% for row in rows %}
     <tr>
-      <td><a href="/corpus/{{ row.doi }}">{{ row.title or "(untitled)" }}</a></td>
+      <td class="title-cell">
+        <a href="/corpus/{{ row.doi }}" title="{{ row.title or '(untitled)' }}">{{ row.title or "(untitled)" }}</a>
+      </td>
       <td class="doi-cell">
         {%- if row.doi -%}
         <a href="/corpus/{{ row.doi }}" title="{{ row.doi }}">{{ row.doi }}</a>
@@ -57,26 +72,29 @@
       <td>{{ stage_dot(row.embeddings_indexed, "Embedded") }}</td>
       <td>{{ stage_dot(row.graph_indexed, "Graph") }}</td>
       <td>{{ stage_dot(row.notes_synced, "Notes") }}</td>
-      <td class="field-note">{% if (row.last_updated or "")[:10] %}{{ (row.last_updated or "")[:10] }}{% else %}&mdash;{% endif %}</td>
+      <td class="updated-cell">{% if (row.last_updated or "")[:10] %}{{ (row.last_updated or "")[:10] }}{% else %}&mdash;{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+{% endif %}
 
-{# Shared filter query string, captured once so prev/next stay in sync.
-   Values are urlencoded (Jinja autoescape HTML-escapes but does not
-   percent-encode); single line so no stray newlines land in the URL. #}
+{# Shared filter query string, captured once so prev/next stay in sync. Values
+   are urlencoded (Jinja autoescape HTML-escapes but does not percent-encode);
+   single line so no stray newlines land in the URL. Carries the active limit so
+   the page-size selection survives paging. #}
 {%- set filter_qs %}search={{ search | urlencode }}&amp;source_type={{ source_type | urlencode }}&amp;status_gap={{ status_gap | urlencode }}&amp;theme={{ theme | urlencode }}&amp;sort={{ sort | urlencode }}&amp;order={{ order | urlencode }}&amp;limit={{ limit }}{% endset -%}
 
 <div class="button-row" style="margin-top: 0.75rem;">
   <span class="field-note">
-    {{ offset + 1 }}&ndash;{{ offset + rows|length }} of {{ total }}
+    {% if total %}{{ offset + 1 }}&ndash;{{ offset + rows|length }} of {{ total }}{% else %}0 of 0{% endif %}
   </span>
   {% if has_prev %}
   <a class="btn btn-secondary btn-sm"
      hx-get="/corpus?{{ filter_qs }}&amp;offset={{ prev_offset }}"
      hx-target="#corpus-table"
-     hx-swap="innerHTML"
+     hx-select="#corpus-table"
+     hx-swap="outerHTML"
      href="/corpus?{{ filter_qs }}&amp;offset={{ prev_offset }}">
     &larr; Prev
   </a>
@@ -85,10 +103,11 @@
   <a class="btn btn-secondary btn-sm"
      hx-get="/corpus?{{ filter_qs }}&amp;offset={{ next_offset }}"
      hx-target="#corpus-table"
-     hx-swap="innerHTML"
+     hx-select="#corpus-table"
+     hx-swap="outerHTML"
      href="/corpus?{{ filter_qs }}&amp;offset={{ next_offset }}">
     Next &rarr;
   </a>
   {% endif %}
 </div>
-{% endif %}
+</div>
