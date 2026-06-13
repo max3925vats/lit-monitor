@@ -41,7 +41,7 @@ _REQUIRED_KEYS: list[tuple[str, str]] = [
     # (section, key)
     ("zotero", "api_key"),
     ("zotero", "library_id"),
-    ("pubmed", "email"),   # required for Unpaywall OA PDF enrichment
+    ("pubmed", "email"),   # contact email for PubMed/NCBI E-utilities API access
 ]
 _OPTIONAL_KEYS: list[tuple[str, str]] = [
     ("scopus", "api_key"),

@@ -856,7 +856,7 @@ a:hover {
 
 /* --- Bundle H: settings page --- */
 .settings-section { background: var(--card-bg); border: 1px solid var(--border);
-                    border-radius: var(--radius); padding: 0 1.5rem;
+                    border-radius: var(--radius); padding: 0;
                     margin-bottom: 1rem; }
 /* summary acts as the visible header; padding only on the summary, not the closed card */
 .settings-section > summary { cursor: pointer; padding: 0.5rem 0.75rem;
@@ -868,7 +868,9 @@ a:hover {
 /* Closed state: no extra space below the summary */
 .settings-section:not([open]) { padding-bottom: 0; }
 .settings-section .setup-form { display: flex; flex-direction: column; gap: 1rem;
-                                 padding-bottom: 1.25rem; }
+                                 padding: 0 0.75rem 1.25rem; }
+/* Setup step 7: space between the optional warning card and the "For each entry…" note. */
+.after-card-gap { margin-top: 1rem; }
 /* Shoelace control sizing inside settings sections */
 .settings-section sl-input,
 .settings-section sl-select { display: block; max-width: 28rem; margin-top: 0.5rem; }
