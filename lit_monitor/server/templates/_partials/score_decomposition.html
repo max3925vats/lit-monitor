@@ -10,7 +10,7 @@
     {% if show_score_decomp|default(true) and paper.score_breakdown_json %}
 #}
 {% set breakdown = paper.score_breakdown_json | fromjson %}
-<details class="why-panel" open>
+<details class="why-panel">
   <summary>Why this paper?</summary>
   <table class="score-breakdown-table">
     <thead>

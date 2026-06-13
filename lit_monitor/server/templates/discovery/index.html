@@ -30,15 +30,17 @@
 
   {% if last_run %}
   <h2>Last run</h2>
-  <dl class="kv">
-    <dt>Run ID</dt><dd><code>{{ last_run.run_id }}</code></dd>
-    <dt>Started</dt><dd>{{ last_run.started_at }}</dd>
-    <dt>Finished</dt><dd>{{ last_run.finished_at or "—" }}</dd>
-    <dt>Status</dt><dd>{{ last_run.status or "—" }}</dd>
-    <dt>Papers processed</dt><dd>{{ last_run.papers_processed or 0 }}</dd>
-    <dt>Papers skipped</dt><dd>{{ last_run.papers_skipped or 0 }}</dd>
-    <dt>Papers failed</dt><dd>{{ last_run.papers_failed or 0 }}</dd>
-  </dl>
+  <div class="card last-run-card">
+    <div class="stat-grid">
+      <div><span class="stat-eyebrow">Run ID</span><code>{{ last_run.run_id }}</code></div>
+      <div><span class="stat-eyebrow">Started</span>{{ last_run.started_at }}</div>
+      <div><span class="stat-eyebrow">Finished</span>{% if last_run.finished_at %}{{ last_run.finished_at }}{% else %}&mdash;{% endif %}</div>
+      <div><span class="stat-eyebrow">Status</span>{% if last_run.status %}{{ last_run.status }}{% else %}&mdash;{% endif %}</div>
+      <div><span class="stat-eyebrow">Processed</span>{{ last_run.papers_processed or 0 }}</div>
+      <div><span class="stat-eyebrow">Skipped</span>{{ last_run.papers_skipped or 0 }}</div>
+      <div><span class="stat-eyebrow">Failed</span>{{ last_run.papers_failed or 0 }}</div>
+    </div>
+  </div>
   {% else %}
   <p class="field-note">No discovery runs in the log yet.</p>
   {% endif %}

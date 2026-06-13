@@ -504,10 +504,10 @@ class TestDiscoveryRunDetailPage:
 
 
 class TestDiscoveryLastRunKvSemantics:
-    """AR-7: the 'Last run' key/value block is a <dl class="kv">, not a
-    <th>-in-<tbody> table. Labels + the run_id value must survive verbatim."""
+    """P3.1: the 'Last run' block is now a compact .last-run-card with .stat-grid.
+    Labels + the run_id value must survive verbatim."""
 
-    def test_last_run_renders_as_definition_list(self, client):
+    def test_last_run_renders_as_stat_grid(self, client):
         # The 'Last run' block is driven by get_recent_runs_by_type → last_run.
         fake_db = MagicMock()
         fake_db.get_recent_runs_by_type.return_value = [
@@ -521,11 +521,10 @@ class TestDiscoveryLastRunKvSemantics:
         with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=fake_rt):
             r = client.get("/discovery")
         assert r.status_code == 200
-        assert '<dl class="kv">' in r.text
-        assert "<dt>Run ID</dt>" in r.text
-        assert "<dt>Status</dt>" in r.text
-        assert "<dt>Papers processed</dt>" in r.text
-        # The run_id value must survive the table→dl conversion verbatim.
+        assert 'last-run-card' in r.text
+        assert 'stat-grid' in r.text
+        assert 'stat-eyebrow' in r.text
+        # The run_id value must survive the redesign verbatim.
         assert "abc123" in r.text
 
 
@@ -657,4 +656,65 @@ class TestDiscoveryControlsShoelaceDedup:
         )
         assert true_btn is not None, (
             'Expected an <sl-button name="dry_run" value="true"> in controls HTML'
+        )
+
+
+# ---------------------------------------------------------------------------
+# P3.1: suppress start/stop JSON + score panel collapsed
+# ---------------------------------------------------------------------------
+
+
+class TestP31DiscoveryPolish:
+    """P3.1: controls no longer dump JSON into a #discovery-result div;
+    the 'Why this paper?' panel starts collapsed."""
+
+    def test_discovery_controls_no_result_json_div(self, client):
+        """P3.1 Item 1: the #discovery-result JSON-dump target div is gone.
+
+        The old template had <div id="discovery-result"></div> as the hx-target
+        for start/stop responses. The user doesn't want raw JSONResponse rendered
+        there — so the div and the hx-target references are removed.
+        """
+        r = client.get("/api/discovery/controls")
+        assert r.status_code == 200
+        assert 'id="discovery-result"' not in r.text, (
+            "The #discovery-result JSON-dump div must be removed from _controls.html"
+        )
+
+    def test_score_panel_collapsed_by_default(self, client_with_seeded_run):
+        """P3.1 Item 2: the 'Why this paper?' <details> starts collapsed (no 'open').
+
+        Renders a run-detail page that includes paper cards with score panels;
+        the score_decomposition partial must NOT emit 'open' on the <details>.
+        """
+        from unittest.mock import patch as _patch
+
+        client, run_id = client_with_seeded_run
+        # Seed a score_breakdown_json so the partial actually renders.
+        import json as _json
+
+        # The partial renders only when paper.score_breakdown_json is truthy.
+        # Patch get_discovery_run_papers to return a paper with breakdown JSON.
+        breakdown = _json.dumps({"semantic": 0.8, "domain": 0.6})
+        fake_papers = [
+            {
+                "doi": "10.0/a", "title": "Alpha", "score": 0.9,
+                "rationale": "r1", "ingested": True,
+                "score_breakdown_json": breakdown,
+                "score_breakdown": {"semantic": 0.8, "domain": 0.6},
+            }
+        ]
+        with _patch(
+            "lit_monitor.server.routes.discovery.get_discovery_run_papers",
+            return_value=fake_papers,
+        ):
+            r = client.get(f"/discovery/{run_id}")
+        assert r.status_code == 200
+        html = r.text
+        # The panel must exist but must NOT carry the 'open' attribute.
+        assert 'class="why-panel"' in html, (
+            "Expected a <details class='why-panel'> element in the run-detail page"
+        )
+        assert '<details class="why-panel" open>' not in html, (
+            "The 'Why this paper?' panel must start collapsed — remove the 'open' attr"
         )

@@ -1,18 +1,22 @@
 <section class="discovery-controls card"
-  hx-get="/api/discovery/controls" hx-trigger="every 5s" hx-swap="outerHTML">
+  hx-get="/api/discovery/controls" hx-trigger="every 5s, dischange from:body" hx-swap="outerHTML">
   {% if is_running %}
   <p class="pill warning">
     {% if dry_run %}dry-run{% else %}running{% endif %} —
     pid {{ pid }}, started {{ started_at }}
   </p>
-  <form hx-post="/api/discovery/stop" hx-target="#discovery-result" hx-swap="innerHTML">
+  <form hx-post="/api/discovery/stop" hx-swap="none"
+        hx-on::after-request="htmx.trigger(document.body, 'dischange')"
+        style="margin-top: 1rem;">
     <sl-button variant="danger" type="submit">Stop</sl-button>
     <p class="field-note">Sends SIGTERM; SIGKILL fallback after 30 seconds.</p>
   </form>
   {% else %}
   {# Single form with ONE rag_mode selector; both buttons carry dry_run via name/value. #}
   <form class="control-form" hx-post="/api/discovery/start"
-        hx-target="#discovery-result" hx-swap="innerHTML" hx-encoding="multipart/form-data">
+        hx-swap="none"
+        hx-on::after-request="htmx.trigger(document.body, 'dischange')"
+        hx-encoding="multipart/form-data">
     <sl-select name="rag_mode" label="Retrieval mode" value="{{ default_rag_mode }}" style="max-width:14rem">
       {% for m in (rag_modes or ("vector", "graph", "hybrid")) %}
       <sl-option value="{{ m }}">{{ m }}</sl-option>{% endfor %}
@@ -28,5 +32,4 @@
     Graph/hybrid modes require the <code>[graph]</code> extra.
   </p>
   {% endif %}
-  <div id="discovery-result"></div>
 </section>
