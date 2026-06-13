@@ -291,6 +291,20 @@ def test_corpus_detail_extraction_list_height_capped(client, monkeypatch):
     assert "max-height" in css and "overflow" in css
 
 
+def test_corpus_results_table_height_capped(client):
+    # Review 2026-06-13 / rubric #15: the corpus paper list scrolls inside its
+    # own region (like the digest box) instead of stretching the whole page.
+    css = client.get("/static/site.css").text
+    # Find the .corpus-results rule and assert it bounds height + scrolls.
+    idx = css.index(".corpus-results {")
+    rule = css[idx : idx + 120]
+    assert "max-height" in rule
+    assert "overflow" in rule
+    # Sticky header keeps the column labels visible while scrolling.
+    assert ".corpus-results table thead th" in css
+    assert "position: sticky" in css
+
+
 def test_corpus_detail_404_when_absent(client, monkeypatch):
     monkeypatch.setattr(
         "lit_monitor.server.routes.corpus._get_paper_row", lambda doi: None

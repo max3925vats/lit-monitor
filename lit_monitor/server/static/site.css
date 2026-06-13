@@ -1479,7 +1479,16 @@ sl-card.paper-card::part(base) { width: 100%; }
 .corpus-filters { display: flex; flex-direction: column; gap: 1rem; }
 /* Action button sized to content (rubric #1) — not a full-width stretch. */
 .corpus-filters sl-button { align-self: flex-start; }
-.corpus-results { min-width: 0; overflow-x: auto; }
+/* rubric #15: cap the corpus results height so the (long) paper list scrolls
+   inside its own region instead of stretching the whole page (like the digest
+   box). Sticky header keeps the column labels visible while scrolling. */
+.corpus-results { min-width: 0; overflow: auto; max-height: 40rem; }
+.corpus-results table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--card-bg);
+  z-index: 1;
+}
 @media (max-width: 820px) {
   .corpus-layout { grid-template-columns: 1fr; }
 }
