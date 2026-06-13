@@ -14,8 +14,9 @@
    — matches the corpus detail route). All content via Jinja autoescape only —
    never |safe. Em-dash placeholders use the block form only.
 #}
-<div class="card" id="insights-top-papers-card">
-  <h2>Top aligned papers</h2>
+{# P4: the enclosing <sl-details summary="Top aligned papers"> on index.html IS
+   this fragment's heading (rubric #12), so no <h2> / .card wrapper here. #}
+<div id="insights-top-papers-card">
   {% if learning.available %}
     {% if learning.top_papers %}
   <p class="field-note">

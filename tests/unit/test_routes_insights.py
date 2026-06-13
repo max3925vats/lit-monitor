@@ -133,9 +133,11 @@ def test_insights_learning_state_card(client, monkeypatch):
     assert "42" in r.text and "0.58" in r.text
 
 
-def test_insights_learning_state_uses_definition_list(client, monkeypatch):
-    # AR-7: the learning-state key/value block is a <dl class="kv"> with <dt>/<dd>,
-    # not a <th>-in-<tbody> table. The labels must survive verbatim.
+def test_insights_learning_state_uses_last_run_line(client, monkeypatch):
+    # P4 (Shoelace redesign req #1): the learning-state block is now a compact
+    # one-line stat row reusing the /discovery `.last-run-line` + `.stat-eyebrow`
+    # pattern (NOT a collapsed section; it stays visible). The labels survive
+    # verbatim as stat eyebrows; the INERT state is an <sl-badge> pill.
     monkeypatch.setattr(
         "lit_monitor.server.routes.feedback._learning_state",
         lambda: {
@@ -149,14 +151,17 @@ def test_insights_learning_state_uses_definition_list(client, monkeypatch):
         },
     )
     r = client.get("/insights")
-    assert '<dl class="kv">' in r.text
-    # Labels are now <dt> terms, not <th> headers.
-    assert "<dt>Feedback events</dt>" in r.text
-    assert "<dt>Soft-gate</dt>" in r.text
-    assert "<dt>Interest-vector dim</dt>" in r.text
-    assert "<dt>Computed at</dt>" in r.text
-    # The INERT pill text must survive the conversion.
+    # Compact stat row, not a <dl class="kv"> definition list.
+    assert "last-run-line" in r.text
+    assert '<dl class="kv">' not in r.text
+    # Labels survive as stat eyebrows.
+    assert "Feedback events" in r.text
+    assert "Soft-gate" in r.text
+    assert "Interest-vector dim" in r.text
+    assert "Computed at" in r.text
+    # The INERT state survives the conversion as a Shoelace badge/pill.
     assert "INERT" in r.text
+    assert "<sl-badge" in r.text
 
 
 def test_insights_first_run_no_vector(client, monkeypatch):
@@ -506,3 +511,151 @@ def test_recent_events_over_the_end_offset_keeps_prev(client, real_db, monkeypat
     assert "No events on this page." in body   # empty-slice copy, not "No recent events yet"
     assert "No recent events yet" not in body  # there ARE events, just not on this page
     assert "events_offset=200" in body         # Prev still reachable
+
+
+# ---------------------------------------------------------------------------
+# P4 (Shoelace redesign): six collapsed <sl-details> + in-place pager + lazy
+# fragments + the chart-in-collapsed-details site.js handler.
+# ---------------------------------------------------------------------------
+
+def _stub_all(monkeypatch):
+    """Stub the three page-level seams to degenerate-but-non-empty defaults so the
+    six sections all render their <sl-details>."""
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.feedback._learning_state",
+        lambda: {"available": False},
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.feedback._cluster_weights",
+        lambda: {"floor": 0.1, "clusters": []},
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.feedback._summary_by_source", lambda: {}
+    )
+
+
+def test_insights_six_sections_are_collapsed_sl_details(client, monkeypatch):
+    # Req #2: the six non-learning-state sections each become their own COLLAPSED
+    # <sl-details summary="…">. Every summary must be present and none of these
+    # six is open by default.
+    _stub_all(monkeypatch)
+    r = client.get("/insights")
+    assert r.status_code == 200
+    body = r.text
+    for summary in (
+        "Top aligned papers",
+        "Cluster weights",
+        "Signal mix",
+        "Feedback by source",
+        "Recent events",
+        "Feedback timeline",
+    ):
+        assert f'summary="{summary}"' in body, f"missing sl-details for {summary!r}"
+    # None of the six content sections should be force-open. (The learning-state
+    # row is NOT an sl-details, so an absence of `open` here is meaningful.)
+    assert "<sl-details open" not in body
+    assert "open " not in body.split("<sl-details")[1] if "<sl-details" in body else True
+
+
+def test_insights_events_pager_is_in_place_htmx(client, real_db, monkeypatch):
+    # Req #4: the recent-events table + Prev/Next live inside #insights-events-body,
+    # itself inside the Recent-events <sl-details>; the pager links use hx-get +
+    # hx-target/#insights-events-body + hx-select/#insights-events-body so paging
+    # swaps in place (no full-page reload / section collapse). href kept as fallback.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.feedback._learning_state", lambda: {"available": False}
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.feedback._cluster_weights",
+        lambda: {"floor": 0.1, "clusters": []},
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.feedback._summary_by_source", lambda: {}
+    )
+    _seed_events(real_db, 150)
+    body = client.get("/insights").text
+    assert 'id="insights-events-body"' in body
+    assert 'hx-target="#insights-events-body"' in body
+    assert 'hx-select="#insights-events-body"' in body
+    assert 'hx-get="/insights?events_offset=100"' in body  # Next, in-place
+    assert 'href="/insights?events_offset=100"' in body    # fallback href kept
+
+
+def test_insights_events_body_hx_selectable_on_get(client, real_db, monkeypatch):
+    # Req #4: a GET with the offset param must return a full page whose
+    # #insights-events-body can be hx-selected — i.e. the offset window drives the
+    # events slice and the wrapper id is present in the response.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.feedback._learning_state", lambda: {"available": False}
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.feedback._cluster_weights",
+        lambda: {"floor": 0.1, "clusters": []},
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.feedback._summary_by_source", lambda: {}
+    )
+    _seed_events(real_db, 150)
+    page2 = client.get("/insights?events_offset=100").text
+    assert 'id="insights-events-body"' in page2
+    assert "10.1/p0000" in page2      # the offset window drives the slice
+    assert "10.1/p0149" not in page2
+
+
+def test_insights_lazy_fragments_use_sl_show_once(client, monkeypatch):
+    # Req #5: the two lazy fragment containers fetch on FIRST EXPAND, not on page
+    # load — hx-trigger="sl-show once" (rubric #13: contextual reveal).
+    _stub_all(monkeypatch)
+    body = client.get("/insights").text
+    # top-papers + timeline containers both switch to sl-show once. The trigger
+    # listens for Shoelace's `sl-show` event bubbling from the enclosing
+    # <sl-details> (HTMX `from:closest sl-details`), so it fires only on first
+    # expand of that section — not on page load.
+    assert body.count('hx-trigger="sl-show once from:closest sl-details"') >= 2
+    # the old eager `hx-trigger="load"` is gone for these two containers.
+    assert 'hx-trigger="load"' not in body
+    assert 'hx-get="/insights/top-papers"' in body
+    assert 'hx-get="/insights/timeline' in body
+
+
+def test_site_js_has_chart_after_show_handler():
+    # Req #3: site.js registers an sl-after-show handler that (re)inits/resizes the
+    # Chart.js canvas inside a collapsed <sl-details> (0-width-at-render gotcha).
+    # Assert the handler substring + that it references the chart-detail containers.
+    js = (
+        Path(__file__).parents[2]
+        / "lit_monitor" / "server" / "static" / "site.js"
+    ).read_text()
+    assert "sl-after-show" in js
+    # it must drive the per-canvas (re)init/resize path for a single container.
+    assert "resize" in js
+    # it targets the chart-bearing <sl-details> (marked with a data hook).
+    assert "data-chart-details" in js
+
+
+def test_insights_chart_details_carry_hook(client, monkeypatch):
+    # Req #3: the three chart-bearing <sl-details> are tagged so the site.js
+    # sl-after-show handler can find them (data-chart-details).
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.feedback._learning_state", lambda: {"available": False}
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.feedback._cluster_weights",
+        lambda: {
+            "floor": 0.1,
+            "clusters": [
+                {"id": 1, "name": "Chromatography", "weight": 0.42, "at_floor": False}
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.feedback._summary_by_source",
+        lambda: {"discovery": 7},
+    )
+    body = client.get("/insights").text
+    # cluster-weights + signal-mix + by-source sections carry the hook attribute.
+    assert "data-chart-details" in body
+    # data islands + table fallbacks must NOT regress.
+    assert 'data-chart="cluster-weights-data"' in body
+    assert 'data-chart="by-source-data"' in body
+    assert "papers-table" in body  # table degradation fallbacks retained

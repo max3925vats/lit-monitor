@@ -24,33 +24,37 @@
    switching one axis never silently resets the other.
 #}
 {% set _cat_header = "Source" if dimension == "source" else "Signal" %}
-<div class="card" id="insights-timeline-card">
-  <h2>Feedback timeline</h2>
-
-  {# Granularity toggle: each link re-requests this fragment at a different
+{# P4: the enclosing <sl-details summary="Feedback timeline"> on index.html IS
+   this fragment's heading (rubric #12), so no <h2> / .card wrapper here — just
+   the toggle controls + chart + table. The fragment swaps into #insights-timeline
+   on toggle, which lives inside the (already-open) details. #}
+<div id="insights-timeline-card">
+  {# Granularity toggle: each button re-requests this fragment at a different
      bucket size, preserving the current dimension, and swaps itself back into
-     #insights-timeline. #}
-  <p class="button-row" role="group" aria-label="Timeline granularity">
+     #insights-timeline. (req #6: <sl-button> not native <a class="btn">.) #}
+  <div class="button-row" role="group" aria-label="Timeline granularity">
     {% for g in ["week", "day"] %}
-    <a class="btn btn-secondary btn-sm{% if g == granularity %} active{% endif %}"
+    <sl-button size="small"
+       variant="{{ 'primary' if g == granularity else 'default' }}"
        hx-get="/insights/timeline?granularity={{ g | urlencode }}&dimension={{ dimension | urlencode }}"
        hx-target="#insights-timeline"
        hx-swap="innerHTML"
-       href="/insights/timeline?granularity={{ g | urlencode }}&amp;dimension={{ dimension | urlencode }}">{{ g }}</a>
+       href="/insights/timeline?granularity={{ g | urlencode }}&amp;dimension={{ dimension | urlencode }}">{{ g }}</sl-button>
     {% endfor %}
-  </p>
+  </div>
 
   {# Dimension toggle (FI-6): group the per-period breakdown by signal or source,
      preserving the current granularity. #}
-  <p class="button-row" role="group" aria-label="Timeline dimension">
+  <div class="button-row" role="group" aria-label="Timeline dimension">
     {% for d in ["signal", "source"] %}
-    <a class="btn btn-secondary btn-sm{% if d == dimension %} active{% endif %}"
+    <sl-button size="small"
+       variant="{{ 'primary' if d == dimension else 'default' }}"
        hx-get="/insights/timeline?granularity={{ granularity | urlencode }}&dimension={{ d | urlencode }}"
        hx-target="#insights-timeline"
        hx-swap="innerHTML"
-       href="/insights/timeline?granularity={{ granularity | urlencode }}&amp;dimension={{ d | urlencode }}">by {{ d }}</a>
+       href="/insights/timeline?granularity={{ granularity | urlencode }}&amp;dimension={{ d | urlencode }}">by {{ d }}</sl-button>
     {% endfor %}
-  </p>
+  </div>
 
   {% if error %}
   <p class="field-note">Could not load the feedback timeline — check the server logs.</p>

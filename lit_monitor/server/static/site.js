@@ -111,6 +111,17 @@
 // tables remain. Re-runs on htmx:afterSettle so the lazily-loaded timeline (and
 // its toggle re-swaps) re-initialise; any prior chart on a canvas is destroyed
 // first so re-swaps never leak or duplicate.
+//
+// P4 (Shoelace redesign) — CHART-IN-COLLAPSED-DETAILS GOTCHA: a Chart.js canvas
+// inside a COLLAPSED <sl-details> has 0 width when first laid out, so a chart
+// created at DOMContentLoaded draws broken/empty and never recovers on expand.
+// Fix: charts that live inside a `[data-chart-details]` <sl-details> are NOT
+// built eagerly — they are built lazily on Shoelace's `sl-after-show` (fired when
+// the details finishes opening, at which point the canvas has real width). A
+// per-canvas registry (`canvas._chart`) means each is inited at most once; every
+// subsequent show just calls `chart.resize()` (cheap, and re-flows after any
+// viewport change while collapsed). Charts NOT inside such a details (none today,
+// but kept general) still init eagerly on load.
 (function () {
   "use strict";
 
@@ -184,6 +195,26 @@
     };
   }
 
+  // Build (or rebuild) the chart for a single canvas. `destroyFirst` controls
+  // re-swap safety: on an HTMX swap the old chart must be destroyed before a new
+  // one is created on the same canvas; on a first lazy build there is nothing to
+  // destroy. Returns true if a chart now exists on the canvas.
+  function _initCanvas(canvas, scope, palette, destroyFirst) {
+    var name = canvas.getAttribute("data-chart");
+    var data = readData(name, scope);
+    var cfg = buildConfig(name, data, palette);
+    if (!cfg) return false;
+    if (destroyFirst && canvas._chart) canvas._chart.destroy();
+    canvas._chart = new window.Chart(canvas, cfg);
+    return true;
+  }
+
+  // Eager init for a subtree (load + HTMX swaps). Canvases that live inside a
+  // collapsed-by-default `[data-chart-details]` are SKIPPED here — building them
+  // now (0 width) would draw broken; they are built lazily on `sl-after-show`
+  // instead. Canvases swapped in by HTMX (e.g. the timeline fragment, which only
+  // loads once its details is already open) are not inside a collapsed details at
+  // swap time, so they init/redraw correctly on the htmx:afterSettle path.
   function _initInsightsCharts(root) {
     if (!window.Chart) return; // CDN blocked/offline → tables remain, no error.
     var scope = root && root.querySelectorAll ? root : document;
@@ -191,12 +222,25 @@
     if (!canvases.length) return; // not an insights page / nothing swapped in.
     var palette = readPalette(); // resolve CSS tokens once per init.
     canvases.forEach(function (canvas) {
-      var name = canvas.getAttribute("data-chart");
-      var data = readData(name, scope);
-      var cfg = buildConfig(name, data, palette);
-      if (!cfg) return;
-      if (canvas._chart) canvas._chart.destroy(); // re-swap safety: no leak/dupe.
-      canvas._chart = new window.Chart(canvas, cfg);
+      // Defer charts inside a collapsed chart-details to sl-after-show.
+      if (canvas.closest && canvas.closest("[data-chart-details]")) return;
+      _initCanvas(canvas, scope, palette, true); // re-swap safe.
+    });
+  }
+
+  // sl-after-show handler for the chart-bearing <sl-details>. The first time a
+  // details is shown each canvas inside it is inited (now that it has real
+  // width); on every subsequent show the existing chart is just resized so it
+  // re-flows to the current container width. Registry: canvas._chart.
+  function _showChartsIn(details) {
+    if (!window.Chart || !details || !details.querySelectorAll) return;
+    var palette = readPalette();
+    details.querySelectorAll("canvas[data-chart]").forEach(function (canvas) {
+      if (canvas._chart) {
+        canvas._chart.resize(); // already inited → re-flow to real width.
+      } else {
+        _initCanvas(canvas, details, palette, false); // first show → build now.
+      }
     });
   }
 
@@ -208,6 +252,16 @@
   document.body.addEventListener("htmx:afterSettle", function (evt) {
     var target = (evt.detail && evt.detail.target) || evt.target;
     _initInsightsCharts(target);
+  });
+  // P4: lazily build/resize charts inside a collapsed <sl-details> when it opens.
+  // sl-after-show fires after the panel is fully revealed (canvas has real width).
+  // Scope to chart-details so unrelated sl-details (Recent events, lazy fragments)
+  // don't trigger a needless palette read.
+  document.body.addEventListener("sl-after-show", function (evt) {
+    var details = evt.target;
+    if (details && details.matches && details.matches("[data-chart-details]")) {
+      _showChartsIn(details);
+    }
   });
 })();
 
