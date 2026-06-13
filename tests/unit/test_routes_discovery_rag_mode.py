@@ -130,8 +130,8 @@ def test_discovery_default_mode_from_config(client, monkeypatch):
     )
     r = client.get("/api/discovery/controls")
     assert r.status_code == 200
-    # The graph <option> should carry the selected attribute.
-    assert 'value="graph" selected' in r.text
+    # Shoelace: pre-selection via value="graph" on the <sl-select> host element.
+    assert 'value="graph"' in r.text
 
 
 @pytest.mark.unit

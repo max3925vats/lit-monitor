@@ -1414,3 +1414,9 @@ sl-card.paper-card::part(base) { width: 100%; }
 
 /* Step 7: top margin so the form doesn't cramp against the Optional warning card */
 .researchers-intro-gap { margin-top: 1rem; }
+
+/* P3: form rubric for dashboard control forms (parity with .setup-form). */
+.dashboard form sl-input, .dashboard form sl-select { display: block; width: 100%; max-width: 28rem; }
+.dashboard form sl-textarea { display: block; width: 100%; max-width: none; }
+.dashboard form sl-button, .dashboard form button { align-self: flex-start; }
+.dashboard .control-form { display: flex; flex-direction: column; gap: 1rem; align-items: flex-start; }

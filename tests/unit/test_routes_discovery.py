@@ -613,3 +613,48 @@ class TestRouteOrderingSafety:
         assert r.status_code in (200, 204, 302, 303, 307, 308), (
             f"unexpected status {r.status_code} from /discovery/notify-handler"
         )
+
+
+# ---------------------------------------------------------------------------
+# A6: Shoelace dedup + dry_run button tests
+# ---------------------------------------------------------------------------
+
+
+class TestDiscoveryControlsShoelaceDedup:
+    """A6: single rag_mode selector (dedup) + dry_run buttons on one form."""
+
+    def test_discovery_single_rag_mode_select(self, client):
+        """A6: the duplicate rag_mode select is gone — exactly ONE name="rag_mode"."""
+        r = client.get("/api/discovery/controls")
+        assert r.status_code == 200
+        html = r.text
+        count = html.count('name="rag_mode"')
+        assert count == 1, f"Expected 1 rag_mode selector, found {count}"
+        assert "<sl-select" in html, "Expected Shoelace <sl-select> component"
+
+    def test_discovery_start_buttons_carry_dry_run(self, client):
+        """A6: both dry_run values appear on sl-button elements in the same form."""
+        import re
+
+        r = client.get("/api/discovery/controls")
+        assert r.status_code == 200
+        html = r.text
+        # Attribute order in rendered HTML may vary; match both attrs on the same tag.
+        # Pattern: <sl-button ... name="dry_run" ... value="false" ...>
+        # or       <sl-button ... value="false" ... name="dry_run" ...>
+        false_btn = re.search(
+            r'<sl-button\b[^>]*\bname=["\']dry_run["\'][^>]*\bvalue=["\']false["\']'
+            r'|<sl-button\b[^>]*\bvalue=["\']false["\'][^>]*\bname=["\']dry_run["\']',
+            html,
+        )
+        true_btn = re.search(
+            r'<sl-button\b[^>]*\bname=["\']dry_run["\'][^>]*\bvalue=["\']true["\']'
+            r'|<sl-button\b[^>]*\bvalue=["\']true["\'][^>]*\bname=["\']dry_run["\']',
+            html,
+        )
+        assert false_btn is not None, (
+            'Expected an <sl-button name="dry_run" value="false"> in controls HTML'
+        )
+        assert true_btn is not None, (
+            'Expected an <sl-button name="dry_run" value="true"> in controls HTML'
+        )
