@@ -248,6 +248,37 @@ def test_schedule_pager_links_point_at_schedule(client):
 
 
 @pytest.mark.unit
+def test_schedule_pager_does_inplace_htmx_swap(client):
+    """The /schedule Run History pager paginates IN PLACE via HTMX, targeting
+    a ``#run-history-body`` wrapper inside the sl-details, with hx-get pointed
+    at /schedule and the plain href kept as a no-JS fallback."""
+    rows = [
+        {
+            "id": 100 + i, "started_at": "2026-06-01 08:00:00",
+            "finished_at": "2026-06-01 08:01:00", "status": "success",
+            "total_found": 1, "total_ingested": 1,
+            "papers_processed": 1, "papers_skipped": 0, "papers_failed": 0,
+            "trigger": "scheduled",
+        }
+        for i in range(10)
+    ]
+    rt = _runtime_with_db()
+    hist = MagicMock(return_value={"runs": rows, "total": 12})
+    p1, p2, p3, p4 = _patch_schedule(rt, hist)
+    with p1, p2, p3, p4:
+        resp = client.get("/schedule")
+    body = resp.text
+    assert 'id="run-history-body"' in body
+    body_idx = body.index('id="run-history-body"')
+    details_idx = body.index('summary="Run History"')
+    assert details_idx < body_idx  # wrapper inside the card
+    assert 'hx-get="/schedule?runs_offset=10"' in body
+    assert 'hx-target="#run-history-body"' in body
+    assert 'hx-select="#run-history-body"' in body
+    assert 'href="/schedule?runs_offset=10"' in body  # fallback
+
+
+@pytest.mark.unit
 def test_schedule_empty_state_is_scheduled_specific(client):
     """No scheduled runs → the scheduled-specific empty text, not discovery's."""
     rt = _runtime_with_db()

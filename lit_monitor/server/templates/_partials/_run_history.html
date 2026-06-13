@@ -20,6 +20,10 @@
 {% set empty_text = empty_text | default("No discovery runs yet.") %}
 <sl-details summary="Run History" style="margin-top:1.25rem">
   {% if run_history %}
+  {# Stable wrapper: HTMX pagination swaps THIS (table + pager) in place so the
+     enclosing <sl-details> is never re-rendered/collapsed. Inside the
+     sl-details; does NOT include it. #}
+  <div id="run-history-body">
   <table class="runs-table">
     <thead>
       <tr>
@@ -55,21 +59,31 @@
 
   {# Offset-link pager (page size 10). Prev hidden at offset 0; Next hidden on
      the last page. The pager base differs per page (pager_base). #}
+  {# In-place HTMX pagination: hx-get fetches the full page, hx-select keeps
+     only #run-history-body, leaving the <sl-details> untouched (stays open).
+     The plain href is the no-JS / keyboard fallback. #}
   <div class="button-row" style="margin-top: 0.75rem;">
     <span class="field-note">
       {{ runs_offset + 1 }}&ndash;{{ runs_offset + run_history|length }} of {{ runs_total }}
     </span>
     {% if runs_has_prev %}
-    <a class="btn btn-secondary btn-sm" href="{{ pager_base }}?runs_offset={{ runs_prev_offset }}">
+    <a class="btn btn-secondary btn-sm" role="button"
+       href="{{ pager_base }}?runs_offset={{ runs_prev_offset }}"
+       hx-get="{{ pager_base }}?runs_offset={{ runs_prev_offset }}"
+       hx-target="#run-history-body" hx-select="#run-history-body" hx-swap="outerHTML">
       &larr; Newer
     </a>
     {% endif %}
     {% if runs_has_next %}
-    <a class="btn btn-secondary btn-sm" href="{{ pager_base }}?runs_offset={{ runs_next_offset }}">
+    <a class="btn btn-secondary btn-sm" role="button"
+       href="{{ pager_base }}?runs_offset={{ runs_next_offset }}"
+       hx-get="{{ pager_base }}?runs_offset={{ runs_next_offset }}"
+       hx-target="#run-history-body" hx-select="#run-history-body" hx-swap="outerHTML">
       Older &rarr;
     </a>
     {% endif %}
   </div>
+  </div>{# /#run-history-body #}
   {% else %}
   <p class="field-note">{{ empty_text }}</p>
   {% endif %}

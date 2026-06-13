@@ -81,6 +81,10 @@
   {# Per-paper status — collapsed by default; paginated 10 rows/page (Task C). #}
   <sl-details summary="Per-paper status">
     {% if rows %}
+    {# Stable wrapper: HTMX pagination swaps THIS (table + pager) in place so
+       the enclosing <sl-details> is never re-rendered/collapsed. The wrapper
+       must stay INSIDE the sl-details and must NOT include it. #}
+    <div id="per-paper-body">
     <p class="field-note">Core fields = basic extraction &middot;
       Deep fields = deep extraction &middot;
       Indexed = embedded into the brain.</p>
@@ -120,21 +124,31 @@
 
     {# Offset pagination — mirrors the discovery-runs pager. Prev hidden at
        offset 0; Next hidden on the last page; "X–Y of Z" count. #}
+    {# In-place HTMX pagination: hx-get fetches the full page, hx-select keeps
+       only #per-paper-body, leaving the <sl-details> untouched (stays open).
+       The plain href is the no-JS / keyboard fallback. #}
     <div class="button-row" style="margin-top: 0.75rem;">
       <span class="field-note">
         {{ bb_window_start }}&ndash;{{ bb_window_end }} of {{ bb_total }}
       </span>
       {% if bb_has_prev %}
-      <a class="btn btn-secondary btn-sm" href="/brain-build?bb_offset={{ bb_prev_offset }}">
+      <a class="btn btn-secondary btn-sm" role="button"
+         href="/brain-build?bb_offset={{ bb_prev_offset }}"
+         hx-get="/brain-build?bb_offset={{ bb_prev_offset }}"
+         hx-target="#per-paper-body" hx-select="#per-paper-body" hx-swap="outerHTML">
         &larr; Prev
       </a>
       {% endif %}
       {% if bb_has_next %}
-      <a class="btn btn-secondary btn-sm" href="/brain-build?bb_offset={{ bb_next_offset }}">
+      <a class="btn btn-secondary btn-sm" role="button"
+         href="/brain-build?bb_offset={{ bb_next_offset }}"
+         hx-get="/brain-build?bb_offset={{ bb_next_offset }}"
+         hx-target="#per-paper-body" hx-select="#per-paper-body" hx-swap="outerHTML">
         Next &rarr;
       </a>
       {% endif %}
     </div>
+    </div>{# /#per-paper-body #}
     {% else %}
     <p class="field-note">No papers tracked yet.</p>
     {% endif %}

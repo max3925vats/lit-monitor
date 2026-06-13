@@ -198,6 +198,37 @@ def test_progress_bar_not_regressed_by_offset(monkeypatch) -> None:
     assert "0 / 5" not in html
 
 
+@pytest.mark.unit
+def test_per_paper_pager_does_inplace_htmx_swap(monkeypatch) -> None:
+    """The per-paper pager paginates IN PLACE via HTMX so the sl-details card
+    stays open (no full-page navigation that re-collapses the card).
+
+    Requires: a stable ``#per-paper-body`` wrapper INSIDE the
+    ``<sl-details summary="Per-paper status">`` (but not wrapping the
+    sl-details itself), and Next/Prev links carrying hx-get / hx-target /
+    hx-select pointed at that wrapper, while keeping the plain ``href`` as a
+    no-JS fallback.
+    """
+    rows = _make_rows(25)
+    html = _get(monkeypatch, rows, query="?bb_offset=0")
+
+    # A stable wrapper id exists, and it lives INSIDE the per-paper sl-details.
+    assert 'id="per-paper-body"' in html
+    body_idx = html.index('id="per-paper-body"')
+    details_idx = html.index('summary="Per-paper status"')
+    next_details = html.find("<sl-details", details_idx + 1)
+    assert details_idx < body_idx
+    # The wrapper must NOT spill into the next sl-details card.
+    assert next_details == -1 or body_idx < next_details
+
+    # The Next link does an in-place HTMX swap of the wrapper.
+    assert 'hx-get="/brain-build?bb_offset=10"' in html
+    assert 'hx-target="#per-paper-body"' in html
+    assert 'hx-select="#per-paper-body"' in html
+    # Progressive-enhancement fallback href preserved.
+    assert 'href="/brain-build?bb_offset=10"' in html
+
+
 # ---------------------------------------------------------------------------
 # Task D — recent runs table
 # ---------------------------------------------------------------------------

@@ -587,6 +587,24 @@ class TestDiscoveryRunsPagination:
         assert "runs_offset=10" in body         # Prev → page 2
         assert "runs_offset=30" not in body     # no Next past the end
 
+    def test_run_history_pager_does_inplace_htmx_swap(self, client_with_many_runs):
+        """The Run History pager paginates IN PLACE via HTMX so the sl-details
+        card stays open. Requires a stable ``#run-history-body`` wrapper INSIDE
+        the ``<sl-details summary="Run History">`` and Next/Prev links carrying
+        hx-get / hx-target / hx-select pointed at /discovery, with the plain
+        href kept as a no-JS fallback.
+        """
+        client, ids = client_with_many_runs
+        body = client.get("/discovery").text
+        assert 'id="run-history-body"' in body
+        body_idx = body.index('id="run-history-body"')
+        details_idx = body.index('summary="Run History"')
+        assert details_idx < body_idx  # wrapper is inside the card
+        assert 'hx-get="/discovery?runs_offset=10"' in body
+        assert 'hx-target="#run-history-body"' in body
+        assert 'hx-select="#run-history-body"' in body
+        assert 'href="/discovery?runs_offset=10"' in body  # fallback
+
 
 class TestRouteOrderingSafety:
     def test_notify_handler_not_shadowed_by_run_detail(self, client_with_db):
