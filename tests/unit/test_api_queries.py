@@ -691,3 +691,67 @@ def test_get_discovery_run_history_paginates(tmp_path):
     assert page1["total"] == 2 and page2["total"] == 2
     assert len(page1["runs"]) == 1 and len(page2["runs"]) == 1
     assert page1["runs"][0]["id"] != page2["runs"][0]["id"]
+
+
+def _seed_triggers(db):
+    """Seed two manual + one scheduled discovery run. Returns
+    (manual_ids, scheduled_id)."""
+    m1 = db.start_discovery_run({"topics": ["m1"]})  # default trigger='manual'
+    m2 = db.start_discovery_run({"topics": ["m2"]}, trigger="manual")
+    s1 = db.start_discovery_run({"topics": ["s1"]}, trigger="scheduled")
+    return [m1, m2], s1
+
+
+def test_get_discovery_run_history_row_has_trigger_key(tmp_path):
+    from lit_monitor.api.queries import get_discovery_run_history
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    _seed_triggers(db)
+
+    result = get_discovery_run_history(db, limit=20, offset=0)
+    assert result["total"] == 3
+    for run in result["runs"]:
+        assert "trigger" in run, "each run dict must expose a 'trigger' key"
+    triggers = sorted(r["trigger"] for r in result["runs"])
+    assert triggers == ["manual", "manual", "scheduled"]
+
+
+def test_get_discovery_run_history_trigger_none_returns_all(tmp_path):
+    from lit_monitor.api.queries import get_discovery_run_history
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    _seed_triggers(db)
+
+    result = get_discovery_run_history(db, limit=20, offset=0, trigger=None)
+    assert result["total"] == 3
+    assert len(result["runs"]) == 3
+
+
+def test_get_discovery_run_history_filters_scheduled_only(tmp_path):
+    from lit_monitor.api.queries import get_discovery_run_history
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    _manual_ids, scheduled_id = _seed_triggers(db)
+
+    result = get_discovery_run_history(db, limit=20, offset=0, trigger="scheduled")
+    # total reflects the filtered count, not the all-runs count.
+    assert result["total"] == 1
+    assert len(result["runs"]) == 1
+    assert result["runs"][0]["id"] == scheduled_id
+    assert result["runs"][0]["trigger"] == "scheduled"
+
+
+def test_get_discovery_run_history_filters_manual_only(tmp_path):
+    from lit_monitor.api.queries import get_discovery_run_history
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    manual_ids, _scheduled_id = _seed_triggers(db)
+
+    result = get_discovery_run_history(db, limit=20, offset=0, trigger="manual")
+    assert result["total"] == 2
+    assert {r["id"] for r in result["runs"]} == set(manual_ids)
+    assert all(r["trigger"] == "manual" for r in result["runs"])

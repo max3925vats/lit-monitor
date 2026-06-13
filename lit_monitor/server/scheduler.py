@@ -222,7 +222,8 @@ def write_schedule(spec: ScheduleSpec) -> Path:
         ctx = {
             "label": "com.litmonitor.discovery",
             "command": _uv_path(),
-            "args": ["run", "lit-monitor", "run"],
+            # --source scheduled marks OS-triggered runs in discovery_runs.trigger.
+            "args": ["run", "lit-monitor", "run", "--source", "scheduled"],
             "working_dir": str(repo),
             "day_num": _DAY_TO_LAUNCHD[spec.day_of_week],
             "hour": hour,
@@ -249,7 +250,8 @@ def write_schedule(spec: ScheduleSpec) -> Path:
             "day_of_week_systemd": _DAY_TO_SYSTEMD[spec.day_of_week],
             "time": spec.time,
             "command": _uv_path(),
-            "args": ["run", "lit-monitor", "run"],
+            # --source scheduled marks OS-triggered runs in discovery_runs.trigger.
+            "args": ["run", "lit-monitor", "run", "--source", "scheduled"],
             "working_dir": str(repo),
             "stdout_path": str(repo / "logs" / "discovery-systemd.stdout.log"),
             "stderr_path": str(repo / "logs" / "discovery-systemd.stderr.log"),

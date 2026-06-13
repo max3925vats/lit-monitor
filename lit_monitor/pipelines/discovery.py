@@ -117,6 +117,7 @@ def run_discovery(
     top_k: int = 20,
     sim_threshold: float = 0.3,
     rag_mode: str | None = None,
+    trigger: str = "manual",
 ) -> _RunSummary:
     """
     Run the discovery + ingestion pipeline.
@@ -144,6 +145,9 @@ def run_discovery(
         One of "vector", "graph", "hybrid". Default reads from
         config.retrieval.default_mode; falls back to "vector".
         When "graph" or "hybrid", graph proximity is used for paper ranking.
+    trigger:
+        How this run was started — "manual" (web "Run now" / CLI) or
+        "scheduled" (OS scheduler). Recorded on the discovery_runs row.
     Returns
     -------
     _RunSummary
@@ -169,6 +173,7 @@ def run_discovery(
                 "sim_threshold": sim_threshold,
             },
             run_log_id=run_id,  # link discovery_runs → run_log for unified history
+            trigger=trigger,
         )
 
     # A4: compute search window from last successful run date.

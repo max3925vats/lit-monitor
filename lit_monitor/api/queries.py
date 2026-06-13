@@ -607,6 +607,7 @@ def get_discovery_run_history(
     *,
     limit: int = 20,
     offset: int = 0,
+    trigger: str | None = None,
 ) -> dict[str, Any]:
     """Unified discovery-run history: discovery_runs LEFT JOIN run_log.
 
@@ -620,28 +621,41 @@ def get_discovery_run_history(
         state_db: StateDB instance.
         limit:    Maximum number of rows to return (default 20).
         offset:   Row offset for pagination (default 0).
+        trigger:  When set ('manual' | 'scheduled'), restrict to runs with that
+            trigger and report ``total`` over the filtered set. When None
+            (default), all runs are returned unchanged.
 
     Returns:
         Dict with keys ``runs`` (list of run dicts, newest first) and ``total``
-        (total count of discovery_runs rows). Each run dict has keys: id,
+        (count of matching discovery_runs rows). Each run dict has keys: id,
         started_at, finished_at, status, total_found, total_ingested,
-        papers_processed, papers_skipped, papers_failed.
+        papers_processed, papers_skipped, papers_failed, trigger.
     """
     cols = [
         "id", "started_at", "finished_at", "status", "total_found",
         "total_ingested", "papers_processed", "papers_skipped", "papers_failed",
+        "trigger",
     ]
+    # Optional trigger filter applied identically to both the rows SELECT and
+    # the total COUNT so pagination math stays consistent with the filtered set.
+    where = "WHERE dr.trigger = ? " if trigger is not None else ""
+    where_params: tuple = (trigger,) if trigger is not None else ()
     with state_db._connect() as conn:
         rows = conn.execute(
             "SELECT dr.id, dr.started_at, dr.finished_at, dr.status, "
             "dr.total_found, dr.total_ingested, "
-            "rl.papers_processed, rl.papers_skipped, rl.papers_failed "
+            "rl.papers_processed, rl.papers_skipped, rl.papers_failed, "
+            "dr.trigger "
             "FROM discovery_runs dr "
             "LEFT JOIN run_log rl ON dr.run_log_id = rl.run_id "
+            f"{where}"
             "ORDER BY dr.started_at DESC, dr.id DESC LIMIT ? OFFSET ?",
-            (limit, offset),
+            (*where_params, limit, offset),
         ).fetchall()
-        total: int = conn.execute("SELECT COUNT(*) FROM discovery_runs").fetchone()[0]
+        total: int = conn.execute(
+            f"SELECT COUNT(*) FROM discovery_runs dr {where}",
+            where_params,
+        ).fetchone()[0]
     return {"runs": [dict(zip(cols, r)) for r in rows], "total": total}
 
 

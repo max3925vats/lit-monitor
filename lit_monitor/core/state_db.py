@@ -152,7 +152,8 @@ CREATE TABLE IF NOT EXISTS discovery_runs (
     total_found      INTEGER DEFAULT 0,
     total_ingested   INTEGER DEFAULT 0,
     run_params_json  TEXT,
-    run_log_id       TEXT          -- FK → run_log.run_id (uuid); NULL for pre-FK historical rows
+    run_log_id       TEXT,         -- FK → run_log.run_id (uuid); NULL for pre-FK historical rows
+    trigger          TEXT NOT NULL DEFAULT 'manual'  -- 'manual' (web/CLI) | 'scheduled' (OS scheduler)
 );
 CREATE TABLE IF NOT EXISTS discovery_paper_results (
     -- P1: one row per ranked candidate seen by a discovery run.
@@ -484,6 +485,12 @@ class StateDB:
                 # NULL for historical rows written before this column existed.
                 ("discovery_runs", "run_log_id",
                  "ALTER TABLE discovery_runs ADD COLUMN run_log_id TEXT"),
+                # Trigger marker: how this run was started — 'manual' (web "Run now"
+                # / CLI) vs 'scheduled' (OS scheduler). SQLite permits adding a NOT
+                # NULL column only with a non-NULL default; 'manual' backfills any
+                # pre-existing rows.
+                ("discovery_runs", "trigger",
+                 "ALTER TABLE discovery_runs ADD COLUMN trigger TEXT NOT NULL DEFAULT 'manual'"),
             ]
             for table, column, sql in additive_migrations:
                 if self._column_exists(conn, table, column):
@@ -1600,7 +1607,10 @@ class StateDB:
     # -- P1: structured discovery-run tracking --
 
     def start_discovery_run(
-        self, run_params: dict, run_log_id: str | None = None
+        self,
+        run_params: dict,
+        run_log_id: str | None = None,
+        trigger: str = "manual",
     ) -> int:
         """P1: insert a discovery_runs row with status='running'; return new run_id.
 
@@ -1611,6 +1621,8 @@ class StateDB:
                 discovery history can join the two tables. None for callers that
                 don't create a run_log row (e.g. dry-run paths / legacy tests),
                 which leaves the column NULL.
+            trigger: How this run was started — 'manual' (web "Run now" / CLI) or
+                'scheduled' (OS scheduler). Defaults to 'manual'.
 
         Returns:
             Integer primary-key of the newly inserted row.
@@ -1618,8 +1630,9 @@ class StateDB:
         import json as _json
         with self._connect() as conn:
             cur = conn.execute(
-                "INSERT INTO discovery_runs (run_params_json, run_log_id) VALUES (?, ?)",
-                (_json.dumps(run_params), run_log_id),
+                "INSERT INTO discovery_runs (run_params_json, run_log_id, trigger) "
+                "VALUES (?, ?, ?)",
+                (_json.dumps(run_params), run_log_id, trigger),
             )
             # _connect() commits on context-manager exit, but we need lastrowid
             # before that happens — SQLite guarantees it is set after execute().

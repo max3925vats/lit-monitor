@@ -98,6 +98,33 @@ def test_write_linux_renders_timer_and_calls_systemctl(linux_tmp_dirs):
 
 
 @pytest.mark.unit
+def test_write_macos_marks_run_as_scheduled(macos_tmp_dirs):
+    """OS-triggered launchd runs invoke `... run --source scheduled`."""
+    spec = scheduler.ScheduleSpec.parse("mon", "08:00")
+    with patch("lit_monitor.server.scheduler.subprocess.run") as mock_run:
+        mock_run.return_value.returncode = 0
+        path = scheduler.write_schedule(spec)
+    text = path.read_text()
+    # The rendered ProgramArguments must carry the --source scheduled marker.
+    assert "--source" in text
+    assert "scheduled" in text
+    # And it must come from the `run` subcommand, not some unrelated arg.
+    assert "run" in text
+
+
+@pytest.mark.unit
+def test_write_linux_marks_run_as_scheduled(linux_tmp_dirs):
+    """OS-triggered systemd runs invoke `... run --source scheduled`."""
+    spec = scheduler.ScheduleSpec.parse("fri", "14:30")
+    with patch("lit_monitor.server.scheduler.subprocess.run") as mock_run:
+        mock_run.return_value.returncode = 0
+        scheduler.write_schedule(spec)
+    # ExecStart renders args via `{{ args | join(' ') }}`.
+    service_text = scheduler._SYSTEMD_SERVICE.read_text()
+    assert "run --source scheduled" in service_text
+
+
+@pytest.mark.unit
 def test_write_macos_uses_atomic_write(macos_tmp_dirs):
     """P1.2: the macOS plist is written via atomic_write_text (crash-safe).
 

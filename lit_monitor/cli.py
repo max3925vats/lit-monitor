@@ -1437,6 +1437,13 @@ def brain_build_cmd(
         "extraction.yaml retrieval.default_mode (falls back to 'vector')."
     ),
 )
+@click.option(
+    "--source",
+    type=click.Choice(["manual", "scheduled"]),
+    default="manual",
+    show_default=True,
+    help="How this run was triggered. The OS scheduler passes 'scheduled'.",
+)
 @click.pass_context
 def run_cmd(
     ctx: click.Context,
@@ -1445,6 +1452,7 @@ def run_cmd(
     top_k: int,
     sim_threshold: float,
     rag_mode: str | None,
+    source: str,
 ) -> None:
     """Run the discovery pipeline: search + ranking + ingest new Zotero items."""
     _setup_logging("discovery", verbose=ctx.obj.get("verbose", False))
@@ -1499,6 +1507,7 @@ def run_cmd(
             top_k=top_k,
             sim_threshold=sim_threshold,
             rag_mode=_effective_rag,
+            trigger=source,
         )
     except RateLimitExhausted as exc:
         # P5.5: preserve the historical exit-code-2 behaviour at the CLI
