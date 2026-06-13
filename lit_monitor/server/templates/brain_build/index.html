@@ -18,21 +18,24 @@
   </section>
 
   <section class="collection-switcher">
+    {# Plain-text current collection (no <code> — it's a name, not a code token). #}
     <p class="field-note">Current collection:
-      <code>{{ collection_name or "(not set — see setup step 2)" }}</code>
+      <span class="collection-current">{{ collection_name or "(not set — see setup step 2)" }}</span>
     </p>
-    <sl-details summary="Change collection…">
-      <form hx-post="/setup/api/paths/collection"
-            hx-target="#collection-result" hx-swap="innerHTML">
-        <div id="collection-field"
-             hx-get="/setup/api/collections-options?current={{ (collection_name or '') | urlencode }}"
-             hx-trigger="load" hx-target="#collection-field" hx-swap="innerHTML">
-          {# endpoint returns the full <sl-select name="collection_name" value="…">…</sl-select> #}
-        </div>
-        <sl-button variant="default" type="submit">Switch</sl-button>
-      </form>
-      <div id="collection-result"></div>
-    </sl-details>
+    {# Inline switch control (no sl-details — this never needed to be collapsible).
+       The form id lets site.js scope its submit fixup to THIS form only. #}
+    <h3 class="collection-switch-heading">Change collection</h3>
+    <form id="collection-switch-form"
+          hx-post="/setup/api/paths/collection"
+          hx-target="#collection-result" hx-swap="innerHTML">
+      <div id="collection-field"
+           hx-get="/setup/api/collections-options?current={{ (collection_name or '') | urlencode }}"
+           hx-trigger="load" hx-target="#collection-field" hx-swap="innerHTML">
+        {# endpoint returns the full <sl-select name="collection_name" value="…">…</sl-select> #}
+      </div>
+      <sl-button variant="default" type="submit">Switch</sl-button>
+    </form>
+    <div id="collection-result"></div>
   </section>
 
   {% if progress and progress.total %}

@@ -245,6 +245,37 @@
   else init();
 })();
 
+// Brain-build collection switcher: restore the true collection name on submit.
+//
+// Shoelace forbids spaces in <sl-option value="…"> and SILENTLY rewrites them to
+// underscores ("Molecular Simulations" -> DOM value "Molecular_Simulations").
+// The form would therefore submit the underscored token, and the backend would
+// persist that corrupted name to paths.yaml — so the active collection would no
+// longer match the real Zotero collection (the user-reported "switch doesn't
+// work" bug, 2026-06-13).
+//
+// Fix: on submit of #collection-switch-form, if the dropdown rendered as an
+// sl-select, overwrite the outgoing collection_name with the SELECTED OPTION'S
+// LABEL (textContent), which preserves the original spaces. The fallback
+// sl-input path needs no fixup (free text, no space corruption) and is left
+// untouched. Using htmx:configRequest keeps this a pure parameter rewrite — no
+// hidden field, no dependence on Shoelace form-association timing.
+(function () {
+  "use strict";
+  document.body.addEventListener("htmx:configRequest", function (evt) {
+    var form = evt.target;
+    if (!form || form.id !== "collection-switch-form") return;
+    var select = form.querySelector("sl-select");
+    if (!select) return; // fallback sl-input path: nothing to repair
+    var opt = select.querySelector(
+      'sl-option[value="' + (select.value || "") + '"]'
+    );
+    // textContent is the true name (with spaces); value is the underscored token.
+    var trueName = opt ? opt.textContent.trim() : "";
+    if (trueName) evt.detail.parameters.collection_name = trueName;
+  });
+})();
+
 // App-shell: mobile sidebar toggle + global Ask drawer open.
 (function () {
   "use strict";

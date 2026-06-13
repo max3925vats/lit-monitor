@@ -196,10 +196,17 @@ def test_brain_build_controls_use_shoelace(
 
 
 @pytest.mark.unit
-def test_brain_build_collection_switcher_is_sl_details(
+def test_brain_build_collection_switcher_is_inline_plain_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """GET /brain-build uses sl-details for the collection switcher and HTMX wrapper pattern (B2)."""
+    """GET /brain-build renders the collection switcher as a plain inline control.
+
+    User review (2026-06-13) flagged three things to fix on this control:
+      1. "Current collection" must NOT be in a ``<code>`` font — plain text.
+      2. The switcher must NOT be collapsible — drop the ``<sl-details>`` wrapper.
+      3. The HTMX wrapper (#collection-field) + the switch form must remain so
+         the dropdown still loads and the switch still works.
+    """
     runtime_mod.reset_runtime()
 
     class _FakeDB:
@@ -227,7 +234,15 @@ def test_brain_build_collection_switcher_is_sl_details(
     resp = client.get("/brain-build")
     assert resp.status_code == 200
     html = resp.text
-    # Native <details> replaced by sl-details (B2)
-    assert "<sl-details" in html
-    # HTMX wrapper div with id for innerHTML-swap (B2 wrapper pattern)
-    assert 'id="collection-field"' in html
+    # (2) No collapsible wrapper around the collection switcher.
+    assert 'summary="Change collection' not in html
+    # (1) The current collection name is plain text, not wrapped in <code>.
+    #     The whole .collection-switcher section must contain no <code>…
+    start = html.index("collection-switcher")
+    end = html.index("</section>", start)
+    switcher = html[start:end]
+    assert "<code>" not in switcher, "current collection must be plain text, not <code>"
+    assert "TestCol" in switcher
+    # (3) The switch form + HTMX wrapper survive so the control still works.
+    assert 'id="collection-field"' in switcher
+    assert 'id="collection-switch-form"' in switcher

@@ -689,11 +689,17 @@ a:hover {
 }
 .live-progress-hint { color: var(--log-hint-fg); }
 
-/* --- Collection switcher --- */
-.collection-switcher { margin: 1rem 0; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); }
-.collection-switcher details { padding: 0; }
-.collection-switcher summary { cursor: pointer; padding: 0.25rem 0.5rem; }
-.collection-switcher form { padding: 0.5rem 0; display: flex; gap: 0.5rem; align-items: end; }
+/* --- Collection switcher (inline, non-collapsible) --- */
+/* overflow:visible so the sl-select listbox popup is NOT clipped by the card. */
+.collection-switcher { margin: 1rem 0; padding: 0.75rem; border: 1px solid var(--border); border-radius: var(--radius); overflow: visible; }
+.collection-current { color: var(--fg); }
+.collection-switch-heading { margin: 0.5rem 0 0.5rem; font-size: 1rem; }
+/* Column layout: cap the single-line select ~28rem (rubric #1), button to content. */
+.collection-switcher form { display: flex; flex-direction: column; gap: 0.5rem; align-items: stretch; }
+.collection-switcher #collection-field { max-width: 28rem; }
+.collection-switcher #collection-field sl-select,
+.collection-switcher #collection-field sl-input { max-width: 28rem; }
+.collection-switcher sl-button[type="submit"] { align-self: flex-start; }
 
 /* --- Discovery digest preview --- */
 .digest-pre { background: var(--card-bg); border: 1px solid var(--border); padding: 1rem;
