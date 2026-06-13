@@ -21,33 +21,23 @@
     <p class="field-note">Current collection:
       <code>{{ collection_name or "(not set — see setup step 2)" }}</code>
     </p>
-    <details>
-      <summary>Change collection…</summary>
+    <sl-details summary="Change collection…">
       <form hx-post="/setup/api/paths/collection"
             hx-target="#collection-result" hx-swap="innerHTML">
-        <label>New collection
-          <select name="collection_name"
-            hx-get="/setup/api/collections-options?current={{ (collection_name or '') | urlencode }}"
-            hx-trigger="load"
-            hx-target="this" hx-swap="innerHTML">
-            <option value="{{ collection_name or '' }}">{{ collection_name or "(loading…)" }}</option>
-          </select>
-        </label>
-        <button type="submit" class="button">Switch</button>
+        <div id="collection-field"
+             hx-get="/setup/api/collections-options?current={{ (collection_name or '') | urlencode }}"
+             hx-trigger="load" hx-target="#collection-field" hx-swap="innerHTML">
+          {# endpoint returns the full <sl-select name="collection_name" value="…">…</sl-select> #}
+        </div>
+        <sl-button variant="default" type="submit">Switch</sl-button>
       </form>
       <div id="collection-result"></div>
-    </details>
+    </sl-details>
   </section>
 
   {% if progress and progress.total %}
   <div class="progress-block">
-    <div class="progress-label">
-      {{ progress.done }} / {{ progress.total }} papers fully extracted
-      ({{ progress.pct }}%)
-    </div>
-    <div class="progress-bar">
-      <div class="progress-fill" style="width: {{ progress.pct }}%;"></div>
-    </div>
+    <sl-progress-bar value="{{ progress.pct }}">{{ progress.done }} / {{ progress.total }} papers ({{ progress.pct }}%)</sl-progress-bar>
   </div>
   {% else %}
   <p class="field-note">No papers tracked yet. Run
@@ -98,8 +88,7 @@
   {% endif %}
 
   {% if failed_rows %}
-  <details class="failed-block">
-    <summary><strong>Failed papers ({{ failed_rows | length }})</strong></summary>
+  <sl-details summary="Failed papers ({{ failed_rows | length }})">
     <ul>
       {% for r in failed_rows %}
       <li>
@@ -109,7 +98,7 @@
       </li>
       {% endfor %}
     </ul>
-  </details>
+  </sl-details>
   {% endif %}
 
   <h2>Recent runs</h2>

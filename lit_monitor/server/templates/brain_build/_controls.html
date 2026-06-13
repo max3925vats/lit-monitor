@@ -4,32 +4,19 @@
   {% if is_running %}
   <p class="pill warning">running — pid {{ pid }}, started {{ started_at }}</p>
   <form hx-post="/api/brain-build/stop" hx-target="#start-stop-result" hx-swap="innerHTML">
-    <button type="submit" class="button danger">Stop after current paper</button>
+    <sl-button variant="danger" type="submit">Stop after current paper</sl-button>
     <p class="field-note">Sends SIGTERM; the pipeline finishes the in-flight paper
       then exits cleanly. SIGKILL fallback after 30 seconds.</p>
   </form>
   {% else %}
-  <form hx-post="/api/brain-build/start"
+  <form class="control-form"
+        hx-post="/api/brain-build/start"
         hx-target="#start-stop-result" hx-swap="innerHTML"
         hx-encoding="multipart/form-data">
-    <div class="field">
-      <label>
-        <input type="checkbox" name="resume" value="true" checked>
-        Resume from last state
-      </label>
-    </div>
-    <div class="field">
-      <label>Max papers
-        <input type="number" name="max_papers" min="1" placeholder="(unlimited)">
-      </label>
-    </div>
-    <div class="field">
-      <label>
-        <input type="checkbox" name="all_library" value="true">
-        Process whole library (not just configured collection)
-      </label>
-    </div>
-    <button type="submit" class="button">Start brain-build</button>
+    <sl-switch name="resume" value="true" checked>Resume from last state</sl-switch>
+    <sl-input type="number" name="max_papers" min="1" placeholder="(unlimited)" label="Max papers"></sl-input>
+    <sl-switch name="all_library" value="true">Process whole library (not just configured collection)</sl-switch>
+    <sl-button variant="primary" type="submit">Start brain-build</sl-button>
   </form>
   {% endif %}
   <div id="start-stop-result"></div>
