@@ -49,8 +49,8 @@
   {# P4: consolidated Run History card — SAME shared partial as /discovery, but
      filtered to scheduled runs only (the route passes trigger="scheduled"). Run
      numbers are the GLOBAL discovery_runs.id, so a run shown as #3 on Discovery
-     is also #3 here (manual runs simply don't appear). Pager base is /schedule. #}
-  <h2>Run History</h2>
+     is also #3 here (manual runs simply don't appear). Pager base is /schedule.
+     No <h2> — the card's "Run History" summary is the heading (matches /discovery). #}
   {% set pager_base = "/schedule" %}
   {% set empty_text = "No scheduled runs yet — runs triggered by the schedule will appear here." %}
   {% include "_partials/_run_history.html" %}
