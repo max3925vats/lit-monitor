@@ -27,6 +27,28 @@ _DEFAULT_SIM_THRESHOLD = 0.3
 _DEFAULT_N_DATABASES = 5  # 4 primary + 1 S2 supplementary (kept as a safe fallback)
 
 
+def digest_filename(date: str, ordinal: int) -> str:
+    """Digest note filename for a discovery run, disambiguated per same-day run.
+
+    The day's first run (``ordinal`` 1) keeps the bare ``Discovery_{date}.md``;
+    the 2nd, 3rd, ... runs get a ``_{ordinal}`` suffix so same-day runs no longer
+    collide on one filename. Importable by both the pipeline write path and the
+    web-UI read/create route so the two stay in lockstep.
+
+    Args:
+        date:    ISO date string (``YYYY-MM-DD``).
+        ordinal: The run's position among same-day runs (1-based). Values <= 1
+                 yield the bare name (defensive — also covers unexpected 0).
+
+    Returns:
+        The digest filename, e.g. ``Discovery_2026-06-10.md`` or
+        ``Discovery_2026-06-10_2.md``.
+    """
+    if ordinal <= 1:
+        return f"Discovery_{date}.md"
+    return f"Discovery_{date}_{ordinal}.md"
+
+
 def render_digest(
     run: dict[str, Any],
     papers: list[dict[str, Any]],

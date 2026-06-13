@@ -679,6 +679,33 @@ def get_discovery_run(state_db: Any, run_id: int) -> dict[str, Any] | None:
     return dict(zip(cols, row)) if row else None
 
 
+def discovery_run_same_day_ordinal(state_db: Any, run_id: int) -> int:
+    """Position of ``run_id`` among same-day ``discovery_runs`` (1-based).
+
+    Counts discovery runs sharing this run's ``started_at`` date whose id is
+    ``<= run_id``. Returns 1 for the day's first run, 2 for the second, etc.
+    Used to disambiguate same-day digest filenames (the first run keeps the bare
+    ``Discovery_{date}.md``; later runs get a ``_{ordinal}`` suffix).
+
+    Args:
+        state_db: StateDB instance.
+        run_id:   Primary key of the discovery_runs row.
+
+    Returns:
+        The 1-based ordinal. Defensively returns 1 if the run is not found.
+    """
+    with state_db._connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM discovery_runs "
+            "WHERE substr(started_at, 1, 10) = "
+            "  (SELECT substr(started_at, 1, 10) FROM discovery_runs WHERE id = ?) "
+            "AND id <= ?",
+            (run_id, run_id),
+        ).fetchone()
+    ordinal = int(row[0]) if row and row[0] else 0
+    return ordinal if ordinal >= 1 else 1
+
+
 def get_discovery_run_papers(
     state_db: Any,
     run_id: int,

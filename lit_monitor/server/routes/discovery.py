@@ -29,12 +29,13 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from lit_monitor.api.queries import (
+    discovery_run_same_day_ordinal,
     get_discovery_run,
     get_discovery_run_history,
     get_discovery_run_papers,
     get_discovery_runs,
 )
-from lit_monitor.output.digest_renderer import render_digest
+from lit_monitor.output.digest_renderer import digest_filename, render_digest
 from lit_monitor.server.app import templates
 from lit_monitor.server.routes.sse import stream_log
 from lit_monitor.server.runtime import get_runtime
@@ -119,9 +120,12 @@ def _digests_folder_name() -> str:
 
 
 def _digest_options(db) -> list[dict]:
-    """Newest-first ``[{id, date}, ...]`` for the digest-viewer dropdown.
+    """Newest-first ``[{id, date, ordinal}, ...]`` for the digest-viewer dropdown.
 
-    One entry per discovery run (label ``Discovery_{date}``). Derived from
+    One entry per discovery run. The label is ``Discovery_{date}`` for the day's
+    first run and ``Discovery_{date}_{ordinal}`` for later same-day runs, so two
+    runs on the same date get DISTINCT labels (the bug was two identical
+    ``Discovery_{date}`` options pointing at the same file). Derived from
     ``get_discovery_run_history`` so the dropdown mirrors the Run History card.
     Defensive: any failure (or no db) yields an empty list, so the viewer shows
     a friendly empty state instead of 500-ing.
@@ -139,7 +143,14 @@ def _digest_options(db) -> list[dict]:
         rid = r.get("id")
         if rid is None:
             continue
-        options.append({"id": rid, "date": (r.get("started_at") or "")[:10]})
+        try:
+            ordinal = discovery_run_same_day_ordinal(db, rid)
+        except Exception:
+            logger.warning("digest_options: ordinal query failed", exc_info=True)
+            ordinal = 1
+        options.append(
+            {"id": rid, "date": (r.get("started_at") or "")[:10], "ordinal": ordinal}
+        )
     return options
 
 
@@ -244,7 +255,11 @@ def discovery_digest(run_id: int = Query(...)) -> HTMLResponse:
         )
 
     date_str = (run.get("started_at") or "")[:10]
-    path = vault / _digests_folder_name() / f"Discovery_{date_str}.md"
+    # Same-day runs each get their own file via a per-day ordinal suffix, so the
+    # day's 2nd run reads/creates Discovery_{date}_2.md (its own papers) instead
+    # of colliding on the bare file (which holds the 1st run's content).
+    ordinal = discovery_run_same_day_ordinal(state_db, run_id)
+    path = vault / _digests_folder_name() / digest_filename(date_str, ordinal)
 
     try:
         if path.exists():

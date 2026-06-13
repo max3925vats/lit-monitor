@@ -73,7 +73,7 @@
                hx-target="#digest-view"
                hx-include="this">
       {% for opt in digest_options %}
-      <sl-option value="{{ opt.id }}">Discovery_{{ opt.date }}</sl-option>
+      <sl-option value="{{ opt.id }}">Discovery_{{ opt.date }}{% if opt.ordinal > 1 %}_{{ opt.ordinal }}{% endif %}</sl-option>
       {% endfor %}
     </sl-select>
 

@@ -224,6 +224,101 @@ class TestDigestEndpointDefensive:
 
 
 # ---------------------------------------------------------------------------
+# GET /api/discovery/digest — same-day ordinal disambiguation (the BUG fix)
+# ---------------------------------------------------------------------------
+
+
+class TestDigestEndpointSameDayOrdinal:
+    """Two runs on the same date must resolve to DISTINCT files.
+
+    Run #1 (ordinal 1) → bare ``Discovery_{date}.md``; run #2 (ordinal 2) →
+    ``Discovery_{date}_2.md``. The 2nd run must read/create ITS own file and
+    leave the bare file (run #1's content) untouched.
+    """
+
+    def test_second_same_day_run_uses_ordinal_file_not_bare(self, client, vault):
+        date_str = "2026-06-10"
+        bare = vault / "Literature" / "Digests" / f"Discovery_{date_str}.md"
+        ordinal2 = vault / "Literature" / "Digests" / f"Discovery_{date_str}_2.md"
+        # Pre-write run #1's content into the bare file; it must stay untouched.
+        bare.write_text("## Run One\n\n- 287 papers here\n", encoding="utf-8")
+        before_bare = bare.read_text(encoding="utf-8")
+        assert not ordinal2.exists()
+
+        run = {"id": 22, "started_at": f"{date_str}T11:00:00"}
+        with (
+            patch(
+                "lit_monitor.server.routes.discovery._vault_root",
+                return_value=vault,
+            ),
+            patch(
+                "lit_monitor.server.routes.discovery.get_runtime",
+                return_value=_make_fake_runtime(MagicMock()),
+            ),
+            patch(
+                "lit_monitor.server.routes.discovery.get_discovery_run",
+                return_value=run,
+            ),
+            # This run is the 2nd of its day.
+            patch(
+                "lit_monitor.server.routes.discovery.discovery_run_same_day_ordinal",
+                return_value=2,
+            ),
+            patch(
+                "lit_monitor.server.routes.discovery.get_discovery_run_papers",
+                return_value=[],
+            ),
+            patch(
+                "lit_monitor.server.routes.discovery.render_digest",
+                return_value="## Run Two\n\n- 996 papers here\n",
+            ),
+        ):
+            r = client.get("/api/discovery/digest?run_id=22")
+
+        assert r.status_code == 200
+        # The 2nd run created its OWN ordinal file...
+        assert ordinal2.exists()
+        assert "996 papers here" in ordinal2.read_text(encoding="utf-8")
+        # ...and the response reflects the 2nd run's own papers.
+        assert "Run Two" in r.text
+        assert "996 papers here" in r.text
+        # The bare file (run #1) was NOT touched or overwritten.
+        assert bare.read_text(encoding="utf-8") == before_bare
+        assert "Run One" not in r.text
+
+    def test_first_same_day_run_uses_bare_file(self, client, vault):
+        date_str = "2026-06-10"
+        bare = vault / "Literature" / "Digests" / f"Discovery_{date_str}.md"
+        bare.write_text("## Run One\n\n- 287 papers\n", encoding="utf-8")
+
+        run = {"id": 21, "started_at": f"{date_str}T08:00:00"}
+        with (
+            patch(
+                "lit_monitor.server.routes.discovery._vault_root",
+                return_value=vault,
+            ),
+            patch(
+                "lit_monitor.server.routes.discovery.get_runtime",
+                return_value=_make_fake_runtime(MagicMock()),
+            ),
+            patch(
+                "lit_monitor.server.routes.discovery.get_discovery_run",
+                return_value=run,
+            ),
+            patch(
+                "lit_monitor.server.routes.discovery.discovery_run_same_day_ordinal",
+                return_value=1,
+            ),
+        ):
+            r = client.get("/api/discovery/digest?run_id=21")
+
+        assert r.status_code == 200
+        # Ordinal 1 reads the bare file.
+        assert "Run One" in r.text
+        assert "287 papers" in r.text
+
+
+# ---------------------------------------------------------------------------
 # GET /discovery — the Digest viewer dropdown (template)
 # ---------------------------------------------------------------------------
 
@@ -255,6 +350,39 @@ class TestDigestViewerTemplate:
         assert "Discovery_" in body
         # The old raw <pre> dump is gone.
         assert '<pre class="digest-pre"' not in body
+
+    def test_two_same_day_runs_yield_distinct_labels(self, client, tmp_path):
+        """Two runs on the same date must render two DISTINCT dropdown labels.
+
+        Run #1 → ``Discovery_{date}``; run #2 → ``Discovery_{date}_2``. Without
+        the ordinal suffix both options read ``Discovery_{date}`` and collide.
+        """
+        from lit_monitor.core.state_db import StateDB
+
+        db = StateDB(tmp_path / "state.db")
+        same_day = "2026-06-10T08:00:00"
+        rid1 = db.start_discovery_run({"topics": ["a"]})
+        rid2 = db.start_discovery_run({"topics": ["b"]})
+        with db._connect() as conn:
+            conn.execute(
+                "UPDATE discovery_runs SET started_at = ? WHERE id IN (?, ?)",
+                (same_day, rid1, rid2),
+            )
+        for rid in (rid1, rid2):
+            db.finish_discovery_run(rid, status="success", total_found=1, total_ingested=1)
+
+        rt = _make_fake_runtime(db)
+        with patch(
+            "lit_monitor.server.routes.discovery.get_runtime", return_value=rt
+        ):
+            r = client.get("/discovery")
+        assert r.status_code == 200
+        body = r.text
+        # Both distinct labels must be present.
+        assert "Discovery_2026-06-10_2" in body
+        # The bare label for run #1 also appears (as an exact <sl-option> label,
+        # not merely as a prefix of the _2 variant).
+        assert ">Discovery_2026-06-10<" in body
 
     def test_template_empty_state_when_no_runs(self, client, tmp_path):
         from lit_monitor.core.state_db import StateDB

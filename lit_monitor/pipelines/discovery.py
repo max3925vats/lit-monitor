@@ -282,6 +282,7 @@ def run_discovery(
         if _resolve_digest_auto_write(config):
             digest_path = _write_digest(
                 ranked, config, sim_threshold, dry_run=dry_run,
+                state_db=state_db, disc_run_id=_disc_run_id,
             )
             summary.digest_path = digest_path
         else:
@@ -1000,14 +1001,26 @@ def _write_digest(
     sim_threshold: float,
     dry_run: bool = False,
     n_databases: int | None = None,
+    *,
+    state_db=None,
+    disc_run_id: int | None = None,
 ) -> str:
     """Render and write the discovery digest note. Returns the note path.
 
     Delegates rendering to ``scripts.output.digest_renderer.render_digest``
     (single renderer, DR1).  n_databases defaults to
     len(DEFAULT_DATABASES) + 1 (for S2 supplementary search).
+
+    Same-day runs no longer collide on one filename: the digest filename carries
+    a per-day ordinal suffix (``digest_filename``) so the day's 2nd, 3rd, ... run
+    each get their own ``Discovery_{date}_N.md``. ``disc_run_id`` is None in
+    dry-run (nothing is written anyway) → falls back to ordinal 1.
     """
-    from lit_monitor.output.digest_renderer import render_digest  # DR1: single renderer
+    from lit_monitor.api.queries import discovery_run_same_day_ordinal
+    from lit_monitor.output.digest_renderer import (  # DR1: single renderer
+        digest_filename,
+        render_digest,
+    )
 
     run_date = str(date.today())
     vault_path = Path(config.obsidian.vault_path)
@@ -1024,7 +1037,11 @@ def _write_digest(
         _today=run_date,
     )
 
-    digest_path = digests_folder / f"Discovery_{run_date}.md"
+    if disc_run_id is not None and state_db is not None:
+        ordinal = discovery_run_same_day_ordinal(state_db, disc_run_id)
+    else:
+        ordinal = 1
+    digest_path = digests_folder / digest_filename(run_date, ordinal)
     if not dry_run:
         digest_path.write_text(content, encoding="utf-8")
         logger.warning("Wrote discovery digest: %s", digest_path)
