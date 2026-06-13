@@ -50,67 +50,12 @@
   <p class="field-note">No discovery runs in the log yet.</p>
   {% endif %}
 
-  {# P4: ONE consolidated, collapsed Run History card backed by the unified
-     get_discovery_run_history query (discovery_runs LEFT JOIN run_log). Carries
-     both the structured run metadata AND the per-paper processed/skipped/failed
-     counts. Historical rows (run_log_id IS NULL) have None counts → rendered as
-     em-dashes; a real 0 is preserved (we test `is none`, not truthiness). #}
-  <sl-details summary="Run History" style="margin-top:1.25rem">
-    {% if run_history %}
-    <table class="runs-table">
-      <thead>
-        <tr>
-          <th>Run</th>
-          <th>Started</th>
-          <th>Finished</th>
-          <th>Status</th>
-          <th>Found</th>
-          <th>Ingested</th>
-          <th>Processed</th>
-          <th>Skipped</th>
-          <th>Failed</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in run_history %}
-        <tr>
-          <td><code>#{{ r.id }}</code></td>
-          <td>{% if (r.started_at or "")[:19] %}{{ (r.started_at or "")[:19] }}{% else %}&mdash;{% endif %}</td>
-          <td>{% if (r.finished_at or "")[:19] %}{{ (r.finished_at or "")[:19] }}{% else %}&mdash;{% endif %}</td>
-          <td>{% if r.status %}{{ r.status }}{% else %}&mdash;{% endif %}</td>
-          <td>{{ r.total_found or 0 }}</td>
-          <td>{{ r.total_ingested or 0 }}</td>
-          <td>{% if r.papers_processed is none %}&mdash;{% else %}{{ r.papers_processed }}{% endif %}</td>
-          <td>{% if r.papers_skipped is none %}&mdash;{% else %}{{ r.papers_skipped }}{% endif %}</td>
-          <td>{% if r.papers_failed is none %}&mdash;{% else %}{{ r.papers_failed }}{% endif %}</td>
-          <td><a href="/discovery/{{ r.id }}">Papers &rarr;</a></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-
-    {# Offset-link pager (page size 10). Prev hidden at offset 0; Next hidden on
-       the last page. #}
-    <div class="button-row" style="margin-top: 0.75rem;">
-      <span class="field-note">
-        {{ runs_offset + 1 }}&ndash;{{ runs_offset + run_history|length }} of {{ runs_total }}
-      </span>
-      {% if runs_has_prev %}
-      <a class="btn btn-secondary btn-sm" href="/discovery?runs_offset={{ runs_prev_offset }}">
-        &larr; Newer
-      </a>
-      {% endif %}
-      {% if runs_has_next %}
-      <a class="btn btn-secondary btn-sm" href="/discovery?runs_offset={{ runs_next_offset }}">
-        Older &rarr;
-      </a>
-      {% endif %}
-    </div>
-    {% else %}
-    <p class="field-note">No discovery runs yet.</p>
-    {% endif %}
-  </sl-details>
+  {# P4: ONE consolidated, collapsed Run History card. The markup lives in the
+     shared _partials/_run_history.html partial (reused on /schedule). Discovery
+     keeps its /discovery pager base and generic empty-state wording. #}
+  {% set pager_base = "/discovery" %}
+  {% set empty_text = "No discovery runs yet." %}
+  {% include "_partials/_run_history.html" %}
 
   <h2>Digest</h2>
   {% if digest_options %}

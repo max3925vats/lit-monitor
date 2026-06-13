@@ -1,0 +1,76 @@
+{#
+  _partials/_run_history.html — shared "Run History" card (P4).
+
+  ONE consolidated, collapsed card backed by the unified get_discovery_run_history
+  query (discovery_runs LEFT JOIN run_log): structured run metadata + per-paper
+  processed/skipped/failed counts. Historical rows (run_log_id IS NULL) have None
+  counts → rendered as em-dashes; a real 0 is preserved (we test `is none`, not
+  truthiness). Offset-link pager (page size 10).
+
+  Included from BOTH /discovery and /schedule. The includer sets, via {% set %}:
+    pager_base  — "/discovery" or "/schedule": the prev/next pager href base.
+    empty_text  — the page-appropriate empty-state copy.
+  Both have defaults below so a bare include still renders.
+
+  Parent context required: run_history, runs_total, runs_offset, runs_has_prev,
+  runs_has_next, runs_prev_offset, runs_next_offset. The per-row "Papers →" link
+  always targets /discovery/{id} (the global discovery run id) on both pages.
+#}
+{% set pager_base = pager_base | default("/discovery") %}
+{% set empty_text = empty_text | default("No discovery runs yet.") %}
+<sl-details summary="Run History" style="margin-top:1.25rem">
+  {% if run_history %}
+  <table class="runs-table">
+    <thead>
+      <tr>
+        <th>Run</th>
+        <th>Started</th>
+        <th>Finished</th>
+        <th>Status</th>
+        <th>Found</th>
+        <th>Ingested</th>
+        <th>Processed</th>
+        <th>Skipped</th>
+        <th>Failed</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in run_history %}
+      <tr>
+        <td><code>#{{ r.id }}</code></td>
+        <td>{% if (r.started_at or "")[:19] %}{{ (r.started_at or "")[:19] }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if (r.finished_at or "")[:19] %}{{ (r.finished_at or "")[:19] }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if r.status %}{{ r.status }}{% else %}&mdash;{% endif %}</td>
+        <td>{{ r.total_found or 0 }}</td>
+        <td>{{ r.total_ingested or 0 }}</td>
+        <td>{% if r.papers_processed is none %}&mdash;{% else %}{{ r.papers_processed }}{% endif %}</td>
+        <td>{% if r.papers_skipped is none %}&mdash;{% else %}{{ r.papers_skipped }}{% endif %}</td>
+        <td>{% if r.papers_failed is none %}&mdash;{% else %}{{ r.papers_failed }}{% endif %}</td>
+        <td><a href="/discovery/{{ r.id }}">Papers &rarr;</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# Offset-link pager (page size 10). Prev hidden at offset 0; Next hidden on
+     the last page. The pager base differs per page (pager_base). #}
+  <div class="button-row" style="margin-top: 0.75rem;">
+    <span class="field-note">
+      {{ runs_offset + 1 }}&ndash;{{ runs_offset + run_history|length }} of {{ runs_total }}
+    </span>
+    {% if runs_has_prev %}
+    <a class="btn btn-secondary btn-sm" href="{{ pager_base }}?runs_offset={{ runs_prev_offset }}">
+      &larr; Newer
+    </a>
+    {% endif %}
+    {% if runs_has_next %}
+    <a class="btn btn-secondary btn-sm" href="{{ pager_base }}?runs_offset={{ runs_next_offset }}">
+      Older &rarr;
+    </a>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="field-note">{{ empty_text }}</p>
+  {% endif %}
+</sl-details>
