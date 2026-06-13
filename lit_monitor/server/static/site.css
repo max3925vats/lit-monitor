@@ -800,6 +800,16 @@ a:hover {
 /* Make .button-row work as a sibling of dashboard h2s, not only inside dev-panel. */
 .dashboard .button-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0; align-items: center; }
 .dev-result { margin-top: 0.75rem; }
+/* Neutral write-back preview callout (themes pages). Subtle card, NOT the amber
+   dev-output style — reuses the standard card tokens. Empty until HTMX fills it. */
+.writeback-result { margin-top: 0.75rem; }
+.writeback-result:not(:empty) {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85em;
+}
 .dev-output { background: var(--dev-output-bg); padding: 0.5rem; border-radius: 3px; font-size: 0.85em;
               max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
 .dev-output-err { background: var(--dev-output-err-bg); padding: 0.5rem; border-radius: 3px; font-size: 0.85em;
