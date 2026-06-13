@@ -741,7 +741,9 @@ a:hover {
    indentation, table borders, brand link color. Full width, generous padding. */
 .digest-rendered { background: var(--card-bg); border: 1px solid var(--border);
   padding: 1.25rem 1.5rem; border-radius: var(--radius); max-width: 100%;
-  overflow-x: auto; line-height: 1.6; }
+  /* Cap height so a long digest scrolls within the card instead of
+     stretching the whole page. */
+  max-height: 32rem; overflow: auto; line-height: 1.6; }
 .digest-rendered h1 { font-size: 1.5rem; margin: 0 0 0.75rem; }
 .digest-rendered h2 { font-size: 1.25rem; margin: 1.25rem 0 0.5rem; }
 .digest-rendered h3 { font-size: 1.05rem; margin: 1rem 0 0.5rem; }
