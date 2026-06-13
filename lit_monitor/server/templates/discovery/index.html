@@ -112,16 +112,37 @@
     {% endif %}
   </sl-details>
 
-  <h2>Today's digest</h2>
-  {% if digest_path %}
-  <p class="field-note">Source: <code>{{ digest_path }}</code></p>
-  {% if digest_content %}
-  <pre class="digest-pre">{{ digest_content }}</pre>
+  <h2>Digest</h2>
+  {% if digest_options %}
+  {# Digest viewer: pick a past digest (Discovery_{date}); selecting one GETs
+     /api/discovery/digest → rendered HTML into #digest-view. The newest digest
+     auto-loads on page load (the #digest-view hx-trigger="load"). The <sl-select>
+     needs value= on the HOST (not selected= on options) — known project gotcha. #}
+  <div class="digest-viewer">
+    <sl-select name="run_id"
+               label="Select a digest"
+               value="{{ digest_options[0].id }}"
+               class="digest-select"
+               hx-get="/api/discovery/digest"
+               hx-trigger="sl-change"
+               hx-target="#digest-view"
+               hx-include="this">
+      {% for opt in digest_options %}
+      <sl-option value="{{ opt.id }}">Discovery_{{ opt.date }}</sl-option>
+      {% endfor %}
+    </sl-select>
+
+    <div id="digest-view"
+         class="digest-view"
+         hx-get="/api/discovery/digest?run_id={{ digest_options[0].id }}"
+         hx-trigger="load"
+         hx-target="#digest-view"
+         hx-swap="innerHTML">
+      <p class="field-note">Loading digest…</p>
+    </div>
+  </div>
   {% else %}
-  <p class="field-note">Digest file exists but could not be read.</p>
-  {% endif %}
-  {% else %}
-  <p class="field-note">No digest file for today (or vault path not configured).</p>
+  <p class="field-note">No discovery runs yet.</p>
   {% endif %}
 
   {% endif %}

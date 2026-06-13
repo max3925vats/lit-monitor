@@ -17,9 +17,13 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import logging
-from datetime import UTC, date, datetime
+import os
+import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 
+import markdown
+import nh3
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
@@ -30,6 +34,7 @@ from lit_monitor.api.queries import (
     get_discovery_run_papers,
     get_discovery_runs,
 )
+from lit_monitor.output.digest_renderer import render_digest
 from lit_monitor.server.app import templates
 from lit_monitor.server.routes.sse import stream_log
 from lit_monitor.server.runtime import get_runtime
@@ -113,40 +118,29 @@ def _digests_folder_name() -> str:
         return "Literature/Digests"
 
 
-def _todays_digest() -> tuple[Path | None, str | None]:
-    """Locate today's digest file, if any. Returns (path, content_or_None).
+def _digest_options(db) -> list[dict]:
+    """Newest-first ``[{id, date}, ...]`` for the digest-viewer dropdown.
 
-    The discovery pipeline writes to ``{vault}/{digests_folder}/Discovery_{YYYY-MM-DD}.md``
-    using ``date.today()`` (local timezone). Falls back to the most recent
-    ``Discovery_*.md`` if today's exact filename is missing.
+    One entry per discovery run (label ``Discovery_{date}``). Derived from
+    ``get_discovery_run_history`` so the dropdown mirrors the Run History card.
+    Defensive: any failure (or no db) yields an empty list, so the viewer shows
+    a friendly empty state instead of 500-ing.
     """
-    vault = _vault_root()
-    if vault is None:
-        return None, None
-    folder = vault / _digests_folder_name()
-    if not folder.exists() or not folder.is_dir():
-        return None, None
-    today = date.today().strftime("%Y-%m-%d")
-    exact = folder / f"Discovery_{today}.md"
-    if exact.exists():
-        try:
-            return exact, exact.read_text(encoding="utf-8")
-        except OSError:
-            logger.warning("Cannot read digest %s", exact, exc_info=True)
-            return exact, None
-    # Fallback: newest Discovery_*.md in the folder.
-    candidates = sorted(
-        folder.glob("Discovery_*.md"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    if not candidates:
-        return None, None
-    newest = candidates[0]
+    if db is None:
+        return []
     try:
-        return newest, newest.read_text(encoding="utf-8")
-    except OSError:
-        return newest, None
+        result = get_discovery_run_history(db, limit=50, offset=0)
+        runs = result.get("runs", []) or []
+    except Exception:
+        logger.warning("digest_options: history query failed", exc_info=True)
+        return []
+    options: list[dict] = []
+    for r in runs:
+        rid = r.get("id")
+        if rid is None:
+            continue
+        options.append({"id": rid, "date": (r.get("started_at") or "")[:10]})
+    return options
 
 
 @router.get("/discovery", response_class=HTMLResponse)
@@ -192,7 +186,9 @@ def dashboard(
         except Exception:
             logger.warning("get_discovery_run_history failed", exc_info=True)
 
-    digest_path, digest_content = _todays_digest()
+    # Digest viewer: newest-first dropdown options ({id, date}); the template
+    # auto-loads the newest into #digest-view via /api/discovery/digest.
+    digest_options = _digest_options(db)
     return templates.TemplateResponse(
         request,
         "discovery/index.html",
@@ -208,11 +204,94 @@ def dashboard(
             "runs_has_next": offset + _RUNS_PAGE_SIZE < runs_total,
             "runs_prev_offset": max(offset - _RUNS_PAGE_SIZE, 0),
             "runs_next_offset": offset + _RUNS_PAGE_SIZE,
-            "digest_path": str(digest_path) if digest_path else None,
-            "digest_content": digest_content,
+            "digest_options": digest_options,
             "db_unavailable": db is None,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Digest viewer fragment — render a stored (or freshly-created) digest as HTML
+# ---------------------------------------------------------------------------
+
+# markdown.markdown extensions: GFM-ish tables, fenced code, and sane (PEP-style)
+# list nesting so the rendered digest reads like the Obsidian note does.
+_MD_EXTENSIONS = ["tables", "fenced_code", "sane_lists"]
+
+
+@router.get("/api/discovery/digest", response_class=HTMLResponse)
+def discovery_digest(run_id: int = Query(...)) -> HTMLResponse:
+    """Render the ``Discovery_{date}.md`` digest for a run as sanitized HTML.
+
+    Exists path → read the file. Missing → render it from the run's papers via
+    ``render_digest`` and write it atomically into the vault, then render.
+
+    Every body is an HTMX-swappable fragment (never a 500): missing run →
+    ``Run not found`` (404), no vault → a field-note, IO/render failure → a
+    generic card (the absolute path is logged server-side, NOT leaked — A3-5).
+    """
+    state_db = get_runtime().state_db
+    run = get_discovery_run(state_db, run_id)
+    if run is None:
+        return HTMLResponse(
+            '<div class="card danger">Run not found.</div>', status_code=404
+        )
+
+    vault = _vault_root()
+    if vault is None:
+        return HTMLResponse(
+            '<p class="field-note">Vault path not configured.</p>'
+        )
+
+    date_str = (run.get("started_at") or "")[:10]
+    path = vault / _digests_folder_name() / f"Discovery_{date_str}.md"
+
+    try:
+        if path.exists():
+            md = path.read_text(encoding="utf-8")
+        else:
+            papers = get_discovery_run_papers(state_db, run_id, top_k=1000)
+            md = render_digest(run, papers)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # Atomic write: temp file in the same dir, then os.replace.
+            fd, tmp_name = tempfile.mkstemp(
+                dir=str(path.parent), prefix=".digest-", suffix=".md.tmp"
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    fh.write(md)
+                os.replace(tmp_name, path)
+            except OSError:
+                # Best-effort cleanup of the stray temp file before re-raising.
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+                raise
+
+        html_body = markdown.markdown(md, extensions=_MD_EXTENSIONS)
+        # nh3's default allowlist permits headings/p/ul/ol/li/a/code/pre/em/
+        # strong/blockquote and full tables — and strips <script>/<style>/event
+        # handlers. This is the XSS boundary for user/LLM-authored digest text.
+        safe = nh3.clean(html_body)
+    except OSError:
+        # A3-5 info-leak guard: the OSError embeds the absolute vault path. Log
+        # it (with traceback) server-side; the client gets a generic card only.
+        logger.error("discovery_digest: digest IO failed", exc_info=True)
+        return HTMLResponse(
+            '<div class="card danger">Could not render digest — '
+            "check server logs.</div>",
+            status_code=500,
+        )
+    except Exception:  # noqa: BLE001 — render failure must not 500-leak either
+        logger.error("discovery_digest: render failed", exc_info=True)
+        return HTMLResponse(
+            '<div class="card danger">Could not render digest — '
+            "check server logs.</div>",
+            status_code=500,
+        )
+
+    return HTMLResponse(f'<div class="digest-rendered">{safe}</div>')
 
 
 # ---------------------------------------------------------------------------
