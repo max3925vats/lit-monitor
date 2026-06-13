@@ -203,6 +203,95 @@ class TestTrendingPageCopy:
         assert "not a field-level publication trend" in body
 
 
+class TestTrendingPageShoelace:
+    """P4 (Explore): the /trending page is migrated to Shoelace + the rubric.
+
+    Controls become <sl-button> (HTMX attrs preserved); "In topics?" becomes a
+    status-dot; concept type becomes an <sl-badge>; the table stays HTML.
+    """
+
+    def test_controls_are_sl_buttons_with_htmx_preserved(self, client):
+        rows = [_make_row(1), _make_row(2, "distillation")]
+        with patch("lit_monitor.server.routes.trending._safe_db") as mock_db_fn:
+            mock_db = MagicMock()
+            mock_db.get_pending_trending_suggestions.return_value = rows
+            mock_db_fn.return_value = mock_db
+            body = client.get("/trending").text
+
+        # Re-detect + per-row Accept/Dismiss are NOT native <button class=...>.
+        # (No native button should carry these HTMX posts.)
+        assert '<button hx-post="/api/trending/detect"' not in body
+        assert '<button\n              hx-post="/api/trending/1/accept"' not in body
+        assert 'class="btn-accept"' not in body
+
+        # They are sl-buttons now.
+        assert "<sl-button" in body
+        # HTMX attributes survive onto the sl-button triggers.
+        assert 'hx-post="/api/trending/detect"' in body
+        assert 'hx-post="/api/trending/1/accept"' in body
+        assert 'hx-post="/api/trending/1/dismiss"' in body
+        assert 'hx-swap="outerHTML"' in body
+        assert 'hx-target="#trending-row-1"' in body
+
+        # The accept hx-post must land on an <sl-button>, not a stray <button>.
+        import re
+
+        accept_tag = re.search(
+            r"<(sl-button|button)[^>]*hx-post=\"/api/trending/1/accept\"", body
+        )
+        assert accept_tag and accept_tag.group(1) == "sl-button"
+
+    def test_in_topics_renders_status_dot(self, client):
+        in_topics = _make_row(1)
+        in_topics["in_existing_topics"] = True
+        not_in = _make_row(2, "distillation")
+        not_in["in_existing_topics"] = False
+        with patch("lit_monitor.server.routes.trending._safe_db") as mock_db_fn:
+            mock_db = MagicMock()
+            mock_db.get_pending_trending_suggestions.return_value = [in_topics, not_in]
+            mock_db_fn.return_value = mock_db
+            body = client.get("/trending").text
+
+        # The yes/no text is replaced by status-dots.
+        assert "status-dot ok" in body
+        assert "status-dot pending" in body
+        # Accessible titles present.
+        assert "Already a topic" in body
+        assert "Not yet a topic" in body
+
+    def test_concept_type_renders_sl_badge(self, client):
+        rows = [_make_row(1)]
+        with patch("lit_monitor.server.routes.trending._safe_db") as mock_db_fn:
+            mock_db = MagicMock()
+            mock_db.get_pending_trending_suggestions.return_value = rows
+            mock_db_fn.return_value = mock_db
+            body = client.get("/trending").text
+
+        assert "<sl-badge" in body
+        # The concept_type ("topic") is rendered inside a badge.
+        import re
+
+        assert re.search(r"<sl-badge[^>]*>\s*topic\s*</sl-badge>", body)
+
+    def test_table_stays_html_and_empty_state_is_field_note(self, client):
+        # Table present when there are suggestions.
+        rows = [_make_row(1)]
+        with patch("lit_monitor.server.routes.trending._safe_db") as mock_db_fn:
+            mock_db = MagicMock()
+            mock_db.get_pending_trending_suggestions.return_value = rows
+            mock_db_fn.return_value = mock_db
+            body = client.get("/trending").text
+        assert '<table class="papers-table">' in body
+
+        # Real .field-note empty state when there are none.
+        with patch(
+            "lit_monitor.server.routes.trending._safe_db", return_value=None
+        ):
+            empty = client.get("/trending").text
+        assert "field-note" in empty
+        assert "No pending suggestions" in empty
+
+
 class TestSafeSaveTopics:
     def test_atomic_add_creates_file(self, tmp_path):
         from lit_monitor.server.config_io import safe_save_topics
