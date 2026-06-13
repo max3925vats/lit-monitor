@@ -504,10 +504,10 @@ class TestDiscoveryRunDetailPage:
 
 
 class TestDiscoveryLastRunKvSemantics:
-    """P3.1: the 'Last run' block is now a compact .last-run-card with .stat-grid.
-    Labels + the run_id value must survive verbatim."""
+    """Review 2026-06-13: the 'Last run' block is one compact .last-run-line.
+    Run ID is dropped; the remaining fields render inline."""
 
-    def test_last_run_renders_as_stat_grid(self, client):
+    def test_last_run_renders_as_one_line_without_run_id(self, client):
         # The 'Last run' block is driven by get_recent_runs_by_type → last_run.
         fake_db = MagicMock()
         fake_db.get_recent_runs_by_type.return_value = [
@@ -515,6 +515,8 @@ class TestDiscoveryLastRunKvSemantics:
              "papers_processed": 5, "papers_skipped": 1, "papers_failed": 0,
              "finished_at": "2026-06-01 12:00:00"},
         ]
+        # Empty Run History so any id text can only come from the Last-run block.
+        fake_db.get_discovery_run_history.return_value = {"runs": [], "total": 0}
         fake_rt = MagicMock()
         fake_rt.state_db = fake_db
         fake_rt.config.obsidian.vault_path = ""
@@ -522,10 +524,13 @@ class TestDiscoveryLastRunKvSemantics:
             r = client.get("/discovery")
         assert r.status_code == 200
         assert 'last-run-card' in r.text
-        assert 'stat-grid' in r.text
+        assert 'last-run-line' in r.text
         assert 'stat-eyebrow' in r.text
-        # The run_id value must survive the redesign verbatim.
-        assert "abc123" in r.text
+        # Run ID is intentionally NOT shown in the Last-run block anymore.
+        assert 'Run ID' not in r.text
+        assert "abc123" not in r.text
+        # The remaining fields still render.
+        assert "complete" in r.text
 
 
 @pytest.fixture
@@ -826,7 +831,8 @@ class TestRunHistoryCardConsolidation:
             r = client.get("/discovery")
         assert r.status_code == 200
         assert "last-run-card" in r.text
-        assert "abc123" in r.text
+        # Run ID dropped per review (2026-06-13); the status field still renders.
+        assert "complete" in r.text
 
 
 @pytest.fixture

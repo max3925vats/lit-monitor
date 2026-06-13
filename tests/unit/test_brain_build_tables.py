@@ -12,7 +12,7 @@ Task D — Recent runs table + discovery run-id truncation:
   - route fetches brain_build runs only (``get_recent_runs_by_type``)
   - Type column dropped, Completed column added, Run ID truncated w/ title
   - wrapped in a collapsed ``<sl-details summary="Recent runs">``
-  - discovery "Last run" card truncates its run_id with a title= tooltip
+  - discovery "Last run" block omits the run_id (review 2026-06-13)
 """
 
 from __future__ import annotations
@@ -235,10 +235,11 @@ def test_recent_runs_table_columns_and_card(monkeypatch) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Task D #4 — discovery last-run run_id truncation
+# Review 2026-06-13 — the discovery Last-run block dropped Run ID entirely
+# (BB-D's truncation is superseded). The run_id must no longer be rendered there.
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
-def test_discovery_last_run_id_truncated(monkeypatch) -> None:
+def test_discovery_last_run_omits_run_id(monkeypatch) -> None:
     from unittest.mock import MagicMock, patch
 
     runtime_mod.reset_runtime()
@@ -255,6 +256,8 @@ def test_discovery_last_run_id_truncated(monkeypatch) -> None:
             "papers_failed": 0,
         }
     ]
+    # Empty Run History so the run_id can only come from the Last-run block.
+    fake_db.get_discovery_run_history.return_value = {"runs": [], "total": 0}
     fake_rt = MagicMock()
     fake_rt.state_db = fake_db
     fake_rt.config.obsidian.vault_path = ""
@@ -265,8 +268,10 @@ def test_discovery_last_run_id_truncated(monkeypatch) -> None:
         resp = client.get("/discovery")
     assert resp.status_code == 200
     html = resp.text
-    # Truncated to 8 chars with the full UUID in a title tooltip.
-    assert f'title="{full_id}"' in html
-    assert "11111111…" in html
-    # The full UUID must NOT appear as bare visible text in a <code> body.
-    assert f"<code>{full_id}</code>" not in html
+    # The Last-run block no longer shows the run id (truncated or full).
+    assert "Run ID" not in html
+    assert full_id not in html
+    assert "11111111…" not in html
+    # The one-line summary + its other fields still render.
+    assert "last-run-line" in html
+    assert "complete" in html
