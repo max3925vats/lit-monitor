@@ -620,3 +620,74 @@ def test_relative_time_rolls_over_units():
     assert ago(days=14) == "2w ago"        # 14 // 7 → weeks
     assert ago(days=60) == "2mo ago"       # 60 // 30 → months
     assert ago(days=800) == "2y ago"       # 800 // 365 → years
+
+
+# ---------------------------------------------------------------------------
+# get_discovery_run_history: unified discovery_runs ⋈ run_log view
+# ---------------------------------------------------------------------------
+
+
+def _seed_history(db):
+    """Seed one LINKED discovery run (with run_log counts) and one UNLINKED
+    historical run (no run_log row). Returns (linked_id, historical_id)."""
+    # Linked pair: run_log row keyed by uuid + a discovery_runs row pointing at it.
+    db.start_run("uuid-linked", "discovery")
+    db.finish_run("uuid-linked", status="complete", processed=7, skipped=2, failed=1)
+    linked_id = db.start_discovery_run({"topics": ["linked"]}, run_log_id="uuid-linked")
+    db.finish_discovery_run(linked_id, status="success", total_found=10, total_ingested=4)
+
+    # Historical (pre-FK) discovery run: no linked run_log row.
+    historical_id = db.start_discovery_run({"topics": ["historical"]})
+    return linked_id, historical_id
+
+
+def test_get_discovery_run_history_links_run_log_counts(tmp_path):
+    from lit_monitor.api.queries import get_discovery_run_history
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    linked_id, historical_id = _seed_history(db)
+
+    result = get_discovery_run_history(db, limit=20, offset=0)
+    assert result["total"] == 2
+    by_id = {r["id"]: r for r in result["runs"]}
+
+    linked = by_id[linked_id]
+    assert linked["papers_processed"] == 7
+    assert linked["papers_skipped"] == 2
+    assert linked["papers_failed"] == 1
+    assert linked["status"] == "success"
+    assert linked["total_found"] == 10
+    assert linked["total_ingested"] == 4
+
+    historical = by_id[historical_id]
+    assert historical["papers_processed"] is None
+    assert historical["papers_skipped"] is None
+    assert historical["papers_failed"] is None
+
+
+def test_get_discovery_run_history_newest_first(tmp_path):
+    from lit_monitor.api.queries import get_discovery_run_history
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    linked_id, historical_id = _seed_history(db)
+
+    runs = get_discovery_run_history(db, limit=20, offset=0)["runs"]
+    # historical_id was inserted last → newest first → it leads.
+    assert runs[0]["id"] == historical_id
+    assert runs[1]["id"] == linked_id
+
+
+def test_get_discovery_run_history_paginates(tmp_path):
+    from lit_monitor.api.queries import get_discovery_run_history
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    _seed_history(db)
+
+    page1 = get_discovery_run_history(db, limit=1, offset=0)
+    page2 = get_discovery_run_history(db, limit=1, offset=1)
+    assert page1["total"] == 2 and page2["total"] == 2
+    assert len(page1["runs"]) == 1 and len(page2["runs"]) == 1
+    assert page1["runs"][0]["id"] != page2["runs"][0]["id"]

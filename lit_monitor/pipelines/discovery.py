@@ -161,12 +161,15 @@ def run_discovery(
     if not dry_run:
         state_db.start_run(run_id, "discovery")
         # P1: open the structured discovery_runs row; finish in finally below.
-        _disc_run_id = state_db.start_discovery_run({
-            "rag_mode": _rag_mode,
-            "top_k": top_k,
-            "screen_all": screen_all,
-            "sim_threshold": sim_threshold,
-        })
+        _disc_run_id = state_db.start_discovery_run(
+            {
+                "rag_mode": _rag_mode,
+                "top_k": top_k,
+                "screen_all": screen_all,
+                "sim_threshold": sim_threshold,
+            },
+            run_log_id=run_id,  # link discovery_runs → run_log for unified history
+        )
 
     # A4: compute search window from last successful run date.
     # Cap at 90 days to avoid overwhelming databases after a long gap.

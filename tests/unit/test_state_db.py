@@ -636,6 +636,43 @@ class TestDiscoveryRunHelpers:
         assert row is not None
 
 
+class TestDiscoveryRunLogLink:
+    """Link discovery_runs to run_log via a run_log_id FK column."""
+
+    def test_run_log_id_column_exists(self, tmp_path):
+        db = StateDB(tmp_path / "state.db")
+        with db._connect() as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(discovery_runs)").fetchall()]
+        assert "run_log_id" in cols
+
+    def test_migration_is_idempotent(self, tmp_path):
+        """Building a StateDB against the same file twice must not error and keep the column."""
+        path = tmp_path / "state.db"
+        StateDB(path)  # first build runs migrations
+        db = StateDB(path)  # second build re-runs the migration guard
+        with db._connect() as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(discovery_runs)").fetchall()]
+        assert "run_log_id" in cols
+
+    def test_start_discovery_run_persists_run_log_id(self, tmp_path):
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({"topics": ["x"]}, run_log_id="uuid-x")
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT run_log_id FROM discovery_runs WHERE id=?", (run_id,)
+            ).fetchone()
+        assert row[0] == "uuid-x"
+
+    def test_start_discovery_run_default_run_log_id_is_null(self, tmp_path):
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({"topics": ["x"]})
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT run_log_id FROM discovery_runs WHERE id=?", (run_id,)
+            ).fetchone()
+        assert row[0] is None
+
+
 # ---------------------------------------------------------------------------
 # Bundle H: feedback_events table + helper tests
 # ---------------------------------------------------------------------------

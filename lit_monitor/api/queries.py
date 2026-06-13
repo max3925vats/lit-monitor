@@ -602,6 +602,49 @@ def get_discovery_runs(
     return {"runs": [dict(zip(cols, r)) for r in rows], "total": total}
 
 
+def get_discovery_run_history(
+    state_db: Any,
+    *,
+    limit: int = 20,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Unified discovery-run history: discovery_runs LEFT JOIN run_log.
+
+    Joins each discovery_runs row to its sibling run_log row (via the
+    ``run_log_id`` FK, a uuid) so a single view carries both the structured
+    run metadata and the per-paper processed/skipped/failed counts. Historical
+    rows written before the FK existed have ``run_log_id IS NULL``; for them the
+    three count columns come back as ``None``.
+
+    Args:
+        state_db: StateDB instance.
+        limit:    Maximum number of rows to return (default 20).
+        offset:   Row offset for pagination (default 0).
+
+    Returns:
+        Dict with keys ``runs`` (list of run dicts, newest first) and ``total``
+        (total count of discovery_runs rows). Each run dict has keys: id,
+        started_at, finished_at, status, total_found, total_ingested,
+        papers_processed, papers_skipped, papers_failed.
+    """
+    cols = [
+        "id", "started_at", "finished_at", "status", "total_found",
+        "total_ingested", "papers_processed", "papers_skipped", "papers_failed",
+    ]
+    with state_db._connect() as conn:
+        rows = conn.execute(
+            "SELECT dr.id, dr.started_at, dr.finished_at, dr.status, "
+            "dr.total_found, dr.total_ingested, "
+            "rl.papers_processed, rl.papers_skipped, rl.papers_failed "
+            "FROM discovery_runs dr "
+            "LEFT JOIN run_log rl ON dr.run_log_id = rl.run_id "
+            "ORDER BY dr.started_at DESC, dr.id DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        total: int = conn.execute("SELECT COUNT(*) FROM discovery_runs").fetchone()[0]
+    return {"runs": [dict(zip(cols, r)) for r in rows], "total": total}
+
+
 def get_discovery_run(state_db: Any, run_id: int) -> dict[str, Any] | None:
     """P5: single discovery_runs row (without papers). None if not found.
 

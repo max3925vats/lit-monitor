@@ -151,7 +151,8 @@ CREATE TABLE IF NOT EXISTS discovery_runs (
     status           TEXT NOT NULL DEFAULT 'running',
     total_found      INTEGER DEFAULT 0,
     total_ingested   INTEGER DEFAULT 0,
-    run_params_json  TEXT
+    run_params_json  TEXT,
+    run_log_id       TEXT          -- FK → run_log.run_id (uuid); NULL for pre-FK historical rows
 );
 CREATE TABLE IF NOT EXISTS discovery_paper_results (
     -- P1: one row per ranked candidate seen by a discovery run.
@@ -479,6 +480,10 @@ class StateDB:
                 # when a score_breakdown dict is provided.
                 ("discovery_paper_results", "score_breakdown_json",
                  "ALTER TABLE discovery_paper_results ADD COLUMN score_breakdown_json TEXT"),
+                # Discovery history join: FK linking discovery_runs → run_log.run_id (uuid).
+                # NULL for historical rows written before this column existed.
+                ("discovery_runs", "run_log_id",
+                 "ALTER TABLE discovery_runs ADD COLUMN run_log_id TEXT"),
             ]
             for table, column, sql in additive_migrations:
                 if self._column_exists(conn, table, column):
@@ -1594,12 +1599,18 @@ class StateDB:
 
     # -- P1: structured discovery-run tracking --
 
-    def start_discovery_run(self, run_params: dict) -> int:
+    def start_discovery_run(
+        self, run_params: dict, run_log_id: str | None = None
+    ) -> int:
         """P1: insert a discovery_runs row with status='running'; return new run_id.
 
         Args:
             run_params: Arbitrary dict of run parameters (topics, since_days,
                 rag_mode, etc.) serialised as JSON for later auditing.
+            run_log_id: The uuid of the sibling run_log row (from start_run), so
+                discovery history can join the two tables. None for callers that
+                don't create a run_log row (e.g. dry-run paths / legacy tests),
+                which leaves the column NULL.
 
         Returns:
             Integer primary-key of the newly inserted row.
@@ -1607,8 +1618,8 @@ class StateDB:
         import json as _json
         with self._connect() as conn:
             cur = conn.execute(
-                "INSERT INTO discovery_runs (run_params_json) VALUES (?)",
-                (_json.dumps(run_params),),
+                "INSERT INTO discovery_runs (run_params_json, run_log_id) VALUES (?, ?)",
+                (_json.dumps(run_params), run_log_id),
             )
             # _connect() commits on context-manager exit, but we need lastrowid
             # before that happens — SQLite guarantees it is set after execute().
