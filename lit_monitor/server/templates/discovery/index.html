@@ -50,92 +50,67 @@
   <p class="field-note">No discovery runs in the log yet.</p>
   {% endif %}
 
-  {# P8: discovery runs table with links to per-run paper cards (/discovery/{id}) #}
-  {% if discovery_runs %}
-  <h2>Discovery runs</h2>
-  {% if latest_discovery_run %}
-  <div class="card" id="latest-run-summary">
-    <h3>Latest run &mdash; #{{ latest_discovery_run.id }}</h3>
-    <p class="field-note">
-      {{ (latest_discovery_run.started_at or "")[:19] or "—" }}
-      &middot;
-      <span class="status-{{ latest_discovery_run.status }}">{{ latest_discovery_run.status or "unknown" }}</span>
-      &middot;
-      {{ latest_discovery_run.total_ingested or 0 }} ingested /
-      {{ latest_discovery_run.total_found or 0 }} found
-      &middot;
-      <a href="/discovery/{{ latest_discovery_run.id }}">View papers &rarr;</a>
-    </p>
-  </div>
-  {% endif %}
-  <table class="runs-table" id="run-history-table">
-    <thead>
-      <tr><th>Run</th><th>Started</th><th>Status</th><th>Found</th><th>Ingested</th><th></th></tr>
-    </thead>
-    <tbody>
-      {% for run in discovery_runs %}
-      <tr>
-        <td><code>#{{ run.id }}</code></td>
-        <td>{{ (run.started_at or "")[:19] or "—" }}</td>
-        <td>{{ run.status or "—" }}</td>
-        <td>{{ run.total_found or 0 }}</td>
-        <td>{{ run.total_ingested or 0 }}</td>
-        <td><a href="/discovery/{{ run.id }}">Papers &rarr;</a></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  {# AR-7: corpus-style prev/next pagination for the discovery-runs table.
-     Prev is hidden at offset 0; Next is hidden on the last page. #}
-  <div class="button-row" style="margin-top: 0.75rem;">
-    <span class="field-note">
-      {{ runs_offset + 1 }}&ndash;{{ runs_offset + discovery_runs|length }} of {{ runs_total }}
-    </span>
-    {% if runs_has_prev %}
-    <a class="btn btn-secondary btn-sm" href="/discovery?runs_offset={{ runs_prev_offset }}">
-      &larr; Prev
-    </a>
-    {% endif %}
-    {% if runs_has_next %}
-    <a class="btn btn-secondary btn-sm" href="/discovery?runs_offset={{ runs_next_offset }}">
-      Next &rarr;
-    </a>
-    {% endif %}
-  </div>
-  {% endif %}
-
-  {# Run log: skipped/failed counts sourced from run_log (recent_runs), which the
-     discovery_runs table doesn't expose. Collapsed by default so it's not a
-     redundant in-your-face second table, but the data is still accessible. #}
-  {% if recent_runs %}
-  <sl-details summary="Run log — processed / skipped / failed (last 10)" style="margin-top:1.25rem">
+  {# P4: ONE consolidated, collapsed Run History card backed by the unified
+     get_discovery_run_history query (discovery_runs LEFT JOIN run_log). Carries
+     both the structured run metadata AND the per-paper processed/skipped/failed
+     counts. Historical rows (run_log_id IS NULL) have None counts → rendered as
+     em-dashes; a real 0 is preserved (we test `is none`, not truthiness). #}
+  <sl-details summary="Run History" style="margin-top:1.25rem">
+    {% if run_history %}
     <table class="runs-table">
       <thead>
         <tr>
+          <th>Run</th>
           <th>Started</th>
+          <th>Finished</th>
           <th>Status</th>
+          <th>Found</th>
+          <th>Ingested</th>
           <th>Processed</th>
           <th>Skipped</th>
           <th>Failed</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
-        {% for run in recent_runs %}
+        {% for r in run_history %}
         <tr>
-          <td>{{ (run.started_at or "")[:19] or "—" }}</td>
-          <td>{{ run.status or "—" }}</td>
-          <td>{{ run.papers_processed or 0 }}</td>
-          <td>{{ run.papers_skipped or 0 }}</td>
-          <td>{{ run.papers_failed or 0 }}</td>
+          <td><code>#{{ r.id }}</code></td>
+          <td>{% if (r.started_at or "")[:19] %}{{ (r.started_at or "")[:19] }}{% else %}&mdash;{% endif %}</td>
+          <td>{% if (r.finished_at or "")[:19] %}{{ (r.finished_at or "")[:19] }}{% else %}&mdash;{% endif %}</td>
+          <td>{% if r.status %}{{ r.status }}{% else %}&mdash;{% endif %}</td>
+          <td>{{ r.total_found or 0 }}</td>
+          <td>{{ r.total_ingested or 0 }}</td>
+          <td>{% if r.papers_processed is none %}&mdash;{% else %}{{ r.papers_processed }}{% endif %}</td>
+          <td>{% if r.papers_skipped is none %}&mdash;{% else %}{{ r.papers_skipped }}{% endif %}</td>
+          <td>{% if r.papers_failed is none %}&mdash;{% else %}{{ r.papers_failed }}{% endif %}</td>
+          <td><a href="/discovery/{{ r.id }}">Papers &rarr;</a></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+
+    {# Offset-link pager (page size 10). Prev hidden at offset 0; Next hidden on
+       the last page. #}
+    <div class="button-row" style="margin-top: 0.75rem;">
+      <span class="field-note">
+        {{ runs_offset + 1 }}&ndash;{{ runs_offset + run_history|length }} of {{ runs_total }}
+      </span>
+      {% if runs_has_prev %}
+      <a class="btn btn-secondary btn-sm" href="/discovery?runs_offset={{ runs_prev_offset }}">
+        &larr; Newer
+      </a>
+      {% endif %}
+      {% if runs_has_next %}
+      <a class="btn btn-secondary btn-sm" href="/discovery?runs_offset={{ runs_next_offset }}">
+        Older &rarr;
+      </a>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="field-note">No discovery runs yet.</p>
+    {% endif %}
   </sl-details>
-  {% else %}
-  <p class="field-note" style="margin-top:1rem">No run log entries yet.</p>
-  {% endif %}
 
   <h2>Today's digest</h2>
   {% if digest_path %}

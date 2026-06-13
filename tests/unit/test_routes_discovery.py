@@ -530,7 +530,7 @@ class TestDiscoveryLastRunKvSemantics:
 
 @pytest.fixture
 def seeded_many_runs_db(tmp_path):
-    """Real StateDB with 25 discovery_runs so the runs table spans >1 page (20)."""
+    """Real StateDB with 25 discovery_runs so the Run History card spans >2 pages (10)."""
     from lit_monitor.core.state_db import StateDB
 
     db = StateDB(tmp_path / "state.db")
@@ -551,35 +551,36 @@ def client_with_many_runs(seeded_many_runs_db):
 
 
 class TestDiscoveryRunsPagination:
-    """AR-7: corpus-style prev/next pagination on the discovery-runs table."""
+    """P4: offset-link prev/next pagination on the Run History card (page size 10)."""
 
     def test_page_one_has_next_no_prev(self, client_with_many_runs):
         client, ids = client_with_many_runs
         r = client.get("/discovery")
         assert r.status_code == 200
         body = r.text
-        assert "runs_offset=20" in body       # Next → page 2
+        assert "runs_offset=10" in body       # Next → page 2
         assert "runs_offset=0" not in body     # no Prev on page 1
         assert "of 25" in body                 # total surfaced
 
-    def test_page_two_renders_next_slice_and_prev(self, client_with_many_runs):
+    def test_last_page_renders_tail_slice_and_prev(self, client_with_many_runs):
         client, ids = client_with_many_runs
-        # Newest-first (id DESC): page 1 = ids[24..5], page 2 = ids[4..0].
+        # Newest-first (id DESC): page 1 = ids[24..15], page 3 = ids[4..0].
         oldest_run = ids[0]
         # Match the exact table link (trailing quote) so /discovery/1 does not
         # spuriously match /discovery/19, /discovery/10, etc.
         oldest_link = f'/discovery/{oldest_run}"'
-        # The oldest run's table link is on page 2 only (not page 1).
+        # The oldest run's table link is on the last page only (not page 1).
         page1 = client.get("/discovery").text
         assert oldest_link not in page1
 
+        # 25 runs, page size 10 → last page starts at offset 20 (5 rows).
         r = client.get("/discovery?runs_offset=20")
         assert r.status_code == 200
         body = r.text
         assert oldest_link in body
         # Last page: a Prev link, no Next.
-        assert "runs_offset=0" in body          # Prev → page 1
-        assert "runs_offset=40" not in body     # no Next past the end
+        assert "runs_offset=10" in body         # Prev → page 2
+        assert "runs_offset=30" not in body     # no Next past the end
 
 
 class TestRouteOrderingSafety:
@@ -718,3 +719,150 @@ class TestP31DiscoveryPolish:
         assert '<details class="why-panel" open>' not in html, (
             "The 'Why this paper?' panel must start collapsed — remove the 'open' attr"
         )
+
+
+# ---------------------------------------------------------------------------
+# P4: consolidate the three run-data blocks into ONE "Run History" card
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def history_db(tmp_path):
+    """Real StateDB with two discovery runs:
+
+    - one *modern* run linked to a run_log row (papers_* counts present, incl. 0),
+    - one *historical* run with run_log_id=NULL (papers_* come back None).
+
+    Returns (db, modern_id, historical_id).
+    """
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+
+    # Modern run: create a run_log row and link it. processed=0 is a REAL value
+    # (must render as 0, not —); skipped=3, failed=1.
+    db.start_run("uuid-modern", "discovery")
+    db.finish_run("uuid-modern", status="success", processed=0, skipped=3, failed=1)
+    modern_id = db.start_discovery_run({"topics": ["m"]}, run_log_id="uuid-modern")
+    db.finish_discovery_run(modern_id, status="success", total_found=5, total_ingested=2)
+
+    # Historical run: no run_log link → papers_* are None.
+    historical_id = db.start_discovery_run({"topics": ["h"]}, run_log_id=None)
+    db.finish_discovery_run(historical_id, status="success", total_found=1, total_ingested=0)
+
+    return db, modern_id, historical_id
+
+
+@pytest.fixture
+def client_with_history(history_db):
+    db, modern_id, historical_id = history_db
+    rt = _make_fake_runtime(db)
+    with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
+        yield TestClient(create_app()), modern_id, historical_id
+
+
+class TestRunHistoryCardConsolidation:
+    """P4: the #latest-run-summary mini-card, #run-history-table + pager, and the
+    'Run log —' sl-details collapse into ONE collapsed Run History card."""
+
+    def test_exactly_one_run_history_details(self, client_with_history):
+        client, _modern, _hist = client_with_history
+        r = client.get("/discovery")
+        assert r.status_code == 200
+        assert r.text.count('<sl-details summary="Run History"') == 1
+
+    def test_old_blocks_removed(self, client_with_history):
+        client, _modern, _hist = client_with_history
+        r = client.get("/discovery")
+        body = r.text
+        assert 'id="latest-run-summary"' not in body
+        assert 'id="run-history-table"' not in body
+        assert "Run log —" not in body
+
+    def test_all_nine_columns_present(self, client_with_history):
+        client, _modern, _hist = client_with_history
+        r = client.get("/discovery")
+        body = r.text
+        for header in (
+            ">Run<", ">Started<", ">Finished<", ">Status<", ">Found<",
+            ">Ingested<", ">Processed<", ">Skipped<", ">Failed<",
+        ):
+            assert header in body, f"missing column header {header!r}"
+
+    def test_row_links_to_run_detail(self, client_with_history):
+        client, modern_id, _hist = client_with_history
+        r = client.get("/discovery")
+        assert f"/discovery/{modern_id}" in r.text
+
+    def test_historical_row_renders_emdash_for_none_counts(self, client_with_history):
+        """Historical row (papers_* = None) shows — for processed/skipped/failed."""
+        client, _modern, _hist = client_with_history
+        r = client.get("/discovery")
+        # The historical row contributes three em-dashes for the count columns.
+        assert "&mdash;" in r.text
+
+    def test_zero_count_renders_zero_not_emdash(self, client_with_history):
+        """A real 0 (modern run, processed=0) must render as 0, not —."""
+        client, modern_id, _hist = client_with_history
+        r = client.get("/discovery")
+        body = r.text
+        # Row cell for processed=0 must show '>0<' (a real zero), proving we test
+        # `is none` and not truthiness.
+        assert ">0<" in body
+
+    def test_last_run_card_still_renders(self, client):
+        """The top 'Last run' card (driven by get_recent_runs_by_type) survives."""
+        fake_db = MagicMock()
+        fake_db.get_recent_runs_by_type.return_value = [
+            {"run_id": "abc123", "started_at": "2026-06-01", "status": "complete",
+             "papers_processed": 5, "papers_skipped": 1, "papers_failed": 0,
+             "finished_at": "2026-06-01 12:00:00"},
+        ]
+        fake_db.get_discovery_run_history = MagicMock()
+        fake_rt = MagicMock()
+        fake_rt.state_db = fake_db
+        fake_rt.config.obsidian.vault_path = ""
+        with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=fake_rt):
+            r = client.get("/discovery")
+        assert r.status_code == 200
+        assert "last-run-card" in r.text
+        assert "abc123" in r.text
+
+
+@pytest.fixture
+def client_with_12_runs(tmp_path):
+    """Real StateDB with 12 discovery runs so the page-size-10 pager spans 2 pages."""
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    ids = []
+    for i in range(12):
+        rid = db.start_discovery_run({"topics": [f"t{i}"]})
+        db.finish_discovery_run(rid, status="success", total_found=i, total_ingested=i)
+        ids.append(rid)
+    rt = _make_fake_runtime(db)
+    with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
+        yield TestClient(create_app()), ids
+
+
+class TestRunHistoryPaginationPageSize10:
+    """P4: the Run History card paginates by 10 (not 20)."""
+
+    def test_page_one_shows_ten_with_next(self, client_with_12_runs):
+        client, ids = client_with_12_runs
+        r = client.get("/discovery")
+        body = r.text
+        # 12 total → first page shows 10 rows, Next present, no Prev.
+        assert "runs_offset=10" in body       # Next → page 2
+        assert "of 12" in body
+        # Count the table data rows by counting the per-row "Papers →" links.
+        assert body.count("Papers &rarr;") == 10
+
+    def test_page_two_shows_remaining_two_no_next(self, client_with_12_runs):
+        client, ids = client_with_12_runs
+        r = client.get("/discovery?runs_offset=10")
+        body = r.text
+        assert r.status_code == 200
+        assert body.count("Papers &rarr;") == 2
+        assert "runs_offset=0" in body          # Prev → page 1
+        assert "runs_offset=20" not in body     # no Next past the end

@@ -26,6 +26,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from lit_monitor.api.queries import (
     get_discovery_run,
+    get_discovery_run_history,
     get_discovery_run_papers,
     get_discovery_runs,
 )
@@ -42,8 +43,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 # FG-3: valid retrieval modes for the discovery start form's rag_mode select.
 _VALID_RAG_MODES = ("vector", "graph", "hybrid")
 
-# AR-7: page size for the paginated discovery-runs table on the dashboard.
-_RUNS_PAGE_SIZE = 20
+# P4: page size for the paginated Run History card on the dashboard.
+_RUNS_PAGE_SIZE = 10
 
 
 def _graph_extra_available() -> bool:
@@ -164,40 +165,32 @@ def dashboard(
         except Exception:
             logger.warning("get_recent_runs_by_type failed", exc_info=True)
 
-    # P8: also fetch structured discovery_runs (have id, total_found, total_ingested)
-    # to populate the run-history table with links to /discovery/{run_id}.
-    # AR-7: this table is now paginated (corpus-style offset/limit) so a long run
-    # history no longer renders unbounded. The "latest run" summary always shows
-    # the newest run (offset 0) independent of the table's current page.
-    discovery_runs: list[dict] = []
-    latest_discovery_run: dict | None = None
+    # P4: unified Run History — discovery_runs LEFT JOIN run_log so a single
+    # paginated card carries both structured run metadata (id, found, ingested)
+    # AND the per-paper processed/skipped/failed counts. Historical rows (no
+    # run_log FK) return None for the three count columns; the template renders
+    # those as em-dashes. Paginated by 10 (offset-link prev/next).
+    run_history: list[dict] = []
     runs_total = 0
-    # AR-7: clamp the requested offset to >= 0. A hand-crafted ?runs_offset= past
-    # the end yields an empty table, but the runs pager renders unconditionally so
-    # Prev (shown whenever offset > 0) still navigates back to a valid page.
+    # Clamp the requested offset to >= 0. A hand-crafted ?runs_offset= past the
+    # end yields an empty card, but the pager renders whenever rows exist so Prev
+    # (shown whenever offset > 0) still navigates back to a valid page.
     offset = max(runs_offset, 0)
     if db is not None:
         try:
             state_db = get_runtime().state_db
-            result = get_discovery_runs(
+            result = get_discovery_run_history(
                 state_db, limit=_RUNS_PAGE_SIZE, offset=offset
             )
-            discovery_runs = result.get("runs", [])
+            run_history = result.get("runs", [])
             # Coerce defensively: a non-int total (e.g. a partial test double)
             # would break the has_next arithmetic at render time.
             try:
                 runs_total = int(result.get("total", 0))
             except (TypeError, ValueError):
-                runs_total = len(discovery_runs)
-            # The latest run is always the newest row (offset 0), shown in the
-            # summary card regardless of which page the table is on.
-            if offset == 0:
-                latest_discovery_run = discovery_runs[0] if discovery_runs else None
-            else:
-                head = get_discovery_runs(state_db, limit=1, offset=0).get("runs", [])
-                latest_discovery_run = head[0] if head else None
+                runs_total = len(run_history)
         except Exception:
-            logger.warning("get_discovery_runs failed", exc_info=True)
+            logger.warning("get_discovery_run_history failed", exc_info=True)
 
     digest_path, digest_content = _todays_digest()
     return templates.TemplateResponse(
@@ -206,10 +199,9 @@ def dashboard(
         {
             "last_run": last_run,
             "recent_runs": recent_runs,
-            # P8: structured discovery_runs with id field for linking
-            "discovery_runs": discovery_runs,
-            "latest_discovery_run": latest_discovery_run,
-            # AR-7: pagination context for the discovery-runs table.
+            # P4: unified run-history rows for the single Run History card.
+            "run_history": run_history,
+            # P4: pagination context for the Run History card (page size 10).
             "runs_total": runs_total,
             "runs_offset": offset,
             "runs_has_prev": offset > 0,
