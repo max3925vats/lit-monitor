@@ -1,4 +1,5 @@
 <section class="discovery-controls card"
+  data-running="{{ 'true' if is_running else 'false' }}"
   hx-get="/api/discovery/controls" hx-trigger="every 5s, dischange from:body" hx-swap="outerHTML">
   {% if is_running %}
   <p class="pill warning">

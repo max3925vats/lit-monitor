@@ -668,6 +668,11 @@ a:hover {
 .field-note.error { color: var(--error-fg); }
 
 /* --- Live progress panel (brain-build SSE stream) --- */
+/* Run-gated wrapper: shown only while a run is active (site.js toggles `hidden`
+   from the controls fragment's data-running). `!important` guards against global
+   [hidden] overrides; generous top margin so the revealed pane sits well. */
+.live-progress-wrap { margin-top: 1.5rem; }
+.live-progress-wrap[hidden] { display: none !important; }
 .live-progress { margin: 1rem 0; }
 .live-progress-pane {
   height: 30vh;            /* fixed height so the pane stops growing and the

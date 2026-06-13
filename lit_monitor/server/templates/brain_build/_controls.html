@@ -1,4 +1,5 @@
 <section class="brain-build-controls card"
+  data-running="{{ 'true' if is_running else 'false' }}"
   hx-get="/api/brain-build/controls" hx-trigger="every 5s" hx-swap="outerHTML">
   <h2>Controls</h2>
   {% if is_running %}

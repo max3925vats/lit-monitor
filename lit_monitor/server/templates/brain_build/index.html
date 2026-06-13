@@ -47,15 +47,20 @@
     <code>lit-monitor brain-build</code> to populate the state DB.</p>
   {% endif %}
 
-  <h2>Live progress</h2>
-  <div hx-ext="sse" sse-connect="/api/brain-build/stream" class="live-progress">
-    <div id="progress-lines"
-         sse-swap="progress"
-         hx-swap="beforeend scroll:bottom"
-         class="live-progress-pane">
-      <div class="field-note live-progress-hint">
-        Streaming from the newest <code>brain_build</code> JSONL log.
-        New lines appear here as the pipeline runs.
+  {# Run-gated log pane. The wrapper is a STABLE element (never re-rendered by
+     the controls 5s poll), so its sse-connect child mounts once and keeps its
+     EventSource alive. site.js toggles `hidden` on this wrapper from the
+     controls fragment's data-running. Default hidden (no run at page load). #}
+  <div id="live-progress-wrap" class="live-progress-wrap" hidden>
+    <h2>Live progress</h2>
+    <div hx-ext="sse" sse-connect="/api/brain-build/stream" class="live-progress">
+      <div id="progress-lines"
+           sse-swap="progress"
+           hx-swap="beforeend scroll:bottom"
+           class="live-progress-pane">
+        <div class="field-note live-progress-hint">
+          Live log appears here while a <code>brain_build</code> run is active.
+        </div>
       </div>
     </div>
   </div>

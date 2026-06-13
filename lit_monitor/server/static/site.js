@@ -276,6 +276,53 @@
   });
 })();
 
+// Run-gated live-progress pane (brain-build + discovery dashboards).
+//
+// The log pane (#live-progress-wrap) should be visible only while a run is
+// active. The controls fragment above it re-renders itself every 5s and carries
+// the running state as data-running on its <section>. On each controls swap (and
+// the initial hx-trigger=load swap), read that flag and toggle `hidden` on the
+// wrapper. The wrapper itself is a stable element in index.html — it is NEVER a
+// swap target — so its sse-connect child keeps its EventSource alive across the
+// 5s poll (no reconnect storm, no lost log lines). Generic across both pages: a
+// page only has one of the two controls sections.
+(function () {
+  "use strict";
+  function syncFromControls(section) {
+    if (!section) return;
+    if (!section.classList) return;
+    if (
+      !section.classList.contains("brain-build-controls") &&
+      !section.classList.contains("discovery-controls")
+    ) {
+      return; // not a controls section — ignore (e.g. other afterSettle swaps)
+    }
+    var wrap = document.getElementById("live-progress-wrap");
+    if (!wrap) return; // not a dashboard with a log pane
+    var running = section.getAttribute("data-running") === "true";
+    if (running) wrap.removeAttribute("hidden");
+    else wrap.setAttribute("hidden", "");
+  }
+  // The controls fragment loads via hx-trigger=load and re-polls every 5s; each
+  // settle gives us the freshest data-running. afterSettle fires after the DOM
+  // is in place, so getAttribute reads the swapped-in markup.
+  document.body.addEventListener("htmx:afterSettle", function (evt) {
+    var target = (evt.detail && evt.detail.target) || evt.target;
+    syncFromControls(target);
+  });
+  // Initial sync in case the controls section is already in the DOM at load
+  // (e.g. server-rendered or already-settled before this listener attached).
+  function initSync() {
+    syncFromControls(document.querySelector(".brain-build-controls"));
+    syncFromControls(document.querySelector(".discovery-controls"));
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initSync);
+  } else {
+    initSync();
+  }
+})();
+
 // App-shell: mobile sidebar toggle + global Ask drawer open.
 (function () {
   "use strict";
