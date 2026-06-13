@@ -94,3 +94,34 @@ def test_delete_schedule_invokes_remover(client):
         resp = client.delete("/api/schedule")
     assert resp.status_code == 200
     mock_rm.assert_called_once()
+
+
+@pytest.mark.unit
+def test_schedule_form_uses_shoelace(client):
+    """C4: schedule page form uses Shoelace components; day_of_week pre-selection
+    is on the sl-select HOST (value= attribute), not on an sl-option (gotcha)."""
+    import re
+
+    with patch("lit_monitor.server.routes.schedule.detect_platform", return_value="macos"), \
+         patch("lit_monitor.server.routes.schedule.read_schedule", return_value=None):
+        resp = client.get("/schedule")
+
+    assert resp.status_code == 200
+    html = resp.text
+
+    # Shoelace components are present
+    assert "<sl-select" in html
+    assert "<sl-button" in html
+
+    # Time field is an sl-input with type="time"
+    assert 'type="time"' in html
+
+    # Day-of-week pre-selection is on the HOST (value= attr on <sl-select>),
+    # NOT via `selected` on an individual <sl-option> — Shoelace gotcha.
+    assert re.search(r'<sl-select\b[^>]*\bname="day_of_week"[^>]*\bvalue="', html), (
+        "sl-select for day_of_week must carry value= on the host element"
+    )
+
+    # Sanity: no native <select> or <input type="time"> remain in the form block
+    assert "<select" not in html
+    assert '<input type="time"' not in html

@@ -20,26 +20,26 @@
     <dt>Time</dt><dd>{{ current.time }}</dd>
   </dl>
   <form hx-delete="/api/schedule" hx-target="#schedule-result" hx-swap="innerHTML" hx-confirm="Remove the discovery schedule?">
-    <button type="submit" class="button danger">Remove schedule</button>
+    <sl-button variant="danger" type="submit">Remove schedule</sl-button>
   </form>
   {% else %}
   <p class="field-note">No schedule installed yet — create one below to run discovery on a cadence.</p>
   {% endif %}
 
   <h2>{% if current %}Replace{% else %}Create{% endif %} schedule</h2>
-  <form hx-post="/api/schedule" hx-target="#schedule-result" hx-swap="innerHTML"
+  <form class="control-form" hx-post="/api/schedule" hx-target="#schedule-result" hx-swap="innerHTML"
         hx-encoding="multipart/form-data">
-    <label>Day of week
-      <select name="day_of_week" required>
-        {% for day in ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] %}
-        <option value="{{ day }}" {% if current and current.day_of_week == day %}selected{% endif %}>{{ day }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Time (HH:MM, 24h, local time)
-      <input type="time" name="time" value="{{ current.time if current else "08:00" }}" required>
-    </label>
-    <button type="submit" class="button">{% if current %}Replace{% else %}Create{% endif %}</button>
+    <sl-select name="day_of_week" label="Day of week" required value="{{ current.day_of_week if current else 'mon' }}">
+      <sl-option value="mon">mon</sl-option>
+      <sl-option value="tue">tue</sl-option>
+      <sl-option value="wed">wed</sl-option>
+      <sl-option value="thu">thu</sl-option>
+      <sl-option value="fri">fri</sl-option>
+      <sl-option value="sat">sat</sl-option>
+      <sl-option value="sun">sun</sl-option>
+    </sl-select>
+    <sl-input type="time" name="time" label="Time (HH:MM, 24h, local)" value="{{ current.time if current else '08:00' }}" required></sl-input>
+    <sl-button variant="primary" type="submit">{% if current %}Replace{% else %}Create{% endif %}</sl-button>
   </form>
 
   <div id="schedule-result"></div>
