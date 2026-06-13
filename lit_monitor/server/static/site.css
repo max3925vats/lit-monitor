@@ -1465,6 +1465,28 @@ sl-card.paper-card::part(base) { width: 100%; }
    Actions) and the lazy HTMX fragment slots get even vertical spacing instead
    of sitting flush against each other. */
 .paper-detail { display: flex; flex-direction: column; gap: 1rem; }
+
+/* --- Corpus list: left filter rail + results (P4) --- */
+/* Two-column grid: a fixed ~17rem filter rail on the left, results fill the
+   rest. Stacks vertically on narrow screens so the rail sits above the table. */
+.corpus-layout {
+  display: grid;
+  grid-template-columns: 17rem minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+.corpus-rail { min-width: 0; }
+.corpus-filters { display: flex; flex-direction: column; gap: 1rem; }
+/* Action button sized to content (rubric #1) — not a full-width stretch. */
+.corpus-filters sl-button { align-self: flex-start; }
+.corpus-results { min-width: 0; overflow-x: auto; }
+@media (max-width: 820px) {
+  .corpus-layout { grid-template-columns: 1fr; }
+}
+
+/* rubric #15: cap the extraction list height so one section can't stretch the
+   page; it scrolls inside the card instead (100+ extraction fields are common). */
+.extraction-scroll { max-height: 28rem; overflow: auto; }
 .rate-summary { cursor: pointer; display: inline-block; font-size: 0.82rem; }
 .home-card { width: 100%; }
 .home-card a { text-decoration: none; color: inherit; display: block; }

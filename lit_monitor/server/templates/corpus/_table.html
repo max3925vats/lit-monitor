@@ -1,5 +1,19 @@
 {# FE2-2: corpus table fragment — returned standalone on HTMX requests and
-   included inside #corpus-table on the full page. #}
+   included inside #corpus-table on the full page.
+
+   P4 (Shoelace/rubric): the per-item ingestion state is shown as a coloured
+   .status-dot (green=indexed / grey=pending) with an accessible title — not the
+   old ✓/✗ pill glyphs (rubric #16). The DOI is a .doi-cell link to the internal
+   detail page (truncated + title= tooltip, rubric #15/#17); the title also links
+   to the detail page. #}
+{# Status-dot helper: green when the stage is done, grey (pending) otherwise. #}
+{% macro stage_dot(done, label) %}
+  {%- if done -%}
+    <span class="status-dot ok" title="{{ label }}: indexed" aria-label="{{ label }}: indexed"></span>
+  {%- else -%}
+    <span class="status-dot pending" title="{{ label }}: not yet" aria-label="{{ label }}: not yet"></span>
+  {%- endif -%}
+{% endmacro %}
 {% if not rows %}
 <p class="field-note">
   No papers match these filters. Run a brain-build (<code>lit-monitor
@@ -10,6 +24,7 @@
   <thead>
     <tr>
       <th>Title</th>
+      <th>DOI</th>
       <th>Year</th>
       <th>Source</th>
       <th>Confidence</th>
@@ -23,6 +38,13 @@
     {% for row in rows %}
     <tr>
       <td><a href="/corpus/{{ row.doi }}">{{ row.title or "(untitled)" }}</a></td>
+      <td class="doi-cell">
+        {%- if row.doi -%}
+        <a href="/corpus/{{ row.doi }}" title="{{ row.doi }}">{{ row.doi }}</a>
+        {%- else -%}
+        <span class="muted">&mdash;</span>
+        {%- endif -%}
+      </td>
       <td>{% if row.year %}{{ row.year }}{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
       <td>{% if row.source_type %}{{ row.source_type }}{% else %}&mdash;{% endif %}</td>
       <td>
@@ -32,27 +54,9 @@
           <span class="muted">&mdash;</span>
         {% endif %}
       </td>
-      <td>
-        {% if row.embeddings_indexed %}
-          <span class="pill success">&check;</span>
-        {% else %}
-          <span class="pill danger">&cross;</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if row.graph_indexed %}
-          <span class="pill success">&check;</span>
-        {% else %}
-          <span class="pill danger">&cross;</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if row.notes_synced %}
-          <span class="pill success">&check;</span>
-        {% else %}
-          <span class="pill danger">&cross;</span>
-        {% endif %}
-      </td>
+      <td>{{ stage_dot(row.embeddings_indexed, "Embedded") }}</td>
+      <td>{{ stage_dot(row.graph_indexed, "Graph") }}</td>
+      <td>{{ stage_dot(row.notes_synced, "Notes") }}</td>
       <td class="field-note">{% if (row.last_updated or "")[:10] %}{{ (row.last_updated or "")[:10] }}{% else %}&mdash;{% endif %}</td>
     </tr>
     {% endfor %}

@@ -1,4 +1,11 @@
-{# FE2-2: /corpus — a read lens over the processed-papers corpus (state DB). #}
+{# FE2-2: /corpus — a read lens over the processed-papers corpus (state DB).
+
+   P4 (Shoelace): two-column layout — a left filter rail (Shoelace controls) +
+   the results region on the right. The filter form keeps its ORIGINAL HTMX
+   wiring: hx-get="/corpus" swaps only the #corpus-table region. The route reads
+   the EXACT param names below (search, source_type, status_gap, theme, sort);
+   pre-selection is via value= on the sl-input/sl-select HOST (the Shoelace
+   initial-value gotcha — selected= on <sl-option> is a no-op). #}
 {% extends "base.html" %}
 {% block title %}Corpus — lit-monitor{% endblock %}
 {% block content %}
@@ -11,55 +18,66 @@
     </p>
   </div>
 
-  {# Filter form: hx-get refreshes only the #corpus-table region. New filters
-     reset to offset 0 (the hidden offset starts at 0; pagination links carry
-     the current filters forward). #}
-  <form class="corpus-filters button-row"
-        hx-get="/corpus"
-        hx-target="#corpus-table"
-        hx-swap="innerHTML"
-        hx-trigger="submit, change from:select">
-    <input type="search" name="search" value="{{ search }}"
-           placeholder="Search title or DOI…" aria-label="Search title or DOI" />
+  <div class="corpus-layout">
+    {# Left filter rail. The hx-get form refreshes only the #corpus-table region.
+       New filters reset to offset 0 (hidden offset starts at 0; pagination links
+       carry the current filters forward). hx-trigger keeps the submit + select
+       wiring; sl-select fires `sl-change`, so we listen for that too. #}
+    <aside class="corpus-rail">
+      <form class="corpus-filters"
+            hx-get="/corpus"
+            hx-target="#corpus-table"
+            hx-swap="innerHTML"
+            hx-trigger="submit, sl-change">
+        <sl-input type="search" name="search" value="{{ search }}"
+                  label="Search" placeholder="Title or DOI…"
+                  clearable></sl-input>
 
-    <select name="source_type" aria-label="Source type">
-      <option value="">All sources</option>
-      <option value="paper"{% if source_type == "paper" %} selected{% endif %}>paper</option>
-      <option value="review"{% if source_type == "review" %} selected{% endif %}>review</option>
-    </select>
+        <sl-select name="source_type" label="Source type" value="{{ source_type }}">
+          <sl-option value="">All sources</sl-option>
+          <sl-option value="paper">paper</sl-option>
+          <sl-option value="review">review</sl-option>
+        </sl-select>
 
-    <select name="status_gap" aria-label="Status gap">
-      {% for opt in status_gap_options %}
-      <option value="{{ opt }}"{% if status_gap == opt %} selected{% endif %}>
-        {{ opt if opt else "(any)" }}
-      </option>
-      {% endfor %}
-    </select>
+        <sl-select name="status_gap" label="Status gap" value="{{ status_gap }}">
+          {% for opt in status_gap_options %}
+          <sl-option value="{{ opt }}">{{ opt if opt else "(any)" }}</sl-option>
+          {% endfor %}
+        </sl-select>
 
-    {# PF-3: theme/cluster filter. On a fresh install there are no clusters yet,
-       so render a "no themes" note instead of an empty/broken <select>. The
-       select sits inside this same hx-get form, so changing it filters. #}
-    {% if themes %}
-    <select name="theme" aria-label="Theme">
-      <option value="">(any theme)</option>
-      {% for t in themes %}
-      <option value="{{ t.display_name }}"{% if theme == t.display_name %} selected{% endif %}>{{ t.display_name }}</option>
-      {% endfor %}
-    </select>
-    {% else %}
-    <input type="hidden" name="theme" value="{{ theme }}" />
-    <span class="field-note">No themes yet &mdash; run a brain-build to cluster papers.</span>
-    {% endif %}
-    <input type="hidden" name="sort" value="{{ sort }}" />
-    <input type="hidden" name="order" value="{{ order }}" />
-    <input type="hidden" name="limit" value="{{ limit }}" />
-    <input type="hidden" name="offset" value="0" />
+        {# PF-3: theme/cluster filter. On a fresh install there are no clusters
+           yet, so render a "no themes" note instead of an empty/broken select. #}
+        {% if themes %}
+        <sl-select name="theme" label="Theme" value="{{ theme }}">
+          <sl-option value="">(any theme)</sl-option>
+          {% for t in themes %}
+          <sl-option value="{{ t.display_name }}">{{ t.display_name }}</sl-option>
+          {% endfor %}
+        </sl-select>
+        {% else %}
+        <input type="hidden" name="theme" value="{{ theme }}" />
+        <span class="field-note">No themes yet &mdash; run a brain-build to cluster papers.</span>
+        {% endif %}
 
-    <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
-  </form>
+        <sl-select name="sort" label="Sort by" value="{{ sort }}">
+          <sl-option value="last_updated">Last updated</sl-option>
+          <sl-option value="year">Year</sl-option>
+          <sl-option value="title">Title</sl-option>
+          <sl-option value="status">Status</sl-option>
+        </sl-select>
 
-  <div id="corpus-table">
-    {% include "corpus/_table.html" %}
+        {# order/limit/offset are carried as hidden fields (no rail control). #}
+        <input type="hidden" name="order" value="{{ order }}" />
+        <input type="hidden" name="limit" value="{{ limit }}" />
+        <input type="hidden" name="offset" value="0" />
+
+        <sl-button type="submit" variant="primary">Apply</sl-button>
+      </form>
+    </aside>
+
+    <div id="corpus-table" class="corpus-results">
+      {% include "corpus/_table.html" %}
+    </div>
   </div>
 </section>
 {% endblock %}

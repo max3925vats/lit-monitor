@@ -7,6 +7,7 @@ network. Mirrors the ``client`` fixture from tests/unit/test_routes_ask.py.
 from __future__ import annotations
 
 import logging
+import re
 
 import pytest
 from fastapi.testclient import TestClient
@@ -44,6 +45,78 @@ def test_get_corpus_renders_table(client, monkeypatch):
     r = client.get("/corpus")
     assert r.status_code == 200
     assert "Chromatography study" in r.text and 'href="/corpus/10.1/a"' in r.text
+
+
+# --- P4: Shoelace filter rail + status-dot table ------------------------------
+
+
+def test_corpus_list_has_filter_rail_with_shoelace_controls(client, monkeypatch):
+    # P4: the list page is a two-column layout with a left filter rail. The rail
+    # holds Shoelace form controls (search input + the select filters) and an
+    # Apply submit button. The active filter values are preserved on the HOST
+    # (value="…") per the Shoelace initial-value gotcha — NOT selected= on options.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._list_themes",
+        lambda: [{"id": 1, "display_name": "Chromatography"}],
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._list_papers", lambda **k: ([], 0)
+    )
+    r = client.get(
+        "/corpus?search=carta&source_type=review&status_gap=missing_graph"
+        "&theme=Chromatography&sort=year"
+    )
+    assert r.status_code == 200
+    # Two-column layout wrapper + the rail aside.
+    assert 'class="corpus-layout"' in r.text
+    assert '<aside class="corpus-rail"' in r.text
+    # Shoelace search input bound to the route's EXACT param name (search, not q).
+    assert "<sl-input" in r.text
+    assert 'name="search"' in r.text
+    # Shoelace selects for the filters, each pre-selected via value= on the HOST.
+    assert "<sl-select" in r.text
+    assert 'name="source_type"' in r.text and 'value="review"' in r.text
+    assert 'name="status_gap"' in r.text and 'value="missing_graph"' in r.text
+    assert 'name="theme"' in r.text and 'value="Chromatography"' in r.text
+    assert 'name="sort"' in r.text and 'value="year"' in r.text
+    # The search value is reflected on the host too.
+    assert 'value="carta"' in r.text
+    # A Shoelace submit button, no native <button>/<select>/<input> form controls.
+    assert "<sl-button" in r.text
+    assert "<select" not in r.text
+
+
+def test_corpus_table_status_dot_and_doi_link(client, monkeypatch):
+    # P4: the status column renders .status-dot (color = state, not glyphs) and
+    # the DOI links to the internal detail page with a .doi-cell truncation.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._list_papers",
+        lambda **k: (
+            [
+                {
+                    "doi": "10.1/a",
+                    "title": "Chromatography study",
+                    "year": 2021,
+                    "source_type": "paper",
+                    "confidence": 0.8,
+                    "embeddings_indexed": 1,
+                    "graph_indexed": 0,
+                    "notes_synced": 1,
+                    "last_updated": "2026-06-01",
+                }
+            ],
+            1,
+        ),
+    )
+    r = client.get("/corpus")
+    assert r.status_code == 200
+    # Status shown as coloured dots, not the old ✓/✗ pill glyphs.
+    assert "status-dot" in r.text
+    assert "&check;" not in r.text and "&cross;" not in r.text
+    # The DOI cell links to the internal detail page with truncation + tooltip.
+    assert "doi-cell" in r.text
+    assert 'href="/corpus/10.1/a"' in r.text
+    assert 'title="10.1/a"' in r.text
 
 
 def test_corpus_search_passes_through(client, monkeypatch):
@@ -143,6 +216,79 @@ def test_get_corpus_detail_renders_extraction(client, monkeypatch):
     assert (
         'hx-post="/api/papers/10.1/carta/relink"' in r.text or "relink" in r.text
     )
+
+
+# --- P4: detail page Shoelace collapsibles + capped extraction list ----------
+
+
+def test_corpus_detail_has_sl_details_sections(client, monkeypatch):
+    # P4: the detail body is organised into <sl-details> sections. Extraction is
+    # open by default; the rest are collapsed. The action buttons are <sl-button>.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_paper_row",
+        lambda doi: {
+            "doi": doi,
+            "title": "Carta 2009",
+            "authors": ["A. Carta"],
+            "year": 2009,
+            "journal": "J Chrom",
+            "source_type": "paper",
+            "zotero_key": "ABCD1234",
+            "note_path": None,
+            "extraction": {"core_finding": "x", "_overall_confidence": 0.7},
+        },
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_score_breakdown",
+        lambda doi: {"doi": doi, "run_id": "r", "breakdown": {"cosine": 0.5}},
+    )
+    r = client.get("/corpus/10.1/carta")
+    assert r.status_code == 200
+    # Each section is a Shoelace <sl-details> with its heading as the summary.
+    assert 'summary="Extraction"' in r.text
+    assert 'summary="Score decomposition"' in r.text
+    assert 'summary="Related work"' in r.text
+    assert 'summary="Knowledge graph"' in r.text
+    # Extraction is open by default; verify its <sl-details> carries `open`.
+    extraction_tag = re.search(r"<sl-details[^>]*summary=\"Extraction\"[^>]*>", r.text)
+    assert extraction_tag is not None and " open" in extraction_tag.group(0)
+    # Action controls are Shoelace buttons that still POST the same endpoints.
+    assert "<sl-button" in r.text
+    assert 'hx-post="/api/papers/10.1/carta/relink"' in r.text
+    assert 'hx-post="/api/papers/10.1/carta/re-extract"' in r.text
+    # The lazy fragments live inside their collapsed sections.
+    assert 'id="corpus-related"' in r.text
+    assert 'id="corpus-graph"' in r.text
+
+
+def test_corpus_detail_extraction_list_height_capped(client, monkeypatch):
+    # P4 / rubric #15: the extraction <dl> can have 100+ fields, so its container
+    # is height-capped and scrolls inside the card. Assert the CSS rule ships.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_paper_row",
+        lambda doi: {
+            "doi": doi,
+            "title": "X",
+            "authors": [],
+            "year": None,
+            "journal": None,
+            "source_type": "paper",
+            "zotero_key": None,
+            "note_path": None,
+            "extraction": {"a": "1", "b": "2"},
+        },
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_score_breakdown", lambda doi: None
+    )
+    r = client.get("/corpus/10.1/x")
+    assert r.status_code == 200
+    # The extraction list container carries the cap class.
+    assert "extraction-scroll" in r.text
+    # And the stylesheet bounds its height with internal scroll.
+    css = client.get("/static/site.css").text
+    assert ".extraction-scroll" in css
+    assert "max-height" in css and "overflow" in css
 
 
 def test_corpus_detail_404_when_absent(client, monkeypatch):

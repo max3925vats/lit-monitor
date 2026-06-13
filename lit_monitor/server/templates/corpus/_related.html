@@ -16,19 +16,21 @@
 
    All content is rendered through Jinja autoescape ONLY — never |safe.
 #}
-<div class="card" id="corpus-related-card">
-  <h2>Related work</h2>
-
-  {# Mode toggle: each link re-requests this fragment for a different retrieval
+{# P4: rendered inside the detail page's <sl-details summary="Related work">, so
+   no inner card/<h2> heading here — the sl-details summary IS the heading
+   (rubric #12). #}
+<div id="corpus-related-card">
+  {# Mode toggle: each button re-requests this fragment for a different retrieval
      mode and swaps itself back into #corpus-related. The DOI path is literal;
      the mode query value is urlencode'd. #}
   <p class="button-row" role="group" aria-label="Retrieval mode">
     {% for m in ["vector", "graph", "hybrid"] %}
-    <a class="btn btn-secondary btn-sm{% if m == mode %} active{% endif %}"
+    <sl-button size="small"
+       variant="{% if m == mode %}primary{% else %}default{% endif %}"
        hx-get="/corpus/{{ doi }}/related?mode={{ m | urlencode }}"
        hx-target="#corpus-related"
        hx-swap="innerHTML"
-       href="/corpus/{{ doi }}/related?mode={{ m | urlencode }}">{{ m }}</a>
+       href="/corpus/{{ doi }}/related?mode={{ m | urlencode }}">{{ m }}</sl-button>
     {% endfor %}
   </p>
 
