@@ -37,7 +37,7 @@
   <h2>Last run</h2>
   <div class="card last-run-card">
     <div class="stat-grid">
-      <div><span class="stat-eyebrow">Run ID</span><code>{{ last_run.run_id }}</code></div>
+      <div><span class="stat-eyebrow">Run ID</span><code title="{{ last_run.run_id }}">{{ last_run.run_id[:8] }}…</code></div>
       <div><span class="stat-eyebrow">Started</span>{{ last_run.started_at }}</div>
       <div><span class="stat-eyebrow">Finished</span>{% if last_run.finished_at %}{{ last_run.finished_at }}{% else %}&mdash;{% endif %}</div>
       <div><span class="stat-eyebrow">Status</span>{% if last_run.status %}{{ last_run.status }}{% else %}&mdash;{% endif %}</div>

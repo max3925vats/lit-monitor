@@ -65,35 +65,80 @@
     </div>
   </div>
 
-  <h2>Per-paper status (latest {{ rows | length }})</h2>
-  {% if rows %}
-  <table class="papers-table">
-    <thead>
-      <tr>
-        <th>DOI</th>
-        <th>Title</th>
-        <th>Authors</th>
-        <th>Year</th>
-        <th>Simple</th>
-        <th>Complex</th>
-        <th>Fully</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in rows %}
-      <tr class="{% if r.error_message %}row-error{% elif r.fully_complete %}row-done{% endif %}">
-        <td><code>{{ r.doi or "(no DOI)" }}</code></td>
-        <td>{{ r.paper_title or "(no title)" }}</td>
-        <td>{{ r.authors_short or "—" }}</td>
-        <td>{{ r.paper_year or "—" }}</td>
-        <td>{{ "✓" if r.simple_complete else "·" }}</td>
-        <td>{{ "✓" if r.complex_complete else "·" }}</td>
-        <td>{{ "✓" if r.fully_complete else "·" }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
+  {# Status-dot macro (Task C): per-phase state shown as a coloured dot.
+     green=done · red=failed (phase not set but the paper errored) · grey=pending.
+     The dot reuses the .pill palette hues via .status-dot states in site.css. #}
+  {% macro phase_dot(done, errored) %}
+    {%- if done -%}
+      <span class="status-dot ok" title="Complete" aria-label="Complete"></span>
+    {%- elif errored -%}
+      <span class="status-dot fail" title="Failed" aria-label="Failed"></span>
+    {%- else -%}
+      <span class="status-dot pending" title="Not started" aria-label="Not started"></span>
+    {%- endif -%}
+  {% endmacro %}
+
+  {# Per-paper status — collapsed by default; paginated 10 rows/page (Task C). #}
+  <sl-details summary="Per-paper status">
+    {% if rows %}
+    <p class="field-note">Core fields = basic extraction &middot;
+      Deep fields = deep extraction &middot;
+      Indexed = embedded into the brain.</p>
+    <table class="papers-table">
+      <thead>
+        <tr>
+          <th>DOI</th>
+          <th>Title</th>
+          <th>Authors</th>
+          <th>Year</th>
+          <th>Core fields</th>
+          <th>Deep fields</th>
+          <th>Indexed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr class="{% if r.error_message %}row-error{% elif r.fully_complete %}row-done{% endif %}">
+          <td class="doi-cell">
+            {%- if r.doi -%}
+            <a href="https://doi.org/{{ r.doi }}" target="_blank" rel="noopener"
+               title="{{ r.doi }}">{{ r.doi }}</a>
+            {%- else -%}
+            (no DOI)
+            {%- endif -%}
+          </td>
+          <td>{{ r.paper_title or "(no title)" }}</td>
+          <td>{{ r.authors_short or "—" }}</td>
+          <td>{{ r.paper_year or "—" }}</td>
+          <td>{{ phase_dot(r.simple_complete, r.error_message) }}</td>
+          <td>{{ phase_dot(r.complex_complete, r.error_message) }}</td>
+          <td>{{ phase_dot(r.fully_complete, r.error_message) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {# Offset pagination — mirrors the discovery-runs pager. Prev hidden at
+       offset 0; Next hidden on the last page; "X–Y of Z" count. #}
+    <div class="button-row" style="margin-top: 0.75rem;">
+      <span class="field-note">
+        {{ bb_window_start }}&ndash;{{ bb_window_end }} of {{ bb_total }}
+      </span>
+      {% if bb_has_prev %}
+      <a class="btn btn-secondary btn-sm" href="/brain-build?bb_offset={{ bb_prev_offset }}">
+        &larr; Prev
+      </a>
+      {% endif %}
+      {% if bb_has_next %}
+      <a class="btn btn-secondary btn-sm" href="/brain-build?bb_offset={{ bb_next_offset }}">
+        Next &rarr;
+      </a>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="field-note">No papers tracked yet.</p>
+    {% endif %}
+  </sl-details>
 
   {% if failed_rows %}
   <sl-details summary="Failed papers ({{ failed_rows | length }})">
@@ -109,36 +154,39 @@
   </sl-details>
   {% endif %}
 
-  <h2>Recent runs</h2>
-  {% if recent_runs %}
-  <table class="runs-table">
-    <thead>
-      <tr>
-        <th>Run ID</th>
-        <th>Type</th>
-        <th>Started</th>
-        <th>Status</th>
-        <th>Papers</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for run in recent_runs %}
-      <tr>
-        <td><code>{{ run.run_id[:8] }}…</code></td>
-        <td>{{ run.run_type or "—" }}</td>
-        <td>{{ run.started_at or "—" }}</td>
-        <td>{{ run.status or "—" }}</td>
-        <td>
-          {{ run.papers_processed or 0 }}{% if run.papers_failed %}
-            ({{ run.papers_failed }} failed){% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="field-note">No runs in the log.</p>
-  {% endif %}
+  {# Recent runs — collapsed by default (Task D). brain_build runs only.
+     Type column dropped; Run ID truncated w/ full id on hover; Completed added. #}
+  <sl-details summary="Recent runs">
+    {% if recent_runs %}
+    <table class="runs-table">
+      <thead>
+        <tr>
+          <th>Run ID</th>
+          <th>Started</th>
+          <th>Completed</th>
+          <th>Status</th>
+          <th>Papers</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in recent_runs %}
+        <tr>
+          <td><code title="{{ run.run_id }}">{{ run.run_id[:8] }}…</code></td>
+          <td>{{ run.started_at or "—" }}</td>
+          <td>{{ run.finished_at or "—" }}</td>
+          <td>{{ run.status or "—" }}</td>
+          <td>
+            {{ run.papers_processed or 0 }}{% if run.papers_failed %}
+              ({{ run.papers_failed }} failed){% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="field-note">No runs in the log.</p>
+    {% endif %}
+  </sl-details>
 
   {% endif %}
 </section>

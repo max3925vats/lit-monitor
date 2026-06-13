@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 
 from lit_monitor.server.app import templates
@@ -17,6 +17,9 @@ from lit_monitor.server.runtime import get_runtime
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["brain-build"])
+
+# Per-paper table page size (Task C — 10 rows per page).
+_PAPERS_PAGE_SIZE = 10
 
 
 def _safe_runtime():
@@ -94,8 +97,16 @@ def _authors_short(authors_json: str | None) -> str:
 
 
 @router.get("/brain-build", response_class=HTMLResponse)
-def dashboard(request: Request) -> HTMLResponse:
-    """Render the read-only brain-build dashboard."""
+def dashboard(
+    request: Request,
+    bb_offset: int = Query(0, ge=0),
+) -> HTMLResponse:
+    """Render the read-only brain-build dashboard.
+
+    The per-paper table is paginated (``bb_offset``, 10 rows/page). The
+    progress bar must reflect ALL papers, so we fetch the full set once, derive
+    progress/failed-rows from it, then slice a 10-row window for the table.
+    """
     db = _safe_db()
     if db is None:
         return templates.TemplateResponse(
@@ -113,26 +124,33 @@ def dashboard(request: Request) -> HTMLResponse:
 
     collection = _safe_collection_name()
     try:
-        rows = db.get_all_brain_build_progress(limit=100)
+        # Fetch the full set so progress + failed_rows stay accurate across ALL
+        # papers (not just the current page). Pagination slices a window below.
+        full_rows = db.get_all_brain_build_progress(limit=100000)
     except Exception:
         logger.warning("get_all_brain_build_progress failed", exc_info=True)
-        rows = []
+        full_rows = []
 
-    # Decorate rows with derived fields the template uses.
-    for r in rows:
+    # Decorate the FULL set: failed_rows needs error_message across all papers,
+    # and the table window reuses the same decorated dicts.
+    for r in full_rows:
         r["error_message"] = _extract_error(r)
         r["authors_short"] = _authors_short(r.get("paper_authors"))
 
-    total = len(rows)
-    done = sum(1 for r in rows if r.get("fully_complete"))
+    total = len(full_rows)
+    done = sum(1 for r in full_rows if r.get("fully_complete"))
     pct = round(100 * done / total) if total else 0
 
-    failed_rows = [r for r in rows if r.get("error_message")]
+    failed_rows = [r for r in full_rows if r.get("error_message")]
+
+    # Clamp the offset to a valid page start; slice the 10-row window.
+    offset = max(bb_offset, 0)
+    rows = full_rows[offset : offset + _PAPERS_PAGE_SIZE]
 
     try:
-        recent_runs = db.get_recent_runs(limit=10)
+        recent_runs = db.get_recent_runs_by_type("brain_build", limit=10)
     except Exception:
-        logger.debug("get_recent_runs failed", exc_info=True)
+        logger.debug("get_recent_runs_by_type failed", exc_info=True)
         recent_runs = []
 
     return templates.TemplateResponse(
@@ -144,6 +162,15 @@ def dashboard(request: Request) -> HTMLResponse:
             "rows": rows,
             "failed_rows": failed_rows,
             "recent_runs": recent_runs,
+            # Per-paper table pagination context (Task C).
+            "bb_offset": offset,
+            "bb_total": total,
+            "bb_window_start": (offset + 1) if rows else 0,
+            "bb_window_end": offset + len(rows),
+            "bb_has_prev": offset > 0,
+            "bb_has_next": offset + _PAPERS_PAGE_SIZE < total,
+            "bb_prev_offset": max(offset - _PAPERS_PAGE_SIZE, 0),
+            "bb_next_offset": offset + _PAPERS_PAGE_SIZE,
             "db_unavailable": False,
         },
     )

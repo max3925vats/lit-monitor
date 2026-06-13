@@ -667,6 +667,31 @@ a:hover {
 }
 .field-note.error { color: var(--error-fg); }
 
+/* --- Per-paper status table (Task C) --- */
+/* Narrow, truncating DOI cell: the link ellipsizes; the full DOI is on hover
+   via the title= attribute. */
+.doi-cell {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.doi-cell a { color: var(--accent); }
+
+/* Phase status dots — reuse the .pill palette hues (no new colours):
+   ok=success, fail=danger, pending=muted. */
+.status-dot {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  vertical-align: middle;
+}
+.status-dot.ok      { background: var(--pill-success-fg); border-color: var(--pill-success-border); }
+.status-dot.fail    { background: var(--pill-danger-fg);  border-color: var(--pill-danger-border); }
+.status-dot.pending { background: var(--muted); border-color: var(--border); }
+
 /* --- Live progress panel (brain-build SSE stream) --- */
 /* Run-gated wrapper: shown only while a run is active (site.js toggles `hidden`
    from the controls fragment's data-running). `!important` guards against global
