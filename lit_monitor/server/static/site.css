@@ -889,10 +889,18 @@ a:hover {
 .btn-action:hover { border-color: var(--accent); color: var(--accent); }
 
 /* --- Bundle H: paper-card (shared partial) --- */
-.paper-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(24rem, 1fr)); gap: 1rem; margin-top: 1rem; align-items: stretch; }
+/* FIX 4: 3-up grid (was minmax(24rem …) → only 2 cols at the run-detail width).
+   minmax(20rem, 1fr) ≈ 320px fits 3 across the ~1045px content area; gap
+   tightened 1rem → 0.75rem to match the setup .card-grid density. */
+.paper-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr)); gap: 0.75rem; margin-top: 1rem; align-items: stretch; }
 .paper-cards sl-card.paper-card { height: 100%; }
 .paper-cards sl-card.paper-card::part(base) { height: 100%; display: flex; flex-direction: column; }
-.paper-card { padding: 1rem 1.25rem; }
+/* FIX 4: trim the dead space above the title. Shoelace's sl-card ::part(body)
+   carries its own ~1.25rem padding, which stacked with the old .paper-card
+   padding. Tighten the top so the <h3> sits near the card top; keep generous
+   side/bottom padding for the card body. */
+.paper-cards sl-card.paper-card::part(body) { padding: 0.85rem 1.25rem 1.1rem; }
+.paper-card { padding: 0; }
 .paper-card h3 { margin: 0 0 0.4rem; font-size: 1.05rem; }
 .paper-card h3 a { color: var(--accent); text-decoration: none; }
 .paper-card h3 a:hover { text-decoration: underline; }
@@ -946,6 +954,16 @@ a:hover {
 .settings-section sl-select { display: block; max-width: 28rem; margin-top: 0.5rem; }
 .settings-section sl-textarea { display: block; width: 100%; max-width: none; margin-top: 0.5rem; }
 .settings-section sl-switch { display: inline-flex; margin-top: 0.5rem; }
+
+/* --- FIX 3: hover affordance on every <sl-details> header ---
+   Matches .step-card a:hover and .settings-section > summary:hover so the
+   discovery / brain-build / run-history / per-paper collapsibles read as
+   clickable (they had no hover cue before). Shoelace exposes the clickable
+   header as the `header` part; tint it with the shared --hover-overlay token
+   to stay consistent with the hand-CSS collapsibles. Kept subtle so it doesn't
+   fight Shoelace's own summary styling. */
+sl-details::part(header) { cursor: pointer; transition: background 0.15s ease; }
+sl-details::part(header):hover { background: var(--hover-overlay); }
 
 /* --- Bundle H: page-header utility --- */
 .page-header { margin-bottom: 1.5rem; }
