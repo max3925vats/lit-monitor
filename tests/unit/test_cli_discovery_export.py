@@ -49,6 +49,54 @@ class TestRenderDigest:
         )
         assert "0.568" in md
 
+    def test_title_is_doi_link_when_doi_present(self):
+        """A paper WITH a doi renders the title itself as a Markdown link to
+        doi.org, and there is NO separate trailing `· [DOI](…)` suffix."""
+        from lit_monitor.output.digest_renderer import render_digest
+
+        md = render_digest(
+            {"id": 1, "started_at": "2026-01-01"},
+            [{"title": "Test Paper A", "doi": "10.1/a", "score": 0.9, "rationale": ""}],
+        )
+        assert "[**Test Paper A**](https://doi.org/10.1/a)" in md
+        # The redundant separate DOI link must be gone.
+        assert "· [DOI]" not in md
+        assert "[DOI](https://doi.org/" not in md
+
+    def test_title_plain_bold_when_no_doi(self):
+        """A paper WITHOUT a doi renders a plain bold title (no link), and the
+        line contains no https://doi.org/ for that paper."""
+        from lit_monitor.output.digest_renderer import render_digest
+
+        md = render_digest(
+            {"id": 1, "started_at": "2026-01-01"},
+            [{"title": "No DOI Paper", "doi": "", "score": 0.9, "rationale": ""}],
+        )
+        assert "**No DOI Paper**" in md
+        assert "[**No DOI Paper**]" not in md
+        assert "https://doi.org/" not in md
+
+    def test_no_pipeline_run_summary_section(self):
+        """render_digest output must never contain a Pipeline Run Summary section."""
+        from lit_monitor.output.digest_renderer import render_digest
+
+        md = render_digest(
+            {"id": 1, "started_at": "2026-01-01"},
+            [{"title": "X", "doi": "10/y", "score": 0.9, "rationale": ""}],
+        )
+        assert "## Pipeline Run Summary" not in md
+
+    def test_render_digest_rejects_recent_runs_kwarg(self):
+        """The recent_runs parameter has been removed from render_digest."""
+        from lit_monitor.output.digest_renderer import render_digest
+
+        with pytest.raises(TypeError):
+            render_digest(
+                {"id": 1, "started_at": "2026-01-01"},
+                [],
+                recent_runs=[{"run_type": "brain_build"}],
+            )
+
 
 class TestExportMdCommand:
     @pytest.fixture

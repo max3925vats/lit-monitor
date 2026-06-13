@@ -273,12 +273,10 @@ def run_discovery(
                     # Bundle B: persist per-signal breakdown for the HTTP endpoint + web UI.
                     score_breakdown=paper.get("score_breakdown"),
                 )
-        # L2: fetch recent runs for Pipeline Run Summary prepended to digest
-        recent_runs = state_db.get_recent_runs(limit=5) if not dry_run else []
         # P10b: gate the digest write on discovery.digest.auto_write (default True).
         if _resolve_digest_auto_write(config):
             digest_path = _write_digest(
-                ranked, config, sim_threshold, dry_run=dry_run, recent_runs=recent_runs,
+                ranked, config, sim_threshold, dry_run=dry_run,
             )
             summary.digest_path = digest_path
         else:
@@ -997,14 +995,12 @@ def _write_digest(
     sim_threshold: float,
     dry_run: bool = False,
     n_databases: int | None = None,
-    recent_runs: list[dict] | None = None,
 ) -> str:
     """Render and write the discovery digest note. Returns the note path.
 
     Delegates rendering to ``scripts.output.digest_renderer.render_digest``
     (single renderer, DR1).  n_databases defaults to
     len(DEFAULT_DATABASES) + 1 (for S2 supplementary search).
-    recent_runs: if provided, a Pipeline Run Summary section is prepended (L2).
     """
     from lit_monitor.output.digest_renderer import render_digest  # DR1: single renderer
 
@@ -1020,7 +1016,6 @@ def _write_digest(
         ranked,
         sim_threshold=sim_threshold,
         n_databases=_n_db,
-        recent_runs=recent_runs,
         _today=run_date,
     )
 

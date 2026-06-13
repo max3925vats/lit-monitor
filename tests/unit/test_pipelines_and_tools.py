@@ -1024,50 +1024,37 @@ def test_ingestion_no_s2_data_uses_paper_source_type(tmp_path):
     assert record is not None
     assert record["source_type"] == "paper"
 # ---------------------------------------------------------------------------
-# L2 — Pipeline Run Summary prepended to discovery digest
+# Pipeline Run Summary section removed from the discovery digest
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
-def test_discovery_digest_prepends_pipeline_run_summary(tmp_path):
-    """
-    write_discovery_digest() with a non-empty recent_runs list must prepend a
-    '## Pipeline Run Summary' section before the discovery content.
-    """
+def test_discovery_digest_has_no_pipeline_run_summary(tmp_path):
+    """The digest must no longer contain a '## Pipeline Run Summary' section."""
     from lit_monitor.pipelines.discovery import _write_digest
     config = _make_config(tmp_path)
-    recent_runs = [
-        {
-            "run_type": "brain_build",
-            "started_at": "2026-05-11T09:00:00",
-            "status": "complete",
-            "papers_processed": 12,
-            "papers_failed": 0,
-        }
-    ]
     digest_path = _write_digest(
         ranked=[_make_paper("10.1/new", score=0.9)],
         config=config,
         sim_threshold=0.5,
         dry_run=False,
-        recent_runs=recent_runs,
     )
     content = Path(digest_path).read_text(encoding="utf-8")
-    # Pipeline Run Summary section must come before the main digest separator
-    assert "## Pipeline Run Summary" in content
-    assert content.index("## Pipeline Run Summary") < content.index("---")
-    assert "brain_build" in content
+    assert "## Pipeline Run Summary" not in content
 
 
 @pytest.mark.unit
-def test_pipeline_run_summary_sources_from_run_log_not_in_memory(tmp_path):
-    """
-    run_discovery() passes state_db.get_recent_runs() to write_discovery_digest().
-    The written digest must include run_log data even when no in-memory variable tracks it.
-    """
+def test_discovery_digest_does_not_fetch_recent_runs(tmp_path):
+    """run_discovery() must not call get_recent_runs() for the digest, and the
+    written digest must not contain a Pipeline Run Summary section."""
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
-    # Seed a run_log entry so get_recent_runs() returns it
+    # Seed a run_log entry so get_recent_runs() WOULD return it if called.
     state_db.start_run("run-L2-test", "brain_build")
     state_db.finish_run("run-L2-test", status="complete", processed=7, skipped=0, failed=0)
+
+    # Tripwire: the digest path must never reach get_recent_runs().
+    state_db.get_recent_runs = MagicMock(  # type: ignore[method-assign]
+        side_effect=AssertionError("get_recent_runs must not be called for the digest")
+    )
 
     embeddings_db = MagicMock()
     embeddings_db.find_similar_to_text.return_value = []
@@ -1089,14 +1076,11 @@ def test_pipeline_run_summary_sources_from_run_log_not_in_memory(tmp_path):
                         dry_run=False,
                     )
 
-    # Find the written digest
     digest_dir = Path(config.obsidian.vault_path) / config.obsidian.digests_folder
     digests = list(digest_dir.glob("Discovery_*.md"))
     assert digests, "Expected a discovery digest to be written"
     content = digests[0].read_text(encoding="utf-8")
-    # The seeded run_log entry should appear in the digest
-    assert "brain_build" in content
-    assert "## Pipeline Run Summary" in content
+    assert "## Pipeline Run Summary" not in content
 
 
 # ===========================================================================
