@@ -73,13 +73,19 @@ jobs:
           source .venv/bin/activate 2>/dev/null || true
           uv run lit-monitor --strict diagnose --config-only || true
 
-      - name: Run unit + llm tests
+      - name: Run unit + llm + security tests
+        # tests/security/ is included: it is a pure static source scan (the
+        # SQL-injection / prompt-injection self-audit) with no live deps, runs
+        # in <1s, and is exactly the safety net CI must enforce — a banned
+        # f-string-SQL pattern once slipped to the local merge gate because this
+        # directory was not in CI.
+        #
         # Explicitly excludes tests/integration/ — those require live Ollama,
         # Zotero, and Obsidian vault and are run locally via the release-gate
         # script (./scripts/test_everything.sh). The -m "not integration" flag
         # is belt-and-braces protection against accidental @pytest.mark.integration
-        # tags in tests/unit/ or tests/llm/.
-        run: uv run pytest tests/unit/ tests/llm/ -m "not integration" -q
+        # tags. tests/visual/ is omitted on purpose (needs Playwright + a browser).
+        run: uv run pytest tests/unit/ tests/llm/ tests/security/ -m "not integration" -q
 
   package:
     # Build the wheel and prove it is pip-installable from scratch. Guards the
