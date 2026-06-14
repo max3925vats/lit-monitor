@@ -123,6 +123,9 @@ class ServerRuntime:
             "vocabulary": ProcessSlot(),
             "dev_dryrun": ProcessSlot(),
             "dev_graph_backfill": ProcessSlot(),
+            "rebuild_vectors": ProcessSlot(),
+            "rebuild_graph": ProcessSlot(),
+            "rebuild_notes": ProcessSlot(),
         }
     )
 
