@@ -24,9 +24,10 @@ def live_server():
     # NOTE: LIT_MONITOR_ROOT redirects the CONFIG DIR only (config/*.yaml). It does
     # NOT redirect the secrets path (~/.config/lit-monitor/config.toml — hard-wired
     # to Path.home() in setup/_paths.py + runtime.py). The visual suite is safe
-    # because no test drives a write route (only /settings + /setup step-1 write,
-    # and neither is submitted here — Playwright form tests target /settings, whose
-    # extraction.yaml save IS under the redirected config dir). If a future visual
+    # because no test drives a write route (only /api/settings/* + /setup step-1
+    # write, and neither is submitted here — Playwright form tests target
+    # /setup/step-9, whose extraction.yaml save IS under the redirected config
+    # dir via the unchanged /api/settings/* API). If a future visual
     # test ever drives the Setup credentials step, it would write the user's REAL
     # config.toml — isolate the secrets path too before adding such a test.
     from lit_monitor.core.config import config_dir

@@ -1,8 +1,11 @@
-"""Bundle H (v0.9): Advanced Settings page + per-section API.
+"""Bundle H (v0.9): per-section Advanced Settings API.
 
 Routes:
-    GET  /settings                    — Advanced Settings HTML page
     POST /api/settings/{section}      — atomic per-section save to extraction.yaml
+
+The former GET /settings HTML page was folded into the setup wizard as the
+optional step-9 ("Tuning") — see lit_monitor/server/routes/setup.py and
+templates/setup/step_tuning.html. Only the per-section save API lives here now.
 """
 from __future__ import annotations
 
@@ -10,7 +13,6 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse
 
 from lit_monitor.server.config_io import (
     SettingsValidationError,
@@ -20,55 +22,6 @@ from lit_monitor.server.config_io import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["settings"])
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _get_templates():
-    """Lazy import to avoid circular dependency at module load."""
-    from lit_monitor.server.app import templates
-    return templates
-
-
-def _load_extraction_config() -> dict[str, Any]:
-    """Return current extraction.yaml content as a dict (best-effort)."""
-    try:
-        from lit_monitor.server.config_io import load_config
-        return load_config("extraction")
-    except Exception:
-        return {}
-
-
-# ---------------------------------------------------------------------------
-# GET /settings — HTML page
-# ---------------------------------------------------------------------------
-
-@router.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request) -> HTMLResponse:
-    """Post-onboarding Advanced Settings panel.
-
-    Three collapsible sections:
-      - ranking:    ranking weights and thresholds
-      - clustering: k-means / HDBSCAN parameters
-      - web_ui:     feedback buttons + other UI flags
-    """
-    cfg = _load_extraction_config()
-    ranking_cfg = cfg.get("ranking", {})
-    clustering_cfg = cfg.get("clustering", {})
-    web_ui_cfg = cfg.get("web_ui", {})
-
-    templates = _get_templates()
-    return templates.TemplateResponse(
-        request,
-        "settings/index.html",
-        {
-            "ranking": ranking_cfg,
-            "clustering": clustering_cfg,
-            "web_ui": web_ui_cfg,
-        },
-    )
 
 
 # ---------------------------------------------------------------------------

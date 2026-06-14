@@ -79,7 +79,8 @@ def test_stats_banner_on_section_page(client):
     assert "Papers Indexed" in html
 
 
-def test_no_stats_banner_on_home_settings_setup(client):
+def test_no_stats_banner_on_home_setup(client):
     assert 'class="stats-banner"' not in client.get("/").text
-    assert 'class="stats-banner"' not in client.get("/settings").text
     assert 'class="stats-banner"' not in client.get("/setup").text
+    # Tuning (step-9) lives under /setup → banner-excluded too.
+    assert 'class="stats-banner"' not in client.get("/setup/step-9").text

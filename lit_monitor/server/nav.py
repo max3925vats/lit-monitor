@@ -40,7 +40,6 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
     NavGroup("Tune", (
         NavItem("Domain", "/domain", "bullseye"),
         NavItem("Insights", "/insights", "bar-chart"),
-        NavItem("Settings", "/settings", "sliders"),
     )),
     NavGroup("Setup", (
         NavItem("Setup", "/setup", "rocket-takeoff"),
@@ -48,13 +47,15 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
 )
 
 
-_NO_BANNER_PREFIXES = ("/setup", "/settings", "/dev")
+_NO_BANNER_PREFIXES = ("/setup", "/dev")
 
 
 def show_stats_banner(path: str) -> bool:
     """True for pages that should display the corpus stats banner.
 
-    Excluded: Home, Setup, Settings, Dev (per the 2026-06-12 decision)."""
+    Excluded: Home, Setup (incl. step-9 Tuning), Dev (per the 2026-06-12
+    decision). The old standalone /settings page was folded into setup
+    step-9, so it no longer needs its own exclusion prefix."""
     if path in ("/", ""):
         return False
     for prefix in _NO_BANNER_PREFIXES:

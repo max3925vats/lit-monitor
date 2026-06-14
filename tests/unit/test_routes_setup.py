@@ -1237,3 +1237,160 @@ def test_step7_add_button_precedes_rows_and_grid():
     add_idx = html.find("/setup/api/researchers/new-row")
     rows_idx = html.find('id="researchers-rows"')
     assert add_idx != -1 and rows_idx != -1 and add_idx < rows_idx
+
+
+# ---------------------------------------------------------------------------
+# Step 9 (Tuning): folds the old standalone /settings page into the wizard.
+# ---------------------------------------------------------------------------
+
+
+def _step9_client():
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    return TestClient(create_app())
+
+
+@pytest.mark.unit
+def test_step9_route_renders_tuning_sections():
+    """GET /setup/step-9 → 200 with the three advanced-settings sections."""
+    client = _step9_client()
+    r = client.get("/setup/step-9")
+    assert r.status_code == 200
+    html = r.text
+    assert "Ranking weights" in html
+    assert "Clustering" in html
+    assert "Feedback" in html
+    # Forms still POST to the unchanged per-section API.
+    assert 'hx-post="/api/settings/ranking"' in html
+    assert 'hx-post="/api/settings/clustering"' in html
+    assert 'hx-post="/api/settings/web_ui"' in html
+
+
+@pytest.mark.unit
+def test_step9_is_optional_with_pill():
+    """Step 9 is an OPTIONAL step — it carries the Optional pill."""
+    client = _step9_client()
+    html = client.get("/setup/step-9").text
+    assert "optional-pill" in html
+    assert "Optional" in html
+
+
+@pytest.mark.unit
+def test_step9_marks_step_nine_in_strip():
+    """The wizard strip renders a 9th step marker on the step-9 page."""
+    client = _step9_client()
+    html = client.get("/setup/step-9").text
+    # current_step == 9 → that span carries the `current` class.
+    import re
+
+    assert re.search(r'<span class="step\b[^"]*current[^"]*"[^>]*>\s*9\s*</span>', html), html
+
+
+@pytest.mark.unit
+def test_wizard_strip_has_nine_markers():
+    """The wizard strip iterates 1..9 (nine step markers)."""
+    client = _step9_client()
+    html = client.get("/setup/step-1").text
+    strip = html.split('class="wizard-strip"', 1)[1].split("</div>", 1)[0]
+    # Count the step spans inside the strip.
+    assert strip.count('class="step') == 9, strip
+
+
+@pytest.mark.unit
+def test_step9_preserves_current_config_values():
+    """Step 9 reflects current extraction.yaml advanced values via value=."""
+    client = _step9_client()
+    with patch(
+        "lit_monitor.server.routes.setup._load_extraction_config",
+        return_value={"web_ui": {"show_feedback_buttons": True}},
+    ):
+        html = client.get("/setup/step-9").text
+    import re
+
+    m = re.search(
+        r'<sl-switch[^>]*data-path="show_feedback_buttons"[^>]*>', html, re.DOTALL
+    )
+    assert m is not None, "feedback toggle not rendered"
+    assert "checked" in m.group(0)
+
+
+@pytest.mark.unit
+def test_step9_in_step_descriptors_optional_and_ok():
+    steps = _build_step_descriptors({})
+    step9 = next((s for s in steps if s["num"] == 9), None)
+    assert step9 is not None, "step 9 missing from descriptors"
+    assert step9["optional"] is True
+    assert step9["url"] == "/setup/step-9"
+    # Optional advanced settings always have defaults → never blocks completion.
+    assert step9["status"] == "ok"
+
+
+@pytest.mark.unit
+def test_settings_page_route_removed():
+    """The standalone /settings page is gone (404); the API survives."""
+    client = _step9_client()
+    assert client.get("/settings").status_code == 404
+
+
+@pytest.mark.unit
+def test_settings_api_still_works():
+    """POST /api/settings/<section> still saves (the API was kept)."""
+    from unittest.mock import patch as _patch
+
+    client = _step9_client()
+    with _patch(
+        "lit_monitor.server.routes.settings.safe_save_settings_section"
+    ) as mock_save:
+        r = client.post("/api/settings/ranking", json={"weights": {"domain_context": 0.6}})
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    mock_save.assert_called_once()
+
+
+@pytest.mark.unit
+def test_step8_routing_result_links_to_step9():
+    """The step-8 save result now continues to step 9, not /setup/complete."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server import config_io
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+
+    import tempfile
+    from pathlib import Path as _P
+
+    tmp = _P(tempfile.mkdtemp())
+    seed = (
+        "routes:\n"
+        "  journalArticle:\n"
+        "    pipeline: brain_build\n"
+        "    default_schema: paper\n"
+        "    source_type: paper\n"
+    )
+    with patch.object(config_io, "CONFIG_DIR", tmp):
+        client = TestClient(create_app())
+        r = client.post("/setup/api/routing", data={"raw_yaml": seed})
+    assert r.status_code == 200, r.text
+    assert "/setup/step-9" in r.text
+    assert "step 9" in r.text.lower()
+
+
+@pytest.mark.unit
+def test_insights_links_to_step9_not_settings():
+    """Dangling-link fix: /insights points at /setup/step-9, not the gone /settings."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/insights").text
+    assert "/setup/step-9" in html
+    assert 'href="/settings"' not in html

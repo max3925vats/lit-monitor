@@ -66,84 +66,10 @@ def _make_client(config_path=None) -> TestClient:
 
 
 # ---------------------------------------------------------------------------
-# GET /settings HTML
+# GET /settings page removed — the page was folded into setup wizard step-9
+# (see tests/unit/test_routes_setup.py::test_step9_* and
+# ::test_settings_page_route_removed). The per-section API below is unchanged.
 # ---------------------------------------------------------------------------
-
-class TestSettingsPage:
-    def test_renders_200(self):
-        with patch(
-            "lit_monitor.server.routes.settings._load_extraction_config",
-            return_value={"ranking": {"semantic_weight": 0.5}},
-        ):
-            client = _make_client()
-            r = client.get("/settings")
-        assert r.status_code == 200
-        assert "Advanced Settings" in r.text
-
-    def test_reflects_current_config(self):
-        import re
-
-        with patch(
-            "lit_monitor.server.routes.settings._load_extraction_config",
-            return_value={
-                "web_ui": {"show_feedback_buttons": True},
-            },
-        ):
-            client = _make_client()
-            r = client.get("/settings")
-        assert r.status_code == 200
-        html = r.text
-        # After the Shoelace migration the feedback toggle is an sl-switch (not
-        # <input type=checkbox>).  Pin by data-path so the check is precise.
-        assert 'data-path="show_feedback_buttons"' in html
-        assert "<sl-switch" in html
-        m = re.search(
-            r'<sl-switch[^>]*data-path="show_feedback_buttons"[^>]*>',
-            html,
-            re.DOTALL,
-        )
-        assert m is not None, "show_feedback_buttons sl-switch not rendered"
-        assert "checked" in m.group(0), (
-            "show_feedback_buttons sl-switch must carry `checked` when config is True"
-        )
-
-    def test_settings_sections_collapsed_by_default(self):
-        with patch(
-            "lit_monitor.server.routes.settings._load_extraction_config",
-            return_value={"ranking": {"semantic_weight": 0.5}},
-        ):
-            client = _make_client()
-            html = client.get("/settings").text
-        import re
-        # the ranking section must NOT be open by default
-        assert not re.search(r'<details[^>]*id="ranking"[^>]*\bopen\b', html), "ranking section should start collapsed"
-        assert 'class="settings-rail"' not in html  # rail removed
-
-    def test_checkbox_unchecked_when_config_false(self):
-        """Inverse of test_reflects_current_config: False config → no `checked`."""
-        import re
-
-        with patch(
-            "lit_monitor.server.routes.settings._load_extraction_config",
-            return_value={
-                "web_ui": {"show_feedback_buttons": False},
-            },
-        ):
-            client = _make_client()
-            r = client.get("/settings")
-        assert r.status_code == 200
-        html = r.text
-        # After the Shoelace migration the feedback toggle is an sl-switch.
-        assert 'data-path="show_feedback_buttons"' in html
-        m = re.search(
-            r'<sl-switch[^>]*data-path="show_feedback_buttons"[^>]*>',
-            html,
-            re.DOTALL,
-        )
-        assert m is not None, "show_feedback_buttons sl-switch not rendered"
-        assert "checked" not in m.group(0), (
-            "show_feedback_buttons sl-switch must NOT carry `checked` when config is False"
-        )
 
 
 # ---------------------------------------------------------------------------

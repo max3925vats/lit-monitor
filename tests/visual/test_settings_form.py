@@ -1,18 +1,21 @@
-"""P2: the settings page uses a custom data-path JSON serializer. After the
+"""P2: the tuning sections use a custom data-path JSON serializer. After the
 Shoelace migration the serializer must read sl-* controls correctly. pytest
 cannot exercise browser JS, so this drives real headless Chromium: set an
 sl-input value, submit, and assert the edited value reached the server with the
 correct type and nesting.
 
+These sections now live on the setup wizard's step-9 ("Tuning") page — the
+standalone /settings page was removed — but the serializer + per-section API
+(/api/settings/*) are unchanged, so this test points at /setup/step-9.
+
 The test intercepts the POST *request* body (not just the response) — this
 proves the serializer's value-read + number coercion + nesting all work. A
 response-body check (`ok: true`) is kept for belt-and-suspenders.
 
-Config-safe: live_server is isolated to a temp config copy (conftest). The GET
-/settings re-render reads through resolve_path which may fall back to the
-CWD-relative config/ in development; the POST (write path) always targets the
-isolated tmp dir via _config_write_dir(). The round-trip is therefore verified
-via the request body + 200 response rather than a page-reload value check."""
+Config-safe: live_server is isolated to a temp config copy (conftest). The POST
+(write path) always targets the isolated tmp dir via _config_write_dir(). The
+round-trip is therefore verified via the request body + 200 response rather than
+a page-reload value check."""
 import json
 
 import pytest
@@ -26,7 +29,7 @@ def test_settings_sl_input_roundtrips(live_server):
     with sync_playwright() as p:
         b = p.chromium.launch(headless=True)
         pg = b.new_page()
-        pg.goto(f"{base}/settings", wait_until="networkidle")
+        pg.goto(f"{base}/setup/step-9", wait_until="networkidle")
         # Shoelace migration: sl-input must be present (not native input)
         assert pg.locator("sl-input[data-path='weights.domain_context']").count() == 1
         # P2-polish: settings sections are collapsed by default — open the ranking

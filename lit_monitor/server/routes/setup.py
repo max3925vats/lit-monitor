@@ -37,6 +37,19 @@ from lit_monitor.server.runtime import get_runtime
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/setup", tags=["setup"])
 
+
+def _load_extraction_config() -> dict[str, Any]:
+    """Return current extraction.yaml content as a dict (best-effort).
+
+    Moved here from routes/settings.py when the standalone /settings page was
+    folded into the wizard as step-9 (Tuning). Used to pre-fill the tuning
+    form's current advanced values.
+    """
+    try:
+        return load_config("extraction")
+    except Exception:  # noqa: BLE001 — defensive: best-effort pre-fill
+        return {}
+
 # F3.3: the build-vocabulary subprocess now lives in the shared process
 # registry at ``runtime.processes["vocabulary"]``. The previous module-level
 # globals (``_vocab_proc``, ``_vocab_lock``, ``_vocab_output``) are gone.
@@ -419,13 +432,17 @@ def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[st
         {"num": 6, "title": "Concepts (vocabulary)", "status": "ok" if step6_ok else "missing", "url": "/setup/step-6", "optional": True},
         {"num": 7, "title": "Researchers", "status": "ok" if step7_ok else "missing", "url": "/setup/step-7", "optional": True},
         {"num": 8, "title": "Item routing (advanced)", "status": "ok" if step8_ok else "missing", "url": "/setup/step-8", "optional": False},
+        # Step 9 is OPTIONAL advanced tuning (ranking / clustering / feedback).
+        # Every setting has a default, so it never blocks the completion gate —
+        # its status is a static "ok" (mirrors the optional steps 6/7 pattern).
+        {"num": 9, "title": "Tuning (ranking / clustering / feedback)", "status": "ok", "url": "/setup/step-9", "optional": True},
     ]
 
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 def landing(request: Request) -> HTMLResponse:
-    """Wizard landing — one status card per step (8 total)."""
+    """Wizard landing — one status card per step (9 total)."""
     from lit_monitor.setup.check_configured import check_configured
 
     checks = check_configured()
@@ -1351,6 +1368,27 @@ def save_routing(
         "setup/_routing_result.html",
         {"ok": True, "errors": []},
     )
+
+
+# --- Step 9: Tuning (folded-in Advanced Settings) ----------------------
+
+
+@router.get("/step-9", response_class=HTMLResponse)
+def step_tuning_form(request: Request) -> HTMLResponse:
+    """Step 9 (optional): advanced ranking / clustering / feedback tuning.
+
+    This is the former standalone /settings page, folded into the wizard. It
+    pre-fills the three sections from the current extraction.yaml and posts to
+    the unchanged /api/settings/{section} per-section save API.
+    """
+    cfg = _load_extraction_config()
+    ctx = {
+        "current_step": 9,
+        "ranking": cfg.get("ranking", {}) or {},
+        "clustering": cfg.get("clustering", {}) or {},
+        "web_ui": cfg.get("web_ui", {}) or {},
+    }
+    return templates.TemplateResponse(request, "setup/step_tuning.html", ctx)
 
 
 # --- F2.12: completion checklist ---------------------------------------
