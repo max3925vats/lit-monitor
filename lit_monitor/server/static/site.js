@@ -534,7 +534,7 @@
         var es = new EventSource("/api/rebuild/" + comp + "/stream");
         _sources[comp] = es;
 
-        es.addEventListener("message", function (evt) {
+        es.addEventListener("progress", function (evt) {
           if (!evt.data) return;
           var div = document.createElement("div");
           div.innerHTML = evt.data; // data is already an HTML <div class="log-line">…</div>

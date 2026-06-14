@@ -517,3 +517,11 @@ def test_rebuild_stream_emits_buffered_lines(client):
     assert "b" in body
     # A done event must close the stream
     assert "done" in body
+    # Named event contract: the server MUST emit "event: progress" lines so the
+    # JS addEventListener("progress", …) listener in site.js can receive them.
+    # An unnamed/default event would only fire the "message" handler, which we
+    # intentionally removed. This assertion locks the server↔client contract.
+    assert "event: progress" in body, (
+        "SSE body must contain 'event: progress' lines; "
+        "the JS rebuild log listener subscribes to the 'progress' named event"
+    )
