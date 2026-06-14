@@ -391,3 +391,40 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
 })();
+
+// RR6: entry-guard for the Reset & Rebuild sidebar link. Intercept clicks on
+// a[href="/setup/reset"], show a confirm dialog, and navigate only on "Continue".
+// Uses delegated click on document.body so it works regardless of when the
+// sidebar is rendered (HTMX swaps, etc.). Guard for null elements defensively.
+(function () {
+  "use strict";
+
+  function init() {
+    var dialog = document.getElementById("reset-entry-guard");
+    var continueBtn = document.getElementById("reset-entry-continue");
+    var cancelBtn = document.getElementById("reset-entry-cancel");
+    if (!dialog || !continueBtn || !cancelBtn) return; // dialog not in DOM (shouldn't happen)
+
+    // Delegated click: intercept any click on the Reset & Rebuild nav link.
+    document.body.addEventListener("click", function (evt) {
+      var anchor = evt.target && evt.target.closest('a[href="/setup/reset"]');
+      if (!anchor) return;
+      evt.preventDefault();
+      dialog.show();
+    });
+
+    // "Continue" navigates to the reset page and closes the dialog.
+    continueBtn.addEventListener("click", function () {
+      dialog.hide();
+      window.location.href = "/setup/reset";
+    });
+
+    // "Cancel" just closes the dialog.
+    cancelBtn.addEventListener("click", function () {
+      dialog.hide();
+    });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();

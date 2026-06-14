@@ -101,3 +101,52 @@ def test_show_stats_banner_excludes_home_setup_dev():
     assert show_stats_banner("/setup/step-9") is False
     assert show_stats_banner("/dev") is False
     assert show_stats_banner("/dev/anything") is False
+
+
+# ---------------------------------------------------------------------------
+# RR6 — new tests for Reset & Rebuild sidebar entry + exact-match breadcrumb fix
+# ---------------------------------------------------------------------------
+
+def test_breadcrumb_setup_reset_is_own_item():
+    """RR6: /setup/reset must resolve to its own NavItem, not the /setup prefix branch.
+
+    Before the exact-match-first fix, breadcrumb_trail iterated items in order and
+    the /setup item's prefix branch matched /setup/reset first, returning a
+    "Setup-detail" shape instead of the dedicated "Reset & Rebuild" crumb.
+    """
+    assert breadcrumb_trail("/setup/reset") == [("Setup", None), ("Reset & Rebuild", None)]
+
+
+def test_active_group_for_setup_reset_is_setup():
+    """RR6: /setup/reset must belong to the Setup group (longest-prefix — already correct)."""
+    assert active_group_for_path("/setup/reset") == "Setup"
+
+
+# Regression: existing setup routes must NOT be broken by the new item.
+
+def test_breadcrumb_setup_index_still_collapses():
+    """Regression: /setup exact match still collapses to a single 'Setup' crumb."""
+    assert breadcrumb_trail("/setup") == [("Setup", None)]
+
+
+def test_breadcrumb_setup_step_detail_still_collapses():
+    """Regression: /setup/step-3 still uses the prefix branch (Setup detail path)."""
+    assert breadcrumb_trail("/setup/step-3", detail="Step 3 — Extraction") == [
+        ("Setup", "/setup"), ("Step 3 — Extraction", None)
+    ]
+
+
+def test_breadcrumb_corpus_detail_unchanged():
+    """Regression: /corpus/10.1/x still uses the normal 3-crumb prefix shape."""
+    assert breadcrumb_trail("/corpus/10.1/x", detail="Foo") == [
+        ("Semantics", None), ("Corpus Health", "/corpus"), ("Foo", None)
+    ]
+
+
+def test_setup_group_has_two_items():
+    """RR6: Setup group must have exactly two items: Setup and Reset & Rebuild."""
+    setup = next(g for g in NAV_GROUPS if g.label == "Setup")
+    hrefs = [i.href for i in setup.items]
+    labels = [i.label for i in setup.items]
+    assert hrefs == ["/setup", "/setup/reset"]
+    assert labels == ["Setup", "Reset & Rebuild"]

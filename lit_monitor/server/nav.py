@@ -43,6 +43,7 @@ NAV_GROUPS: tuple[NavGroup, ...] = (
     )),
     NavGroup("Setup", (
         NavItem("Setup", "/setup", "rocket-takeoff"),
+        NavItem("Reset & Rebuild", "/setup/reset", "arrow-counterclockwise"),
     )),
 )
 
@@ -85,22 +86,43 @@ def breadcrumb_trail(path: str, detail: str | None = None) -> list[tuple[str, st
     Detail (`/corpus/x`)   -> [(group, None), (item, item.href), (detail or "Detail", None)]
     Home/unknown           -> []  (no breadcrumbs)
 
-    Special case (Setup): the Setup group's single item is also labelled "Setup"
-    (``group.label == item.label``). The naive 3-crumb shape would render a
-    redundant "Setup › Setup › Detail". When the group and item labels collide,
-    collapse to a single "Setup" crumb linking to /setup, then the detail.
+    Special case (Setup): when ``group.label == item.label`` the naive 3-crumb
+    shape would render a redundant "Setup › Setup › …". We collapse it:
+    - Exact match (/setup)     -> [("Setup", None)]
+    - Named child (/setup/reset) -> [("Setup", None), ("Reset & Rebuild", None)]
+    - Unnamed sub-path (/setup/step-3) -> [("Setup", "/setup"), (detail or "Detail", None)]
+
+    Pass order matters: exact match wins over any prefix match, so /setup/reset
+    resolves to its own NavItem rather than the /setup item's prefix branch.
     """
+    # Pass 1: exact match — wins over any prefix match.
     for group in NAV_GROUPS:
         for item in group.items:
             if path == item.href:
                 if group.label == item.label:
-                    # Collapse the duplicate (e.g. the Setup index): one crumb,
-                    # not "Setup › Setup".
+                    # Collapse: e.g. /setup → [("Setup", None)], not "Setup › Setup".
                     return [(item.label, None)]
                 return [(group.label, None), (item.label, None)]
+
+    # Pass 2: longest-prefix match for detail/sub-pages (e.g. /corpus/doi, /setup/step-3).
+    # Longest-prefix future-proofs against nested routes and ensures /setup/step-N
+    # still reaches the /setup item even after /setup/reset is added.
+    best: tuple[int, list[tuple[str, str | None]]] | None = None
+    for group in NAV_GROUPS:
+        for item in group.items:
             if path.startswith(item.href.rstrip("/") + "/"):
                 if group.label == item.label:
-                    # Collapse the duplicate (e.g. Setup): one linked crumb + detail.
-                    return [(item.label, item.href), (detail or "Detail", None)]
-                return [(group.label, None), (item.label, item.href), (detail or "Detail", None)]
-    return []
+                    # Collapse: e.g. /setup/step-3 → [("Setup", "/setup"), (detail, None)].
+                    crumbs: list[tuple[str, str | None]] = [
+                        (item.label, item.href),
+                        (detail or "Detail", None),
+                    ]
+                else:
+                    crumbs = [
+                        (group.label, None),
+                        (item.label, item.href),
+                        (detail or "Detail", None),
+                    ]
+                if best is None or len(item.href) > best[0]:
+                    best = (len(item.href), crumbs)
+    return best[1] if best else []
