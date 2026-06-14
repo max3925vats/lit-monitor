@@ -7,7 +7,7 @@
       <a class="step
         {% if current_step is defined and n == current_step %}current{% endif %}
         {% if current_step is defined and n < current_step %}done{% endif %}
-      " href="/setup/step-{{ n }}">{{ n }}</a>
+      " href="/setup/step-{{ n }}" aria-label="Go to step {{ n }}">{{ n }}</a>
     {% endfor %}
   </div>
   <div class="wizard-body">

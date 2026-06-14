@@ -2,6 +2,7 @@
   <p class="field-note">Ask a question while you browse — your place is kept.</p>
   <form hx-post="/ask/answer" hx-target="#ask-drawer-result" hx-swap="innerHTML" hx-indicator="#ask-drawer-spin">
     <sl-textarea name="question" rows="3" resize="auto"
+                 label="Your question"
                  placeholder="e.g. Which papers extend the Bolton model?"></sl-textarea>
     <div class="ask-drawer-actions">
       <sl-button type="submit" variant="primary" size="small">Ask</sl-button>

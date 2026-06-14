@@ -24,7 +24,7 @@
 <details>
 <summary><strong>Advanced — edit YAML directly</strong> (incorrect routes can break brain-build)</summary>
 <form class="setup-form" hx-post="/setup/api/routing" hx-target="#result" hx-swap="innerHTML">
-  <sl-textarea name="raw_yaml" rows="18" class="mono yaml-editor-block" value="{{ raw_yaml }}"></sl-textarea>
+  <sl-textarea name="raw_yaml" rows="18" class="mono yaml-editor-block" label="item_routing.yaml" value="{{ raw_yaml }}"></sl-textarea>
   <sl-button variant="primary" type="submit" style="margin-top: 0.75rem;">Save raw YAML</sl-button>
 </form>
 </details>

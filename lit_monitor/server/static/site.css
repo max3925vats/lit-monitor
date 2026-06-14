@@ -1187,6 +1187,15 @@ body {
 ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* Shoelace buttons render their interactive element inside shadow DOM, so the
+   global :focus-visible rule above can't reach it. Pierce to ::part(base) so
+   keyboard focus stays visible on sl-button / sl-icon-button in both themes. */
+sl-button::part(base):focus-visible,
+sl-icon-button::part(base):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Inline code chips (not the log/console panes). */
 :not(pre) > code {
   background: var(--surface-2);
