@@ -7,6 +7,28 @@ All saves are atomic: write to a sibling temp file in the same directory,
 then ``os.replace()`` it into place.  On POSIX this is atomic provided the
 temp file and the target live on the same filesystem — using the target's
 parent directory for the temp file guarantees that.
+
+Read-vs-write precedence asymmetry (deliberate — read this before touching
+either side):
+
+- **Reads** go through :func:`lit_monitor.core.path_utils.resolve_path`, which
+  prefers a CWD-relative ``./config/{name}.yaml`` and falls back to the
+  packaged ``{name}.example.yaml`` when the real file is absent. So a fresh
+  checkout (or a wheel install before first-run) still loads sensible defaults
+  rather than 500-ing.
+- **Writes** go through :func:`_config_write_dir`, which (outside tests)
+  resolves the active user/dev config dir via
+  :func:`lit_monitor.core.config.config_dir` — i.e. ``~/.config/lit-monitor/``
+  for a wheel install — so wizard edits persist somewhere durable, not into a
+  transient CWD-relative ``./config`` that depends on where ``serve`` happened
+  to be launched. The ``.example.yaml`` fallback is a READ concept only; a save
+  never targets the example file.
+
+In a clean dev checkout (CWD = repo root, ``./config`` present) read and write
+dirs converge, so the asymmetry is invisible. It only diverges for a
+pip-installed wheel run from an arbitrary CWD — there a read may surface a
+packaged example while a write lands in ``~/.config/lit-monitor/``. Keep the two
+sides in sync if you change either resolver.
 """
 from __future__ import annotations
 
@@ -65,7 +87,8 @@ def load_config(name: str) -> dict[str, Any]:
     """Load ``config/{name}.yaml``.
 
     Falls back to ``config/{name}.example.yaml`` if the real file is absent,
-    via :func:`scripts.core.path_utils.resolve_path`.
+    via :func:`lit_monitor.core.path_utils.resolve_path`. See the module
+    docstring for the read-vs-write precedence asymmetry.
 
     Raises:
         FileNotFoundError: If neither the real nor the example file exists
