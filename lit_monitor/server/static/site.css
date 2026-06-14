@@ -204,96 +204,6 @@ a:hover {
   text-decoration: underline;
 }
 
-.topnav {
-  background: var(--card-bg);
-  border-bottom: 1px solid var(--border);
-}
-/* Full-width bar, but the row of items is centered to the same width as the
-   page body so the brand/nav align with the content margins (matches the docs). */
-.topnav-inner {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  max-width: var(--content-max);
-  margin: 0 auto;
-  padding: 0.75rem 1.25rem;
-}
-
-.topnav .brand {
-  font-weight: 700;
-  font-family: var(--font-mono);
-  color: var(--fg);
-}
-
-.topnav nav {
-  display: flex;
-  gap: 1rem;
-}
-
-.topnav nav a {
-  color: var(--fg);
-}
-
-.topnav nav a:hover {
-  color: var(--accent);
-}
-
-/* Nav/IA: grouped CSS-only dropdowns (no JS). Hover + focus-within reveal the
-   menu; focus-within is required so keyboard Tab opens it (accessibility). */
-.navgroup {
-  position: relative;
-  display: inline-block;
-}
-
-.navgroup-label {
-  appearance: none;
-  border: none;
-  background: none;
-  padding: 0;
-  margin: 0;
-  font: inherit;
-  cursor: pointer;
-  color: var(--fg);
-}
-
-.navgroup-label:hover {
-  color: var(--accent);
-}
-
-.navmenu {
-  display: none;
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 10;
-  min-width: 10rem;
-  padding: 0.25rem 0;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.navgroup:hover .navmenu,
-.navgroup:focus-within .navmenu {
-  display: block;
-}
-
-.navmenu a {
-  display: block;
-  padding: 0.35rem 0.75rem;
-  color: var(--fg);
-}
-
-.navmenu a:hover {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-/* Active state: marks the current section using an existing token, no new color. */
-.topnav nav .active {
-  color: var(--accent);
-}
-
 .content {
   max-width: var(--content-max);
   margin: 0 auto;
@@ -301,15 +211,6 @@ a:hover {
 }
 
 .muted {
-  color: var(--muted);
-}
-
-.hero h1 {
-  margin: 0 0 0.25rem 0;
-}
-
-.hero .last-run {
-  font-size: 0.9rem;
   color: var(--muted);
 }
 
@@ -543,51 +444,11 @@ a:hover {
   filter: brightness(1.05);
 }
 
-/* --- Modal --- */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-.modal {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  max-width: 600px;
-  width: 90%;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-}
-.modal header,
-.modal footer {
-  padding: 0.5rem 1rem;
-}
-.modal header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid var(--border);
-}
-.modal-body {
-  padding: 1rem;
-  overflow-y: auto;
-  flex: 1;
-}
+/* --- Folder-picker dialog (sl-dialog body) --- */
 .modal-path {
   background: var(--muted);
   padding: 0.25rem 0.5rem;
   border-radius: var(--radius);
-}
-.modal footer {
-  display: flex;
-  gap: 0.5rem;
-  justify-content: flex-end;
-  border-top: 1px solid var(--border);
 }
 .fs-list {
   list-style: none;
@@ -634,7 +495,6 @@ a:hover {
 /* --- Topics row editor (F2.7) --- */
 .topics-row { border: 1px solid var(--border); border-radius: var(--radius);
   padding: 0.75rem; margin-bottom: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
-.checkbox-inline { display: inline-flex; align-items: center; gap: 0.25rem; margin-right: 1rem; font-weight: normal; }
 .field-note { color: var(--muted); font-size: 0.9em; }
 .field-group { display: flex; flex-direction: column; gap: 0.25rem; }
 .field-label { font-weight: bold; }
@@ -655,27 +515,9 @@ a:hover {
 .routes-table th, .routes-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); text-align: left; }
 .routes-table th { background: var(--card-bg); }
 
-/* --- Status grid (F2.12 completion checklist) --- */
-.status-grid { width: 100%; }
-.status-grid td { padding: 0.5rem; border-bottom: 1px solid var(--border); }
-.status-grid td:last-child { text-align: right; }
-
 /* --- Brain-build dashboard (F3.1) --- */
 .dashboard h2 { margin-top: 1.5rem; }
 .progress-block { margin: 1rem 0; }
-.progress-label { font-weight: bold; margin-bottom: 0.25rem; }
-.progress-bar {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  height: 1rem;
-  overflow: hidden;
-}
-.progress-fill {
-  background: var(--accent);
-  height: 100%;
-  transition: width 0.3s;
-}
 .papers-table, .runs-table {
   width: 100%;
   border-collapse: collapse;
@@ -690,13 +532,6 @@ a:hover {
 }
 .papers-table .row-done { color: var(--muted); }
 .papers-table .row-error { background: var(--row-error-bg); }
-.failed-block {
-  margin: 1rem 0;
-  padding: 0.5rem;
-  border: 1px solid var(--error-block-border);
-  border-radius: var(--radius);
-  background: var(--row-error-bg);
-}
 .field-note.error { color: var(--error-fg); }
 
 /* --- Per-paper status table (Task C) --- */
@@ -800,8 +635,7 @@ a:hover {
   padding: 0.4rem 0.6rem; text-align: left; }
 .digest-rendered thead th { background: var(--bg); }
 
-/* --- Health badge in topnav (Task #65) --- */
-/* .topnav is already display:flex with gap, so just push the badge to the right. */
+/* --- Health badge (Task #65) --- */
 #health-badge { margin-left: auto; }
 .status-badge { display: inline-flex; align-items: center; gap: 0.35em;
                 padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.82em;
@@ -968,7 +802,6 @@ a:hover {
 .rate-widget summary::-webkit-details-marker { display: none; }
 .rate-form { display: flex; gap: 0.25rem; margin-top: 0.25rem; padding: 0.25rem 0.5rem;
              background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); }
-.rate-btn { min-width: 2rem; text-align: center; }
 .feedback-flash { font-size: 0.82rem; margin-left: 0.4rem; }
 
 /* action-row (P8 relink/re-extract) */
@@ -1028,8 +861,8 @@ sl-details::part(header):hover { background: var(--hover-overlay); }
 .ask-question { display: block; width: 100%; max-width: none; }
 
 /* --- /ask page (WA1/WA2): prose answer + mono Cypher panel --- */
-/* Matches the existing mono-panel convention (.digest-pre): card-bg surface,
- * border, radius, mono font — all via tokens, no color literals. */
+/* Mono-panel convention: card-bg surface, border, radius, mono font — all via
+ * tokens, no color literals. */
 .ask-prose {
   margin: var(--space) 0;
   white-space: pre-wrap;
@@ -1094,35 +927,13 @@ body {
 
 /* Editorial serif headings (Fraunces), matching the docs site. */
 .content h1,
-.hero h1,
 .page-header h1,
 .dashboard > h1 {
   font-family: var(--font-display);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
-.hero h1 {
-  font-size: clamp(1.9rem, 4vw, 2.7rem);
-  line-height: 1.05;
-}
 
-/* Sticky topnav with the one Zotero-red hairline (the single place red meets
-   the chrome — mirrors the docs header). */
-.topnav {
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  box-shadow: inset 0 -2px 0 0 var(--brand-red);
-}
-.topnav .brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5em;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 1.18rem;
-  letter-spacing: -0.01em;
-}
 /* Brand mark — the Material "library" book glyph, matching the docs site logo. */
 .brand-logo {
   width: 1.3em;
@@ -1240,18 +1051,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .routes-table tbody tr:hover { background: var(--hover-overlay); }
 .score, .score-breakdown-table td:last-child { font-variant-numeric: tabular-nums; }
 
-/* Modals — depth + a soft backdrop blur. */
-.modal { box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.6); }
-.modal-backdrop { backdrop-filter: blur(2px); }
-
 /* Collapsibles (settings / setup details / why-panel) — hover affordance. */
 .settings-section > summary:hover,
 .setup-form details > summary:hover { background: var(--hover-overlay); }
-
-/* Progress fill picks up the accent gradient. */
-.progress-fill {
-  background: linear-gradient(90deg, var(--accent-strong), var(--accent));
-}
 
 /* ===========================================================================
    Brand redesign — Phase 3: landing hero + page-header polish (both themes).
@@ -1323,8 +1125,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 /* --- Checkboxes / radios ---------------------------------------------------
    The broad `.setup-form input { display:block; width:100% }` rule was inflating
    checkboxes into full-width blocks. Restore their natural size and lay the
-   label + box out on one baseline-aligned row (covers .checkbox-inline,
-   .checkbox-row, .inline-check, and bare <label><input type=checkbox> ...). */
+   label + box out on one baseline-aligned row (covers .inline-check and bare
+   <label><input type=checkbox> ...). */
 input[type="checkbox"], input[type="radio"],
 .setup-form input[type="checkbox"], .setup-form input[type="radio"] {
   display: inline-block;
@@ -1334,7 +1136,7 @@ input[type="checkbox"], input[type="radio"],
   flex: none;
   vertical-align: middle;
 }
-.checkbox-inline, .checkbox-row, .inline-check,
+.inline-check,
 label:has(> input[type="checkbox"]),
 label:has(> input[type="radio"]) {
   display: inline-flex;
@@ -1343,31 +1145,6 @@ label:has(> input[type="radio"]) {
   font-weight: normal;
   margin-bottom: 0.35rem;
 }
-
-/* --- Dropdown menus --------------------------------------------------------
-   Was a flat bordered rectangle flush to the bar. Make it a proper floating
-   menu: raised surface, shadow, padding, rounded rows with hover. */
-.navmenu {
-  min-width: 12rem;
-  padding: 0.3rem;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 14px 32px -14px rgba(0, 0, 0, 0.55);
-}
-.navmenu a {
-  padding: 0.45rem 0.6rem;
-  border-radius: 6px;
-}
-.navmenu a:hover {
-  background: var(--hover-overlay);
-  color: var(--accent);
-}
-.navmenu a.active {
-  color: var(--accent);
-  background: var(--hover-overlay);
-}
-.navgroup-label { display: inline-flex; align-items: center; gap: 0.25em; }
 
 /* --- Form spacing rhythm ---------------------------------------------------- */
 .field-group { gap: 0.3rem; margin-bottom: 0.95rem; }
@@ -1431,7 +1208,7 @@ textarea {
 /* Bare <button>/<input type=submit> with NO class were rendering as raw browser
    buttons (e.g. the trending "Re-detect", several setup-step "Save" buttons).
    Give unclassed buttons a clean neutral style — classed buttons (.btn*,
-   .button, .navgroup-label, .theme-toggle, .rate-btn) are untouched. */
+   .button, .theme-toggle) are untouched. */
 button:not([class]),
 input[type="submit"]:not([class]),
 input[type="button"]:not([class]) {
@@ -1630,10 +1407,6 @@ sl-button.btn-obsidian::part(base):hover {
 .stat-delta { font-size: 0.82rem; }
 .stat-delta.up { color: var(--accent); }
 
-/* Settings sub-section rail (kept for reference but removed from template) */
-.settings-rail { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
-.settings-rail a { color: var(--muted); text-decoration: none; padding: 0.25rem 0.5rem; border-radius: var(--radius); }
-.settings-rail a:hover { color: var(--accent); background: var(--card-bg); }
 .stat-delta.muted { color: var(--muted); }
 .mono { font-family: var(--font-mono); }
 
@@ -1675,6 +1448,3 @@ sl-button.btn-obsidian::part(base):hover {
 .last-run-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 1.5rem; margin: 0; }
 .last-run-line > span { white-space: nowrap; }
 .last-run-line .stat-eyebrow { display: inline; margin-right: 0.4rem; }
-
-/* P3.1: remove excess top margin on the latest-run-summary card heading */
-#latest-run-summary > h3 { margin-top: 0; }
