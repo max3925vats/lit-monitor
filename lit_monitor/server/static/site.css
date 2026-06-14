@@ -386,6 +386,33 @@ a:hover {
   font-size: 0.9rem;
   color: var(--muted);
 }
+/* The strip markers are real links (one click to any step) — read as clickable. */
+.wizard-strip a.step {
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.wizard-strip a.step:hover {
+  background: var(--hover-overlay);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.wizard-strip a.step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The active step keeps its filled accent treatment on hover (don't wash it out). */
+.wizard-strip a.step.current:hover,
+.wizard-strip a.step.done:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+/* Per-step "Saved ✓" result: Back-to-all-steps + Continue side by side. */
+.setup-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
 .wizard-strip .step.done {
   background: var(--accent);
   color: var(--accent-fg);

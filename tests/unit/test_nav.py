@@ -61,6 +61,29 @@ def test_breadcrumb_home_is_empty():
     assert breadcrumb_trail("/") == []
 
 
+def test_breadcrumb_setup_detail_collapses_duplicate_setup_crumb():
+    """ITEM B: the Setup group's only item is also labelled "Setup" (group.label ==
+    item.label). A sub-path like /setup/step-3 must NOT render "Setup › Setup ›
+    Detail" — collapse to a single "Setup" crumb linking to /setup, then the detail."""
+    assert breadcrumb_trail("/setup/step-3", detail="Step 3 — Extraction") == [
+        ("Setup", "/setup"), ("Step 3 — Extraction", None)
+    ]
+
+
+def test_breadcrumb_setup_detail_default_label_when_no_detail():
+    assert breadcrumb_trail("/setup/step-3") == [
+        ("Setup", "/setup"), ("Detail", None)
+    ]
+
+
+def test_breadcrumb_non_setup_detail_shape_unchanged():
+    """The collapse must apply ONLY when group.label == item.label. The normal
+    3-crumb shape (group, item-with-href, detail) must be preserved elsewhere."""
+    assert breadcrumb_trail("/corpus/10.1/x", detail="Foo") == [
+        ("Semantics", None), ("Corpus Health", "/corpus"), ("Foo", None)
+    ]
+
+
 def test_show_stats_banner_excludes_home_setup_dev():
     from lit_monitor.server.nav import show_stats_banner
     assert show_stats_banner("/discovery") is True

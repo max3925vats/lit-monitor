@@ -1281,13 +1281,19 @@ def test_step9_is_optional_with_pill():
 
 @pytest.mark.unit
 def test_step9_marks_step_nine_in_strip():
-    """The wizard strip renders a 9th step marker on the step-9 page."""
+    """The wizard strip renders a 9th step marker on the step-9 page.
+
+    The markers are now clickable <a class="step …"> links (ITEM A.1), so the 9th
+    marker carries the `current` class on an anchor href'd at /setup/step-9."""
     client = _step9_client()
     html = client.get("/setup/step-9").text
-    # current_step == 9 → that span carries the `current` class.
+    # current_step == 9 → that anchor carries the `current` class.
     import re
 
-    assert re.search(r'<span class="step\b[^"]*current[^"]*"[^>]*>\s*9\s*</span>', html), html
+    assert re.search(
+        r'<a class="step\b[^"]*current[^"]*"[^>]*href="/setup/step-9"[^>]*>\s*9\s*</a>',
+        html,
+    ), html
 
 
 @pytest.mark.unit
@@ -1394,3 +1400,120 @@ def test_insights_links_to_step9_not_settings():
     html = client.get("/insights").text
     assert "/setup/step-9" in html
     assert 'href="/settings"' not in html
+
+
+# ---------------------------------------------------------------------------
+# ITEM A — single-step editing made obvious (clickable strip + Saved/Back)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_wizard_strip_steps_are_links():
+    """ITEM A.1: each wizard-strip marker is an <a href="/setup/step-N"> (1 click to
+    any step), not a bare <span>. Render a step page and assert all 9 links exist."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/step-1").text
+    for n in range(1, 10):
+        assert f'href="/setup/step-{n}"' in html, f"missing strip link to step-{n}"
+    # The markers must be anchors carrying the .step class, not bare spans.
+    import re
+
+    assert re.search(r'<a[^>]*class="step\b', html), "strip markers are not <a class=\"step\">"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "fragment,continue_href",
+    [
+        ("setup/_credentials_result.html", "/setup/step-2"),
+        ("setup/_paths_result.html", "/setup/step-3"),
+        ("setup/_extraction_result.html", "/setup/step-4"),
+        ("setup/_topics_result.html", "/setup/step-5"),
+        ("setup/_domain_result.html", "/setup/step-6"),
+        ("setup/_researchers_result.html", "/setup/step-8"),
+        ("setup/_routing_result.html", "/setup/step-9"),
+    ],
+)
+def test_result_fragments_show_saved_and_back_to_all_steps(fragment, continue_href):
+    """ITEM A.2: every per-step success fragment leads with "Saved ✓", shows a
+    prominent "← Back to all steps" link to /setup, AND keeps the sequential
+    "Continue to step N+1 →" link. Render the fragment directly (no POST — never
+    mutate config in a test)."""
+    from lit_monitor.server.app import templates
+
+    ctx = {
+        "errors": None,
+        "test_result": type("T", (), {"ok": True, "message": "ok"})(),
+        "count": 1,
+        "warnings": None,
+    }
+    html = templates.env.get_template(fragment).render(**ctx)
+    assert "Saved ✓" in html, f"{fragment} success line must lead with 'Saved ✓'"
+    assert 'href="/setup"' in html, f"{fragment} missing '← Back to all steps' link to /setup"
+    assert "Back to all steps" in html, f"{fragment} missing Back-to-all-steps copy"
+    assert continue_href in html, f"{fragment} dropped the sequential Continue link"
+
+
+@pytest.mark.unit
+def test_setup_index_explains_single_step_editing():
+    """ITEM A.3: the /setup hub states each step saves on its own (microcopy #11)."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup").text
+    assert "Jump to any step" in html
+    assert "each step saves on its own" in html
+
+
+# ---------------------------------------------------------------------------
+# ITEM B — step pages set a meaningful breadcrumb detail (no "Setup › Setup")
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "url,detail",
+    [
+        ("/setup/step-1", "Step 1 — Credentials"),
+        ("/setup/step-2", "Step 2 — Paths"),
+        ("/setup/step-3", "Step 3 — Extraction"),
+        ("/setup/step-4", "Step 4 — Topics"),
+        ("/setup/step-5", "Step 5 — Domain context"),
+        ("/setup/step-6", "Step 6 — Concepts"),
+        ("/setup/step-7", "Step 7 — Researchers"),
+        ("/setup/step-8", "Step 8 — Item routing"),
+        ("/setup/step-9", "Step 9 — Tuning"),
+    ],
+)
+def test_step_page_breadcrumb_uses_step_name_not_dup_setup(url, detail):
+    """ITEM B.5: each step page sets detail_crumb so the breadcrumb reads
+    "Setup › Step N — <name>", never the buggy "Setup › Setup"."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get(url).text
+    import re
+
+    # Isolate the breadcrumb nav so we don't false-match "Setup" in the sidebar.
+    m = re.search(r'<nav class="app-crumbs".*?</nav>', html, re.DOTALL)
+    assert m, f"{url} rendered no breadcrumb nav"
+    crumbs = m.group(0)
+    assert detail in crumbs, f"{url} breadcrumb missing '{detail}'"
+    # Exactly ONE "Setup" crumb (the linked group) — the dup bug renders two — and
+    # no placeholder "Detail" text.
+    assert crumbs.count(">Setup<") == 1, f"{url} duplicate Setup crumb: {crumbs}"
+    assert ">Detail<" not in crumbs, f"{url} still shows placeholder 'Detail': {crumbs}"

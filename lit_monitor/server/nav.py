@@ -84,11 +84,19 @@ def breadcrumb_trail(path: str, detail: str | None = None) -> list[tuple[str, st
     List page (`/corpus`)  -> [(group, None), (item, None)]
     Detail (`/corpus/x`)   -> [(group, None), (item, item.href), (detail or "Detail", None)]
     Home/unknown           -> []  (no breadcrumbs)
+
+    Special case (Setup): the Setup group's single item is also labelled "Setup"
+    (``group.label == item.label``). The naive 3-crumb shape would render a
+    redundant "Setup › Setup › Detail". When the group and item labels collide,
+    collapse to a single "Setup" crumb linking to /setup, then the detail.
     """
     for group in NAV_GROUPS:
         for item in group.items:
             if path == item.href:
                 return [(group.label, None), (item.label, None)]
             if path.startswith(item.href.rstrip("/") + "/"):
+                if group.label == item.label:
+                    # Collapse the duplicate (e.g. Setup): one linked crumb + detail.
+                    return [(item.label, item.href), (detail or "Detail", None)]
                 return [(group.label, None), (item.label, item.href), (detail or "Detail", None)]
     return []
