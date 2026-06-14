@@ -93,6 +93,9 @@
      form carries the active filters as hidden fields and re-fetches via the SAME
      #corpus-table swap (auto-applies on sl-change; resets to offset 0). The
      value is preserved on the HOST (Shoelace initial-value gotcha). #}
+  {# review item 4: the per-page control is an INLINE "Per page" label + a
+     label-LESS sl-select (the label= attribute stacks the label ABOVE the
+     control; here we want it on one line, to the LEFT of the count). #}
   <form class="per-page-form"
         hx-get="/corpus"
         hx-target="#corpus-table"
@@ -106,7 +109,8 @@
     <input type="hidden" name="sort" value="{{ sort }}" />
     <input type="hidden" name="order" value="{{ order }}" />
     <input type="hidden" name="offset" value="0" />
-    <sl-select name="limit" label="Per page" value="{{ limit }}" size="small">
+    <span class="per-page-label">Per page</span>
+    <sl-select name="limit" value="{{ limit }}" size="small">
       <sl-option value="10">10</sl-option>
       <sl-option value="20">20</sl-option>
       <sl-option value="50">50</sl-option>

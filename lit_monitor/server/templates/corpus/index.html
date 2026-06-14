@@ -75,6 +75,13 @@
        filters reset paging to offset 0. #}
     <input type="hidden" name="order" value="{{ order }}" />
     <input type="hidden" name="offset" value="0" />
+
+    {# review item 6: Reset clears all filters. Since the toolbar auto-applies
+       (no Apply button), Reset is the way back to "no filters". It's a full-page
+       navigation to /corpus?reset=1 so the route clears the in-memory state store
+       AND the controls re-render empty. Neutral styling — it's not a primary CTA. #}
+    <sl-button class="corpus-reset" size="small" variant="neutral"
+               href="/corpus?reset=1">Reset</sl-button>
   </form>
 
   {% if not themes %}

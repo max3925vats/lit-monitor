@@ -16,7 +16,7 @@
 {% block content %}
 <section class="dashboard paper-detail">
   <div class="page-header">
-    <p class="field-note"><a href="/corpus">&larr; Back to corpus</a></p>
+    <p class="field-note"><a href="/corpus">&larr; Back to Corpus Health</a></p>
     <h1>{{ paper.title or "(untitled)" }}</h1>
     <p class="paper-meta field-note">
       {% if paper.authors %}{{ paper.authors | join(", ") }}{% endif %}
@@ -120,6 +120,10 @@
      {doi:path} fragment routes match (no urlencode — "/" → "%2F" breaks it). #}
   {% if paper.doi %}
   <sl-details summary="Related work">
+    {# Honest placeholders (rubric #11): only a paper that's actually embedded can
+       have vector related-work to lazy-load. A not-embedded paper shows a plain
+       note — no HTMX, no lazy div — so the UI never promises data it can't have. #}
+    {% if paper.embeddings_indexed %}
     <div id="corpus-related"
          hx-get="/corpus/{{ paper.doi }}/related"
          hx-trigger="sl-show once"
@@ -127,8 +131,12 @@
          hx-swap="innerHTML">
       <p class="field-note">Expand to load related work&hellip;</p>
     </div>
+    {% else %}
+    <p class="field-note">No related work &mdash; this paper isn't embedded yet.</p>
+    {% endif %}
   </sl-details>
   <sl-details summary="Knowledge graph">
+    {% if paper.graph_indexed %}
     <div id="corpus-graph"
          hx-get="/corpus/{{ paper.doi }}/graph"
          hx-trigger="sl-show once"
@@ -136,6 +144,9 @@
          hx-swap="innerHTML">
       <p class="field-note">Expand to load the knowledge graph&hellip;</p>
     </div>
+    {% else %}
+    <p class="field-note">No knowledge-graph data &mdash; this paper isn't graph-indexed yet.</p>
+    {% endif %}
   </sl-details>
   {% else %}
   <div id="corpus-related"></div>
@@ -151,17 +162,22 @@
   #}
   {# review #7: Actions is a section like the others, NOT a .card. Button size
      matches the top Open-in-* buttons (medium). #}
+  {# review: the action buttons sit on a NEW LINE under the header — the <h2>
+     stacks above a .button-row holding Relink / Re-extract (+ the result span).
+     .action-row is a column flex so the header is above the buttons. #}
   <div class="action-row" id="corpus-actions">
     <h2>Actions</h2>
-    <sl-button variant="default" size="medium"
-               hx-post="/api/papers/{{ paper.doi }}/relink"
-               hx-target="#corpus-actions .action-result"
-               hx-swap="innerHTML">Relink</sl-button>
-    <sl-button variant="default" size="medium"
-               hx-post="/api/papers/{{ paper.doi }}/re-extract"
-               hx-target="#corpus-actions .action-result"
-               hx-swap="innerHTML">Re-extract</sl-button>
-    <span class="action-result"></span>
+    <div class="button-row">
+      <sl-button variant="default" size="medium"
+                 hx-post="/api/papers/{{ paper.doi }}/relink"
+                 hx-target="#corpus-actions .action-result"
+                 hx-swap="innerHTML">Relink</sl-button>
+      <sl-button variant="default" size="medium"
+                 hx-post="/api/papers/{{ paper.doi }}/re-extract"
+                 hx-target="#corpus-actions .action-result"
+                 hx-swap="innerHTML">Re-extract</sl-button>
+      <span class="action-result"></span>
+    </div>
   </div>
   {% endif %}
 </section>

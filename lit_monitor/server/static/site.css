@@ -942,6 +942,16 @@ a:hover {
 /* action-row (P8 relink/re-extract) */
 .action-row { display: flex; gap: 0.4rem; margin-top: 0.6rem; align-items: center; flex-wrap: wrap; }
 
+/* Corpus-detail Actions: the <h2>Actions</h2> header sits ABOVE its button row
+   (review item 2). Scoped to #corpus-actions so the shared .action-row used by
+   the paper-card (buttons-only, no header) stays a horizontal row. The buttons
+   themselves live in a nested .button-row and stay horizontal. */
+.action-row#corpus-actions {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
 /* --- Bundle H: settings page --- */
 .settings-section { background: var(--card-bg); border: 1px solid var(--border);
                     border-radius: var(--radius); padding: 0;
@@ -1486,8 +1496,11 @@ sl-card.paper-card::part(base) { width: 100%; }
    the "X–Y of Z" count. The limit select is narrow — it's a setting, not a
    filter (review #2). */
 .corpus-pager { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-top: 0.75rem; }
-.corpus-pager sl-select[name="limit"] { width: 7rem; max-width: 7rem; }
+.corpus-pager sl-select[name="limit"] { width: 5rem; max-width: 5rem; }
 .corpus-pager .per-page-label { font-size: 0.85rem; color: var(--muted); }
+/* The per-page control is an inline "Per page" label + a label-less select,
+   sitting to the LEFT of the "X–Y of N" count (review item 4). */
+.corpus-pager .per-page-form { display: flex; align-items: center; gap: 0.4rem; margin: 0; }
 
 /* rubric #15: cap the corpus results height so the (long) paper list scrolls
    inside its own region instead of stretching the whole page (like the digest

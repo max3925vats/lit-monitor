@@ -21,6 +21,23 @@ def client(tmp_path, monkeypatch):
     return TestClient(create_app())
 
 
+@pytest.fixture(autouse=True)
+def _reset_corpus_query_store():
+    """Clear the process-global last-corpus-query store around every test.
+
+    The state-retention feature (item 5) keeps the last-applied corpus query in a
+    module-level dict so a bare ``/corpus`` visit restores the user's filters for
+    the life of the server process. That global makes the route tests
+    order-dependent (one test's saved query leaks into the next bare visit) unless
+    it is reset, so this autouse fixture clears it before AND after each test.
+    """
+    from lit_monitor.server.routes.corpus import _reset_corpus_state  # noqa: PLC0415
+
+    _reset_corpus_state()
+    yield
+    _reset_corpus_state()
+
+
 def test_get_corpus_renders_table(client, monkeypatch):
     monkeypatch.setattr(
         "lit_monitor.server.routes.corpus._list_papers",
@@ -264,6 +281,10 @@ def test_corpus_detail_has_sl_details_sections(client, monkeypatch):
             "source_type": "paper",
             "zotero_key": "ABCD1234",
             "note_path": None,
+            # Indexed paper → the lazy related/graph fragments render (the honest
+            # placeholders only kick in when these flags are falsy — see item 1).
+            "embeddings_indexed": 1,
+            "graph_indexed": 1,
             "extraction": {"core_finding": "x", "_overall_confidence": 0.7},
         },
     )
@@ -655,6 +676,11 @@ def _detail_paper(_doi, **over):
         "source_type": "paper",
         "zotero_key": "ABCD1234",
         "note_path": None,
+        # Item 1: index flags drive the honest related/graph placeholders. Default
+        # to indexed so existing tests keep the lazy fragments; the placeholder
+        # tests pass embeddings_indexed=0 / graph_indexed=0 explicitly.
+        "embeddings_indexed": 1,
+        "graph_indexed": 1,
         "extraction": {},
     }
     base.update(over)
@@ -923,3 +949,236 @@ def test_corpus_detail_actions_not_card_buttons_match_size(client, monkeypatch):
     detail_end = r.text.index("</section>", detail_start)
     body = r.text[detail_start:detail_end]
     assert 'size="small"' not in body
+
+
+# --- Corpus Health review fixes (2026-06-13): honest placeholders, actions row,
+#     back link, inline per-page, in-memory state retention, reset button -------
+
+
+def test_corpus_detail_back_link_reads_corpus_health(client, monkeypatch):
+    # Item 3: the back link reads "Back to Corpus Health" (not "Back to corpus").
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_paper_row",
+        lambda doi: _detail_paper(doi),
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_score_breakdown", lambda doi: None
+    )
+    r = client.get("/corpus/10.1/carta")
+    assert r.status_code == 200
+    assert "Back to Corpus Health" in r.text
+    # The bare /corpus href is preserved (state restore relies on it being bare).
+    assert 'href="/corpus"' in r.text
+
+
+def test_corpus_detail_related_honest_when_not_embedded(client, monkeypatch):
+    # Item 1: a paper with embeddings_indexed=0 can NEVER have related work, so the
+    # Related-work section renders an honest note and NOT the lazy hx-trigger div.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_paper_row",
+        lambda doi: _detail_paper(doi, embeddings_indexed=0, graph_indexed=1),
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_score_breakdown", lambda doi: None
+    )
+    r = client.get("/corpus/10.1/carta")
+    assert r.status_code == 200
+    # The Related-work section is present but shows the honest "not embedded" note…
+    assert "isn't embedded yet" in r.text
+    # …and does NOT lazy-load (no related #corpus-related hx-trigger).
+    rel_start = r.text.index('summary="Related work"')
+    rel_end = r.text.index("</sl-details>", rel_start)
+    rel_block = r.text[rel_start:rel_end]
+    assert "sl-show once" not in rel_block
+    assert 'id="corpus-related"' not in rel_block
+
+
+def test_corpus_detail_related_lazy_when_embedded(client, monkeypatch):
+    # Item 1: a paper with embeddings_indexed=1 keeps the lazy related-work div.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_paper_row",
+        lambda doi: _detail_paper(doi, embeddings_indexed=1, graph_indexed=0),
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_score_breakdown", lambda doi: None
+    )
+    r = client.get("/corpus/10.1/carta")
+    assert r.status_code == 200
+    rel_start = r.text.index('summary="Related work"')
+    rel_end = r.text.index("</sl-details>", rel_start)
+    rel_block = r.text[rel_start:rel_end]
+    assert 'id="corpus-related"' in rel_block
+    assert 'hx-trigger="sl-show once"' in rel_block
+    assert "isn't embedded yet" not in rel_block
+
+
+def test_corpus_detail_graph_honest_when_not_graph_indexed(client, monkeypatch):
+    # Item 1: a paper with graph_indexed=0 shows the honest "not graph-indexed"
+    # note in the Knowledge-graph section and NOT the lazy graph div.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_paper_row",
+        lambda doi: _detail_paper(doi, embeddings_indexed=1, graph_indexed=0),
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_score_breakdown", lambda doi: None
+    )
+    r = client.get("/corpus/10.1/carta")
+    assert r.status_code == 200
+    assert "isn't graph-indexed yet" in r.text
+    g_start = r.text.index('summary="Knowledge graph"')
+    g_end = r.text.index("</sl-details>", g_start)
+    g_block = r.text[g_start:g_end]
+    assert "sl-show once" not in g_block
+    assert 'id="corpus-graph"' not in g_block
+
+
+def test_corpus_detail_graph_lazy_when_graph_indexed(client, monkeypatch):
+    # Item 1: a paper with graph_indexed=1 keeps the lazy knowledge-graph div.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_paper_row",
+        lambda doi: _detail_paper(doi, embeddings_indexed=0, graph_indexed=1),
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_score_breakdown", lambda doi: None
+    )
+    r = client.get("/corpus/10.1/carta")
+    assert r.status_code == 200
+    g_start = r.text.index('summary="Knowledge graph"')
+    g_end = r.text.index("</sl-details>", g_start)
+    g_block = r.text[g_start:g_end]
+    assert 'id="corpus-graph"' in g_block
+    assert 'hx-trigger="sl-show once"' in g_block
+    assert "isn't graph-indexed yet" not in g_block
+
+
+def test_corpus_detail_actions_buttons_in_button_row_after_header(client, monkeypatch):
+    # Item 2: the Relink / Re-extract buttons sit on a NEW LINE under the
+    # <h2>Actions</h2> header — wrapped in a .button-row that comes AFTER the <h2>.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_paper_row",
+        lambda doi: _detail_paper(doi),
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_score_breakdown", lambda doi: None
+    )
+    r = client.get("/corpus/10.1/carta")
+    assert r.status_code == 200
+    # Inside the actions block, the button-row opens AFTER the </h2>, and the
+    # buttons live inside it.
+    actions_start = r.text.index('id="corpus-actions"')
+    actions_end = r.text.index("</section>", actions_start)
+    block = r.text[actions_start:actions_end]
+    h2_idx = block.index("<h2>Actions</h2>")
+    row_idx = block.index('class="button-row"')
+    assert row_idx > h2_idx  # button-row comes AFTER the header
+    # Both buttons are inside the button-row (after its opening, before </div>).
+    relink_idx = block.index('hx-post="/api/papers/10.1/carta/relink"')
+    reextract_idx = block.index('hx-post="/api/papers/10.1/carta/re-extract"')
+    assert relink_idx > row_idx and reextract_idx > row_idx
+
+
+def test_corpus_toolbar_has_reset_button(client, monkeypatch):
+    # Item 6: the filter toolbar carries a Reset sl-button → /corpus?reset=1.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._list_papers", lambda **k: ([], 0)
+    )
+    r = client.get("/corpus")
+    assert r.status_code == 200
+    assert "<sl-button" in r.text and 'href="/corpus?reset=1"' in r.text
+    assert ">Reset<" in r.text or "Reset</sl-button>" in r.text
+
+
+def test_corpus_pager_per_page_label_and_labelless_select(client, monkeypatch):
+    # Item 4: the per-page control renders as an inline "Per page" label + a
+    # labelLESS sl-select (no label= attribute), with the count to its right.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._list_papers",
+        lambda **k: (
+            [
+                {
+                    "doi": "10.1/a",
+                    "title": "X",
+                    "year": 2021,
+                    "source_type": "paper",
+                    "confidence": 0.8,
+                    "embeddings_indexed": 1,
+                    "graph_indexed": 1,
+                    "notes_synced": 1,
+                    "last_updated": "2026-06-01",
+                }
+            ],
+            14,
+        ),
+    )
+    r = client.get("/corpus", headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    # An inline "Per page" label sits in the pager.
+    assert "Per page" in r.text
+    # The limit select has NO label= attribute (that would stack the label above).
+    sel = re.search(r'<sl-select[^>]*name="limit"[^>]*>', r.text)
+    assert sel is not None and "label=" not in sel.group(0)
+    # The count is present.
+    assert "of 14" in r.text
+
+
+# --- Item 5: in-memory corpus query state retention --------------------------
+
+
+def test_corpus_state_restored_on_bare_visit_after_explicit(client, monkeypatch):
+    # Item 5(b)→restore: an explicit filtered request is SAVED; a subsequent BARE
+    # /corpus visit RESTORES it (controls reflect it + _list_papers sees it).
+    seen: list[dict] = []
+
+    def _fake(**k):
+        seen.append(dict(k))
+        return ([], 0)
+
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._list_papers", _fake)
+    # Explicit request with filters → saved.
+    r1 = client.get("/corpus?search=carta&limit=50")
+    assert r1.status_code == 200
+    # Bare visit (Back link / sidebar) → restores search=carta + limit=50.
+    r2 = client.get("/corpus")
+    assert r2.status_code == 200
+    assert 'value="carta"' in r2.text  # search control restored
+    assert 'value="50"' in r2.text  # per-page control restored
+    # The effective query passed to _list_papers on the bare visit was restored.
+    assert seen[-1]["search"] == "carta"
+    assert seen[-1]["limit"] == 50
+
+
+def test_corpus_reset_clears_state_and_renders_defaults(client, monkeypatch):
+    # Item 5(a)→reset: /corpus?reset=1 clears the store AND renders defaults.
+    seen: list[dict] = []
+
+    def _fake(**k):
+        seen.append(dict(k))
+        return ([], 0)
+
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._list_papers", _fake)
+    client.get("/corpus?search=carta&limit=50")  # save
+    r_reset = client.get("/corpus?reset=1")
+    assert r_reset.status_code == 200
+    assert 'value="carta"' not in r_reset.text  # search not restored
+    assert seen[-1]["search"] is None  # default (no filter)
+    # And a subsequent bare visit stays default (store was cleared, not restored).
+    r_bare = client.get("/corpus")
+    assert r_bare.status_code == 200
+    assert 'value="carta"' not in r_bare.text
+    assert seen[-1]["search"] is None
+
+
+def test_corpus_first_bare_visit_uses_defaults(client, monkeypatch):
+    # Item 5(c): with an empty store, a first bare /corpus visit uses defaults.
+    seen: list[dict] = []
+
+    def _fake(**k):
+        seen.append(dict(k))
+        return ([], 0)
+
+    monkeypatch.setattr("lit_monitor.server.routes.corpus._list_papers", _fake)
+    r = client.get("/corpus")
+    assert r.status_code == 200
+    assert seen[-1]["search"] is None
+    assert seen[-1]["limit"] == 20  # the route default
+    assert 'value="carta"' not in r.text

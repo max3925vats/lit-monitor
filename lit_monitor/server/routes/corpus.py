@@ -43,6 +43,32 @@ _STATUS_GAP_OPTIONS = (
     "low_confidence",
 )
 
+# Item 5: process-global store of the last-applied corpus query, so a bare
+# /corpus visit (the detail-page Back link / the sidebar nav) restores the user's
+# filters + per-page + offset for the life of the server process. It resets on
+# server restart (acceptable — single-user local). Cleared by ?reset=1 and by
+# ``_reset_corpus_state`` (the test-isolation seam).
+_LAST_CORPUS_QUERY: dict[str, Any] = {}
+
+# The query keys whose PRESENCE in the raw query-string distinguishes an explicit
+# filter/page request from a bare /corpus visit (FastAPI's Query() defaults hide
+# whether the client actually sent them, so we inspect request.query_params).
+_CORPUS_QUERY_KEYS = (
+    "search",
+    "source_type",
+    "status_gap",
+    "theme",
+    "sort",
+    "order",
+    "limit",
+    "offset",
+)
+
+
+def _reset_corpus_state() -> None:
+    """Clear the in-memory last-corpus-query store (test-isolation seam)."""
+    _LAST_CORPUS_QUERY.clear()
+
 
 def _get_templates():
     """Lazy import to avoid a circular dependency at module load.
@@ -94,7 +120,48 @@ def corpus_index(
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> HTMLResponse:
-    """Render the corpus list page (full page) or its table fragment (HTMX)."""
+    """Render the corpus list page (full page) or its table fragment (HTMX).
+
+    Item 5 — in-memory state retention. FastAPI's ``Query`` defaults hide whether
+    the client actually sent a given param, so the *raw* ``request.query_params``
+    multidict is inspected to classify the request:
+
+    * ``?reset=1`` present → CLEAR the store and render all defaults.
+    * NONE of the relevant keys present (a bare ``/corpus`` — the detail Back link
+      or the sidebar) AND the store is non-empty → RESTORE the stored query.
+    * otherwise (≥1 relevant key — an explicit filter/page request, incl. HTMX
+      fragment requests) → use the parsed params AND SAVE them into the store.
+    """
+    raw_params = request.query_params
+    if "reset" in raw_params:
+        _LAST_CORPUS_QUERY.clear()
+    elif not any(k in raw_params for k in _CORPUS_QUERY_KEYS) and _LAST_CORPUS_QUERY:
+        # Bare visit with a saved query → restore it for both the DB call and the
+        # rendered controls.
+        stored = _LAST_CORPUS_QUERY
+        search = stored.get("search", search)
+        source_type = stored.get("source_type", source_type)
+        status_gap = stored.get("status_gap", status_gap)
+        theme = stored.get("theme", theme)
+        sort = stored.get("sort", sort)
+        order = stored.get("order", order)
+        limit = stored.get("limit", limit)
+        offset = stored.get("offset", offset)
+    elif any(k in raw_params for k in _CORPUS_QUERY_KEYS):
+        # Explicit filter/page request → remember it for the next bare visit.
+        _LAST_CORPUS_QUERY.update(
+            {
+                "search": search,
+                "source_type": source_type,
+                "status_gap": status_gap,
+                "theme": theme,
+                "sort": sort,
+                "order": order,
+                "limit": limit,
+                "offset": offset,
+            }
+        )
+
     try:
         rows, total = _list_papers(
             search=search or None,
@@ -260,6 +327,12 @@ def _get_paper_row(doi: str) -> dict | None:
         "source_type": record.get("source_type"),
         "zotero_key": record.get("zotero_key"),
         "note_path": record.get("note_path"),
+        # Item 1: the papers row carries these index flags (get_paper does
+        # SELECT *). They drive the honest Related-work / Knowledge-graph
+        # placeholders — a not-embedded / not-graph-indexed paper can never have
+        # data to lazy-load, so the template renders a plain note instead.
+        "embeddings_indexed": record.get("embeddings_indexed"),
+        "graph_indexed": record.get("graph_indexed"),
         "extraction": extraction,
     }
 
@@ -532,4 +605,4 @@ def corpus_detail(request: Request, doi: str) -> HTMLResponse:
     return _get_templates().TemplateResponse(request, "corpus/detail.html", ctx)
 
 
-__all__ = ["corpus_router"]
+__all__ = ["corpus_router", "_reset_corpus_state"]
