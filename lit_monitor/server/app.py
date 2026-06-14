@@ -318,6 +318,11 @@ def create_app() -> FastAPI:
 
     app.include_router(settings_router)
 
+    # RR4: /setup/reset page + /api/reset/status + /api/reset/{component}.
+    from lit_monitor.server.routes.reset import router as reset_router  # noqa: PLC0415
+
+    app.include_router(reset_router)
+
     # Dev-only /dev test surface. Wrapped in try/except so a syntax error or
     # import-time failure inside routes/dev.py downgrades to a warning rather
     # than killing the whole server.
