@@ -1,7 +1,8 @@
 {% extends "setup/_base.html" %}
 {% block step_content %}
 <h1>Setup wizard</h1>
-<p class="muted">Walk through the required steps (1&ndash;5, 8). Optional steps (6&ndash;7) are accelerators &mdash; safe to skip on a fresh install.</p>
+<p class="muted">Walk through the required steps (1&ndash;5, 8). Optional steps (6&ndash;7, 9) are accelerators &amp; tuning &mdash; safe to skip on a fresh install.</p>
+<p class="field-note">Jump to any step to edit it &mdash; each step saves on its own; you don't have to walk the whole wizard.</p>
 <ul class="step-list">
   {% for step in steps %}
   <li class="step-card {{ step.status }}{% if step.optional %} optional{% endif %}">
@@ -9,7 +10,7 @@
       <span class="step-num">{{ step.num }}</span>
       <span class="step-title">
         {{ step.title }}
-        {% if step.optional %}<span class="pill optional-pill">Optional &mdash; accelerator</span>{% endif %}
+        {% if step.optional %}<span class="pill optional-pill">Optional</span>{% endif %}
       </span>
       <span class="step-status">
         {% if step.status == "ok" %}✓ configured

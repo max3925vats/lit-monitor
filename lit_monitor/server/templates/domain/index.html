@@ -9,11 +9,11 @@
     the discovery pipeline — confirm an item to up-weight it, reject to
     drop it from the signal.
   </p>
-  <p>
-    <button hx-post="/api/domain/analyze" hx-swap="none"
-            hx-on::after-request="window.location.reload()">
+  <p class="card-action">
+    <sl-button variant="primary" hx-post="/api/domain/analyze" hx-swap="none"
+               hx-on::after-request="window.location.reload()">
       Re-analyze
-    </button>
+    </sl-button>
   </p>
 
   {% set any_items = extraction.topics or extraction.methods or extraction.materials or extraction.adjacent_fields or extraction.exclusions %}
@@ -31,8 +31,8 @@
             {% if item.user_confirmed %}
               <em class="domain-confirmed">(confirmed)</em>
             {% endif %}
-            <button hx-post="/api/domain/{{ item.id }}/confirm" hx-swap="none">Confirm</button>
-            <button hx-post="/api/domain/{{ item.id }}/reject"  hx-swap="none">Reject</button>
+            <sl-button variant="default" hx-post="/api/domain/{{ item.id }}/confirm" hx-swap="none">Confirm</sl-button>
+            <sl-button variant="danger" hx-post="/api/domain/{{ item.id }}/reject"  hx-swap="none">Reject</sl-button>
           </li>
         {% endfor %}
       </ul>

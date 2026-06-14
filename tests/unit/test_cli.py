@@ -529,6 +529,56 @@ class TestCliRun:
         assert "DRY RUN" in result.output
         assert "5" in result.output
 
+    def test_run_source_scheduled_passes_trigger(self, runner):
+        """`run --source scheduled` threads trigger='scheduled' into run_discovery."""
+        mock_summary = MagicMock()
+        mock_summary.new_papers_found = 0
+        mock_summary.papers_ingested = 0
+        mock_summary.papers_failed = 0
+        mock_summary.digest_path = ""
+        mock_summary.errors = []
+        with (
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.output.embeddings.check_embed_model_change"),
+            patch(
+                "lit_monitor.pipelines.discovery.run_discovery",
+                return_value=mock_summary,
+            ) as mock_run_discovery,
+        ):
+            result = runner.invoke(main, ["run", "--source", "scheduled"])
+        assert result.exit_code == 0
+        assert mock_run_discovery.call_args.kwargs.get("trigger") == "scheduled"
+
+    def test_run_source_defaults_to_manual(self, runner):
+        """`run` without --source defaults trigger='manual'."""
+        mock_summary = MagicMock()
+        mock_summary.new_papers_found = 0
+        mock_summary.papers_ingested = 0
+        mock_summary.papers_failed = 0
+        mock_summary.digest_path = ""
+        mock_summary.errors = []
+        with (
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.output.embeddings.check_embed_model_change"),
+            patch(
+                "lit_monitor.pipelines.discovery.run_discovery",
+                return_value=mock_summary,
+            ) as mock_run_discovery,
+        ):
+            result = runner.invoke(main, ["run"])
+        assert result.exit_code == 0
+        assert mock_run_discovery.call_args.kwargs.get("trigger") == "manual"
+
     def test_run_rate_limit_exhausted_maps_to_exit_2(self, runner):
         """P5.5: the discovery CLI catches RateLimitExhausted (raised by
         run_discovery) and maps it to exit code 2, mirroring brain-build P4.5.

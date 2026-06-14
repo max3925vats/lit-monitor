@@ -30,10 +30,17 @@ def client() -> TestClient:
 
 @pytest.mark.unit
 def test_health_badge_returns_html_fragment(client: TestClient) -> None:
-    """The badge endpoint must return an HTML fragment with a status-badge class."""
+    """The badge endpoint must return an HTML fragment."""
     r = client.get("/api/health/badge")
     assert r.status_code == 200
-    assert 'class="status-badge' in r.text
+    assert "<sl-badge" in r.text
+
+
+@pytest.mark.unit
+def test_badge_renders_sl_badge_with_variant(client):
+    html = client.get("/api/health/badge").text
+    assert "<sl-badge" in html
+    assert any(v in html for v in ("success", "warning", "danger", "neutral"))
 
 
 @pytest.mark.unit
@@ -50,7 +57,7 @@ def test_health_badge_unconfigured_when_secrets_missing(client: TestClient) -> N
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
-    assert "status-badge unconfigured" in r.text
+    assert 'variant="neutral"' in r.text
 
 
 @pytest.mark.unit
@@ -63,7 +70,7 @@ def test_health_badge_healthy_when_all_pass(client: TestClient) -> None:
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
-    assert "status-badge healthy" in r.text
+    assert 'variant="success"' in r.text
 
 
 @pytest.mark.unit
@@ -83,7 +90,7 @@ def test_health_badge_degraded_when_one_section_fails(client: TestClient) -> Non
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
-    assert "status-badge degraded" in r.text
+    assert 'variant="warning"' in r.text
 
 
 @pytest.mark.unit
@@ -97,7 +104,7 @@ def test_health_badge_misconfigured_when_two_fail(client: TestClient) -> None:
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
-    assert "status-badge misconfigured" in r.text
+    assert 'variant="danger"' in r.text
 
 
 @pytest.mark.unit
@@ -135,7 +142,7 @@ def test_badge_healthy_when_only_warn_severity(client: TestClient) -> None:
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
-    assert "status-badge healthy" in r.text
+    assert 'variant="success"' in r.text
 
 
 @pytest.mark.unit
@@ -166,7 +173,7 @@ def test_badge_healthy_when_optional_scopus_missing_only(client: TestClient) -> 
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
-    assert "status-badge healthy" in r.text
+    assert 'variant="success"' in r.text
 
 
 @pytest.mark.unit
@@ -188,7 +195,7 @@ def test_badge_degraded_when_single_fail_with_warn(client: TestClient) -> None:
     ):
         r = client.get("/api/health/badge")
     assert r.status_code == 200
-    assert "status-badge degraded" in r.text
+    assert 'variant="warning"' in r.text
 
 
 @pytest.mark.unit

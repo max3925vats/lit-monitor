@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import UTC, datetime
 from typing import Any
 
 from lit_monitor.core.doi import normalize_doi
@@ -601,6 +602,80 @@ def get_discovery_runs(
     return {"runs": [dict(zip(cols, r)) for r in rows], "total": total}
 
 
+def get_discovery_run_history(
+    state_db: Any,
+    *,
+    limit: int = 20,
+    offset: int = 0,
+    trigger: str | None = None,
+) -> dict[str, Any]:
+    """Unified discovery-run history: discovery_runs LEFT JOIN run_log.
+
+    Joins each discovery_runs row to its sibling run_log row (via the
+    ``run_log_id`` FK, a uuid) so a single view carries both the structured
+    run metadata and the per-paper processed/skipped/failed counts. Historical
+    rows written before the FK existed have ``run_log_id IS NULL``; for them the
+    three count columns come back as ``None``.
+
+    Args:
+        state_db: StateDB instance.
+        limit:    Maximum number of rows to return (default 20).
+        offset:   Row offset for pagination (default 0).
+        trigger:  When set ('manual' | 'scheduled'), restrict to runs with that
+            trigger and report ``total`` over the filtered set. When None
+            (default), all runs are returned unchanged.
+
+    Returns:
+        Dict with keys ``runs`` (list of run dicts, newest first) and ``total``
+        (count of matching discovery_runs rows). Each run dict has keys: id,
+        started_at, finished_at, status, total_found, total_ingested,
+        papers_processed, papers_skipped, papers_failed, trigger.
+    """
+    cols = [
+        "id", "started_at", "finished_at", "status", "total_found",
+        "total_ingested", "papers_processed", "papers_skipped", "papers_failed",
+        "trigger",
+    ]
+    # Optional trigger filter applied identically to both the rows SELECT and
+    # the total COUNT so pagination math stays consistent with the filtered set.
+    # Two fully-literal SQL variants (no f-string into .execute()) keep the
+    # self-audit's SQL-injection guard happy; the trigger value is always a
+    # ``?`` placeholder, never interpolated.
+    total: int
+    with state_db._connect() as conn:
+        if trigger is not None:
+            rows = conn.execute(
+                "SELECT dr.id, dr.started_at, dr.finished_at, dr.status, "
+                "dr.total_found, dr.total_ingested, "
+                "rl.papers_processed, rl.papers_skipped, rl.papers_failed, "
+                "dr.trigger "
+                "FROM discovery_runs dr "
+                "LEFT JOIN run_log rl ON dr.run_log_id = rl.run_id "
+                "WHERE dr.trigger = ? "
+                "ORDER BY dr.started_at DESC, dr.id DESC LIMIT ? OFFSET ?",
+                (trigger, limit, offset),
+            ).fetchall()
+            total = conn.execute(
+                "SELECT COUNT(*) FROM discovery_runs dr WHERE dr.trigger = ?",
+                (trigger,),
+            ).fetchone()[0]
+        else:
+            rows = conn.execute(
+                "SELECT dr.id, dr.started_at, dr.finished_at, dr.status, "
+                "dr.total_found, dr.total_ingested, "
+                "rl.papers_processed, rl.papers_skipped, rl.papers_failed, "
+                "dr.trigger "
+                "FROM discovery_runs dr "
+                "LEFT JOIN run_log rl ON dr.run_log_id = rl.run_id "
+                "ORDER BY dr.started_at DESC, dr.id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+            total = conn.execute(
+                "SELECT COUNT(*) FROM discovery_runs dr"
+            ).fetchone()[0]
+    return {"runs": [dict(zip(cols, r)) for r in rows], "total": total}
+
+
 def get_discovery_run(state_db: Any, run_id: int) -> dict[str, Any] | None:
     """P5: single discovery_runs row (without papers). None if not found.
 
@@ -619,6 +694,33 @@ def get_discovery_run(state_db: Any, run_id: int) -> dict[str, Any] | None:
             (run_id,),
         ).fetchone()
     return dict(zip(cols, row)) if row else None
+
+
+def discovery_run_same_day_ordinal(state_db: Any, run_id: int) -> int:
+    """Position of ``run_id`` among same-day ``discovery_runs`` (1-based).
+
+    Counts discovery runs sharing this run's ``started_at`` date whose id is
+    ``<= run_id``. Returns 1 for the day's first run, 2 for the second, etc.
+    Used to disambiguate same-day digest filenames (the first run keeps the bare
+    ``Discovery_{date}.md``; later runs get a ``_{ordinal}`` suffix).
+
+    Args:
+        state_db: StateDB instance.
+        run_id:   Primary key of the discovery_runs row.
+
+    Returns:
+        The 1-based ordinal. Defensively returns 1 if the run is not found.
+    """
+    with state_db._connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM discovery_runs "
+            "WHERE substr(started_at, 1, 10) = "
+            "  (SELECT substr(started_at, 1, 10) FROM discovery_runs WHERE id = ?) "
+            "AND id <= ?",
+            (run_id, run_id),
+        ).fetchone()
+    ordinal = int(row[0]) if row and row[0] else 0
+    return ordinal if ordinal >= 1 else 1
 
 
 def get_discovery_run_papers(
@@ -898,6 +1000,108 @@ def get_graph_signals_for_candidate(
         )
 
     return result
+
+
+def _relative_time(iso_ts: str | None) -> str:
+    """Human relative age from a SQLite 'YYYY-MM-DD HH:MM:SS' UTC timestamp.
+
+    Rolls over through units as the age grows: 'just now' / 'Nm ago' (minutes) /
+    'Nh ago' (hours) / 'Nd ago' (< 1 week) / 'Nw ago' (weeks) / 'Nmo ago'
+    (months, ~30d) / 'Ny ago' (years, 365d). Returns 'never' for None/unparseable."""
+    if not iso_ts:
+        return "never"
+    try:
+        dt = datetime.strptime(iso_ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
+    except (ValueError, TypeError):
+        return "never"
+    delta = datetime.now(UTC) - dt
+    secs = max(0, int(delta.total_seconds()))
+    DAY = 86400
+    if secs < 60:
+        return "just now"
+    if secs < 3600:
+        return f"{secs // 60}m ago"
+    if secs < DAY:
+        return f"{secs // 3600}h ago"
+    if secs < 7 * DAY:
+        return f"{secs // DAY}d ago"
+    if secs < 30 * DAY:
+        return f"{secs // (7 * DAY)}w ago"
+    if secs < 365 * DAY:
+        return f"{secs // (30 * DAY)}mo ago"
+    return f"{secs // (365 * DAY)}y ago"
+
+
+def get_dashboard_stats(state_db: Any, graph_db: Any) -> dict[str, Any]:
+    """Assemble the four-stat banner payload (pure read — never writes).
+
+    Returns dict with keys papers/graph_nodes/themes (each {value:int,
+    delta:int|None}) and last_run ({relative:str, status:str|None}). Every
+    field degrades to a safe default; never raises.
+
+    Args:
+        state_db: StateDB instance.
+        graph_db: Optional GraphDB instance (None for graph-absent degradation).
+
+    Returns:
+        Dict with keys: papers, graph_nodes, themes, last_run. All values
+        JSON-serializable.
+    """
+    try:
+        papers_val = int(state_db.count_with_extraction())
+    except Exception as exc:
+        logger.warning("dashboard_stats: papers count failed: %s", exc)
+        papers_val = 0
+    try:
+        themes_val = len(state_db.list_active_clusters())
+    except Exception as exc:
+        logger.warning("dashboard_stats: themes count failed: %s", exc)
+        themes_val = 0
+    graph_val = 0
+    if graph_db is not None:
+        try:
+            gs = get_corpus_stats(graph_db)
+            graph_val = int(gs.get("paper_count", 0)) + int(gs.get("entity_count", 0))
+        except Exception as exc:
+            logger.warning("dashboard_stats: graph count failed: %s", exc)
+            graph_val = 0
+
+    try:
+        snaps = state_db.get_recent_snapshots(limit=2)
+    except Exception as exc:
+        logger.warning("dashboard_stats: snapshots fetch failed: %s", exc)
+        snaps = []
+
+    def _delta(field: str) -> int | None:
+        if len(snaps) < 2:
+            return None
+        return int(snaps[0].get(field, 0)) - int(snaps[1].get(field, 0))
+
+    last_relative, last_status = "never", None
+    try:
+        runs = state_db.get_recent_runs(limit=1)
+        if runs:
+            r = runs[0]
+            last_relative = _relative_time(r.get("finished_at") or r.get("started_at"))
+            last_status = r.get("status")
+    except Exception as exc:
+        logger.warning("dashboard_stats: last run failed: %s", exc)
+
+    try:
+        return _coerce_jsonable({
+            "papers": {"value": papers_val, "delta": _delta("papers")},
+            "graph_nodes": {"value": graph_val, "delta": _delta("graph_nodes")},
+            "themes": {"value": themes_val, "delta": _delta("themes")},
+            "last_run": {"relative": last_relative, "status": last_status},
+        })
+    except Exception as exc:
+        logger.warning("dashboard_stats: final assembly failed: %s", exc)
+        return {
+            "papers": {"value": papers_val, "delta": None},
+            "graph_nodes": {"value": graph_val, "delta": None},
+            "themes": {"value": themes_val, "delta": None},
+            "last_run": {"relative": last_relative, "status": last_status},
+        }
 
 
 def _parse_author_names(authors_str: str) -> set[str]:

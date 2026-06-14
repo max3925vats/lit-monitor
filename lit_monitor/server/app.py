@@ -35,11 +35,60 @@ STATIC_DIR = HERE / "static"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-# Bundle B: register a fromjson filter so run_detail.html can decode the
-# score_breakdown_json column inline without a dedicated route round-trip.
-import json as _json  # noqa: E402 — intentionally after globals block
 
-templates.env.filters["fromjson"] = _json.loads
+def configure_templates(t):
+    """Register the shared Jinja globals + filters on a Jinja2Templates instance.
+
+    Centralised so production AND test-local templates stay in sync (the app-shell
+    sidebar needs nav_groups / active_group_for_path on every render)."""
+    import json as _json
+
+    from lit_monitor.server.nav import NAV_GROUPS, active_group_for_path
+    t.env.globals["nav_groups"] = NAV_GROUPS
+    t.env.globals["active_group_for_path"] = active_group_for_path
+    from lit_monitor.server.nav import breadcrumb_trail, show_stats_banner
+    t.env.globals["breadcrumb_trail"] = breadcrumb_trail
+    t.env.globals["show_stats_banner"] = show_stats_banner
+    t.env.globals["detail_crumb"] = None
+    t.env.filters["fromjson"] = _json.loads
+
+    def _banner_stats() -> dict:
+        """Lazy, read-only stats for the banner. Returns a safe-default dict on
+        any failure so the banner always renders."""
+        try:
+            from lit_monitor.api.queries import get_dashboard_stats
+            from lit_monitor.server.runtime import get_runtime  # real singleton accessor
+
+            rt = get_runtime()
+            state_db = rt.state_db  # lazy property — constructs StateDB on first access
+            graph_db = None
+            try:
+                from lit_monitor.graph import safe_graph_db
+
+                graph_db = safe_graph_db()
+            except Exception:
+                graph_db = None
+            try:
+                return get_dashboard_stats(state_db, graph_db)
+            finally:
+                if graph_db is not None:
+                    try:
+                        graph_db.close()
+                    except Exception:
+                        pass
+        except Exception:
+            return {
+                "papers": {"value": 0, "delta": None},
+                "graph_nodes": {"value": 0, "delta": None},
+                "themes": {"value": 0, "delta": None},
+                "last_run": {"relative": "never", "status": None},
+            }
+
+    t.env.globals["banner_stats"] = _banner_stats
+    return t
+
+
+configure_templates(templates)
 
 
 def _read_version() -> str:
@@ -277,6 +326,9 @@ def create_app() -> FastAPI:
             from lit_monitor.server.routes import dev as dev_routes
 
             app.include_router(dev_routes.router)
+            from lit_monitor.server.routes import gallery as _gallery  # noqa: PLC0415
+
+            app.include_router(_gallery.router)
             logger.info("Dev mode enabled — /dev router mounted.")
         except Exception as exc:  # pragma: no cover — defensive boot path
             logger.warning("Failed to mount /dev router: %s", exc)

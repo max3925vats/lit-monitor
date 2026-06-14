@@ -358,6 +358,10 @@ def run_brain_build(
             errors=summary.errors,
         )
 
+        # Stats-banner snapshot (best-effort; never aborts the run).
+        from lit_monitor.api._stats_snapshot import record_corpus_snapshot
+        record_corpus_snapshot(state_db, run_type="brain_build", run_id=run_id)
+
         # M4: append novel discovered_topics to topics.yaml and concepts.yaml.
         if _topics_batch:
             try:

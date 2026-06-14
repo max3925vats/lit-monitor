@@ -1,0 +1,282 @@
+{# Setup step 9 (Tuning): the former standalone Advanced Settings panel, folded
+   into the wizard as an OPTIONAL step. The three sections + their per-section
+   data-path JSON serializer are unchanged from the old settings/index.html —
+   only the chrome (extends setup/_base.html) and the heading changed. The forms
+   still POST to the unchanged /api/settings/{section} API. #}
+{% extends "setup/_base.html" %}
+{% set current_step = 9 %}
+{% set detail_crumb = "Step 9 — Tuning" %}
+{% block step_content %}
+<h1>Step 9 &mdash; Tuning <span class="pill optional-pill">Optional &mdash; tuning</span></h1>
+<p class="field-note">
+  Advanced ranking / clustering / feedback tuning. <strong>Optional</strong> &mdash;
+  every setting below ships with a sensible default, so you can finish setup
+  without touching this step and revisit it later.
+</p>
+<p class="field-note">
+  Changes are written atomically to <code>config/extraction.yaml</code>.
+  Each Save replaces the entire section, so the form posts every field below
+  (not just the one you changed). All current values are pre-filled.
+</p>
+
+{# E3/B8: every input carries data-path so the inline JS rebuilds the EXACT
+   nested shape the per-section pydantic model (extra="forbid") expects. The
+   write replaces the whole section, so a complete valid body is posted. #}
+
+<!-- Section: Ranking weights & filters -->
+<details class="settings-section" id="ranking">
+  <summary>Ranking weights</summary>
+  <form class="setup-form"
+        hx-post="/api/settings/ranking"
+        hx-ext="settings-json"
+        hx-swap="none"
+        hx-on="htmx:afterRequest: document.getElementById('ranking-result').textContent = (event.detail.successful ? 'Saved.' : 'Error — check logs.')">
+    <h3 class="field-label">Signal weights</h3>
+    <sl-input type="number" step="0.01" min="0" max="1"
+              data-path="weights.domain_context"
+              label="domain_context"
+              help-text="Additive weight for the domain_context paragraph signal."
+              value="{{ ranking.get('weights', {}).get('domain_context', 0.0) }}"></sl-input>
+    <sl-input type="number" step="0.01" min="0" max="1"
+              data-path="weights.cluster_centroid"
+              label="cluster_centroid"
+              help-text="Max-cosine-to-nearest-cluster-centroid signal."
+              value="{{ ranking.get('weights', {}).get('cluster_centroid', 0.0) }}"></sl-input>
+    <sl-input type="number" step="0.01" min="0" max="1"
+              data-path="weights.graph_entity_overlap"
+              label="graph_entity_overlap"
+              help-text="Shared MENTIONS entities between candidate and library."
+              value="{{ ranking.get('weights', {}).get('graph_entity_overlap', 0.0) }}"></sl-input>
+    <sl-input type="number" step="0.01" min="0" max="1"
+              data-path="weights.graph_citation"
+              label="graph_citation"
+              help-text="Candidate cites / is cited by / EXTENDS library papers."
+              value="{{ ranking.get('weights', {}).get('graph_citation', 0.0) }}"></sl-input>
+    <sl-input type="number" step="0.01" min="0" max="1"
+              data-path="weights.graph_shared_authors"
+              label="graph_shared_authors"
+              help-text="Shared author names (case-insensitive, deduped)."
+              value="{{ ranking.get('weights', {}).get('graph_shared_authors', 0.0) }}"></sl-input>
+    {# Preserve weights.feedback on save: this section POST replaces the WHOLE
+       ranking section, so without carrying feedback through, saving here would
+       reset the active-learning weight to 0 and silently disable the loop.
+       Hidden + data-num so it serialises as a number, not a string. #}
+    <input type="hidden" data-path="weights.feedback" data-num
+           value="{{ ranking.get('weights', {}).get('feedback', 0.0) }}">
+
+    <h3 class="field-label">Domain filter</h3>
+    <sl-switch data-path="domain_filter.enabled"
+               {% if ranking.get('domain_filter', {}).get('enabled', false) %}checked{% endif %}>Enable pre-rank semantic filter</sl-switch>
+    <sl-input type="number" step="0.01" min="0" max="1"
+              data-path="domain_filter.threshold"
+              label="threshold"
+              help-text="Cosine cutoff below which candidates are off-domain."
+              value="{{ ranking.get('domain_filter', {}).get('threshold', 0.35) }}"></sl-input>
+    <sl-input type="number" step="0.01" min="0" max="1"
+              data-path="domain_filter.minimum_off_domain_slots_pct"
+              label="minimum_off_domain_slots_pct"
+              help-text="Fraction of digest slots always reserved for serendipity."
+              value="{{ ranking.get('domain_filter', {}).get('minimum_off_domain_slots_pct', 0.05) }}"></sl-input>
+
+    <h3 class="field-label">Semantic Scholar supplement cap</h3>
+    <sl-switch data-path="s2_supplement_cap.enabled"
+               {% if ranking.get('s2_supplement_cap', {}).get('enabled', false) %}checked{% endif %}>Drop low-relevance S2 supplemented candidates</sl-switch>
+    <sl-input type="number" step="0.01" min="0" max="1"
+              data-path="s2_supplement_cap.min_relevance"
+              label="min_relevance"
+              help-text="S2 relevance_score floor; below this → dropped."
+              value="{{ ranking.get('s2_supplement_cap', {}).get('min_relevance', 0.4) }}"></sl-input>
+
+    <sl-button variant="primary" type="submit">Save ranking settings</sl-button>
+    <span id="ranking-result" class="field-note" style="margin-left:1rem;"></span>
+  </form>
+</details>
+
+<!-- Section: Clustering -->
+<details class="settings-section" id="clustering">
+  <summary>Clustering</summary>
+  <form class="setup-form"
+        hx-post="/api/settings/clustering"
+        hx-ext="settings-json"
+        hx-swap="none"
+        hx-on="htmx:afterRequest: document.getElementById('clustering-result').textContent = (event.detail.successful ? 'Saved.' : 'Error — check logs.')">
+    <sl-switch data-path="enabled"
+               {% if clustering.get('enabled', true) %}checked{% endif %}>Enable clustering</sl-switch>
+    <sl-input type="number" step="1" min="1"
+              data-path="min_papers_threshold"
+              label="min_papers_threshold"
+              help-text="Library must hold at least this many indexed papers."
+              value="{{ clustering.get('min_papers_threshold', 100) }}"></sl-input>
+    <sl-input type="number" step="1" min="2" max="100"
+              data-path="k_min"
+              label="k_min"
+              help-text="Low end of the k-means K search range."
+              value="{{ clustering.get('k_min', 5) }}"></sl-input>
+    <sl-input type="number" step="1" min="2" max="100"
+              data-path="k_max"
+              label="k_max"
+              help-text="High end of the K search range (silhouette picks best K)."
+              value="{{ clustering.get('k_max', 15) }}"></sl-input>
+    <sl-input data-path="recompute_frequency"
+              label="recompute_frequency"
+              help-text="How often clusters are recomputed (e.g. nightly)."
+              value="{{ clustering.get('recompute_frequency', 'nightly') }}"></sl-input>
+
+    <h3 class="field-label">Collection priors (tier-3 opt-in)</h3>
+    <sl-switch data-path="use_existing_collections_as_priors.enabled"
+               {% if clustering.get('use_existing_collections_as_priors', {}).get('enabled', false) %}checked{% endif %}>Use existing Zotero collections as cluster seeds</sl-switch>
+    <p class="field-note">
+      Collection names are configured in <code>extraction.yaml</code> directly
+      (list field, not editable here); current names are preserved on save.
+    </p>
+
+    <h3 class="field-label">Write-back (opt-in)</h3>
+    <sl-switch data-path="write_back.tags.enabled"
+               {% if clustering.get('write_back', {}).get('tags', {}).get('enabled', false) %}checked{% endif %}>Write lm/&lt;theme&gt; tags back to Zotero</sl-switch>
+    <sl-input data-path="write_back.tags.namespace"
+              label="tag namespace"
+              value="{{ clustering.get('write_back', {}).get('tags', {}).get('namespace', 'lm') }}"></sl-input>
+    <sl-switch data-path="write_back.collections.enabled"
+               {% if clustering.get('write_back', {}).get('collections', {}).get('enabled', false) %}checked{% endif %}>Create Zotero sub-collections per theme</sl-switch>
+    <sl-input data-path="write_back.collections.parent_collection"
+              label="parent collection"
+              value="{{ clustering.get('write_back', {}).get('collections', {}).get('parent_collection', 'lit-monitor') }}"></sl-input>
+
+    {# The collection_names list is not editable via this panel; carry the
+       current value through so the replace-whole-section write doesn't drop
+       it. Rendered as a hidden JSON blob the serializer parses back to a list. #}
+    <input type="hidden" id="cluster-prior-names"
+           data-path="use_existing_collections_as_priors.collection_names"
+           data-json="list"
+           value="{{ clustering.get('use_existing_collections_as_priors', {}).get('collection_names', []) | tojson }}">
+
+    <sl-button variant="primary" type="submit">Save clustering settings</sl-button>
+    <span id="clustering-result" class="field-note" style="margin-left:1rem;"></span>
+  </form>
+</details>
+
+<!-- Section: Feedback / UI -->
+<details class="settings-section" id="feedback">
+  <summary>Feedback &amp; UI</summary>
+  <form class="setup-form"
+        hx-post="/api/settings/web_ui"
+        hx-ext="settings-json"
+        hx-swap="none"
+        hx-on="htmx:afterRequest: document.getElementById('webui-result').textContent = (event.detail.successful ? 'Saved.' : 'Error — check logs.')">
+    <sl-switch name="show_feedback_buttons" data-path="show_feedback_buttons"
+               {% if web_ui.get('show_feedback_buttons', false) %}checked{% endif %}>Show feedback buttons on paper cards</sl-switch>
+    <p class="field-note">
+      Enables Save / Dismiss / &#128077; / &#128078; / Rate buttons.
+      Default: off. Feedback events are stored for future active-learning.
+      See the <a href="/insights">Insights</a> page.
+    </p>
+    <sl-button variant="primary" type="submit">Save UI settings</sl-button>
+    <span id="webui-result" class="field-note" style="margin-left:1rem;"></span>
+  </form>
+</details>
+
+<hr>
+<p><a href="/setup/complete" class="button">Finish setup →</a></p>
+<p><a href="/setup">← Back to setup overview</a></p>
+
+<script>
+  /* Bundle H (E3/B8): serialize each tuning form into the EXACT nested JSON
+   * the per-section pydantic model expects.
+   *
+   * Each input declares its position in the section via a `data-path`
+   * attribute using dotted notation, e.g. data-path="weights.domain_context"
+   * or data-path="write_back.tags.enabled". This builder walks every input
+   * with a data-path inside the form and assembles a nested object, so the
+   * POST body matches the model's nesting (which uses extra="forbid").
+   *
+   * The settings API REPLACES the whole section on write, so every field is
+   * rendered and posted (not just edited ones) to avoid clobbering siblings.
+   *
+   * HTMX 2 serialization approach: register a named extension (settings-json)
+   * on each form. HTMX 2 calls encodeParameters(xhr, parameters, elt) to build
+   * the request body; the string returned is sent verbatim. This is the correct
+   * hook — setting evt.detail.parameters = JSON.stringify(obj) in configRequest
+   * causes HTMX to iterate over the string characters instead.
+   *
+   * Tag-aware value coercion via readControlValue():
+   *   - sl-switch / sl-checkbox / checkbox  -> boolean (.checked)
+   *   - data-json="list"                    -> JSON.parse (preserves a list we don't edit here)
+   *   - sl-input[type=number] / input[type=number] -> Number()
+   *   - everything else                     -> raw string
+   */
+  // Keys that could pollute Object.prototype if assigned via a crafted
+  // data-path (e.g. "__proto__.polluted"). Skip the whole path if any segment
+  // is one of these — settings fields never legitimately use these names.
+  var UNSAFE_KEYS = { '__proto__': true, 'constructor': true, 'prototype': true };
+
+  function setNested(obj, dottedPath, value) {
+    var parts = dottedPath.split('.');
+    var cur = obj;
+    for (var i = 0; i < parts.length - 1; i++) {
+      var key = parts[i];
+      // prototype-pollution guard: gate the EXACT assignment below. Checking
+      // each key immediately before it is used as an assignment target (rather
+      // than in a separate up-front scan) ensures __proto__/constructor/
+      // prototype can never reach `cur[key] = ...`.
+      if (Object.prototype.hasOwnProperty.call(UNSAFE_KEYS, key)) {
+        return;
+      }
+      if (typeof cur[key] !== 'object' || cur[key] === null) {
+        cur[key] = {};
+      }
+      cur = cur[key];
+    }
+    var last = parts[parts.length - 1];
+    if (Object.prototype.hasOwnProperty.call(UNSAFE_KEYS, last)) {
+      return;
+    }
+    cur[last] = value;
+  }
+
+  function readControlValue(el) {
+    var tag = el.tagName.toLowerCase();
+    // Shoelace sl-switch / sl-checkbox and native checkbox all expose .checked
+    if (tag === 'sl-switch' || tag === 'sl-checkbox' || el.type === 'checkbox') {
+      return el.checked;
+    }
+    // Hidden native input carrying a JSON-encoded list (not converted to Shoelace)
+    if (el.getAttribute('data-json') === 'list') {
+      try { return JSON.parse(el.value); } catch (e) { return []; }
+    }
+    // Numeric inputs: sl-input[type=number] exposes .getAttribute('type'), not .type.
+    // data-num marks a hidden field whose value must serialize as a number (e.g. the
+    // preserved weights.feedback carry-through, which would otherwise post as a string).
+    var isNumber = el.getAttribute('type') === 'number' || el.type === 'number'
+                   || el.getAttribute('data-num') !== null;
+    if (isNumber) {
+      var num = Number(el.value);
+      return isNaN(num) ? el.value : num;
+    }
+    return el.value;
+  }
+
+  // Register a single HTMX 2 extension that handles JSON encoding for all
+  // tuning forms. encodeParameters is the correct hook: HTMX calls it to
+  // produce the request body string, then sends that string verbatim.
+  htmx.defineExtension('settings-json', {
+    onEvent: function(name, evt) {
+      if (name === 'htmx:configRequest') {
+        evt.detail.headers['Content-Type'] = 'application/json';
+      }
+    },
+    encodeParameters: function(xhr, parameters, elt) {
+      // elt is the element that triggered the request (the form or submit button).
+      // Walk up to find the nearest form with data-path controls.
+      var form = (elt.tagName === 'FORM') ? elt : elt.closest('form');
+      if (!form) { return null; }
+      var obj = {};
+      form.querySelectorAll('[data-path]').forEach(function(el) {
+        var path = el.getAttribute('data-path');
+        var value = readControlValue(el);
+        setNested(obj, path, value);
+      });
+      return JSON.stringify(obj);
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}sl-probe{% endblock %}
+{% block content %}
+<form hx-post="/dev/sl-probe/echo" hx-target="#echo-out" hx-swap="innerHTML">
+  <sl-input name="probe" value="hello"></sl-input>
+  <sl-checkbox name="flag" value="on" checked>flag</sl-checkbox>
+  <sl-button type="submit" variant="primary">Submit</sl-button>
+</form>
+<div id="echo-out"></div>
+{% endblock %}

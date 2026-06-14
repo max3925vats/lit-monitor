@@ -5,8 +5,11 @@
 </div>
 {% else %}
 <div class="card success">
-  <h3>Saved</h3>
+  <h3>Saved ✓</h3>
   <p>domain_context.yaml updated.</p>
-  <p><a href="/setup/step-6" class="button">Continue to step 6 →</a></p>
+  <p class="setup-result-actions">
+    <a href="/setup" class="button">← Back to all steps</a>
+    <a href="/setup/step-6" class="button">Continue to step 6 →</a>
+  </p>
 </div>
 {% endif %}

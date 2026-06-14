@@ -15,7 +15,6 @@ Covers:
 """
 from __future__ import annotations
 
-import json as _json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -95,7 +94,7 @@ def _make_html_client(db, monkeypatch) -> TestClient:
     import lit_monitor.server.app as app_mod
 
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-    templates.env.filters["fromjson"] = _json.loads
+    app_mod.configure_templates(templates)
     # monkeypatch auto-restores app.templates after the test so this test-local
     # templates object does not leak into sibling tests (order-dependent flakiness).
     monkeypatch.setattr(app_mod, "templates", templates)
@@ -293,3 +292,87 @@ class TestThemesHTMLPages:
         client, _ = _make_html_client(empty_db, monkeypatch)
         r = client.get("/themes/9999")
         assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# P4 (Shoelace redesign) — themes list markup
+# ---------------------------------------------------------------------------
+
+class TestThemesListShoelaceMarkup:
+    """Assert the /themes LIST page meets the P4 Shoelace + rubric standard.
+
+    These assert on RENDERED markup only — they MUST NOT click/POST the
+    write-back buttons (dry-run preview still spawns work).
+    """
+
+    def test_writeback_controls_are_sl_button(self, seeded_db, monkeypatch):
+        db, cluster_id = seeded_db
+        client, _ = _make_html_client(db, monkeypatch)
+        html = client.get("/themes").text
+        # Both write-back controls converted to <sl-button>.
+        assert "<sl-button" in html
+        # HTMX targets preserved on sl-buttons; the native amber dev buttons gone.
+        assert f'hx-post="/api/themes/{cluster_id}/write-back/tags"' in html
+        assert f'hx-post="/api/themes/{cluster_id}/write-back/collections"' in html
+        # No native <button class= for the write-back controls.
+        assert '<button type="button"' not in html
+
+    def test_writeback_result_container_is_neutral_not_dev(self, seeded_db, monkeypatch):
+        db, cluster_id = seeded_db
+        client, _ = _make_html_client(db, monkeypatch)
+        html = client.get("/themes").text
+        # The inline result container uses the neutral .writeback-result class,
+        # NOT the amber dev-output .dev-result style; HTMX target id preserved.
+        assert f'id="writeback-result-{cluster_id}"' in html
+        assert "writeback-result" in html
+        assert "dev-result" not in html
+
+    def test_theme_name_links_to_detail(self, seeded_db, monkeypatch):
+        db, cluster_id = seeded_db
+        client, _ = _make_html_client(db, monkeypatch)
+        html = client.get("/themes").text
+        # Display name stays a /themes/{id} link (rubric #17).
+        assert f'href="/themes/{cluster_id}"' in html
+
+    def test_cohesion_has_sl_badge(self, seeded_db, monkeypatch):
+        db, _ = seeded_db
+        client, _ = _make_html_client(db, monkeypatch)
+        html = client.get("/themes").text
+        # Cohesion column carries a qualitative <sl-badge> cue.
+        assert "<sl-badge" in html
+
+    def test_empty_state_is_field_note(self, empty_db, monkeypatch):
+        client, _ = _make_html_client(empty_db, monkeypatch)
+        html = client.get("/themes").text
+        # Real empty state referencing the actual CLI command.
+        assert "field-note" in html
+        assert "lit-monitor cluster" in html
+
+    def test_count_links_to_filtered_corpus(self, seeded_db, monkeypatch):
+        # P5 cross-link (rubric #17): each theme's n_papers count links to Corpus
+        # Health pre-filtered to that cluster (the corpus list filters on
+        # display_name via its ?theme= query param). "Topic A" → Topic%20A.
+        db, _ = seeded_db
+        client, _ = _make_html_client(db, monkeypatch)
+        html = client.get("/themes").text
+        assert 'href="/corpus?theme=Topic%20A"' in html
+
+
+# ---------------------------------------------------------------------------
+# P4 (Shoelace redesign) — themes detail markup
+# ---------------------------------------------------------------------------
+
+class TestThemesDetailShoelaceMarkup:
+    def test_action_buttons_are_sl_button_before_grid(self, seeded_db, monkeypatch):
+        db, cluster_id = seeded_db
+        client, _ = _make_html_client(db, monkeypatch)
+        html = client.get(f"/themes/{cluster_id}").text
+        # Action buttons converted to <sl-button> and appear BEFORE the grid
+        # (rubric #6 — primary actions at the top).
+        assert "<sl-button" in html
+        assert "paper-cards" in html
+        first_btn = html.index("<sl-button")
+        grid = html.index('class="paper-cards"')
+        assert first_btn < grid, "action sl-buttons must precede the paper-cards grid"
+        # No leftover native action buttons.
+        assert '<button type="button"' not in html

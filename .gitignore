@@ -85,3 +85,8 @@ test_pass_extraction.py
 coverage.xml
 htmlcov/
 site/
+
+# Opt-in visual-regression baselines — local-only, never committed (regenerable
+# with LIT_MONITOR_VISUAL_BASELINE_UPDATE=1). Pixel PNGs flake across machines
+# and bloat history, so they stay out of the repo.
+tests/visual/baselines/

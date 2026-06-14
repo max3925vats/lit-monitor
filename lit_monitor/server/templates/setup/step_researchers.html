@@ -1,4 +1,5 @@
 {% extends "setup/_base.html" %}
+{% set detail_crumb = "Step 7 — Researchers" %}
 {% block step_content %}
 <h1>Step 7 &mdash; Researchers <span class="pill optional-pill">Optional &mdash; accelerator</span></h1>
 <p>Tracked researchers &mdash; new papers by these authors get a Tracked Author flag in the discovery digest. Stored at <code>config/researchers.yaml</code>.</p>
@@ -7,30 +8,30 @@
   effect on the rest of the pipeline. Use it only when there's a specific author
   whose new work you want flagged regardless of similarity score to your library.</p>
 </div>
-<p class="field-note">For each entry, set <code>orcid</code> or <code>scopus_id</code> to enable lookups &mdash; plain-name search is unreliable across databases.</p>
+<p class="field-note after-card-gap">For each entry, set <code>orcid</code> or <code>scopus_id</code> to enable lookups &mdash; plain-name search is unreliable across databases.</p>
 
-<form class="setup-form" hx-post="/setup/api/researchers" hx-target="#result" hx-swap="innerHTML">
-  <div id="researchers-rows">
+<form class="setup-form researchers-intro-gap" hx-post="/setup/api/researchers" hx-target="#result" hx-swap="innerHTML">
+  <sl-button type="button"
+    hx-get="/setup/api/researchers/new-row?idx={{ researchers | length }}"
+    hx-target="#researchers-rows"
+    hx-swap="beforeend">+ Add researcher</sl-button>
+
+  <div id="researchers-rows" class="card-grid">
     {% for r in researchers %}
     <fieldset class="topics-row">
-      <label>name <input type="text" name="name_{{ loop.index0 }}" value="{{ r.name }}"></label>
-      <label>affiliation <input type="text" name="affiliation_{{ loop.index0 }}" value="{{ r.affiliation }}"></label>
-      <label>orcid <input type="text" name="orcid_{{ loop.index0 }}" value="{{ r.orcid }}" placeholder="0000-0000-0000-0000"></label>
-      <label>scopus_id <input type="text" name="scopus_id_{{ loop.index0 }}" value="{{ r.scopus_id }}"></label>
-      <label>notes <textarea name="notes_{{ loop.index0 }}" rows="2">{{ r.notes }}</textarea></label>
-      <button type="button" class="button danger"
-        onclick="this.closest('fieldset').remove()">Remove</button>
+      <sl-input name="name_{{ loop.index0 }}" label="Name" value="{{ r.name }}"></sl-input>
+      <sl-input name="affiliation_{{ loop.index0 }}" label="Affiliation" value="{{ r.affiliation }}"></sl-input>
+      <sl-input name="orcid_{{ loop.index0 }}" label="ORCID" value="{{ r.orcid }}" placeholder="0000-0000-0000-0000"></sl-input>
+      <sl-input name="scopus_id_{{ loop.index0 }}" label="Scopus ID" value="{{ r.scopus_id }}"></sl-input>
+      <sl-textarea name="notes_{{ loop.index0 }}" rows="2" label="Notes" value="{{ r.notes }}"></sl-textarea>
+      <sl-button variant="danger" size="small"
+        onclick="this.closest('fieldset').remove()">Remove</sl-button>
     </fieldset>
     {% endfor %}
   </div>
 
-  <button type="button" class="button"
-    hx-get="/setup/api/researchers/new-row?idx={{ researchers | length }}"
-    hx-target="#researchers-rows"
-    hx-swap="beforeend">+ Add researcher</button>
-
   <hr>
-  <button type="submit">Save</button>
+  <sl-button variant="primary" type="submit">Save</sl-button>
 </form>
 
 <div id="result"></div>

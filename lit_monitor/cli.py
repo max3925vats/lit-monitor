@@ -1437,6 +1437,13 @@ def brain_build_cmd(
         "extraction.yaml retrieval.default_mode (falls back to 'vector')."
     ),
 )
+@click.option(
+    "--source",
+    type=click.Choice(["manual", "scheduled"]),
+    default="manual",
+    show_default=True,
+    help="How this run was triggered. The OS scheduler passes 'scheduled'.",
+)
 @click.pass_context
 def run_cmd(
     ctx: click.Context,
@@ -1445,6 +1452,7 @@ def run_cmd(
     top_k: int,
     sim_threshold: float,
     rag_mode: str | None,
+    source: str,
 ) -> None:
     """Run the discovery pipeline: search + ranking + ingest new Zotero items."""
     _setup_logging("discovery", verbose=ctx.obj.get("verbose", False))
@@ -1499,6 +1507,7 @@ def run_cmd(
             top_k=top_k,
             sim_threshold=sim_threshold,
             rag_mode=_effective_rag,
+            trigger=source,
         )
     except RateLimitExhausted as exc:
         # P5.5: preserve the historical exit-code-2 behaviour at the CLI
@@ -3957,7 +3966,7 @@ def trending_suggest_cmd() -> None:
 
     from lit_monitor.core.config import get_config
     from lit_monitor.core.state_db import StateDB
-    from lit_monitor.graph.trending import find_trending_concepts
+    from lit_monitor.graph.trending import detect_and_persist_trending
 
     cfg = get_config()
     if not cfg.trending_concepts.enabled:
@@ -3969,34 +3978,16 @@ def trending_suggest_cmd() -> None:
 
     db = StateDB(Path(cfg.state_db.path).expanduser())
     try:
-        from lit_monitor.graph.db import GraphDB
-
-        graph_path = Path(cfg.retrieval.graph_db.persist_dir).expanduser()
-        graph_db = GraphDB(str(graph_path))
+        # Shared CLI/route code path (DRY): opens the graph, runs detection,
+        # persists each suggestion, returns the count.
+        persisted = detect_and_persist_trending(cfg, db)
     except Exception as exc:
         click.echo(f"Could not open graph DB: {exc}", err=True)
         return
 
-    with graph_db:
-        suggestions = find_trending_concepts(graph_db, db, cfg)
-
-    if not suggestions:
+    if not persisted:
         click.echo("No trending concepts detected above the configured thresholds.")
         return
-
-    persisted = 0
-    for s in suggestions:
-        try:
-            db.persist_trending_suggestion(
-                concept_text=s["concept_text"],
-                concept_type=s["concept_type"],
-                n_mentions_new=s["n_mentions_new"],
-                n_mentions_prev=s["n_mentions_prev"],
-                growth_rate=s["growth_rate"],
-            )
-            persisted += 1
-        except Exception as exc:
-            click.echo(f"  Warning: could not persist {s['concept_text']!r}: {exc}", err=True)
 
     click.echo(f"Detected and persisted {persisted} trending concept(s).")
     click.echo("Run `lit-monitor trending view` to review them.")

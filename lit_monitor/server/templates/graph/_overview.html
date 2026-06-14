@@ -17,6 +17,8 @@
    striptags (scientific entity text legitimately contains < and >).
 #}
 {% if not available %}
+{# Consolidated empty/error state — ONE card, never three per-table messages
+   (P4 rubric #5). #}
 <div class="card" id="graph-overview-notice">
   {% if error %}
   <p class="field-note">
@@ -24,17 +26,19 @@
   </p>
   {% else %}
   <p class="field-note">
-    No knowledge graph yet &mdash; run a brain-build or
-    <code>lit-monitor graph backfill --all</code> to populate the graph, then
-    this overview will fill in.
+    No knowledge graph yet &mdash; run <code>lit-monitor graph build</code>
+    (or <code>lit-monitor graph backfill --all</code> to backfill an existing
+    corpus), then this overview will fill in.
   </p>
   {% endif %}
 </div>
 {% else %}
 <div class="card" id="graph-overview-card">
-  <h2>Graph health</h2>
+  {# Compact one-line health stat row (rubric #14) — mirrors the .pill palette
+     used elsewhere. Kept as a single dense line, not a multi-cell grid. #}
   {% set _pct = ((indexed / total * 100) | round(0, "floor") | int) if total else 0 %}
-  <p class="paper-meta">
+  <p class="last-run-line">
+    <span class="stat-eyebrow">Graph health</span>
     <span class="pill">{{ indexed }}/{{ total }} papers indexed ({{ _pct }}%)</span>
     <span class="pill">{{ paper_count }} paper nodes</span>
     <span class="pill">{{ entity_count }} entity nodes</span>
@@ -43,49 +47,53 @@
     {% endif %}
   </p>
 
-  {# --- Entities by type --------------------------------------------------- #}
-  <h3>Entities by type</h3>
-  {% if by_type %}
-  <table class="papers-table">
-    <thead><tr><th>Type</th><th>Count</th></tr></thead>
-    <tbody>
-      {% for type_, count in by_type.items() %}
-      <tr><td><span class="badge">{{ type_ }}</span></td><td>{{ count }}</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="field-note">No entities in the graph yet.</p>
-  {% endif %}
+  {# --- Entities by type (open only when non-empty — don't auto-open an empty
+         section) ------------------------------------------------------------ #}
+  <sl-details summary="Entities by type ({{ by_type | length }})"{% if by_type %} open{% endif %}>
+    {% if by_type %}
+    <table class="papers-table">
+      <thead><tr><th>Type</th><th>Count</th></tr></thead>
+      <tbody>
+        {% for type_, count in by_type.items() %}
+        <tr><td><sl-badge variant="neutral">{{ type_ }}</sl-badge></td><td>{{ count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="field-note">No entities in the graph yet.</p>
+    {% endif %}
+  </sl-details>
 
-  {# --- Edges by predicate ------------------------------------------------- #}
-  <h3>Edges by predicate</h3>
-  {% if by_predicate %}
-  <table class="papers-table">
-    <thead><tr><th>Predicate</th><th>Count</th></tr></thead>
-    <tbody>
-      {% for pred, count in by_predicate.items() %}
-      <tr><td>{{ pred }}</td><td>{{ count }}</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="field-note">No edges in the graph yet.</p>
-  {% endif %}
+  {# --- Edges by predicate (collapsed) ------------------------------------- #}
+  <sl-details summary="Edges by predicate ({{ by_predicate | length }})">
+    {% if by_predicate %}
+    <table class="papers-table">
+      <thead><tr><th>Predicate</th><th>Count</th></tr></thead>
+      <tbody>
+        {% for pred, count in by_predicate.items() %}
+        <tr><td>{{ pred }}</td><td>{{ count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="field-note">No edges in the graph yet.</p>
+    {% endif %}
+  </sl-details>
 
-  {# --- Entities (mentions) by extraction source --------------------------- #}
-  <h3>Mentions by source</h3>
-  {% if by_source %}
-  <table class="papers-table">
-    <thead><tr><th>Source</th><th>Count</th></tr></thead>
-    <tbody>
-      {% for src, count in by_source.items() %}
-      <tr><td>{{ src }}</td><td>{{ count }}</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="field-note">No mention edges in the graph yet.</p>
-  {% endif %}
+  {# --- Mentions by extraction source (collapsed) -------------------------- #}
+  <sl-details summary="Mentions by source ({{ by_source | length }})">
+    {% if by_source %}
+    <table class="papers-table">
+      <thead><tr><th>Source</th><th>Count</th></tr></thead>
+      <tbody>
+        {% for src, count in by_source.items() %}
+        <tr><td>{{ src }}</td><td>{{ count }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="field-note">No mention edges in the graph yet.</p>
+    {% endif %}
+  </sl-details>
 </div>
 {% endif %}

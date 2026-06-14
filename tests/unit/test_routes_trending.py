@@ -26,6 +26,7 @@ def app(tmp_path):
     from fastapi import FastAPI
     from fastapi.templating import Jinja2Templates
 
+    import lit_monitor.server.app as app_mod
     from lit_monitor.server.routes.trending import router as trending_router
 
     app = FastAPI()
@@ -33,7 +34,9 @@ def app(tmp_path):
 
     # Provide templates at app-level so route handlers can access request.app.state
     templates_dir = Path(__file__).parents[2] / "lit_monitor" / "server" / "templates"
-    app.state.templates = Jinja2Templates(directory=str(templates_dir))
+    app.state.templates = app_mod.configure_templates(
+        Jinja2Templates(directory=str(templates_dir))
+    )
     app.state.dev_mode = False
     app.state.version = "test"
     return app
@@ -198,6 +201,171 @@ class TestTrendingPageCopy:
         # a disclaiming "not when they were published" sense).
         assert "not" in body and "published" in body
         assert "not a field-level publication trend" in body
+
+
+class TestTrendingPageShoelace:
+    """P4 (Explore): the /trending page is migrated to Shoelace + the rubric.
+
+    Controls become <sl-button> (HTMX attrs preserved); "In topics?" becomes a
+    status-dot; concept type becomes an <sl-badge>; the table stays HTML.
+    """
+
+    def test_controls_are_sl_buttons_with_htmx_preserved(self, client):
+        rows = [_make_row(1), _make_row(2, "distillation")]
+        with patch("lit_monitor.server.routes.trending._safe_db") as mock_db_fn:
+            mock_db = MagicMock()
+            mock_db.get_pending_trending_suggestions.return_value = rows
+            mock_db_fn.return_value = mock_db
+            body = client.get("/trending").text
+
+        # Re-detect + per-row Accept/Dismiss are NOT native <button class=...>.
+        # (No native button should carry these HTMX posts.)
+        assert '<button hx-post="/api/trending/detect"' not in body
+        assert '<button\n              hx-post="/api/trending/1/accept"' not in body
+        assert 'class="btn-accept"' not in body
+
+        # They are sl-buttons now.
+        assert "<sl-button" in body
+        # HTMX attributes survive onto the sl-button triggers.
+        assert 'hx-post="/api/trending/detect"' in body
+        assert 'hx-post="/api/trending/1/accept"' in body
+        assert 'hx-post="/api/trending/1/dismiss"' in body
+        assert 'hx-swap="outerHTML"' in body
+        assert 'hx-target="#trending-row-1"' in body
+
+        # The accept hx-post must land on an <sl-button>, not a stray <button>.
+        import re
+
+        accept_tag = re.search(
+            r"<(sl-button|button)[^>]*hx-post=\"/api/trending/1/accept\"", body
+        )
+        assert accept_tag and accept_tag.group(1) == "sl-button"
+
+    def test_in_topics_renders_status_dot(self, client):
+        in_topics = _make_row(1)
+        in_topics["in_existing_topics"] = True
+        not_in = _make_row(2, "distillation")
+        not_in["in_existing_topics"] = False
+        with patch("lit_monitor.server.routes.trending._safe_db") as mock_db_fn:
+            mock_db = MagicMock()
+            mock_db.get_pending_trending_suggestions.return_value = [in_topics, not_in]
+            mock_db_fn.return_value = mock_db
+            body = client.get("/trending").text
+
+        # The yes/no text is replaced by status-dots.
+        assert "status-dot ok" in body
+        assert "status-dot pending" in body
+        # Accessible titles present.
+        assert "Already a topic" in body
+        assert "Not yet a topic" in body
+
+    def test_concept_type_renders_sl_badge(self, client):
+        rows = [_make_row(1)]
+        with patch("lit_monitor.server.routes.trending._safe_db") as mock_db_fn:
+            mock_db = MagicMock()
+            mock_db.get_pending_trending_suggestions.return_value = rows
+            mock_db_fn.return_value = mock_db
+            body = client.get("/trending").text
+
+        assert "<sl-badge" in body
+        # The concept_type ("topic") is rendered inside a badge.
+        import re
+
+        assert re.search(r"<sl-badge[^>]*>\s*topic\s*</sl-badge>", body)
+
+    def test_table_stays_html_and_empty_state_is_field_note(self, client):
+        # Table present when there are suggestions.
+        rows = [_make_row(1)]
+        with patch("lit_monitor.server.routes.trending._safe_db") as mock_db_fn:
+            mock_db = MagicMock()
+            mock_db.get_pending_trending_suggestions.return_value = rows
+            mock_db_fn.return_value = mock_db
+            body = client.get("/trending").text
+        assert '<table class="papers-table">' in body
+
+        # Real .field-note empty state when there are none.
+        with patch(
+            "lit_monitor.server.routes.trending._safe_db", return_value=None
+        ):
+            empty = client.get("/trending").text
+        assert "field-note" in empty
+        assert "No pending suggestions" in empty
+
+
+class TestDetectTrendingRoute:
+    """POST /api/trending/detect runs the shared detection helper and reloads.
+
+    The helper (detect_and_persist_trending) is monkeypatched in every test so
+    no real graph DB is opened and no real state.db is written.
+    """
+
+    def _runtime_with_enabled(self, enabled: bool) -> MagicMock:
+        rt = MagicMock()
+        rt.config.trending_concepts.enabled = enabled
+        rt.state_db = MagicMock()
+        return rt
+
+    def test_enabled_calls_helper_and_returns_success_count(self, client):
+        rt = self._runtime_with_enabled(True)
+        with (
+            patch(
+                "lit_monitor.server.routes.trending.get_runtime", return_value=rt
+            ),
+            patch(
+                "lit_monitor.server.routes.trending.detect_and_persist_trending",
+                return_value=3,
+            ) as mock_detect,
+        ):
+            resp = client.post("/api/trending/detect")
+
+        assert resp.status_code == 200
+        mock_detect.assert_called_once()
+        # The helper got the resolved cfg + state_db.
+        args = mock_detect.call_args.args
+        assert args[0] is rt.config
+        assert args[1] is rt.state_db
+        # The success card reflects the returned count.
+        assert "success" in resp.text
+        assert "3" in resp.text
+
+    def test_disabled_returns_warning_and_skips_helper(self, client):
+        rt = self._runtime_with_enabled(False)
+        with (
+            patch(
+                "lit_monitor.server.routes.trending.get_runtime", return_value=rt
+            ),
+            patch(
+                "lit_monitor.server.routes.trending.detect_and_persist_trending",
+            ) as mock_detect,
+        ):
+            resp = client.post("/api/trending/detect")
+
+        assert resp.status_code == 200
+        mock_detect.assert_not_called()
+        assert "warning" in resp.text
+        assert "disabled" in resp.text.lower()
+
+    def test_helper_error_returns_generic_card_no_leak(self, client):
+        rt = self._runtime_with_enabled(True)
+        secret_path = "/Users/secret/.config/lit-monitor/graph.kuzu"
+        with (
+            patch(
+                "lit_monitor.server.routes.trending.get_runtime", return_value=rt
+            ),
+            patch(
+                "lit_monitor.server.routes.trending.detect_and_persist_trending",
+                side_effect=RuntimeError(f"cannot open {secret_path}"),
+            ),
+        ):
+            resp = client.post("/api/trending/detect")
+
+        # Page must still reload cleanly — never a raw 500 traceback page.
+        assert resp.status_code in (200, 500)
+        assert "danger" in resp.text
+        # No info-leak: neither the graph path nor the exception text is in the body.
+        assert secret_path not in resp.text
+        assert "cannot open" not in resp.text
+        assert "check the server logs" in resp.text.lower()
 
 
 class TestSafeSaveTopics:

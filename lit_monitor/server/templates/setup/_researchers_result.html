@@ -5,12 +5,15 @@
 </div>
 {% else %}
 <div class="card success">
-  <h3>Saved</h3>
+  <h3>Saved ✓</h3>
   <p>{{ count }} researcher{{ 's' if count != 1 else '' }} stored in researchers.yaml.</p>
   {% if warnings %}
   <p class="field-note">Warnings:</p>
   <ul>{% for w in warnings %}<li class="field-note">{{ w }}</li>{% endfor %}</ul>
   {% endif %}
-  <p><a href="/setup/step-8" class="button">Continue to step 8 →</a></p>
+  <p class="setup-result-actions">
+    <a href="/setup" class="button">← Back to all steps</a>
+    <a href="/setup/step-8" class="button">Continue to step 8 →</a>
+  </p>
 </div>
 {% endif %}

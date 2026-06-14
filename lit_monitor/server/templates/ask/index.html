@@ -22,10 +22,11 @@
           hx-swap="innerHTML"
           hx-indicator="#ask-spin">
       <div class="input-row">
-        <textarea name="question" rows="3"
-                  placeholder="e.g. Which papers cite Smith 2021?"></textarea>
+        <sl-textarea name="question" rows="3" class="ask-question"
+                     label="Your question"
+                     placeholder="e.g. Which papers cite Smith 2021?"></sl-textarea>
       </div>
-      <button type="submit" class="btn-primary">Ask</button>
+      <sl-button variant="primary" type="submit">Ask</sl-button>
       <span id="ask-spin" class="htmx-indicator status-badge loading">thinking…</span>
     </form>
 
@@ -33,7 +34,7 @@
     <div id="ask-result"></div>
 
     <h3 class="muted">Recent questions</h3>
-    <div id="ask-history"></div>
+    <div id="ask-history"><p class="field-note">No questions asked yet.</p></div>
   {% endif %}
 </section>
 {% endblock %}

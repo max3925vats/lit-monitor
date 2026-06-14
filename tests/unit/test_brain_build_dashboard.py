@@ -148,10 +148,101 @@ def test_dashboard_aggregates_progress_correctly(
     resp = client.get("/brain-build")
     assert resp.status_code == 200
     body = resp.text
-    # Progress label format: "2 / 3 papers fully extracted (67%)"
-    assert "2 / 3 papers fully extracted" in body
+    # Progress: sl-progress-bar renders done/total/pct (B4 — exact label relaxed)
+    assert "2 / 3" in body
     assert "67%" in body
     # Collection name surfaced.
     assert "Test Collection" in body
     # Per-paper table renders with one row per fake.
     assert "Alpha" in body and "Beta" in body and "Gamma" in body
+
+
+# ---------------------------------------------------------------------------
+# B7 — Shoelace controls + sl-details collection switcher
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_brain_build_controls_use_shoelace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GET /api/brain-build/controls returns sl-switch + sl-button with correct names (B1)."""
+    runtime_mod.reset_runtime()
+
+    import unittest.mock as mock
+
+    fake_slot = mock.MagicMock()
+    fake_slot.is_running.return_value = False
+    fake_slot.process = None
+    fake_slot.started_at = None
+
+    class _FakeRuntime:
+        processes = {"brain_build": fake_slot}
+
+    from lit_monitor.server.routes import control as ctrl_route
+
+    monkeypatch.setattr(ctrl_route, "get_runtime", lambda: _FakeRuntime())
+
+    client = TestClient(create_app())
+    resp = client.get("/api/brain-build/controls")
+    assert resp.status_code == 200
+    html = resp.text
+    # Shoelace components present
+    assert "<sl-switch" in html
+    assert "<sl-button" in html
+    # Form field names preserved for server-side Form() parsing
+    assert 'name="resume"' in html
+    assert 'name="max_papers"' in html
+
+
+@pytest.mark.unit
+def test_brain_build_collection_switcher_is_inline_plain_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GET /brain-build renders the collection switcher as a plain inline control.
+
+    User review (2026-06-13) flagged three things to fix on this control:
+      1. "Current collection" must NOT be in a ``<code>`` font — plain text.
+      2. The switcher must NOT be collapsible — drop the ``<sl-details>`` wrapper.
+      3. The HTMX wrapper (#collection-field) + the switch form must remain so
+         the dropdown still loads and the switch still works.
+    """
+    runtime_mod.reset_runtime()
+
+    class _FakeDB:
+        def get_all_brain_build_progress(self, limit: int = 100) -> list[dict]:
+            return []
+
+        def get_recent_runs(self, limit: int = 10) -> list[dict]:
+            return []
+
+    class _FakeZotero:
+        collection_name = "TestCol"
+
+    class _FakeConfig:
+        zotero = _FakeZotero()
+
+    class _FakeRuntime:
+        state_db = _FakeDB()
+        config = _FakeConfig()
+
+    from lit_monitor.server.routes import brain_build as bb_route
+
+    monkeypatch.setattr(bb_route, "get_runtime", lambda: _FakeRuntime())
+
+    client = TestClient(create_app())
+    resp = client.get("/brain-build")
+    assert resp.status_code == 200
+    html = resp.text
+    # (2) No collapsible wrapper around the collection switcher.
+    assert 'summary="Change collection' not in html
+    # (1) The current collection name is plain text, not wrapped in <code>.
+    #     The whole .collection-switcher section must contain no <code>…
+    start = html.index("collection-switcher")
+    end = html.index("</section>", start)
+    switcher = html[start:end]
+    assert "<code>" not in switcher, "current collection must be plain text, not <code>"
+    assert "TestCol" in switcher
+    # (3) The switch form + HTMX wrapper survive so the control still works.
+    assert 'id="collection-field"' in switcher
+    assert 'id="collection-switch-form"' in switcher

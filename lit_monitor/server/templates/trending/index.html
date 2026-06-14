@@ -12,18 +12,22 @@
     <code>config/topics.yaml</code>; dismiss to suppress for 60 days.
     Changes are never applied automatically.
   </p>
-  <p>
-    <button hx-post="/api/trending/detect"
-            hx-swap="none"
-            hx-on::after-request="window.location.reload()">
+  {# Primary action stays at the top (rubric #6). sl-button works as an HTMX
+     trigger exactly like a native button (see discovery controls). #}
+  <p class="card-action">
+    <sl-button variant="primary"
+               hx-post="/api/trending/detect"
+               hx-swap="none"
+               hx-on::after-request="window.location.reload()">
       Re-detect trending concepts
-    </button>
+    </sl-button>
   </p>
 
   {% if not suggestions %}
-    <p><em>No pending suggestions. Run a brain-build or click Re-detect to find concepts recently active in your library.</em></p>
+    <p class="field-note">No pending suggestions. Run a brain-build or click Re-detect to find concepts recently active in your library.</p>
   {% else %}
-    <table class="data-table">
+    {# Table stays HTML (papers-table) — only the controls become Shoelace. #}
+    <table class="papers-table">
       <thead>
         <tr>
           <th>Concept</th>
@@ -40,27 +44,37 @@
         {% for s in suggestions %}
         <tr id="trending-row-{{ s.id }}">
           <td><strong>{{ s.concept_text }}</strong></td>
-          <td>{{ s.concept_type }}</td>
+          <td><sl-badge variant="neutral">{{ s.concept_type }}</sl-badge></td>
           <td>{{ s.n_mentions_new }}</td>
           <td>{{ s.n_mentions_prev }}</td>
           <td>+{{ (s.growth_rate * 100) | round(0) | int }}%</td>
-          <td>{% if s.in_existing_topics is defined and s.in_existing_topics %}Yes{% else %}No{% endif %}</td>
+          <td>
+            {# Status as colour, not yes/no text (rubric #16). #}
+            {% if s.in_existing_topics is defined and s.in_existing_topics %}
+            <span class="status-dot ok" title="Already a topic" aria-label="Already a topic"></span>
+            {% else %}
+            <span class="status-dot pending" title="Not yet a topic" aria-label="Not yet a topic"></span>
+            {% endif %}
+          </td>
           <td><small>{{ s.suggested_at }}</small></td>
           <td>
-            <button
+            <sl-button
+              variant="primary"
+              size="small"
               hx-post="/api/trending/{{ s.id }}/accept"
               hx-swap="outerHTML"
               hx-target="#trending-row-{{ s.id }}"
-              hx-confirm="Add '{{ s.concept_text }}' to topics.yaml?"
-              class="btn-accept">
+              hx-confirm="Add '{{ s.concept_text }}' to topics.yaml?">
               Accept
-            </button>
-            <button
+            </sl-button>
+            <sl-button
+              variant="default"
+              size="small"
               hx-post="/api/trending/{{ s.id }}/dismiss"
               hx-swap="outerHTML"
               hx-target="#trending-row-{{ s.id }}">
               Dismiss
-            </button>
+            </sl-button>
           </td>
         </tr>
         {% endfor %}

@@ -52,12 +52,10 @@ def restore_app_templates():
 
 
 def _make_client(config_path=None) -> TestClient:
-    import json as _json
-
     import lit_monitor.server.app as app_mod
 
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
-    templates.env.filters["fromjson"] = _json.loads
+    app_mod.configure_templates(templates)
     app_mod.templates = templates
 
     app = FastAPI()
@@ -68,63 +66,10 @@ def _make_client(config_path=None) -> TestClient:
 
 
 # ---------------------------------------------------------------------------
-# GET /settings HTML
+# GET /settings page removed — the page was folded into setup wizard step-9
+# (see tests/unit/test_routes_setup.py::test_step9_* and
+# ::test_settings_page_route_removed). The per-section API below is unchanged.
 # ---------------------------------------------------------------------------
-
-class TestSettingsPage:
-    def test_renders_200(self):
-        with patch(
-            "lit_monitor.server.routes.settings._load_extraction_config",
-            return_value={"ranking": {"semantic_weight": 0.5}},
-        ):
-            client = _make_client()
-            r = client.get("/settings")
-        assert r.status_code == 200
-        assert "Advanced Settings" in r.text
-
-    def test_reflects_current_config(self):
-        import re
-
-        with patch(
-            "lit_monitor.server.routes.settings._load_extraction_config",
-            return_value={
-                "web_ui": {"show_feedback_buttons": True},
-            },
-        ):
-            client = _make_client()
-            r = client.get("/settings")
-        assert r.status_code == 200
-        # The SPECIFIC show_feedback_buttons checkbox must carry `checked` when the
-        # config value is True — a bare `"checked" in r.text` would also match any
-        # other checked control on the page, so pin the input by name.
-        feedback_input = re.search(
-            r'<input[^>]*name="show_feedback_buttons"[^>]*>', r.text, re.DOTALL
-        )
-        assert feedback_input is not None, "show_feedback_buttons checkbox not rendered"
-        assert "checked" in feedback_input.group(0), (
-            "show_feedback_buttons checkbox must be `checked` when config is True"
-        )
-
-    def test_checkbox_unchecked_when_config_false(self):
-        """Inverse of test_reflects_current_config: False config → no `checked`."""
-        import re
-
-        with patch(
-            "lit_monitor.server.routes.settings._load_extraction_config",
-            return_value={
-                "web_ui": {"show_feedback_buttons": False},
-            },
-        ):
-            client = _make_client()
-            r = client.get("/settings")
-        assert r.status_code == 200
-        feedback_input = re.search(
-            r'<input[^>]*name="show_feedback_buttons"[^>]*>', r.text, re.DOTALL
-        )
-        assert feedback_input is not None, "show_feedback_buttons checkbox not rendered"
-        assert "checked" not in feedback_input.group(0), (
-            "show_feedback_buttons checkbox must NOT be `checked` when config is False"
-        )
 
 
 # ---------------------------------------------------------------------------

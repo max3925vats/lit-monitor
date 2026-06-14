@@ -87,6 +87,14 @@ dependencies = [
     "sse-starlette>=2.1",
     "tomli_w>=1.0",
     "python-multipart>=0.0.29",
+    # Digest viewer: render the stored Markdown digest to HTML, then sanitize.
+    # nh3 is a maintained Rust HTML sanitizer with prebuilt wheels (default
+    # allowlist covers headings/p/lists/links/code/tables/blockquote). markdown
+    # converts the digest .md → HTML (tables/fenced_code/sane_lists extensions).
+    # (The web stack is a core dep since v0.8.1, so these live here, not in the
+    # now-empty [server] alias.)
+    "markdown>=3.4",
+    "nh3>=0.2",
 
     # Knowledge graph — KuzuDB + entity normalization
     "kuzu>=0.6",
@@ -126,6 +134,12 @@ dev = [
     "pytest-cov",
     "responses",
     "mypy",
+    "playwright",
+    "pytest-playwright",
+    # Pillow: pixel-diff for the opt-in visual-regression baseline suite
+    # (tests/visual/test_visual_baselines.py). Decodes PNG screenshots so the
+    # fresh capture can be compared to the committed baseline. Test-only.
+    "pillow",
 ]
 # Documentation site (MkDocs Material). Preview locally with:
 #   uv run --extra docs mkdocs serve
@@ -183,6 +197,7 @@ include-package-data = true
     "server/templates/**/*.html",
     "server/static/**/*.css",
     "server/static/**/*.js",
+    "server/static/vendor/**/*",
     "server/scheduler_templates/*.j2",
     "_data/note_templates/*.j2",
     "_data/item_routing.yaml",
@@ -221,4 +236,5 @@ python_functions = ["test_*"]
 markers = [
     "unit: fast unit tests, no external services",
     "integration: live-service tests requiring Ollama + Zotero + Obsidian vault. Run with: pytest -m integration",
+    "visual: Playwright headless-chromium visual/behavior tests (need the [dev] extra)",
 ]

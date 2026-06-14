@@ -139,7 +139,6 @@ def test_pipeline_write_digest_delegates_to_render_digest(
         sim_threshold=_FIXTURE_SIM_THRESHOLD,
         dry_run=False,
         n_databases=_FIXTURE_N_DATABASES,
-        recent_runs=None,
     )
     written_content = Path(written_path).read_text(encoding="utf-8")
 

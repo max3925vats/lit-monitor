@@ -130,6 +130,135 @@ class TestLastInsightRunColumn:
 
 
 # ---------------------------------------------------------------------------
+# discovery_runs.trigger — scheduled-vs-manual run marker (additive migration)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDiscoveryRunTriggerColumn:
+    """discovery_runs.trigger NOT NULL DEFAULT 'manual' via additive migration."""
+
+    def test_discovery_runs_has_trigger_column(self, tmp_path):
+        """discovery_runs gains a trigger column on a fresh DB."""
+        db_path = str(tmp_path / "state.db")
+        StateDB(db_path)
+
+        cols = _column_info(db_path, "discovery_runs")
+        assert "trigger" in cols, (
+            "discovery_runs.trigger missing — additive migration did not run"
+        )
+
+    def test_trigger_migration_is_idempotent(self, tmp_path):
+        """Building the DB twice does not raise and does not duplicate the column."""
+        db_path = str(tmp_path / "state.db")
+        db1 = StateDB(db_path)
+        # Pre-existing discovery_runs row (written before the second open).
+        first_id = db1.start_discovery_run({"topics": ["pre-migration"]})
+        # Re-open: additive migration should skip because _column_exists is True.
+        StateDB(db_path)
+
+        col_names = [r[1] for r in sqlite3.connect(db_path).execute(
+            "PRAGMA table_info(discovery_runs)"
+        ).fetchall()]
+        assert col_names.count("trigger") == 1, (
+            "trigger must appear exactly once — no duplicate after re-open"
+        )
+
+        # The pre-existing row backfills to the 'manual' default (NOT NULL column
+        # added with a non-NULL default is the only form SQLite permits).
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT trigger FROM discovery_runs WHERE id = ?", (first_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row[0] == "manual", (
+            f"pre-existing discovery_runs row must backfill to 'manual', got {row[0]!r}"
+        )
+
+    def test_trigger_added_to_existing_db_without_column(self, tmp_path):
+        """A discovery_runs table built before this column gets it on next open."""
+        db_path = str(tmp_path / "state.db")
+
+        # Build discovery_runs WITHOUT the trigger column (simulates an older DB).
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "CREATE TABLE discovery_runs ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "started_at TEXT, status TEXT, run_params_json TEXT"
+            ")"
+        )
+        conn.execute(
+            "INSERT INTO discovery_runs (status, run_params_json) VALUES ('running', '{}')"
+        )
+        conn.commit()
+        conn.close()
+
+        StateDB(db_path)
+
+        cols = _column_info(db_path, "discovery_runs")
+        assert "trigger" in cols, (
+            "Additive migration failed to add trigger to a pre-existing table"
+        )
+        # Existing row backfills to 'manual' (NOT NULL DEFAULT 'manual').
+        conn2 = sqlite3.connect(db_path)
+        try:
+            row = conn2.execute(
+                "SELECT trigger FROM discovery_runs WHERE id = 1"
+            ).fetchone()
+        finally:
+            conn2.close()
+        assert row[0] == "manual", (
+            f"Existing row must backfill to 'manual', got {row[0]!r}"
+        )
+
+
+@pytest.mark.unit
+class TestStartDiscoveryRunTrigger:
+    """start_discovery_run persists the trigger marker (default 'manual')."""
+
+    def _read_trigger(self, db_path: str, run_id: int) -> str:
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT trigger FROM discovery_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        return row[0]
+
+    def test_default_trigger_is_manual(self, tmp_path):
+        db_path = str(tmp_path / "state.db")
+        db = StateDB(db_path)
+        run_id = db.start_discovery_run({"topics": ["a"]})
+        assert self._read_trigger(db_path, run_id) == "manual"
+
+    def test_trigger_scheduled_is_persisted(self, tmp_path):
+        db_path = str(tmp_path / "state.db")
+        db = StateDB(db_path)
+        run_id = db.start_discovery_run({"topics": ["a"]}, trigger="scheduled")
+        assert self._read_trigger(db_path, run_id) == "scheduled"
+
+    def test_trigger_coexists_with_run_log_id(self, tmp_path):
+        """trigger and the existing run_log_id kwarg are stored together."""
+        db_path = str(tmp_path / "state.db")
+        db = StateDB(db_path)
+        run_id = db.start_discovery_run(
+            {"topics": ["a"]}, run_log_id="uuid-x", trigger="scheduled"
+        )
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT run_log_id, trigger FROM discovery_runs WHERE id = ?",
+                (run_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row == ("uuid-x", "scheduled")
+
+
+# ---------------------------------------------------------------------------
 # G16 — get_papers_without_insight_run() helper tests
 # ---------------------------------------------------------------------------
 
@@ -634,6 +763,43 @@ class TestDiscoveryRunHelpers:
                 "SELECT doi FROM papers WHERE doi='10.0/legacy'"
             ).fetchone()
         assert row is not None
+
+
+class TestDiscoveryRunLogLink:
+    """Link discovery_runs to run_log via a run_log_id FK column."""
+
+    def test_run_log_id_column_exists(self, tmp_path):
+        db = StateDB(tmp_path / "state.db")
+        with db._connect() as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(discovery_runs)").fetchall()]
+        assert "run_log_id" in cols
+
+    def test_migration_is_idempotent(self, tmp_path):
+        """Building a StateDB against the same file twice must not error and keep the column."""
+        path = tmp_path / "state.db"
+        StateDB(path)  # first build runs migrations
+        db = StateDB(path)  # second build re-runs the migration guard
+        with db._connect() as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(discovery_runs)").fetchall()]
+        assert "run_log_id" in cols
+
+    def test_start_discovery_run_persists_run_log_id(self, tmp_path):
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({"topics": ["x"]}, run_log_id="uuid-x")
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT run_log_id FROM discovery_runs WHERE id=?", (run_id,)
+            ).fetchone()
+        assert row[0] == "uuid-x"
+
+    def test_start_discovery_run_default_run_log_id_is_null(self, tmp_path):
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({"topics": ["x"]})
+        with db._connect() as conn:
+            row = conn.execute(
+                "SELECT run_log_id FROM discovery_runs WHERE id=?", (run_id,)
+            ).fetchone()
+        assert row[0] is None
 
 
 # ---------------------------------------------------------------------------
@@ -1166,3 +1332,14 @@ def test_get_zotero_key_none_for_unlinked_paper(tmp_path):
     db = StateDB(tmp_path / "state.db")
     db.upsert_paper({"doi": "10.1/nolink", "title": "T"})  # no zotero_key
     assert db.get_zotero_key("10.1/nolink") is None
+
+
+def test_corpus_snapshot_roundtrip(tmp_path):
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(tmp_path / "state.db")
+    db.write_corpus_snapshot(papers=10, graph_nodes=20, themes=3, run_type="discovery", run_id="r1")
+    db.write_corpus_snapshot(papers=14, graph_nodes=28, themes=3, run_type="discovery", run_id="r2")
+    snaps = db.get_recent_snapshots(limit=2)
+    assert len(snaps) == 2
+    assert snaps[0]["papers"] == 14 and snaps[0]["graph_nodes"] == 28  # newest first
+    assert snaps[1]["papers"] == 10

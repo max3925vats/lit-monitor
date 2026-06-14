@@ -20,51 +20,39 @@
     <dt>Time</dt><dd>{{ current.time }}</dd>
   </dl>
   <form hx-delete="/api/schedule" hx-target="#schedule-result" hx-swap="innerHTML" hx-confirm="Remove the discovery schedule?">
-    <button type="submit" class="button danger">Remove schedule</button>
+    <sl-button variant="danger" type="submit">Remove schedule</sl-button>
   </form>
   {% else %}
   <p class="field-note">No schedule installed yet — create one below to run discovery on a cadence.</p>
   {% endif %}
 
   <h2>{% if current %}Replace{% else %}Create{% endif %} schedule</h2>
-  <form hx-post="/api/schedule" hx-target="#schedule-result" hx-swap="innerHTML"
+  <form class="control-form" hx-post="/api/schedule" hx-target="#schedule-result" hx-swap="innerHTML"
         hx-encoding="multipart/form-data">
-    <label>Day of week
-      <select name="day_of_week" required>
-        {% for day in ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] %}
-        <option value="{{ day }}" {% if current and current.day_of_week == day %}selected{% endif %}>{{ day }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Time (HH:MM, 24h, local time)
-      <input type="time" name="time" value="{{ current.time if current else "08:00" }}" required>
-    </label>
-    <button type="submit" class="button">{% if current %}Replace{% else %}Create{% endif %}</button>
+    <sl-select name="day_of_week" label="Day of week" required value="{{ current.day_of_week if current else 'mon' }}">
+      <sl-option value="mon">mon</sl-option>
+      <sl-option value="tue">tue</sl-option>
+      <sl-option value="wed">wed</sl-option>
+      <sl-option value="thu">thu</sl-option>
+      <sl-option value="fri">fri</sl-option>
+      <sl-option value="sat">sat</sl-option>
+      <sl-option value="sun">sun</sl-option>
+    </sl-select>
+    <sl-input type="time" name="time" label="Time (HH:MM, 24h, local)" value="{{ current.time if current else '08:00' }}" required></sl-input>
+    <sl-button variant="primary" type="submit">{% if current %}Replace{% else %}Create{% endif %}</sl-button>
   </form>
 
   <div id="schedule-result"></div>
 
   {% endif %}
 
-  <h2>Recent discovery runs (last 10)</h2>
-  {% if recent_runs %}
-  <table class="runs-table">
-    <thead>
-      <tr><th>Started</th><th>Status</th><th>Processed</th><th>Failed</th></tr>
-    </thead>
-    <tbody>
-      {% for run in recent_runs %}
-      <tr>
-        <td>{{ run.started_at }}</td>
-        <td>{{ run.status or "—" }}</td>
-        <td>{{ run.papers_processed or 0 }}</td>
-        <td>{{ run.papers_failed or 0 }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="field-note">No discovery runs in the log yet — runs appear here once discovery completes.</p>
-  {% endif %}
+  {# P4: consolidated Run History card — SAME shared partial as /discovery, but
+     filtered to scheduled runs only (the route passes trigger="scheduled"). Run
+     numbers are the GLOBAL discovery_runs.id, so a run shown as #3 on Discovery
+     is also #3 here (manual runs simply don't appear). Pager base is /schedule.
+     No <h2> — the card's "Run History" summary is the heading (matches /discovery). #}
+  {% set pager_base = "/schedule" %}
+  {% set empty_text = "No scheduled runs yet — runs triggered by the schedule will appear here." %}
+  {% include "_partials/_run_history.html" %}
 </section>
 {% endblock %}

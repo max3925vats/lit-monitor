@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import UTC
 
 import pytest
 
@@ -557,3 +558,200 @@ def test_snapshot_without_state_db_keeps_keys_none(tmp_path):
     snap = get_paper_snapshot("10.1/nostate", graph)  # no state_db arg
     assert snap["metadata"]["zotero_key"] is None
     assert snap["metadata"]["zotero_deeplink"] is None
+
+
+# ---------------------------------------------------------------------------
+# Task 2: get_dashboard_stats assembler
+# ---------------------------------------------------------------------------
+
+
+def test_get_dashboard_stats_no_graph(tmp_path):
+    from lit_monitor.api.queries import get_dashboard_stats
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(tmp_path / "state.db")
+    db.write_corpus_snapshot(papers=10, graph_nodes=0, themes=2, run_type="discovery", run_id="r1")
+    db.write_corpus_snapshot(papers=14, graph_nodes=0, themes=3, run_type="discovery", run_id="r2")
+    stats = get_dashboard_stats(db, None)  # graph absent
+    assert stats["papers"]["delta"] == 4      # 14 - 10
+    assert stats["themes"]["delta"] == 1       # 3 - 2
+    assert stats["graph_nodes"]["value"] == 0
+    assert "last_run" in stats
+
+def test_get_dashboard_stats_single_snapshot_has_no_delta(tmp_path):
+    from lit_monitor.api.queries import get_dashboard_stats
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(tmp_path / "state.db")
+    db.write_corpus_snapshot(papers=5, graph_nodes=0, themes=1)
+    stats = get_dashboard_stats(db, None)
+    assert stats["papers"]["delta"] is None   # only one snapshot → no delta
+
+
+def test_get_dashboard_stats_last_run_status(tmp_path):
+    from lit_monitor.api.queries import get_dashboard_stats
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(tmp_path / "state.db")
+    # start_run(run_id: str, run_type: str) / finish_run(run_id: str, status: str)
+    run_id = "test-run-001"
+    db.start_run(run_id, "discovery")
+    db.finish_run(run_id, status="complete")
+    stats = get_dashboard_stats(db, None)
+    assert isinstance(stats["last_run"]["relative"], str)
+    assert stats["last_run"]["status"] == "complete"
+
+
+def test_relative_time_branches():
+    from lit_monitor.api.queries import _relative_time
+    assert _relative_time(None) == "never"
+    assert _relative_time("not-a-date") == "never"
+    # a clearly-old timestamp formats as an 'ago' string, never raises
+    assert _relative_time("2000-01-01 00:00:00").endswith("ago")
+
+
+def test_relative_time_rolls_over_units():
+    from datetime import datetime, timedelta
+
+    from lit_monitor.api.queries import _relative_time
+
+    def ago(**kw):
+        ts = datetime.now(UTC) - timedelta(**kw)
+        return _relative_time(ts.strftime("%Y-%m-%d %H:%M:%S"))
+
+    assert ago(days=3) == "3d ago"        # < 1 week → days
+    assert ago(days=14) == "2w ago"        # 14 // 7 → weeks
+    assert ago(days=60) == "2mo ago"       # 60 // 30 → months
+    assert ago(days=800) == "2y ago"       # 800 // 365 → years
+
+
+# ---------------------------------------------------------------------------
+# get_discovery_run_history: unified discovery_runs ⋈ run_log view
+# ---------------------------------------------------------------------------
+
+
+def _seed_history(db):
+    """Seed one LINKED discovery run (with run_log counts) and one UNLINKED
+    historical run (no run_log row). Returns (linked_id, historical_id)."""
+    # Linked pair: run_log row keyed by uuid + a discovery_runs row pointing at it.
+    db.start_run("uuid-linked", "discovery")
+    db.finish_run("uuid-linked", status="complete", processed=7, skipped=2, failed=1)
+    linked_id = db.start_discovery_run({"topics": ["linked"]}, run_log_id="uuid-linked")
+    db.finish_discovery_run(linked_id, status="success", total_found=10, total_ingested=4)
+
+    # Historical (pre-FK) discovery run: no linked run_log row.
+    historical_id = db.start_discovery_run({"topics": ["historical"]})
+    return linked_id, historical_id
+
+
+def test_get_discovery_run_history_links_run_log_counts(tmp_path):
+    from lit_monitor.api.queries import get_discovery_run_history
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    linked_id, historical_id = _seed_history(db)
+
+    result = get_discovery_run_history(db, limit=20, offset=0)
+    assert result["total"] == 2
+    by_id = {r["id"]: r for r in result["runs"]}
+
+    linked = by_id[linked_id]
+    assert linked["papers_processed"] == 7
+    assert linked["papers_skipped"] == 2
+    assert linked["papers_failed"] == 1
+    assert linked["status"] == "success"
+    assert linked["total_found"] == 10
+    assert linked["total_ingested"] == 4
+
+    historical = by_id[historical_id]
+    assert historical["papers_processed"] is None
+    assert historical["papers_skipped"] is None
+    assert historical["papers_failed"] is None
+
+
+def test_get_discovery_run_history_newest_first(tmp_path):
+    from lit_monitor.api.queries import get_discovery_run_history
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    linked_id, historical_id = _seed_history(db)
+
+    runs = get_discovery_run_history(db, limit=20, offset=0)["runs"]
+    # historical_id was inserted last → newest first → it leads.
+    assert runs[0]["id"] == historical_id
+    assert runs[1]["id"] == linked_id
+
+
+def test_get_discovery_run_history_paginates(tmp_path):
+    from lit_monitor.api.queries import get_discovery_run_history
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    _seed_history(db)
+
+    page1 = get_discovery_run_history(db, limit=1, offset=0)
+    page2 = get_discovery_run_history(db, limit=1, offset=1)
+    assert page1["total"] == 2 and page2["total"] == 2
+    assert len(page1["runs"]) == 1 and len(page2["runs"]) == 1
+    assert page1["runs"][0]["id"] != page2["runs"][0]["id"]
+
+
+def _seed_triggers(db):
+    """Seed two manual + one scheduled discovery run. Returns
+    (manual_ids, scheduled_id)."""
+    m1 = db.start_discovery_run({"topics": ["m1"]})  # default trigger='manual'
+    m2 = db.start_discovery_run({"topics": ["m2"]}, trigger="manual")
+    s1 = db.start_discovery_run({"topics": ["s1"]}, trigger="scheduled")
+    return [m1, m2], s1
+
+
+def test_get_discovery_run_history_row_has_trigger_key(tmp_path):
+    from lit_monitor.api.queries import get_discovery_run_history
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    _seed_triggers(db)
+
+    result = get_discovery_run_history(db, limit=20, offset=0)
+    assert result["total"] == 3
+    for run in result["runs"]:
+        assert "trigger" in run, "each run dict must expose a 'trigger' key"
+    triggers = sorted(r["trigger"] for r in result["runs"])
+    assert triggers == ["manual", "manual", "scheduled"]
+
+
+def test_get_discovery_run_history_trigger_none_returns_all(tmp_path):
+    from lit_monitor.api.queries import get_discovery_run_history
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    _seed_triggers(db)
+
+    result = get_discovery_run_history(db, limit=20, offset=0, trigger=None)
+    assert result["total"] == 3
+    assert len(result["runs"]) == 3
+
+
+def test_get_discovery_run_history_filters_scheduled_only(tmp_path):
+    from lit_monitor.api.queries import get_discovery_run_history
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    _manual_ids, scheduled_id = _seed_triggers(db)
+
+    result = get_discovery_run_history(db, limit=20, offset=0, trigger="scheduled")
+    # total reflects the filtered count, not the all-runs count.
+    assert result["total"] == 1
+    assert len(result["runs"]) == 1
+    assert result["runs"][0]["id"] == scheduled_id
+    assert result["runs"][0]["trigger"] == "scheduled"
+
+
+def test_get_discovery_run_history_filters_manual_only(tmp_path):
+    from lit_monitor.api.queries import get_discovery_run_history
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "state.db")
+    manual_ids, _scheduled_id = _seed_triggers(db)
+
+    result = get_discovery_run_history(db, limit=20, offset=0, trigger="manual")
+    assert result["total"] == 2
+    assert {r["id"] for r in result["runs"]} == set(manual_ids)
+    assert all(r["trigger"] == "manual" for r in result["runs"])

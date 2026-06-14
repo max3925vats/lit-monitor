@@ -77,4 +77,78 @@ def test_graph_overview_no_leak(client, monkeypatch, caplog):
 
 def test_nav_explore_has_knowledge_graph(client):
     r = client.get("/")
-    assert 'href="/graph"' in r.text and "Knowledge Graph" in r.text
+    # The Knowledge-graph link is surfaced in the app-shell sidebar.
+    assert 'href="/graph"' in r.text
+
+
+# ---------------------------------------------------------------------------
+# P4 (Explore): Shoelace + rubric migration of the graph overview fragment.
+# ---------------------------------------------------------------------------
+
+def _graph_present(**over):
+    """A graph-present overview payload (with sensible defaults)."""
+    payload = {
+        "available": True,
+        "paper_count": 10,
+        "indexed": 8,
+        "total": 10,
+        "entity_count": 42,
+        "by_type": {"Method": 5, "Protein": 3},
+        "by_predicate": {"MENTIONS": 30, "EXTENDS": 4},
+        "by_source": {"schema": 20, "biobert": 15, "llm_cloud": 7},
+        "last_indexed": "2026-06-01",
+    }
+    payload.update(over)
+    return payload
+
+
+def test_graph_overview_uses_sl_details_with_open_entities(client, monkeypatch):
+    """Entities-by-type is the ONE open sl-details; predicate/source collapsed."""
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.graph._get_graph_overview", _graph_present
+    )
+    body = client.get("/graph/overview").text
+
+    # Three collapsibles, each labelled with its count in the summary.
+    assert 'summary="Entities by type (2)"' in body
+    assert 'summary="Edges by predicate (2)"' in body
+    assert 'summary="Mentions by source (3)"' in body
+
+    # The entities sl-details carries `open`; the other two do NOT.
+    import re
+
+    details = re.findall(r"<sl-details[^>]*>", body)
+    entities = [d for d in details if "Entities by type" in d]
+    predicate = [d for d in details if "Edges by predicate" in d]
+    source = [d for d in details if "Mentions by source" in d]
+    assert entities and " open" in entities[0]
+    assert predicate and " open" not in predicate[0]
+    assert source and " open" not in source[0]
+
+
+def test_graph_overview_tables_stay_html(client, monkeypatch):
+    """Tables remain HTML `papers-table`s inside the sl-details (no web table)."""
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.graph._get_graph_overview", _graph_present
+    )
+    body = client.get("/graph/overview").text
+    assert '<table class="papers-table">' in body
+
+
+def test_graph_absent_single_consolidated_empty_state(client, monkeypatch):
+    """Graph-absent renders ONE consolidated empty-state card, not three
+    per-table empty messages."""
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.graph._get_graph_overview",
+        lambda: {"available": False},
+    )
+    body = client.get("/graph/overview").text
+
+    # The three OLD per-table empty strings must be gone.
+    assert "No entities in the graph yet." not in body
+    assert "No edges in the graph yet." not in body
+    assert "No mention edges in the graph yet." not in body
+
+    # Exactly one consolidated empty-state card, with the build hint.
+    assert body.count("No knowledge graph yet") == 1
+    assert "graph build" in body or "graph backfill" in body

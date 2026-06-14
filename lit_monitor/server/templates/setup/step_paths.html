@@ -1,4 +1,5 @@
 {% extends "setup/_base.html" %}
+{% set detail_crumb = "Step 2 — Paths" %}
 {% block step_content %}
 <h1>Step 2 — Paths</h1>
 <p>Where your Obsidian vault lives and which Zotero collection to monitor. Stored at <code>config/paths.yaml</code>.</p>
@@ -9,43 +10,62 @@
   hx-target="#result"
   hx-swap="innerHTML"
 >
-  <label>Obsidian vault path
+  <div class="field-group">
+    <label class="sl-label">Obsidian vault path</label>
     <div class="input-row">
-      <input id="vault_path" type="text" name="vault_path" value="{{ vault_path }}" required>
-      <button type="button" class="button"
+      <!-- id="vault_path" kept — the fs-dialog picker does:
+           document.getElementById('vault_path').value = chosenPath
+           sl-input supports the .value setter identically to <input>. -->
+      <sl-input
+        id="vault_path"
+        name="vault_path"
+        value="{{ vault_path }}"
+        required
+        style="flex: 1"
+      ></sl-input>
+      <sl-button variant="default" type="button"
         hx-get="/setup/fs-modal?path={{ home | urlencode }}"
         hx-target="#fs-modal" hx-swap="innerHTML">
         Browse…
-      </button>
+      </sl-button>
     </div>
-  </label>
+  </div>
 
-  <label>Zotero collection name
-    <select name="collection_name" id="collection-select"
-      hx-get="/setup/api/collections-options?current={{ collection_name | urlencode }}"
-      hx-trigger="load"
-      hx-target="this" hx-swap="innerHTML">
-      <option value="{{ collection_name }}">Loading collections…</option>
-    </select>
+  <div class="field-group">
+    <label class="sl-label">Zotero collection name</label>
+    <!-- The entire sl-select (or sl-input fallback) is swapped in by the
+         collections-options endpoint so the value= attribute can be set on
+         the host element (innerHTML-swap cannot reach the host attribute). -->
+    <div id="collection-field"
+         hx-get="/setup/api/collections-options?current={{ collection_name | urlencode }}"
+         hx-trigger="load"
+         hx-target="#collection-field"
+         hx-swap="innerHTML">
+      {# server fills this with the full sl-select (or fallback sl-input) #}
+    </div>
     <noscript>(Enter manually:) <input type="text" name="collection_name" value="{{ collection_name }}"></noscript>
-  </label>
+  </div>
 
-  <label>Zotero library ID
-    <input type="text" name="library_id" value="{{ library_id }}" required>
-  </label>
+  <sl-input
+    name="library_id"
+    label="Zotero library ID"
+    value="{{ library_id }}"
+    required
+  ></sl-input>
 
-  <label>Library type
-    <select name="library_type">
-      <option value="user" {% if library_type == "user" %}selected{% endif %}>user</option>
-      <option value="group" {% if library_type == "group" %}selected{% endif %}>group</option>
-    </select>
-  </label>
+  <sl-select name="library_type" label="Library type" value="{{ library_type }}">
+    <sl-option value="user">user</sl-option>
+    <sl-option value="group">group</sl-option>
+  </sl-select>
 
-  <label>Zotero local storage path
-    <input type="text" name="local_storage_path" value="{{ local_storage_path }}">
-  </label>
+  <sl-input
+    name="local_storage_path"
+    label="Zotero local storage path"
+    help-text="Optional — path to your local Zotero storage directory."
+    value="{{ local_storage_path }}"
+  ></sl-input>
 
-  <button type="submit">Save</button>
+  <sl-button variant="primary" type="submit">Save</sl-button>
 </form>
 
 <div id="result" aria-live="polite"></div>

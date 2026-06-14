@@ -17,89 +17,145 @@
     <p class="field-note">Loading controls…</p>
   </section>
 
-  <section class="collection-switcher">
+  <section class="collection-switcher card">
+    {# Plain-text current collection (no <code> — it's a name, not a code token). #}
     <p class="field-note">Current collection:
-      <code>{{ collection_name or "(not set — see setup step 2)" }}</code>
+      <span class="collection-current">{{ collection_name or "(not set — see setup step 2)" }}</span>
     </p>
-    <details>
-      <summary>Change collection…</summary>
-      <form hx-post="/setup/api/paths/collection"
-            hx-target="#collection-result" hx-swap="innerHTML">
-        <label>New collection
-          <select name="collection_name"
-            hx-get="/setup/api/collections-options?current={{ (collection_name or '') | urlencode }}"
-            hx-trigger="load"
-            hx-target="this" hx-swap="innerHTML">
-            <option value="{{ collection_name or '' }}">{{ collection_name or "(loading…)" }}</option>
-          </select>
-        </label>
-        <button type="submit" class="button">Switch</button>
-      </form>
-      <div id="collection-result"></div>
-    </details>
+    {# Inline switch control (no sl-details — this never needed to be collapsible).
+       The form id lets site.js scope its submit fixup to THIS form only. #}
+    <h3 class="collection-switch-heading">Change collection</h3>
+    <form id="collection-switch-form"
+          hx-post="/setup/api/paths/collection"
+          hx-target="#collection-result" hx-swap="innerHTML">
+      <div id="collection-field"
+           hx-get="/setup/api/collections-options?current={{ (collection_name or '') | urlencode }}"
+           hx-trigger="load" hx-target="#collection-field" hx-swap="innerHTML">
+        {# endpoint returns the full <sl-select name="collection_name" value="…">…</sl-select> #}
+      </div>
+      <sl-button variant="default" type="submit">Switch</sl-button>
+    </form>
+    <div id="collection-result"></div>
   </section>
 
   {% if progress and progress.total %}
   <div class="progress-block">
-    <div class="progress-label">
-      {{ progress.done }} / {{ progress.total }} papers fully extracted
-      ({{ progress.pct }}%)
-    </div>
-    <div class="progress-bar">
-      <div class="progress-fill" style="width: {{ progress.pct }}%;"></div>
-    </div>
+    <sl-progress-bar value="{{ progress.pct }}">{{ progress.done }} / {{ progress.total }} papers ({{ progress.pct }}%)</sl-progress-bar>
   </div>
   {% else %}
   <p class="field-note">No papers tracked yet. Run
     <code>lit-monitor brain-build</code> to populate the state DB.</p>
   {% endif %}
 
-  <h2>Live progress</h2>
-  <div hx-ext="sse" sse-connect="/api/brain-build/stream" class="live-progress">
-    <div id="progress-lines"
-         sse-swap="progress"
-         hx-swap="beforeend scroll:bottom"
-         class="live-progress-pane">
-      <div class="field-note live-progress-hint">
-        Streaming from the newest <code>brain_build</code> JSONL log.
-        New lines appear here as the pipeline runs.
+  {# Run-gated log pane. The wrapper is a STABLE element (never re-rendered by
+     the controls 5s poll), so its sse-connect child mounts once and keeps its
+     EventSource alive. site.js toggles `hidden` on this wrapper from the
+     controls fragment's data-running. Default hidden (no run at page load). #}
+  <div id="live-progress-wrap" class="live-progress-wrap" hidden>
+    <h2>Live progress</h2>
+    <div hx-ext="sse" sse-connect="/api/brain-build/stream" class="live-progress">
+      <div id="progress-lines"
+           sse-swap="progress"
+           hx-swap="beforeend scroll:bottom"
+           class="live-progress-pane">
+        <div class="field-note live-progress-hint">
+          Live log appears here while a <code>brain_build</code> run is active.
+        </div>
       </div>
     </div>
   </div>
 
-  <h2>Per-paper status (latest {{ rows | length }})</h2>
-  {% if rows %}
-  <table class="papers-table">
-    <thead>
-      <tr>
-        <th>DOI</th>
-        <th>Title</th>
-        <th>Authors</th>
-        <th>Year</th>
-        <th>Simple</th>
-        <th>Complex</th>
-        <th>Fully</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in rows %}
-      <tr class="{% if r.error_message %}row-error{% elif r.fully_complete %}row-done{% endif %}">
-        <td><code>{{ r.doi or "(no DOI)" }}</code></td>
-        <td>{{ r.paper_title or "(no title)" }}</td>
-        <td>{{ r.authors_short or "—" }}</td>
-        <td>{{ r.paper_year or "—" }}</td>
-        <td>{{ "✓" if r.simple_complete else "·" }}</td>
-        <td>{{ "✓" if r.complex_complete else "·" }}</td>
-        <td>{{ "✓" if r.fully_complete else "·" }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
+  {# Status-dot macro (Task C): per-phase state shown as a coloured dot.
+     green=done · red=failed (phase not set but the paper errored) · grey=pending.
+     The dot reuses the .pill palette hues via .status-dot states in site.css. #}
+  {% macro phase_dot(done, errored) %}
+    {%- if done -%}
+      <span class="status-dot ok" title="Complete" aria-label="Complete"></span>
+    {%- elif errored -%}
+      <span class="status-dot fail" title="Failed" aria-label="Failed"></span>
+    {%- else -%}
+      <span class="status-dot pending" title="Not started" aria-label="Not started"></span>
+    {%- endif -%}
+  {% endmacro %}
+
+  {# Per-paper status — collapsed by default; paginated 10 rows/page (Task C). #}
+  <sl-details summary="Per-paper status">
+    {% if rows %}
+    {# Stable wrapper: HTMX pagination swaps THIS (table + pager) in place so
+       the enclosing <sl-details> is never re-rendered/collapsed. The wrapper
+       must stay INSIDE the sl-details and must NOT include it. #}
+    <div id="per-paper-body">
+    <p class="field-note">Core fields = basic extraction &middot;
+      Deep fields = deep extraction &middot;
+      Indexed = embedded into the brain.</p>
+    <table class="papers-table">
+      <thead>
+        <tr>
+          <th>DOI</th>
+          <th>Title</th>
+          <th>Authors</th>
+          <th>Year</th>
+          <th>Core fields</th>
+          <th>Deep fields</th>
+          <th>Indexed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr class="{% if r.error_message %}row-error{% elif r.fully_complete %}row-done{% endif %}">
+          <td class="doi-cell">
+            {%- if r.doi -%}
+            <a href="https://doi.org/{{ r.doi }}" target="_blank" rel="noopener"
+               title="{{ r.doi }}">{{ r.doi }}</a>
+            {%- else -%}
+            (no DOI)
+            {%- endif -%}
+          </td>
+          <td>{{ r.paper_title or "(no title)" }}</td>
+          <td>{{ r.authors_short or "—" }}</td>
+          <td>{{ r.paper_year or "—" }}</td>
+          <td>{{ phase_dot(r.simple_complete, r.error_message) }}</td>
+          <td>{{ phase_dot(r.complex_complete, r.error_message) }}</td>
+          <td>{{ phase_dot(r.fully_complete, r.error_message) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {# Offset pagination — mirrors the discovery-runs pager. Prev hidden at
+       offset 0; Next hidden on the last page; "X–Y of Z" count. #}
+    {# In-place HTMX pagination: hx-get fetches the full page, hx-select keeps
+       only #per-paper-body, leaving the <sl-details> untouched (stays open).
+       The plain href is the no-JS / keyboard fallback. #}
+    <div class="button-row" style="margin-top: 0.75rem;">
+      <span class="field-note">
+        {{ bb_window_start }}&ndash;{{ bb_window_end }} of {{ bb_total }}
+      </span>
+      {% if bb_has_prev %}
+      <a class="btn btn-secondary btn-sm" role="button"
+         href="/brain-build?bb_offset={{ bb_prev_offset }}"
+         hx-get="/brain-build?bb_offset={{ bb_prev_offset }}"
+         hx-target="#per-paper-body" hx-select="#per-paper-body" hx-swap="outerHTML">
+        &larr; Prev
+      </a>
+      {% endif %}
+      {% if bb_has_next %}
+      <a class="btn btn-secondary btn-sm" role="button"
+         href="/brain-build?bb_offset={{ bb_next_offset }}"
+         hx-get="/brain-build?bb_offset={{ bb_next_offset }}"
+         hx-target="#per-paper-body" hx-select="#per-paper-body" hx-swap="outerHTML">
+        Next &rarr;
+      </a>
+      {% endif %}
+    </div>
+    </div>{# /#per-paper-body #}
+    {% else %}
+    <p class="field-note">No papers tracked yet.</p>
+    {% endif %}
+  </sl-details>
 
   {% if failed_rows %}
-  <details class="failed-block">
-    <summary><strong>Failed papers ({{ failed_rows | length }})</strong></summary>
+  <sl-details summary="Failed papers ({{ failed_rows | length }})">
     <ul>
       {% for r in failed_rows %}
       <li>
@@ -109,39 +165,44 @@
       </li>
       {% endfor %}
     </ul>
-  </details>
+  </sl-details>
   {% endif %}
 
-  <h2>Recent runs</h2>
-  {% if recent_runs %}
-  <table class="runs-table">
-    <thead>
-      <tr>
-        <th>Run ID</th>
-        <th>Type</th>
-        <th>Started</th>
-        <th>Status</th>
-        <th>Papers</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for run in recent_runs %}
-      <tr>
-        <td><code>{{ run.run_id[:8] }}…</code></td>
-        <td>{{ run.run_type or "—" }}</td>
-        <td>{{ run.started_at or "—" }}</td>
-        <td>{{ run.status or "—" }}</td>
-        <td>
-          {{ run.papers_processed or 0 }}{% if run.papers_failed %}
-            ({{ run.papers_failed }} failed){% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="field-note">No runs in the log.</p>
-  {% endif %}
+  {# Recent runs — collapsed by default (Task D). brain_build runs only.
+     Type column dropped; Completed added. brain_build runs have no integer id,
+     so the Run column is a DISPLAY ORDINAL (run_no, oldest = 1) set in the
+     route — NOT the uuid run_id (review 2026-06-13). #}
+  <sl-details summary="Recent runs">
+    {% if recent_runs %}
+    <table class="runs-table">
+      <thead>
+        <tr>
+          <th>Run</th>
+          <th>Started</th>
+          <th>Completed</th>
+          <th>Status</th>
+          <th>Papers</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in recent_runs %}
+        <tr>
+          <td>Run {{ run.run_no }}</td>
+          <td>{{ run.started_at or "—" }}</td>
+          <td>{{ run.finished_at or "—" }}</td>
+          <td>{{ run.status or "—" }}</td>
+          <td>
+            {{ run.papers_processed or 0 }}{% if run.papers_failed %}
+              ({{ run.papers_failed }} failed){% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="field-note">No runs in the log.</p>
+    {% endif %}
+  </sl-details>
 
   {% endif %}
 </section>

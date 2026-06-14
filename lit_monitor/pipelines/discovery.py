@@ -117,6 +117,7 @@ def run_discovery(
     top_k: int = 20,
     sim_threshold: float = 0.3,
     rag_mode: str | None = None,
+    trigger: str = "manual",
 ) -> _RunSummary:
     """
     Run the discovery + ingestion pipeline.
@@ -144,6 +145,9 @@ def run_discovery(
         One of "vector", "graph", "hybrid". Default reads from
         config.retrieval.default_mode; falls back to "vector".
         When "graph" or "hybrid", graph proximity is used for paper ranking.
+    trigger:
+        How this run was started — "manual" (web "Run now" / CLI) or
+        "scheduled" (OS scheduler). Recorded on the discovery_runs row.
     Returns
     -------
     _RunSummary
@@ -161,12 +165,16 @@ def run_discovery(
     if not dry_run:
         state_db.start_run(run_id, "discovery")
         # P1: open the structured discovery_runs row; finish in finally below.
-        _disc_run_id = state_db.start_discovery_run({
-            "rag_mode": _rag_mode,
-            "top_k": top_k,
-            "screen_all": screen_all,
-            "sim_threshold": sim_threshold,
-        })
+        _disc_run_id = state_db.start_discovery_run(
+            {
+                "rag_mode": _rag_mode,
+                "top_k": top_k,
+                "screen_all": screen_all,
+                "sim_threshold": sim_threshold,
+            },
+            run_log_id=run_id,  # link discovery_runs → run_log for unified history
+            trigger=trigger,
+        )
 
     # A4: compute search window from last successful run date.
     # Cap at 90 days to avoid overwhelming databases after a long gap.
@@ -270,12 +278,11 @@ def run_discovery(
                     # Bundle B: persist per-signal breakdown for the HTTP endpoint + web UI.
                     score_breakdown=paper.get("score_breakdown"),
                 )
-        # L2: fetch recent runs for Pipeline Run Summary prepended to digest
-        recent_runs = state_db.get_recent_runs(limit=5) if not dry_run else []
         # P10b: gate the digest write on discovery.digest.auto_write (default True).
         if _resolve_digest_auto_write(config):
             digest_path = _write_digest(
-                ranked, config, sim_threshold, dry_run=dry_run, recent_runs=recent_runs,
+                ranked, config, sim_threshold, dry_run=dry_run,
+                state_db=state_db, disc_run_id=_disc_run_id,
             )
             summary.digest_path = digest_path
         else:
@@ -332,6 +339,8 @@ def run_discovery(
                 total_found=summary.new_papers_found,
                 total_ingested=summary.papers_ingested,
             )
+            from lit_monitor.api._stats_snapshot import record_corpus_snapshot
+            record_corpus_snapshot(state_db, run_type="discovery", run_id=str(_disc_run_id))
         # P2: fire OS notification after the run row is committed.
         # Wrapped in try/except so any failure here is non-fatal.
         try:
@@ -992,16 +1001,26 @@ def _write_digest(
     sim_threshold: float,
     dry_run: bool = False,
     n_databases: int | None = None,
-    recent_runs: list[dict] | None = None,
+    *,
+    state_db=None,
+    disc_run_id: int | None = None,
 ) -> str:
     """Render and write the discovery digest note. Returns the note path.
 
     Delegates rendering to ``scripts.output.digest_renderer.render_digest``
     (single renderer, DR1).  n_databases defaults to
     len(DEFAULT_DATABASES) + 1 (for S2 supplementary search).
-    recent_runs: if provided, a Pipeline Run Summary section is prepended (L2).
+
+    Same-day runs no longer collide on one filename: the digest filename carries
+    a per-day ordinal suffix (``digest_filename``) so the day's 2nd, 3rd, ... run
+    each get their own ``Discovery_{date}_N.md``. ``disc_run_id`` is None in
+    dry-run (nothing is written anyway) → falls back to ordinal 1.
     """
-    from lit_monitor.output.digest_renderer import render_digest  # DR1: single renderer
+    from lit_monitor.api.queries import discovery_run_same_day_ordinal
+    from lit_monitor.output.digest_renderer import (  # DR1: single renderer
+        digest_filename,
+        render_digest,
+    )
 
     run_date = str(date.today())
     vault_path = Path(config.obsidian.vault_path)
@@ -1015,11 +1034,14 @@ def _write_digest(
         ranked,
         sim_threshold=sim_threshold,
         n_databases=_n_db,
-        recent_runs=recent_runs,
         _today=run_date,
     )
 
-    digest_path = digests_folder / f"Discovery_{run_date}.md"
+    if disc_run_id is not None and state_db is not None:
+        ordinal = discovery_run_same_day_ordinal(state_db, disc_run_id)
+    else:
+        ordinal = 1
+    digest_path = digests_folder / digest_filename(run_date, ordinal)
     if not dry_run:
         digest_path.write_text(content, encoding="utf-8")
         logger.warning("Wrote discovery digest: %s", digest_path)

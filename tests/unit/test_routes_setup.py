@@ -863,3 +863,657 @@ class TestRoutingAdvancedEditorComments:
         # The pre-existing good file must be untouched.
         after = (tmp_path / "item_routing.yaml").read_text(encoding="utf-8")
         assert after == self._SEED
+
+
+# ---------------------------------------------------------------------------
+# Task 3: setup wizard → Shoelace controls
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_setup_steps_use_shoelace_controls():
+    """Setup wizard simple-field steps render Shoelace web components."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+
+    assert "<sl-input" in client.get("/setup/step-1").text
+    assert "<sl-select" in client.get("/setup/step-2").text
+    assert "<sl-textarea" in client.get("/setup/step-5").text
+
+
+@pytest.mark.unit
+def test_domain_textarea_renders_initial_value_as_attribute():
+    """Regression: sl-textarea ignores slot text — the saved domain_focus must be
+    rendered via value=, not as element content (else it shows blank → save wipes it)."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    with patch(
+        "lit_monitor.server.routes.setup.load_config",
+        return_value={"domain_focus": "MEMBRANE FILTRATION FOCUS"},
+    ):
+        html = client.get("/setup/step-5").text
+    assert 'value="MEMBRANE FILTRATION FOCUS"' in html
+    assert ">MEMBRANE FILTRATION FOCUS</sl-textarea>" not in html  # not as slot text
+
+
+@pytest.mark.unit
+def test_routing_textarea_renders_initial_value_as_attribute():
+    """Regression: step-8 raw_yaml must render via value= on sl-textarea."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    with patch(
+        "lit_monitor.server.routes.setup._read_routing_raw",
+        return_value="journalArticle: brain_build\n",
+    ):
+        html = client.get("/setup/step-8").text
+    assert 'value="journalArticle: brain_build' in html
+    assert ">journalArticle: brain_build" not in html.split("</sl-textarea>")[0].split(
+        "<sl-textarea"
+    )[-1]
+
+
+@pytest.mark.unit
+def test_library_type_select_preselects_via_value_attr():
+    """Regression: sl-select pre-selects via value= on the host, not `selected` on options."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    import re
+
+    fake_paths = {"zotero": {"library_type": "group"}, "obsidian": {}}
+    with patch(
+        "lit_monitor.server.routes.setup.load_config", return_value=fake_paths
+    ):
+        html = client.get("/setup/step-2").text
+    # The value= must be on the <sl-select> HOST (its pre-selection mechanism), NOT
+    # merely on an <sl-option> (which `value="group"` would also match — vacuous).
+    m = re.search(r"<sl-select\b[^>]*\bname=\"library_type\"[^>]*>", html)
+    assert m, "library_type sl-select not found"
+    assert 'value="group"' in m.group(0), m.group(0)
+
+
+# ---------------------------------------------------------------------------
+# Task 4: setup wizard row editors (topics + researchers) → Shoelace
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_topics_new_row_is_shoelace():
+    """GET /setup/api/topics/new-row returns a row rendered with sl-input/sl-textarea."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/api/topics/new-row?idx=3").text
+    assert "<sl-input" in html
+    assert 'name="name_3"' in html
+
+
+@pytest.mark.unit
+def test_researchers_new_row_is_shoelace():
+    """GET /setup/api/researchers/new-row returns a row rendered with sl-input."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/api/researchers/new-row?idx=2").text
+    assert "<sl-input" in html
+    assert 'name="name_2"' in html
+
+
+# ---------------------------------------------------------------------------
+# Shoelace migration: remaining native controls (A-E)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_complete_notification_form_uses_shoelace():
+    """A: /setup/complete — notification-prefs form must use Shoelace controls only.
+
+    The form has 2 checkboxes (enabled, digest_auto_write) → sl-switch,
+    3 radios (viewer) → sl-radio-group/sl-radio, and a submit button → sl-button.
+    No native <button> or <input> should survive inside the form.
+    """
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/complete").text
+    assert "<sl-button" in html
+    # The two checkboxes must be sl-switch
+    assert "<sl-switch" in html
+    # The viewer radios must be sl-radio (or sl-radio-group)
+    assert "<sl-radio" in html
+    # No native <button> anywhere on the page (incl. the form)
+    assert "<button" not in html
+
+
+@pytest.mark.unit
+def test_setup_step_save_buttons_are_shoelace():
+    """B/D: step-4, step-6, step-7 must have no native <button> elements."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    for url in ("/setup/step-4", "/setup/step-7", "/setup/step-6"):
+        html = client.get(url).text
+        assert "<button" not in html, f"native <button> left in {url}"
+
+
+@pytest.mark.unit
+def test_complete_notify_enabled_switch_renders_checked():
+    """A value/checked assertion: when notify_enabled=True the sl-switch renders checked.
+
+    This test goes RED without the template change because the original <input
+    type='checkbox'> uses checked= but <sl-switch> requires the same attribute.
+    After conversion, 'checked' must appear on <sl-switch name="enabled">.
+    """
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    fake_extraction = {
+        "discovery": {
+            "notify": {"enabled": True, "preferred_viewer": "browser"},
+            "digest": {"auto_write": True},
+        }
+    }
+    with patch(
+        "lit_monitor.server.routes.setup.load_config", return_value=fake_extraction
+    ):
+        html = client.get("/setup/complete").text
+
+    import re
+
+    # Find the sl-switch for the 'enabled' name attribute and check it carries 'checked'
+    m = re.search(r"<sl-switch\b[^>]*\bname=\"enabled\"[^>]*>", html)
+    assert m, "sl-switch name='enabled' not found in /setup/complete"
+    assert "checked" in m.group(0), (
+        f"sl-switch name='enabled' missing 'checked' when notify_enabled=True: {m.group(0)}"
+    )
+
+
+@pytest.mark.unit
+def test_concepts_progress_stop_button_is_shoelace():
+    """C: _concepts_progress.html Stop build button must be sl-button variant=danger."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/step-6/progress").text
+    assert "<button" not in html, "native <button> left in step-6/progress"
+    assert 'variant="danger"' in html
+
+
+@pytest.mark.unit
+def test_paths_browse_button_is_shoelace():
+    """E: step-2 Browse… button must be sl-button, not native <button>."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/step-2").text
+    # The Browse button must be sl-button
+    assert "Browse" in html
+    # No native <button> tags on the page
+    assert "<button" not in html, "native <button> left in step-2"
+
+
+@pytest.mark.unit
+def test_topics_prefilled_query_uses_value_attr_not_slot_text():
+    """Regression: sl-textarea ignores slot text — query must appear as value= on the
+    sl-textarea tag, NOT as text content between the tags.
+
+    This is the data-loss bug: if the query is rendered as slot content
+    (e.g. <sl-textarea>my query</sl-textarea>) the field displays empty → saving
+    wipes it.  Only value="my query" on the host element works.
+    """
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+
+    known_query = "chromatography AND purification"
+    fake_topics = {
+        "searches": [
+            {
+                "name": "chroma-test",
+                "query": known_query,
+                "databases": ["pubmed"],
+            }
+        ]
+    }
+
+    with patch(
+        "lit_monitor.server.routes.setup.load_config", return_value=fake_topics
+    ):
+        html = client.get("/setup/step-4").text
+
+    # The known query MUST appear as a value= attribute on the sl-textarea tag.
+    assert f'value="{known_query}"' in html, (
+        "query not found as value= attribute — prefilled rows would render blank"
+    )
+    # It must NOT appear as slot text content (that would be the broken form).
+    assert f">{known_query}</sl-textarea>" not in html, (
+        "query found as slot text content — sl-textarea ignores this (data-loss bug)"
+    )
+
+
+@pytest.mark.unit
+def test_setup_check_secrets_row_does_not_500():
+    """Regression: check_configured() returns 3-field CheckResult NamedTuples;
+    the setup_check aggregator must not unpack them as 2-tuples (was a 500)."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    r = client.get("/setup/api/check/secrets")
+    assert r.status_code == 200, r.text
+    assert "pill" in r.text  # renders a status pill, not a 500
+
+
+# ---------------------------------------------------------------------------
+# Task B: setup steps 3/6/8 — collapse modes, keyword paragraphs, spacing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_step3_modes_collapsed_by_default():
+    import re
+
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/step-3").text
+    # no extraction-mode <details ... open>
+    assert not re.search(r"<details[^>]*\bopen\b", html), "step-3 mode cards should start collapsed"
+
+
+@pytest.mark.unit
+def test_step6_keywords_render_as_paragraph_not_bullets():
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+
+    # Patch _load_concepts to inject a theme with keywords ["alpha", "beta"]
+    fake_data = {
+        "themes": [{"name": "Test Theme", "keywords": ["alpha", "beta"]}],
+        "unclustered": [],
+    }
+    with patch(
+        "lit_monitor.server.routes.setup._load_concepts",
+        return_value=(fake_data, "concepts"),
+    ):
+        html = client.get("/setup/step-6").text
+
+    assert 'class="keyword-cloud"' in html, "keyword-cloud paragraph class not found"
+    assert "alpha · beta" in html, "joined keyword paragraph text not found"
+    # Must NOT render as list items
+    assert "<li>alpha</li>" not in html, "keywords still rendered as <li> items"
+
+
+@pytest.mark.unit
+def test_step4_add_button_precedes_rows_and_grid():
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/step-4").text
+    assert 'class="card-grid"' in html
+    # the add-search button appears BEFORE the rows container in source order
+    add_idx = html.find("/setup/api/topics/new-row")
+    rows_idx = html.find('id="topics-rows"')
+    assert add_idx != -1 and rows_idx != -1 and add_idx < rows_idx, "add button must precede the rows grid"
+
+
+@pytest.mark.unit
+def test_step7_add_button_precedes_rows_and_grid():
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/step-7").text
+    assert 'class="card-grid"' in html
+    add_idx = html.find("/setup/api/researchers/new-row")
+    rows_idx = html.find('id="researchers-rows"')
+    assert add_idx != -1 and rows_idx != -1 and add_idx < rows_idx
+
+
+# ---------------------------------------------------------------------------
+# Step 9 (Tuning): folds the old standalone /settings page into the wizard.
+# ---------------------------------------------------------------------------
+
+
+def _step9_client():
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    return TestClient(create_app())
+
+
+@pytest.mark.unit
+def test_step9_route_renders_tuning_sections():
+    """GET /setup/step-9 → 200 with the three advanced-settings sections."""
+    client = _step9_client()
+    r = client.get("/setup/step-9")
+    assert r.status_code == 200
+    html = r.text
+    assert "Ranking weights" in html
+    assert "Clustering" in html
+    assert "Feedback" in html
+    # Forms still POST to the unchanged per-section API.
+    assert 'hx-post="/api/settings/ranking"' in html
+    assert 'hx-post="/api/settings/clustering"' in html
+    assert 'hx-post="/api/settings/web_ui"' in html
+
+
+@pytest.mark.unit
+def test_step9_is_optional_with_pill():
+    """Step 9 is an OPTIONAL step — it carries the Optional pill."""
+    client = _step9_client()
+    html = client.get("/setup/step-9").text
+    assert "optional-pill" in html
+    assert "Optional" in html
+
+
+@pytest.mark.unit
+def test_step9_marks_step_nine_in_strip():
+    """The wizard strip renders a 9th step marker on the step-9 page.
+
+    The markers are now clickable <a class="step …"> links (ITEM A.1), so the 9th
+    marker carries the `current` class on an anchor href'd at /setup/step-9."""
+    client = _step9_client()
+    html = client.get("/setup/step-9").text
+    # current_step == 9 → that anchor carries the `current` class.
+    import re
+
+    assert re.search(
+        r'<a class="step\b[^"]*current[^"]*"[^>]*href="/setup/step-9"[^>]*>\s*9\s*</a>',
+        html,
+    ), html
+
+
+@pytest.mark.unit
+def test_wizard_strip_has_nine_markers():
+    """The wizard strip iterates 1..9 (nine step markers)."""
+    client = _step9_client()
+    html = client.get("/setup/step-1").text
+    strip = html.split('class="wizard-strip"', 1)[1].split("</div>", 1)[0]
+    # Count the step spans inside the strip.
+    assert strip.count('class="step') == 9, strip
+
+
+@pytest.mark.unit
+def test_step9_preserves_current_config_values():
+    """Step 9 reflects current extraction.yaml advanced values via value=."""
+    client = _step9_client()
+    with patch(
+        "lit_monitor.server.routes.setup._load_extraction_config",
+        return_value={"web_ui": {"show_feedback_buttons": True}},
+    ):
+        html = client.get("/setup/step-9").text
+    import re
+
+    m = re.search(
+        r'<sl-switch[^>]*data-path="show_feedback_buttons"[^>]*>', html, re.DOTALL
+    )
+    assert m is not None, "feedback toggle not rendered"
+    assert "checked" in m.group(0)
+
+
+@pytest.mark.unit
+def test_step9_in_step_descriptors_optional_and_ok():
+    steps = _build_step_descriptors({})
+    step9 = next((s for s in steps if s["num"] == 9), None)
+    assert step9 is not None, "step 9 missing from descriptors"
+    assert step9["optional"] is True
+    assert step9["url"] == "/setup/step-9"
+    # Optional advanced settings always have defaults → never blocks completion.
+    assert step9["status"] == "ok"
+
+
+@pytest.mark.unit
+def test_settings_page_route_removed():
+    """The standalone /settings page is gone (404); the API survives."""
+    client = _step9_client()
+    assert client.get("/settings").status_code == 404
+
+
+@pytest.mark.unit
+def test_settings_api_still_works():
+    """POST /api/settings/<section> still saves (the API was kept)."""
+    from unittest.mock import patch as _patch
+
+    client = _step9_client()
+    with _patch(
+        "lit_monitor.server.routes.settings.safe_save_settings_section"
+    ) as mock_save:
+        r = client.post("/api/settings/ranking", json={"weights": {"domain_context": 0.6}})
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    mock_save.assert_called_once()
+
+
+@pytest.mark.unit
+def test_step8_routing_result_links_to_step9():
+    """The step-8 save result now continues to step 9, not /setup/complete."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server import config_io
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+
+    import tempfile
+    from pathlib import Path as _P
+
+    tmp = _P(tempfile.mkdtemp())
+    seed = (
+        "routes:\n"
+        "  journalArticle:\n"
+        "    pipeline: brain_build\n"
+        "    default_schema: paper\n"
+        "    source_type: paper\n"
+    )
+    with patch.object(config_io, "CONFIG_DIR", tmp):
+        client = TestClient(create_app())
+        r = client.post("/setup/api/routing", data={"raw_yaml": seed})
+    assert r.status_code == 200, r.text
+    assert "/setup/step-9" in r.text
+    assert "step 9" in r.text.lower()
+
+
+@pytest.mark.unit
+def test_insights_links_to_step9_not_settings():
+    """Dangling-link fix: /insights points at /setup/step-9, not the gone /settings."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/insights").text
+    assert "/setup/step-9" in html
+    assert 'href="/settings"' not in html
+
+
+# ---------------------------------------------------------------------------
+# ITEM A — single-step editing made obvious (clickable strip + Saved/Back)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_wizard_strip_steps_are_links():
+    """ITEM A.1: each wizard-strip marker is an <a href="/setup/step-N"> (1 click to
+    any step), not a bare <span>. Render a step page and assert all 9 links exist."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup/step-1").text
+    for n in range(1, 10):
+        assert f'href="/setup/step-{n}"' in html, f"missing strip link to step-{n}"
+    # The markers must be anchors carrying the .step class, not bare spans.
+    import re
+
+    assert re.search(r'<a[^>]*class="step\b', html), "strip markers are not <a class=\"step\">"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "fragment,continue_href",
+    [
+        ("setup/_credentials_result.html", "/setup/step-2"),
+        ("setup/_paths_result.html", "/setup/step-3"),
+        ("setup/_extraction_result.html", "/setup/step-4"),
+        ("setup/_topics_result.html", "/setup/step-5"),
+        ("setup/_domain_result.html", "/setup/step-6"),
+        ("setup/_researchers_result.html", "/setup/step-8"),
+        ("setup/_routing_result.html", "/setup/step-9"),
+    ],
+)
+def test_result_fragments_show_saved_and_back_to_all_steps(fragment, continue_href):
+    """ITEM A.2: every per-step success fragment leads with "Saved ✓", shows a
+    prominent "← Back to all steps" link to /setup, AND keeps the sequential
+    "Continue to step N+1 →" link. Render the fragment directly (no POST — never
+    mutate config in a test)."""
+    from lit_monitor.server.app import templates
+
+    ctx = {
+        "errors": None,
+        "test_result": type("T", (), {"ok": True, "message": "ok"})(),
+        "count": 1,
+        "warnings": None,
+    }
+    html = templates.env.get_template(fragment).render(**ctx)
+    assert "Saved ✓" in html, f"{fragment} success line must lead with 'Saved ✓'"
+    assert 'href="/setup"' in html, f"{fragment} missing '← Back to all steps' link to /setup"
+    assert "Back to all steps" in html, f"{fragment} missing Back-to-all-steps copy"
+    assert continue_href in html, f"{fragment} dropped the sequential Continue link"
+
+
+@pytest.mark.unit
+def test_setup_index_explains_single_step_editing():
+    """ITEM A.3: the /setup hub states each step saves on its own (microcopy #11)."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/setup").text
+    assert "Jump to any step" in html
+    assert "each step saves on its own" in html
+
+
+# ---------------------------------------------------------------------------
+# ITEM B — step pages set a meaningful breadcrumb detail (no "Setup › Setup")
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "url,detail",
+    [
+        ("/setup/step-1", "Step 1 — Credentials"),
+        ("/setup/step-2", "Step 2 — Paths"),
+        ("/setup/step-3", "Step 3 — Extraction"),
+        ("/setup/step-4", "Step 4 — Topics"),
+        ("/setup/step-5", "Step 5 — Domain context"),
+        ("/setup/step-6", "Step 6 — Concepts"),
+        ("/setup/step-7", "Step 7 — Researchers"),
+        ("/setup/step-8", "Step 8 — Item routing"),
+        ("/setup/step-9", "Step 9 — Tuning"),
+    ],
+)
+def test_step_page_breadcrumb_uses_step_name_not_dup_setup(url, detail):
+    """ITEM B.5: each step page sets detail_crumb so the breadcrumb reads
+    "Setup › Step N — <name>", never the buggy "Setup › Setup"."""
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get(url).text
+    import re
+
+    # Isolate the breadcrumb nav so we don't false-match "Setup" in the sidebar.
+    m = re.search(r'<nav class="app-crumbs".*?</nav>', html, re.DOTALL)
+    assert m, f"{url} rendered no breadcrumb nav"
+    crumbs = m.group(0)
+    assert detail in crumbs, f"{url} breadcrumb missing '{detail}'"
+    # Exactly ONE "Setup" crumb (the linked group) — the dup bug renders two — and
+    # no placeholder "Detail" text.
+    assert crumbs.count(">Setup<") == 1, f"{url} duplicate Setup crumb: {crumbs}"
+    assert ">Detail<" not in crumbs, f"{url} still shows placeholder 'Detail': {crumbs}"

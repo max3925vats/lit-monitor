@@ -16,7 +16,7 @@
 {% block content %}
 <section class="dashboard paper-detail">
   <div class="page-header">
-    <p class="field-note"><a href="/corpus">&larr; Back to corpus</a></p>
+    <p class="field-note"><a href="/corpus">&larr; Back to Corpus Health</a></p>
     <h1>{{ paper.title or "(untitled)" }}</h1>
     <p class="paper-meta field-note">
       {% if paper.authors %}{{ paper.authors | join(", ") }}{% endif %}
@@ -24,68 +24,81 @@
       {% if paper.journal %} &middot; {{ paper.journal }}{% endif %}
       {% if paper.source_type %} &middot; <span class="badge">{{ paper.source_type }}</span>{% endif %}
     </p>
-    <p class="paper-meta field-note">
+    {# review #4: three inline action buttons (same size) replace the old DOI
+       text link + "Open in Zotero" anchor + "Obsidian note: path" text. Each is
+       only shown when its target exists. All hrefs pass through Jinja autoescape
+       safely — no |safe. #}
+    <div class="button-row paper-links">
       {% if paper.doi %}
-        <a class="doi" href="https://doi.org/{{ paper.doi }}" target="_blank" rel="noopener">{{ paper.doi }}</a>
-      {% else %}
-        <span class="doi">(no DOI)</span>
+      <sl-button size="medium" variant="default"
+                 href="https://doi.org/{{ paper.doi }}"
+                 target="_blank" rel="noopener">Open DOI</sl-button>
       {% endif %}
-    </p>
-
-    <p class="button-row paper-links">
       {% if paper.zotero_key %}
-      <a class="btn btn-secondary btn-sm"
-         href="zotero://select/library/items/{{ paper.zotero_key }}">Open in Zotero</a>
+      <sl-button size="medium" variant="default" class="btn-zotero"
+                 href="zotero://select/library/items/{{ paper.zotero_key }}">Open in Zotero</sl-button>
       {% endif %}
-      {% if paper.note_path %}
-      {# PF-2: when a vault is configured, obsidian_uri is an
-         obsidian://open?vault=…&file=… deep link (built server-side in
-         _obsidian_uri); the readable note path is the link label. When no vault
-         is configured obsidian_uri is None and we fall back to the plain path.
-         The obsidian:// href passes through Jinja autoescape safely — no |safe. #}
       {% if obsidian_uri %}
-      <span class="field-note note-path">Obsidian note:
-        <a href="{{ obsidian_uri }}"><code>{{ paper.note_path }}</code></a></span>
-      {% else %}
-      <span class="field-note note-path">Obsidian note: <code>{{ paper.note_path }}</code></span>
+      {# PF-2: obsidian_uri is the obsidian://open?vault=…&file=… deep link built
+         server-side in _obsidian_uri (None when no vault is configured → no
+         button). This does exactly what the old "Obsidian note: path" link did. #}
+      <sl-button size="medium" variant="default" class="btn-obsidian"
+                 href="{{ obsidian_uri }}">Open in Obsidian</sl-button>
       {% endif %}
-      {% endif %}
-    </p>
+    </div>
   </div>
 
-  {# --- Extraction -------------------------------------------------------- #}
-  <div class="card">
-    <h2>Extraction</h2>
+  {# --- Extraction (open by default — the primary content) --------------- #}
+  {# P4 (Shoelace/rubric #3): the section cards become <sl-details>. Extraction
+     is the primary content so it ships `open`; the rest are collapsed. #}
+  <sl-details summary="Extraction" open>
     {% if paper.extraction and paper.extraction.get("_overall_confidence") is not none %}
     <p class="field-note">Overall confidence:
       {{ "%.3f" | format(paper.extraction.get("_overall_confidence") | float) }}</p>
     {% endif %}
-    {# Collect non-underscore keys; "_"-prefixed keys (e.g. _overall_confidence)
-       are metadata, surfaced separately above and skipped here. #}
-    {% set _visible = [] %}
+    {# review #6: pair each substantive field with its `_confidence` sibling.
+       SKIP "_"-prefixed metadata keys (e.g. _overall_confidence, surfaced above)
+       and SKIP keys ending in "_confidence" (folded into their base row). Each
+       remaining key K → (humanized K, value, value of K + "_confidence" or "—"). #}
+    {% set _rows = [] %}
     {% for key, value in paper.extraction.items() %}
-      {% if not key.startswith("_") %}{% set _ = _visible.append((key, value)) %}{% endif %}
+      {% if not key.startswith("_") and not key.endswith("_confidence") %}
+        {% set _ = _rows.append((key, value, paper.extraction.get(key ~ "_confidence"))) %}
+      {% endif %}
     {% endfor %}
-    {% if _visible %}
-    <dl class="extraction-list">
-      {% for key, value in _visible %}
-      {# Plain Jinja autoescape renders any injected markup inert as text
-         (e.g. <img onerror=...> becomes &lt;img onerror=...&gt;). Do NOT strip
-         tags here: that would delete legitimate scientific text containing
-         angle brackets (p<0.05, n>3, IC50 < 5 uM). No |safe anywhere. #}
-      <dt>{{ key }}</dt>
-      <dd>{{ value }}</dd>
-      {% endfor %}
-    </dl>
+    {% if _rows %}
+    {# rubric #15: the extraction table can carry 100+ fields, so its container is
+       height-capped and scrolls inside the card rather than stretching the page. #}
+    <div class="extraction-scroll">
+      <table class="extraction-table">
+        <thead>
+          <tr><th>Field</th><th>Value</th><th>Confidence</th></tr>
+        </thead>
+        <tbody>
+          {% for key, value, conf in _rows %}
+          {# Plain Jinja autoescape renders any injected markup inert as text
+             (e.g. <img onerror=...> becomes &lt;img onerror=...&gt;). Do NOT strip
+             tags here: that would delete legitimate scientific text containing
+             angle brackets (p<0.05, n>3, IC50 < 5 uM). No |safe anywhere. #}
+          <tr>
+            <th scope="row">{{ key.replace("_", " ") | capitalize }}</th>
+            <td>{{ value }}</td>
+            <td>
+              {% if conf is not none %}<sl-badge variant="neutral" pill>{{ conf }}</sl-badge>{% else %}<span class="muted">&mdash;</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
     {% else %}
     <p class="field-note">No extraction fields stored for this paper.</p>
     {% endif %}
-  </div>
+  </sl-details>
 
-  {# --- Score decomposition (only when a breakdown exists) ---------------- #}
+  {# --- Score decomposition (only when a breakdown exists) — collapsed ---- #}
   {% if breakdown and breakdown.breakdown %}
-  <div class="card">
-    <h2>Score decomposition</h2>
+  <sl-details summary="Score decomposition">
     <table class="score-breakdown-table">
       <thead>
         <tr><th>Signal</th><th>Score</th></tr>
@@ -96,29 +109,49 @@
         {% endfor %}
       </tbody>
     </table>
-  </div>
+  </sl-details>
   {% endif %}
 
   {# --- Related work + knowledge graph (FE2-4: lazy HTMX fragments) -------- #}
-  {# Both load AFTER the page paints (hx-trigger="load") so the detail view
-     renders instantly; the graph-backed fragments stream in once ready. The DOI
-     is embedded literally in the path so the {doi:path} fragment routes match
-     (no urlencode on the path — double-encoding "/" → "%2F" breaks the route). #}
+  {# rubric #13 contextual reveal: each lazy fragment sits inside its collapsed
+     <sl-details> and fetches on first expand (hx-trigger="sl-show once") rather
+     than on page load, so the graph-backed retrieval only runs when the user
+     actually opens the section. The DOI is embedded literally in the path so the
+     {doi:path} fragment routes match (no urlencode — "/" → "%2F" breaks it). #}
   {% if paper.doi %}
-  <div id="corpus-related"
-       hx-get="/corpus/{{ paper.doi }}/related"
-       hx-trigger="load"
-       hx-target="this"
-       hx-swap="innerHTML">
-    <p class="field-note">Loading related work&hellip;</p>
-  </div>
-  <div id="corpus-graph"
-       hx-get="/corpus/{{ paper.doi }}/graph"
-       hx-trigger="load"
-       hx-target="this"
-       hx-swap="innerHTML">
-    <p class="field-note">Loading knowledge graph&hellip;</p>
-  </div>
+  <sl-details summary="Related work">
+    {# Honest placeholders (rubric #11): only a paper that's actually embedded can
+       have vector related-work to lazy-load. A not-embedded paper shows a plain
+       note — no HTMX, no lazy div — so the UI never promises data it can't have. #}
+    {% if paper.embeddings_indexed %}
+    {# `from:closest sl-details` is REQUIRED: sl-show fires on the <sl-details>
+       ancestor and bubbles UP, not down to this child — a bare `sl-show once`
+       never fires, so the fetch must listen on the closest details (matches the
+       insights lazy-fragment fix). Empty result → "No related works found". #}
+    <div id="corpus-related"
+         hx-get="/corpus/{{ paper.doi }}/related"
+         hx-trigger="sl-show once from:closest sl-details"
+         hx-target="this"
+         hx-swap="innerHTML">
+      <p class="field-note">Expand to load related work&hellip;</p>
+    </div>
+    {% else %}
+    <p class="field-note">No related works found in Corpus.</p>
+    {% endif %}
+  </sl-details>
+  <sl-details summary="Knowledge graph">
+    {% if paper.graph_indexed %}
+    <div id="corpus-graph"
+         hx-get="/corpus/{{ paper.doi }}/graph"
+         hx-trigger="sl-show once from:closest sl-details"
+         hx-target="this"
+         hx-swap="innerHTML">
+      <p class="field-note">Expand to load the knowledge graph&hellip;</p>
+    </div>
+    {% else %}
+    <p class="field-note">No knowledge-graph data &mdash; this paper isn't graph-indexed yet.</p>
+    {% endif %}
+  </sl-details>
   {% else %}
   <div id="corpus-related"></div>
   <div id="corpus-graph"></div>
@@ -131,17 +164,24 @@
     {doi:path} route (which accepts "10.x/y" verbatim) matches. Double-encoding
     would yield "%2F" in the path and break the route.
   #}
-  <div class="card action-row" id="corpus-actions">
+  {# review #7: Actions is a section like the others, NOT a .card. Button size
+     matches the top Open-in-* buttons (medium). #}
+  {# review: the action buttons sit on a NEW LINE under the header — the <h2>
+     stacks above a .button-row holding Relink / Re-extract (+ the result span).
+     .action-row is a column flex so the header is above the buttons. #}
+  <div class="action-row" id="corpus-actions">
     <h2>Actions</h2>
-    <button type="button" class="btn btn-secondary btn-sm"
-            hx-post="/api/papers/{{ paper.doi }}/relink"
-            hx-target="#corpus-actions .action-result"
-            hx-swap="innerHTML">Relink</button>
-    <button type="button" class="btn btn-secondary btn-sm"
-            hx-post="/api/papers/{{ paper.doi }}/re-extract"
-            hx-target="#corpus-actions .action-result"
-            hx-swap="innerHTML">Re-extract</button>
-    <span class="action-result"></span>
+    <div class="button-row">
+      <sl-button variant="default" size="medium"
+                 hx-post="/api/papers/{{ paper.doi }}/relink"
+                 hx-target="#corpus-actions .action-result"
+                 hx-swap="innerHTML">Relink</sl-button>
+      <sl-button variant="default" size="medium"
+                 hx-post="/api/papers/{{ paper.doi }}/re-extract"
+                 hx-target="#corpus-actions .action-result"
+                 hx-swap="innerHTML">Re-extract</sl-button>
+      <span class="action-result"></span>
+    </div>
   </div>
   {% endif %}
 </section>

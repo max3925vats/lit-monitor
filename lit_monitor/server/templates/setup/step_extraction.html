@@ -1,4 +1,5 @@
 {% extends "setup/_base.html" %}
+{% set detail_crumb = "Step 3 — Extraction" %}
 {% block step_content %}
 <h1>Step 3 — Extraction</h1>
 <p>LLM provider, model, and tuning per mode. Stored at <code>config/extraction.yaml</code>.</p>
@@ -9,50 +10,79 @@
   hx-target="#result"
   hx-swap="innerHTML">
   {% for mode, vals in modes %}
-  <details {% if loop.first %}open{% endif %}>
+  <details>
     <summary><strong>{{ mode }}</strong> — {{ vals.model or "no model set" }}</summary>
     <fieldset>
-      <label>provider
-        <select name="{{ mode }}__provider">
-          <option value="ollama" {% if vals.provider == "ollama" %}selected{% endif %}>ollama</option>
-          <option value="litellm" {% if vals.provider == "litellm" %}selected{% endif %}>litellm</option>
-        </select>
-      </label>
-      <label>ollama_host
+      <sl-select name="{{ mode }}__provider" label="provider" value="{{ vals.provider }}">
+        <sl-option value="ollama">ollama</sl-option>
+        <sl-option value="litellm">litellm</sl-option>
+      </sl-select>
+
+      <div class="field-group">
+        <label class="sl-label">ollama_host</label>
         <div class="input-row">
-          <input type="text" name="{{ mode }}__ollama_host" value="{{ vals.ollama_host }}"
-            id="{{ mode }}__ollama_host">
-          <button type="button" class="button"
+          <sl-input
+            name="{{ mode }}__ollama_host"
+            id="{{ mode }}__ollama_host"
+            value="{{ vals.ollama_host }}"
+            style="flex: 1"
+          ></sl-input>
+          <sl-button type="button"
             hx-get="/setup/api/ollama-test"
             hx-vals='js:{host: document.getElementById("{{ mode }}__ollama_host").value}'
             hx-target="#{{ mode }}__ollama_test_result"
             hx-swap="innerHTML">
             Test
-          </button>
+          </sl-button>
           <span id="{{ mode }}__ollama_test_result"></span>
         </div>
-      </label>
-      <label>model
-        <input type="text" name="{{ mode }}__model" value="{{ vals.model }}">
-      </label>
-      <label>litellm_model <span class="muted">(only if provider=litellm)</span>
-        <input type="text" name="{{ mode }}__litellm_model" value="{{ vals.litellm_model }}">
-      </label>
-      <label>temperature <span class="muted">(0.0 – 1.0)</span>
-        <input type="number" step="0.05" min="0" max="1" name="{{ mode }}__temperature" value="{{ vals.temperature }}">
-      </label>
-      <label>timeout <span class="muted">(seconds)</span>
-        <input type="number" min="1" name="{{ mode }}__timeout" value="{{ vals.timeout }}">
-      </label>
-      <label class="checkbox-row">
-        <input type="checkbox" name="{{ mode }}__think" {% if vals.think %}checked{% endif %}>
-        think <span class="muted">(reasoning mode — only set true for qwen3:*, deepseek-r1:*, phi4-mini:reasoning)</span>
-      </label>
+      </div>
+
+      <sl-input
+        name="{{ mode }}__model"
+        label="model"
+        value="{{ vals.model }}"
+      ></sl-input>
+
+      <sl-input
+        name="{{ mode }}__litellm_model"
+        label="litellm_model"
+        help-text="Only required when provider=litellm."
+        value="{{ vals.litellm_model }}"
+      ></sl-input>
+
+      <sl-input
+        type="number"
+        name="{{ mode }}__temperature"
+        label="temperature"
+        help-text="Range 0.0 – 1.0."
+        min="0"
+        max="1"
+        step="0.05"
+        value="{{ vals.temperature }}"
+      ></sl-input>
+
+      <sl-input
+        type="number"
+        name="{{ mode }}__timeout"
+        label="timeout"
+        help-text="Seconds."
+        min="1"
+        value="{{ vals.timeout }}"
+      ></sl-input>
+
+      <!-- sl-switch serializes as name=on when checked, absent when unchecked —
+           the server-side _merge_extraction reads it as a truthy string check,
+           same as a native checkbox. -->
+      <sl-switch name="{{ mode }}__think" {% if vals.think %}checked{% endif %}>
+        think
+        <span class="muted" slot="help-text">Reasoning mode — only set true for qwen3:*, deepseek-r1:*, phi4-mini:reasoning.</span>
+      </sl-switch>
     </fieldset>
   </details>
   {% endfor %}
 
-  <button type="submit" class="button">Save</button>
+  <sl-button variant="primary" type="submit">Save</sl-button>
 </form>
 
 <div id="result"></div>

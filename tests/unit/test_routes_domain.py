@@ -243,3 +243,32 @@ class TestConfirmReject:
         assert r.status_code == 200
         assert r.json() == {"ok": True, "row_id": row_id, "confirmed": False}
         assert db.list_domain_extraction()["topics"][0]["user_confirmed"] is False
+
+
+@pytest.mark.unit
+def test_domain_endpoint_has_openapi_tag():
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+    reset_runtime()
+    client = TestClient(create_app())
+    schema = client.get("/openapi.json").json()
+    op = schema["paths"]["/api/domain"]["get"]
+    assert "Domain" in op.get("tags", [])
+
+
+@pytest.mark.unit
+def test_domain_actions_use_sl_button():
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+    from lit_monitor.server.runtime import reset_runtime
+    reset_runtime()
+    client = TestClient(create_app())
+    html = client.get("/domain").text
+    # The Re-analyze action button must be an sl-button, not a native <button>
+    assert 'hx-post="/api/domain/analyze"' in html
+    assert "<sl-button" in html and 'hx-post="/api/domain/analyze"' in html
+    # Specifically, the analyze trigger must NOT be a native button
+    assert "<button hx-post=\"/api/domain/analyze\"" not in html

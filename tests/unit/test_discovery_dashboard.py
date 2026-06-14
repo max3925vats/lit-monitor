@@ -55,4 +55,7 @@ def test_dashboard_filters_by_run_type_discovery(client):
         resp = client.get("/discovery")
     assert resp.status_code == 200
     fake_db.get_recent_runs_by_type.assert_called_once_with("discovery", limit=10)
-    assert b"abc" in resp.content
+    # Run ID is no longer rendered (review 2026-06-13); the run still surfaces
+    # via the Last-run card's other fields.
+    assert b"last-run-card" in resp.content
+    assert b"complete" in resp.content

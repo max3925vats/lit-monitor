@@ -5,8 +5,11 @@
 </div>
 {% else %}
 <div class="card success">
-  <h3>Saved</h3>
+  <h3>Saved ✓</h3>
   <p>item_routing.yaml updated.</p>
-  <p><a href="/setup/complete" class="button">Finish setup →</a></p>
+  <p class="setup-result-actions">
+    <a href="/setup" class="button">← Back to all steps</a>
+    <a href="/setup/step-9" class="button">Continue to step 9 →</a>
+  </p>
 </div>
 {% endif %}

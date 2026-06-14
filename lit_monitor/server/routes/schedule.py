@@ -9,9 +9,10 @@ from __future__ import annotations
 import logging
 import subprocess
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse
 
+from lit_monitor.api.queries import get_discovery_run_history
 from lit_monitor.server.app import templates
 from lit_monitor.server.runtime import get_runtime
 from lit_monitor.server.scheduler import (
@@ -25,15 +26,21 @@ from lit_monitor.server.scheduler import (
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["schedule"])
 
+# P4: page size for the Run History card (mirrors discovery's _RUNS_PAGE_SIZE).
+_RUNS_PAGE_SIZE = 10
 
-def _safe_recent_runs() -> list[dict]:
-    """Last 10 discovery runs, or [] if state DB is unavailable."""
+
+def _safe_db():
+    """Return the runtime state DB, or None when it is unavailable.
+
+    Mirrors discovery's _safe_db(): a missing/broken runtime yields None so the
+    schedule dashboard renders a friendly empty Run History card instead of 500.
+    """
     try:
-        r = get_runtime()
-        return r.state_db.get_recent_runs_by_type("discovery", limit=10)
+        return get_runtime().state_db
     except Exception:
-        logger.debug("get_recent_runs_by_type failed", exc_info=True)
-        return []
+        logger.debug("state_db unavailable for schedule dashboard", exc_info=True)
+        return None
 
 
 def _safe_current_schedule() -> ScheduleSpec | None:
@@ -51,10 +58,35 @@ def _safe_current_schedule() -> ScheduleSpec | None:
 
 
 @router.get("/schedule", response_class=HTMLResponse)
-def dashboard(request: Request) -> HTMLResponse:
+def dashboard(
+    request: Request,
+    runs_offset: int = Query(0, ge=0),
+) -> HTMLResponse:
     plat = detect_platform()
     current = _safe_current_schedule()
-    recent_runs = _safe_recent_runs()
+
+    # P4: SAME consolidated Run History card as /discovery, but filtered to
+    # scheduled runs only (trigger="scheduled") — manual "Run now"/CLI runs never
+    # appear here. Run numbers are the GLOBAL discovery_runs.id, so a run shown as
+    # #3 on Discovery is also #3 here. Paginated by 10 (offset-link prev/next),
+    # pager base /schedule. Defensive: any failure → empty card, never a 500.
+    db = _safe_db()
+    run_history: list[dict] = []
+    runs_total = 0
+    offset = max(runs_offset, 0)
+    if db is not None:
+        try:
+            result = get_discovery_run_history(
+                db, limit=_RUNS_PAGE_SIZE, offset=offset, trigger="scheduled"
+            )
+            run_history = result.get("runs", [])
+            try:
+                runs_total = int(result.get("total", 0))
+            except (TypeError, ValueError):
+                runs_total = len(run_history)
+        except Exception:
+            logger.warning("get_discovery_run_history (scheduled) failed", exc_info=True)
+
     return templates.TemplateResponse(
         request,
         "schedule/index.html",
@@ -62,7 +94,15 @@ def dashboard(request: Request) -> HTMLResponse:
             "platform": plat,
             "is_supported": plat != "unsupported",
             "current": current,
-            "recent_runs": recent_runs,
+            # P4: unified run-history rows + page-size-10 pager context. pager_base
+            # and empty_text are set in the template (passed to the shared partial).
+            "run_history": run_history,
+            "runs_total": runs_total,
+            "runs_offset": offset,
+            "runs_has_prev": offset > 0,
+            "runs_has_next": offset + _RUNS_PAGE_SIZE < runs_total,
+            "runs_prev_offset": max(offset - _RUNS_PAGE_SIZE, 0),
+            "runs_next_offset": offset + _RUNS_PAGE_SIZE,
         },
     )
 

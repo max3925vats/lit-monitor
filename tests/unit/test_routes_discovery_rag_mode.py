@@ -130,8 +130,12 @@ def test_discovery_default_mode_from_config(client, monkeypatch):
     )
     r = client.get("/api/discovery/controls")
     assert r.status_code == 200
-    # The graph <option> should carry the selected attribute.
-    assert 'value="graph" selected' in r.text
+    # Shoelace: pre-selection via value="graph" on the <sl-select> host element.
+    # The bare assertion 'value="graph"' is vacuous — it also matches
+    # <sl-option value="graph">. Assert the value attribute is on the HOST tag.
+    import re
+    assert re.search(r'<sl-select\b[^>]*\bvalue="graph"', r.text), \
+        "default rag mode must pre-select via value= on the sl-select host"
 
 
 @pytest.mark.unit

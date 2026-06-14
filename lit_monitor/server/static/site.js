@@ -33,7 +33,9 @@
 
   var list = document.getElementById("ask-history");
   var form = list && list.closest("section").querySelector("form");
-  var textarea = form && form.querySelector('textarea[name="question"]');
+  // sl-textarea is a custom element; select by tag name + attribute, not the
+  // native textarea tag (the Shoelace migration replaced the native element).
+  var textarea = form && form.querySelector('sl-textarea[name="question"]');
   if (!list || !form || !textarea) return; // not the /ask page
 
   function load() {
@@ -67,6 +69,11 @@
   }
 
   function render(arr) {
+    if (!arr || arr.length === 0) {
+      // Show a muted empty-state line that matches the server-rendered default.
+      list.innerHTML = '<p class="field-note">No questions asked yet.</p>';
+      return;
+    }
     list.textContent = "";
     arr.forEach(function (q) {
       var btn = document.createElement("button");
@@ -74,6 +81,7 @@
       btn.className = "btn btn-action btn-sm";
       btn.textContent = q;
       btn.addEventListener("click", function () {
+        // sl-textarea exposes .value as a property (Shoelace mirrors the attribute).
         textarea.value = q;
         // Re-run through the existing HTMX flow.
         if (window.htmx) window.htmx.trigger(form, "submit");
@@ -103,6 +111,17 @@
 // tables remain. Re-runs on htmx:afterSettle so the lazily-loaded timeline (and
 // its toggle re-swaps) re-initialise; any prior chart on a canvas is destroyed
 // first so re-swaps never leak or duplicate.
+//
+// P4 (Shoelace redesign) — CHART-IN-COLLAPSED-DETAILS GOTCHA: a Chart.js canvas
+// inside a COLLAPSED <sl-details> has 0 width when first laid out, so a chart
+// created at DOMContentLoaded draws broken/empty and never recovers on expand.
+// Fix: charts that live inside a `[data-chart-details]` <sl-details> are NOT
+// built eagerly — they are built lazily on Shoelace's `sl-after-show` (fired when
+// the details finishes opening, at which point the canvas has real width). A
+// per-canvas registry (`canvas._chart`) means each is inited at most once; every
+// subsequent show just calls `chart.resize()` (cheap, and re-flows after any
+// viewport change while collapsed). Charts NOT inside such a details (none today,
+// but kept general) still init eagerly on load.
 (function () {
   "use strict";
 
@@ -176,6 +195,26 @@
     };
   }
 
+  // Build (or rebuild) the chart for a single canvas. `destroyFirst` controls
+  // re-swap safety: on an HTMX swap the old chart must be destroyed before a new
+  // one is created on the same canvas; on a first lazy build there is nothing to
+  // destroy. Returns true if a chart now exists on the canvas.
+  function _initCanvas(canvas, scope, palette, destroyFirst) {
+    var name = canvas.getAttribute("data-chart");
+    var data = readData(name, scope);
+    var cfg = buildConfig(name, data, palette);
+    if (!cfg) return false;
+    if (destroyFirst && canvas._chart) canvas._chart.destroy();
+    canvas._chart = new window.Chart(canvas, cfg);
+    return true;
+  }
+
+  // Eager init for a subtree (load + HTMX swaps). Canvases that live inside a
+  // collapsed-by-default `[data-chart-details]` are SKIPPED here — building them
+  // now (0 width) would draw broken; they are built lazily on `sl-after-show`
+  // instead. Canvases swapped in by HTMX (e.g. the timeline fragment, which only
+  // loads once its details is already open) are not inside a collapsed details at
+  // swap time, so they init/redraw correctly on the htmx:afterSettle path.
   function _initInsightsCharts(root) {
     if (!window.Chart) return; // CDN blocked/offline → tables remain, no error.
     var scope = root && root.querySelectorAll ? root : document;
@@ -183,12 +222,25 @@
     if (!canvases.length) return; // not an insights page / nothing swapped in.
     var palette = readPalette(); // resolve CSS tokens once per init.
     canvases.forEach(function (canvas) {
-      var name = canvas.getAttribute("data-chart");
-      var data = readData(name, scope);
-      var cfg = buildConfig(name, data, palette);
-      if (!cfg) return;
-      if (canvas._chart) canvas._chart.destroy(); // re-swap safety: no leak/dupe.
-      canvas._chart = new window.Chart(canvas, cfg);
+      // Defer charts inside a collapsed chart-details to sl-after-show.
+      if (canvas.closest && canvas.closest("[data-chart-details]")) return;
+      _initCanvas(canvas, scope, palette, true); // re-swap safe.
+    });
+  }
+
+  // sl-after-show handler for the chart-bearing <sl-details>. The first time a
+  // details is shown each canvas inside it is inited (now that it has real
+  // width); on every subsequent show the existing chart is just resized so it
+  // re-flows to the current container width. Registry: canvas._chart.
+  function _showChartsIn(details) {
+    if (!window.Chart || !details || !details.querySelectorAll) return;
+    var palette = readPalette();
+    details.querySelectorAll("canvas[data-chart]").forEach(function (canvas) {
+      if (canvas._chart) {
+        canvas._chart.resize(); // already inited → re-flow to real width.
+      } else {
+        _initCanvas(canvas, details, palette, false); // first show → build now.
+      }
     });
   }
 
@@ -201,49 +253,141 @@
     var target = (evt.detail && evt.detail.target) || evt.target;
     _initInsightsCharts(target);
   });
+  // P4: lazily build/resize charts inside a collapsed <sl-details> when it opens.
+  // sl-after-show fires after the panel is fully revealed (canvas has real width).
+  // Scope to chart-details so unrelated sl-details (Recent events, lazy fragments)
+  // don't trigger a needless palette read.
+  document.body.addEventListener("sl-after-show", function (evt) {
+    var details = evt.target;
+    if (details && details.matches && details.matches("[data-chart-details]")) {
+      _showChartsIn(details);
+    }
+  });
 })();
 
-// Theme toggle: dark is the default; the topnav button flips to light and back,
-// persisting the choice in localStorage. The no-flash <head> bootstrap reads the
-// same key on load, so the choice survives navigations and full reloads.
+// Theme toggle: dark default; flips data-theme + Shoelace's sl-theme-dark class,
+// persisted in localStorage. The <head> bootstrap reads the same key on load.
 (function () {
   "use strict";
-
   var KEY = "lit_theme";
-
   function currentTheme() {
-    return document.documentElement.getAttribute("data-theme") === "light"
-      ? "light"
-      : "dark";
+    return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
   }
-
+  function applyTheme(next) {
+    if (next === "light") {
+      document.documentElement.setAttribute("data-theme", "light");
+      document.documentElement.classList.remove("sl-theme-dark");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+      document.documentElement.classList.add("sl-theme-dark");
+    }
+    try { window.localStorage.setItem(KEY, next); } catch (e) {}
+  }
   function paintGlyph(btn) {
-    if (btn) btn.textContent = currentTheme() === "light" ? "☀" : "🌙";
+    if (btn) btn.setAttribute("name", currentTheme() === "light" ? "sun" : "moon");
   }
-
   function init() {
     var btn = document.getElementById("theme-toggle");
     if (!btn) return;
     paintGlyph(btn);
     btn.addEventListener("click", function () {
-      var next = currentTheme() === "light" ? "dark" : "light";
-      if (next === "light") {
-        document.documentElement.setAttribute("data-theme", "light");
-      } else {
-        document.documentElement.removeAttribute("data-theme");
-      }
-      try {
-        window.localStorage.setItem(KEY, next);
-      } catch (e) {
-        /* storage blocked — theme still applies for this session */
-      }
+      applyTheme(currentTheme() === "light" ? "dark" : "light");
       paintGlyph(btn);
     });
   }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
+// Brain-build collection switcher: restore the true collection name on submit.
+//
+// Shoelace forbids spaces in <sl-option value="…"> and SILENTLY rewrites them to
+// underscores ("Molecular Simulations" -> DOM value "Molecular_Simulations").
+// The form would therefore submit the underscored token, and the backend would
+// persist that corrupted name to paths.yaml — so the active collection would no
+// longer match the real Zotero collection (the user-reported "switch doesn't
+// work" bug, 2026-06-13).
+//
+// Fix: on submit of #collection-switch-form, if the dropdown rendered as an
+// sl-select, overwrite the outgoing collection_name with the SELECTED OPTION'S
+// LABEL (textContent), which preserves the original spaces. The fallback
+// sl-input path needs no fixup (free text, no space corruption) and is left
+// untouched. Using htmx:configRequest keeps this a pure parameter rewrite — no
+// hidden field, no dependence on Shoelace form-association timing.
+(function () {
+  "use strict";
+  document.body.addEventListener("htmx:configRequest", function (evt) {
+    var form = evt.target;
+    if (!form || form.id !== "collection-switch-form") return;
+    var select = form.querySelector("sl-select");
+    if (!select) return; // fallback sl-input path: nothing to repair
+    var opt = select.querySelector(
+      'sl-option[value="' + (select.value || "") + '"]'
+    );
+    // textContent is the true name (with spaces); value is the underscored token.
+    var trueName = opt ? opt.textContent.trim() : "";
+    if (trueName) evt.detail.parameters.collection_name = trueName;
+  });
+})();
+
+// Run-gated live-progress pane (brain-build + discovery dashboards).
+//
+// The log pane (#live-progress-wrap) should be visible only while a run is
+// active. The controls fragment above it re-renders itself every 5s and carries
+// the running state as data-running on its <section>. On each controls swap (and
+// the initial hx-trigger=load swap), read that flag and toggle `hidden` on the
+// wrapper. The wrapper itself is a stable element in index.html — it is NEVER a
+// swap target — so its sse-connect child keeps its EventSource alive across the
+// 5s poll (no reconnect storm, no lost log lines). Generic across both pages: a
+// page only has one of the two controls sections.
+(function () {
+  "use strict";
+  function syncFromControls(section) {
+    if (!section) return;
+    if (!section.classList) return;
+    if (
+      !section.classList.contains("brain-build-controls") &&
+      !section.classList.contains("discovery-controls")
+    ) {
+      return; // not a controls section — ignore (e.g. other afterSettle swaps)
+    }
+    var wrap = document.getElementById("live-progress-wrap");
+    if (!wrap) return; // not a dashboard with a log pane
+    var running = section.getAttribute("data-running") === "true";
+    if (running) wrap.removeAttribute("hidden");
+    else wrap.setAttribute("hidden", "");
   }
+  // The controls fragment loads via hx-trigger=load and re-polls every 5s; each
+  // settle gives us the freshest data-running. afterSettle fires after the DOM
+  // is in place, so getAttribute reads the swapped-in markup.
+  document.body.addEventListener("htmx:afterSettle", function (evt) {
+    var target = (evt.detail && evt.detail.target) || evt.target;
+    syncFromControls(target);
+  });
+  // Initial sync in case the controls section is already in the DOM at load
+  // (e.g. server-rendered or already-settled before this listener attached).
+  function initSync() {
+    syncFromControls(document.querySelector(".brain-build-controls"));
+    syncFromControls(document.querySelector(".discovery-controls"));
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initSync);
+  } else {
+    initSync();
+  }
+})();
+
+// App-shell: mobile sidebar toggle + global Ask drawer open.
+(function () {
+  "use strict";
+  function init() {
+    var shell = document.querySelector(".app-shell");
+    var sb = document.querySelector(".app-sidebar-toggle");
+    if (sb && shell) sb.addEventListener("click", function () { shell.classList.toggle("sidebar-open"); });
+    var ask = document.querySelector(".app-ask-btn");
+    var drawer = document.getElementById("ask-drawer");
+    if (ask && drawer) ask.addEventListener("click", function () { drawer.show(); });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
 })();

@@ -14,9 +14,9 @@
    All content is rendered through Jinja autoescape ONLY — never |safe, never
    striptags (scientific text legitimately contains < and >).
 #}
-<div class="card" id="corpus-graph-card">
-  <h2>Knowledge graph</h2>
-
+{# P4: rendered inside the detail page's <sl-details summary="Knowledge graph">,
+   so no inner card/<h2> heading — the sl-details summary IS the heading. #}
+<div id="corpus-graph-card">
   {% if error %}
   <p class="field-note">Could not load the knowledge graph — check the server logs.</p>
   {% elif snapshot is none %}

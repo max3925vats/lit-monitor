@@ -4,99 +4,72 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}lit-monitor{% endblock %}</title>
-    {# No-flash theme bootstrap: dark is the default; opt into light before the
-       stylesheet paints so there's no flash of the wrong theme. #}
+    {# No-flash theme bootstrap: dark default; opt into light AND set Shoelace's dark class. #}
     <script>
       (function () {
         try {
-          if (localStorage.getItem("lit_theme") === "light") {
-            document.documentElement.setAttribute("data-theme", "light");
-          }
-        } catch (e) {}
+          var light = localStorage.getItem("lit_theme") === "light";
+          if (light) document.documentElement.setAttribute("data-theme", "light");
+          if (!light) document.documentElement.classList.add("sl-theme-dark");
+        } catch (e) { document.documentElement.classList.add("sl-theme-dark"); }
       })();
     </script>
-    {# Favicon: the Material "library" book glyph (brand purple), matching the
-       brand mark + the docs logo. Inline SVG data URI — no extra asset to ship. #}
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20fill%3D%22%237c6cf0%22%20d%3D%22M12%208a3%203%200%200%200%203-3%203%203%200%200%200-3-3%203%203%200%200%200-3%203%203%203%200%200%200%203%203m0%203.54C9.64%209.35%206.5%208%203%208v11c3.5%200%206.64%201.35%209%203.54%202.36-2.19%205.5-3.54%209-3.54V8c-3.5%200-6.64%201.35-9%203.54%22%2F%3E%3C%2Fsvg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
-    />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" />
+    <link rel="stylesheet" href="/static/vendor/shoelace/themes/light.css" />
+    <link rel="stylesheet" href="/static/vendor/shoelace/themes/dark.css" />
+    <link rel="stylesheet" href="/static/shoelace-theme.css" />
     <link rel="stylesheet" href="/static/site.css" />
-    <!-- HTMX 2.x + SSE extension via CDN; no JS framework. -->
+    <script type="module" src="/static/vendor/shoelace/shoelace-autoloader.js"></script>
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
     <script defer src="/static/site.js"></script>
     {% block head %}{% endblock %}
   </head>
-  <body>
+  <body class="app-shell">
     {% if request.app.state.dev_mode %}
     <div class="dev-banner">DEV MODE — sandbox active. Test surface at <a href="/dev">/dev</a>.</div>
     {% endif %}
-    {# Current path drives server-side active-state (no JS). #}
-    {% set _path = request.url.path %}
-    {% set _run = ["/discovery", "/brain-build", "/schedule"] %}
-    {% set _explore = ["/corpus", "/graph", "/themes", "/trending"] %}
-    {% set _tune = ["/domain", "/insights", "/settings"] %}
-    <header class="topnav">
-      <div class="topnav-inner">
-      <a class="brand" href="/">
-        <svg class="brand-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
-        <span>lit-monitor</span>
-      </a>
-      <nav>
-        <div class="navgroup">
-          <button type="button" class="navgroup-label{% if _path in _run %} active{% endif %}" aria-haspopup="true" aria-expanded="false">Run ▾</button>
-          <div class="navmenu" role="menu">
-            <a href="/discovery" role="menuitem"{% if _path == "/discovery" %} class="active"{% endif %}>Discovery</a>
-            <a href="/brain-build" role="menuitem"{% if _path == "/brain-build" %} class="active"{% endif %}>Brain-Build</a>
-            <a href="/schedule" role="menuitem"{% if _path == "/schedule" %} class="active"{% endif %}>Schedule</a>
-          </div>
+
+    {% include "_partials/sidebar.html" %}
+
+    <div class="app-main-col">
+      <header class="app-topbar">
+        <sl-icon-button class="app-sidebar-toggle" name="list" label="Menu"></sl-icon-button>
+        <div class="app-topbar-crumbs">
+          {% set _trail = breadcrumb_trail(request.url.path, detail_crumb) %}
+          {% if _trail %}{% from "_partials/breadcrumbs.html" import breadcrumbs %}{{ breadcrumbs(_trail) }}{% endif %}
         </div>
-        <a href="/ask"{% if _path == "/ask" %} class="active"{% endif %}>Ask</a>
-        <div class="navgroup">
-          <button type="button" class="navgroup-label{% if _path in _explore %} active{% endif %}" aria-haspopup="true" aria-expanded="false">Explore ▾</button>
-          <div class="navmenu" role="menu">
-            <a href="/corpus" role="menuitem"{% if _path == "/corpus" %} class="active"{% endif %}>Corpus</a>
-            <a href="/graph" role="menuitem"{% if _path == "/graph" %} class="active"{% endif %}>Knowledge Graph</a>
-            <a href="/themes" role="menuitem"{% if _path == "/themes" %} class="active"{% endif %}>Themes</a>
-            <a href="/trending" role="menuitem"{% if _path == "/trending" %} class="active"{% endif %}>Trending</a>
-          </div>
-        </div>
-        <div class="navgroup">
-          <button type="button" class="navgroup-label{% if _path in _tune %} active{% endif %}" aria-haspopup="true" aria-expanded="false">Tune ▾</button>
-          <div class="navmenu" role="menu">
-            <a href="/domain" role="menuitem"{% if _path == "/domain" %} class="active"{% endif %}>Domain</a>
-            <a href="/insights" role="menuitem"{% if _path == "/insights" %} class="active"{% endif %}>Insights</a>
-            <a href="/settings" role="menuitem"{% if _path == "/settings" %} class="active"{% endif %}>Settings</a>
-          </div>
-        </div>
-        <a href="/setup"{% if _path == "/setup" %} class="active"{% endif %}>Setup</a>
-      </nav>
-      <div id="health-badge" hx-get="/api/health/badge" hx-trigger="load, every 30s" hx-swap="innerHTML">
-        <span class="status-badge loading">checking…</span>
+        <sl-button class="app-ask-btn" variant="primary" size="small" pill>
+          <sl-icon slot="prefix" name="stars"></sl-icon> Ask
+        </sl-button>
+        <sl-icon-button id="theme-toggle" class="theme-toggle" name="moon" label="Switch light / dark theme"></sl-icon-button>
+      </header>
+
+      <div id="health-detail" hidden></div>
+      <div id="status-banner" class="status-banner" hidden></div>
+
+      <div class="app-body">
+        {% block rail %}{% endblock %}
+        <main class="app-main content">
+          {% if show_stats_banner(request.url.path) %}{% include "_partials/stats_banner.html" %}{% endif %}
+          {% block content %}{% endblock %}
+        </main>
       </div>
-      <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Switch light / dark theme" title="Switch light / dark theme">🌙</button>
-      </div>
-    </header>
 
-    <div id="health-detail" hidden></div>
-    <div id="status-banner" class="status-banner" hidden></div>
+      <footer class="site-footer">
+        <span>lit-monitor v{{ request.app.state.version }}</span>
+        <span class="footer-sep">·</span>
+        <a href="https://github.com/max3925vats/lit-monitor" target="_blank" rel="noopener">GitHub</a>
+        <span class="footer-sep">·</span>
+        <a href="https://github.com/max3925vats/lit-monitor/issues" target="_blank" rel="noopener">Report a bug</a>
+        <span class="footer-sep">·</span>
+        <a href="https://github.com/max3925vats/lit-monitor/blob/main/README.md" target="_blank" rel="noopener">README</a>
+      </footer>
+    </div>
 
-    <main class="content">
-      {% block content %}{% endblock %}
-    </main>
-
-    <footer class="site-footer">
-      <span>lit-monitor v{{ request.app.state.version }}</span>
-      <span class="footer-sep">·</span>
-      <a href="https://github.com/max3925vats/lit-monitor" target="_blank" rel="noopener">GitHub</a>
-      <span class="footer-sep">·</span>
-      <a href="https://github.com/max3925vats/lit-monitor/issues" target="_blank" rel="noopener">Report a bug</a>
-      <span class="footer-sep">·</span>
-      <a href="https://github.com/max3925vats/lit-monitor/blob/main/README.md" target="_blank" rel="noopener">README</a>
-    </footer>
+    {% include "_partials/ask_drawer.html" %}
   </body>
 </html>

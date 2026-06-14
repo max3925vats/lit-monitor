@@ -91,3 +91,12 @@ def test_ls_returns_404_for_missing_path(client, tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     resp = client.get("/api/fs/ls", params={"path": str(tmp_path / "nope")})
     assert resp.status_code == 404
+
+
+@pytest.mark.unit
+def test_fs_modal_uses_sl_dialog(client, tmp_path, monkeypatch):
+    """The folder-picker fragment renders as an sl-dialog."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    resp = client.get("/setup/fs-modal", params={"path": str(tmp_path)})
+    assert resp.status_code == 200
+    assert "<sl-dialog" in resp.text

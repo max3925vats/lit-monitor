@@ -3,11 +3,11 @@
 {% block content %}
 <section class="wizard">
   <div class="wizard-strip" aria-label="Setup progress">
-    {% for n in range(1, 9) %}
-      <span class="step
+    {% for n in range(1, 10) %}
+      <a class="step
         {% if current_step is defined and n == current_step %}current{% endif %}
         {% if current_step is defined and n < current_step %}done{% endif %}
-      ">{{ n }}</span>
+      " href="/setup/step-{{ n }}" aria-label="Go to step {{ n }}">{{ n }}</a>
     {% endfor %}
   </div>
   <div class="wizard-body">

@@ -204,96 +204,6 @@ a:hover {
   text-decoration: underline;
 }
 
-.topnav {
-  background: var(--card-bg);
-  border-bottom: 1px solid var(--border);
-}
-/* Full-width bar, but the row of items is centered to the same width as the
-   page body so the brand/nav align with the content margins (matches the docs). */
-.topnav-inner {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  max-width: var(--content-max);
-  margin: 0 auto;
-  padding: 0.75rem 1.25rem;
-}
-
-.topnav .brand {
-  font-weight: 700;
-  font-family: var(--font-mono);
-  color: var(--fg);
-}
-
-.topnav nav {
-  display: flex;
-  gap: 1rem;
-}
-
-.topnav nav a {
-  color: var(--fg);
-}
-
-.topnav nav a:hover {
-  color: var(--accent);
-}
-
-/* Nav/IA: grouped CSS-only dropdowns (no JS). Hover + focus-within reveal the
-   menu; focus-within is required so keyboard Tab opens it (accessibility). */
-.navgroup {
-  position: relative;
-  display: inline-block;
-}
-
-.navgroup-label {
-  appearance: none;
-  border: none;
-  background: none;
-  padding: 0;
-  margin: 0;
-  font: inherit;
-  cursor: pointer;
-  color: var(--fg);
-}
-
-.navgroup-label:hover {
-  color: var(--accent);
-}
-
-.navmenu {
-  display: none;
-  position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 10;
-  min-width: 10rem;
-  padding: 0.25rem 0;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.navgroup:hover .navmenu,
-.navgroup:focus-within .navmenu {
-  display: block;
-}
-
-.navmenu a {
-  display: block;
-  padding: 0.35rem 0.75rem;
-  color: var(--fg);
-}
-
-.navmenu a:hover {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-/* Active state: marks the current section using an existing token, no new color. */
-.topnav nav .active {
-  color: var(--accent);
-}
-
 .content {
   max-width: var(--content-max);
   margin: 0 auto;
@@ -301,15 +211,6 @@ a:hover {
 }
 
 .muted {
-  color: var(--muted);
-}
-
-.hero h1 {
-  margin: 0 0 0.25rem 0;
-}
-
-.hero .last-run {
-  font-size: 0.9rem;
   color: var(--muted);
 }
 
@@ -328,6 +229,11 @@ a:hover {
   border-radius: var(--radius);
   color: var(--fg);
 }
+
+/* A primary-action row inside a card (e.g. Trending "Re-detect", Domain
+   "Re-analyze") — give the button breathing room above and below so it isn't
+   cramped against the description and the result/empty-state. */
+.card-action { margin: 2.5rem 0; }
 
 .card:hover {
   border-color: var(--accent);
@@ -380,6 +286,33 @@ a:hover {
   border: 1px solid var(--border);
   font-size: 0.9rem;
   color: var(--muted);
+}
+/* The strip markers are real links (one click to any step) — read as clickable. */
+.wizard-strip a.step {
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.wizard-strip a.step:hover {
+  background: var(--hover-overlay);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.wizard-strip a.step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The active step keeps its filled accent treatment on hover (don't wash it out). */
+.wizard-strip a.step.current:hover,
+.wizard-strip a.step.done:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+/* Per-step "Saved ✓" result: Back-to-all-steps + Continue side by side. */
+.setup-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 .wizard-strip .step.done {
   background: var(--accent);
@@ -511,51 +444,11 @@ a:hover {
   filter: brightness(1.05);
 }
 
-/* --- Modal --- */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-.modal {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  max-width: 600px;
-  width: 90%;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-}
-.modal header,
-.modal footer {
-  padding: 0.5rem 1rem;
-}
-.modal header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid var(--border);
-}
-.modal-body {
-  padding: 1rem;
-  overflow-y: auto;
-  flex: 1;
-}
+/* --- Folder-picker dialog (sl-dialog body) --- */
 .modal-path {
   background: var(--muted);
   padding: 0.25rem 0.5rem;
   border-radius: var(--radius);
-}
-.modal footer {
-  display: flex;
-  gap: 0.5rem;
-  justify-content: flex-end;
-  border-top: 1px solid var(--border);
 }
 .fs-list {
   list-style: none;
@@ -602,7 +495,6 @@ a:hover {
 /* --- Topics row editor (F2.7) --- */
 .topics-row { border: 1px solid var(--border); border-radius: var(--radius);
   padding: 0.75rem; margin-bottom: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem; }
-.checkbox-inline { display: inline-flex; align-items: center; gap: 0.25rem; margin-right: 1rem; font-weight: normal; }
 .field-note { color: var(--muted); font-size: 0.9em; }
 .field-group { display: flex; flex-direction: column; gap: 0.25rem; }
 .field-label { font-weight: bold; }
@@ -623,27 +515,9 @@ a:hover {
 .routes-table th, .routes-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); text-align: left; }
 .routes-table th { background: var(--card-bg); }
 
-/* --- Status grid (F2.12 completion checklist) --- */
-.status-grid { width: 100%; }
-.status-grid td { padding: 0.5rem; border-bottom: 1px solid var(--border); }
-.status-grid td:last-child { text-align: right; }
-
 /* --- Brain-build dashboard (F3.1) --- */
 .dashboard h2 { margin-top: 1.5rem; }
 .progress-block { margin: 1rem 0; }
-.progress-label { font-weight: bold; margin-bottom: 0.25rem; }
-.progress-bar {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  height: 1rem;
-  overflow: hidden;
-}
-.progress-fill {
-  background: var(--accent);
-  height: 100%;
-  transition: width 0.3s;
-}
 .papers-table, .runs-table {
   width: 100%;
   border-collapse: collapse;
@@ -658,16 +532,39 @@ a:hover {
 }
 .papers-table .row-done { color: var(--muted); }
 .papers-table .row-error { background: var(--row-error-bg); }
-.failed-block {
-  margin: 1rem 0;
-  padding: 0.5rem;
-  border: 1px solid var(--error-block-border);
-  border-radius: var(--radius);
-  background: var(--row-error-bg);
-}
 .field-note.error { color: var(--error-fg); }
 
+/* --- Per-paper status table (Task C) --- */
+/* Narrow, truncating DOI cell: the link ellipsizes; the full DOI is on hover
+   via the title= attribute. */
+.doi-cell {
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.doi-cell a { color: var(--accent); }
+
+/* Phase status dots — reuse the .pill palette hues (no new colours):
+   ok=success, fail=danger, pending=muted. */
+.status-dot {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  vertical-align: middle;
+}
+.status-dot.ok      { background: var(--pill-success-fg); border-color: var(--pill-success-border); }
+.status-dot.fail    { background: var(--pill-danger-fg);  border-color: var(--pill-danger-border); }
+.status-dot.pending { background: var(--muted); border-color: var(--border); }
+
 /* --- Live progress panel (brain-build SSE stream) --- */
+/* Run-gated wrapper: shown only while a run is active (site.js toggles `hidden`
+   from the controls fragment's data-running). `!important` guards against global
+   [hidden] overrides; generous top margin so the revealed pane sits well. */
+.live-progress-wrap { margin-top: 1.5rem; }
+.live-progress-wrap[hidden] { display: none !important; }
 .live-progress { margin: 1rem 0; }
 .live-progress-pane {
   height: 30vh;            /* fixed height so the pane stops growing and the
@@ -689,19 +586,56 @@ a:hover {
 }
 .live-progress-hint { color: var(--log-hint-fg); }
 
-/* --- Collection switcher --- */
-.collection-switcher { margin: 1rem 0; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); }
-.collection-switcher details { padding: 0; }
-.collection-switcher summary { cursor: pointer; padding: 0.25rem 0.5rem; }
-.collection-switcher form { padding: 0.5rem 0; display: flex; gap: 0.5rem; align-items: end; }
+/* --- Collection switcher (inline, non-collapsible) --- */
+/* overflow:visible so the sl-select listbox popup is NOT clipped by the card. */
+/* The collection box is a `.card` (it gets .card's padding/border/radius +
+   hover lift+glow). We only keep the bits .card doesn't provide: a sensible
+   margin and `overflow: visible` so the sl-select dropdown isn't clipped. */
+.collection-switcher { margin: 1rem 0; overflow: visible; }
+.collection-current { color: var(--fg); font-weight: 600; }
+.collection-switch-heading { margin: 0.5rem 0 0.5rem; font-size: 1rem; }
 
-/* --- Discovery digest preview --- */
-.digest-pre { background: var(--card-bg); border: 1px solid var(--border); padding: 1rem;
-  border-radius: var(--radius); max-height: 50vh; overflow-y: auto;
-  white-space: pre-wrap; font-family: monospace; font-size: 0.85em; }
+/* Separate adjacent content cards on the dashboard so the Per-paper status and
+   Recent runs <sl-details> don't sit flush (applies collapsed AND expanded). */
+.dashboard sl-details + sl-details { margin-top: 1.25rem; }
+/* Column layout: cap the single-line select ~28rem (rubric #1), button to content. */
+.collection-switcher form { display: flex; flex-direction: column; gap: 0.5rem; align-items: stretch; }
+.collection-switcher #collection-field { max-width: 28rem; }
+.collection-switcher #collection-field sl-select,
+.collection-switcher #collection-field sl-input { max-width: 28rem; }
+.collection-switcher sl-button[type="submit"] { align-self: flex-start; }
 
-/* --- Health badge in topnav (Task #65) --- */
-/* .topnav is already display:flex with gap, so just push the badge to the right. */
+/* --- Discovery digest viewer --- */
+/* Bound the chrome (the select, per the P3+ rubric ~28rem); free the content
+   (the rendered box fills full width). */
+.digest-viewer { display: flex; flex-direction: column; gap: 1rem; }
+.digest-viewer .digest-select { max-width: 28rem; }
+
+/* The rendered-Markdown box. Styled to read like a note: heading scale, list
+   indentation, table borders, brand link color. Full width, generous padding. */
+.digest-rendered { background: var(--card-bg); border: 1px solid var(--border);
+  padding: 1.25rem 1.5rem; border-radius: var(--radius); max-width: 100%;
+  /* Cap height so a long digest scrolls within the card instead of
+     stretching the whole page. */
+  max-height: 32rem; overflow: auto; line-height: 1.6; }
+.digest-rendered h1 { font-size: 1.5rem; margin: 0 0 0.75rem; }
+.digest-rendered h2 { font-size: 1.25rem; margin: 1.25rem 0 0.5rem; }
+.digest-rendered h3 { font-size: 1.05rem; margin: 1rem 0 0.5rem; }
+.digest-rendered p { margin: 0 0 0.75rem; }
+.digest-rendered ul, .digest-rendered ol { margin: 0 0 0.75rem 1.25rem; padding-left: 0.75rem; }
+.digest-rendered li { margin: 0.15rem 0; }
+.digest-rendered a { color: var(--accent); }
+.digest-rendered code { font-family: monospace; font-size: 0.9em; }
+.digest-rendered pre { background: var(--bg); border: 1px solid var(--border);
+  padding: 0.75rem; border-radius: var(--radius); overflow-x: auto; }
+.digest-rendered blockquote { margin: 0 0 0.75rem; padding-left: 1rem;
+  border-left: 3px solid var(--border); color: var(--text-muted); }
+.digest-rendered table { border-collapse: collapse; width: 100%; margin: 0 0 0.75rem; }
+.digest-rendered th, .digest-rendered td { border: 1px solid var(--border);
+  padding: 0.4rem 0.6rem; text-align: left; }
+.digest-rendered thead th { background: var(--bg); }
+
+/* --- Health badge (Task #65) --- */
 #health-badge { margin-left: auto; }
 .status-badge { display: inline-flex; align-items: center; gap: 0.35em;
                 padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.82em;
@@ -732,6 +666,16 @@ a:hover {
 /* Make .button-row work as a sibling of dashboard h2s, not only inside dev-panel. */
 .dashboard .button-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0; align-items: center; }
 .dev-result { margin-top: 0.75rem; }
+/* Neutral write-back preview callout (themes pages). Subtle card, NOT the amber
+   dev-output style — reuses the standard card tokens. Empty until HTMX fills it. */
+.writeback-result { margin-top: 0.75rem; }
+.writeback-result:not(:empty) {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85em;
+}
 .dev-output { background: var(--dev-output-bg); padding: 0.5rem; border-radius: 3px; font-size: 0.85em;
               max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
 .dev-output-err { background: var(--dev-output-err-bg); padding: 0.5rem; border-radius: 3px; font-size: 0.85em;
@@ -821,8 +765,18 @@ a:hover {
 .btn-action:hover { border-color: var(--accent); color: var(--accent); }
 
 /* --- Bundle H: paper-card (shared partial) --- */
-.paper-cards { display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
-.paper-card { padding: 1rem 1.25rem; }
+/* FIX 4: 3-up grid (was minmax(24rem …) → only 2 cols at the run-detail width).
+   minmax(20rem, 1fr) ≈ 320px fits 3 across the ~1045px content area; gap
+   tightened 1rem → 0.75rem to match the setup .card-grid density. */
+.paper-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr)); gap: 0.75rem; margin-top: 1rem; align-items: stretch; }
+.paper-cards sl-card.paper-card { height: 100%; }
+.paper-cards sl-card.paper-card::part(base) { height: 100%; display: flex; flex-direction: column; }
+/* FIX 4: trim the dead space above the title. Shoelace's sl-card ::part(body)
+   carries its own ~1.25rem padding, which stacked with the old .paper-card
+   padding. Tighten the top so the <h3> sits near the card top; keep generous
+   side/bottom padding for the card body. */
+.paper-cards sl-card.paper-card::part(body) { padding: 0.85rem 1.25rem 1.1rem; }
+.paper-card { padding: 0; }
 .paper-card h3 { margin: 0 0 0.4rem; font-size: 1.05rem; }
 .paper-card h3 a { color: var(--accent); text-decoration: none; }
 .paper-card h3 a:hover { text-decoration: underline; }
@@ -848,28 +802,67 @@ a:hover {
 .rate-widget summary::-webkit-details-marker { display: none; }
 .rate-form { display: flex; gap: 0.25rem; margin-top: 0.25rem; padding: 0.25rem 0.5rem;
              background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); }
-.rate-btn { min-width: 2rem; text-align: center; }
 .feedback-flash { font-size: 0.82rem; margin-left: 0.4rem; }
 
 /* action-row (P8 relink/re-extract) */
 .action-row { display: flex; gap: 0.4rem; margin-top: 0.6rem; align-items: center; flex-wrap: wrap; }
 
+/* Corpus-detail Actions: the <h2>Actions</h2> header sits ABOVE its button row
+   (review item 2). Scoped to #corpus-actions so the shared .action-row used by
+   the paper-card (buttons-only, no header) stays a horizontal row. The buttons
+   themselves live in a nested .button-row and stay horizontal. */
+.action-row#corpus-actions {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+/* Tighten the space under the "Actions" header → button row (review). */
+.action-row#corpus-actions h2 { margin: 0; }
+
 /* --- Bundle H: settings page --- */
-.settings-section { border: 1px solid var(--border); border-radius: var(--radius);
-                    margin-bottom: 1rem; padding: 0; }
-.settings-section > summary { cursor: pointer; padding: 0.75rem 1rem;
-                               border-radius: var(--radius); background: var(--card-bg); }
-.settings-section > summary h2 { display: inline; margin: 0; font-size: 1rem; }
-.settings-section .setup-form { padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.settings-section { background: var(--card-bg); border: 1px solid var(--border);
+                    border-radius: var(--radius); padding: 0;
+                    margin-bottom: 1rem; }
+/* summary acts as the visible header; padding only on the summary, not the closed card */
+.settings-section > summary { cursor: pointer; padding: 0.5rem 0.75rem;
+                               border-radius: var(--radius); background: var(--card-bg);
+                               font-size: 1.1rem; color: var(--accent);
+                               margin: 0; border: none; }
+/* When open, add padding below the summary to separate it from the form body */
+.settings-section[open] > summary { margin-bottom: 0.75rem; }
+/* Closed state: no extra space below the summary */
+.settings-section:not([open]) { padding-bottom: 0; }
+.settings-section .setup-form { display: flex; flex-direction: column; gap: 1rem;
+                                 padding: 0 0.75rem 1.25rem; }
+/* Setup step 7: space between the optional warning card and the "For each entry…" note. */
+.after-card-gap { margin-top: 1rem; }
+/* Shoelace control sizing inside settings sections */
+.settings-section sl-input,
+.settings-section sl-select { display: block; max-width: 28rem; margin-top: 0.5rem; }
+.settings-section sl-textarea { display: block; width: 100%; max-width: none; margin-top: 0.5rem; }
+.settings-section sl-switch { display: inline-flex; margin-top: 0.5rem; }
+
+/* --- FIX 3: hover affordance on every <sl-details> header ---
+   Matches .step-card a:hover and .settings-section > summary:hover so the
+   discovery / brain-build / run-history / per-paper collapsibles read as
+   clickable (they had no hover cue before). Shoelace exposes the clickable
+   header as the `header` part; tint it with the shared --hover-overlay token
+   to stay consistent with the hand-CSS collapsibles. Kept subtle so it doesn't
+   fight Shoelace's own summary styling. */
+sl-details::part(header) { cursor: pointer; transition: background 0.15s ease; }
+sl-details::part(header):hover { background: var(--hover-overlay); }
 
 /* --- Bundle H: page-header utility --- */
 .page-header { margin-bottom: 1.5rem; }
 .page-header h1 { margin: 0 0 0.3rem; }
 .page-header .field-note { margin: 0.25rem 0 0.75rem; }
 
+/* --- /ask page question field — fills full content width (D1) --- */
+.ask-question { display: block; width: 100%; max-width: none; }
+
 /* --- /ask page (WA1/WA2): prose answer + mono Cypher panel --- */
-/* Matches the existing mono-panel convention (.digest-pre): card-bg surface,
- * border, radius, mono font — all via tokens, no color literals. */
+/* Mono-panel convention: card-bg surface, border, radius, mono font — all via
+ * tokens, no color literals. */
 .ask-prose {
   margin: var(--space) 0;
   white-space: pre-wrap;
@@ -934,35 +927,13 @@ body {
 
 /* Editorial serif headings (Fraunces), matching the docs site. */
 .content h1,
-.hero h1,
 .page-header h1,
 .dashboard > h1 {
   font-family: var(--font-display);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
-.hero h1 {
-  font-size: clamp(1.9rem, 4vw, 2.7rem);
-  line-height: 1.05;
-}
 
-/* Sticky topnav with the one Zotero-red hairline (the single place red meets
-   the chrome — mirrors the docs header). */
-.topnav {
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  box-shadow: inset 0 -2px 0 0 var(--brand-red);
-}
-.topnav .brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5em;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 1.18rem;
-  letter-spacing: -0.01em;
-}
 /* Brand mark — the Material "library" book glyph, matching the docs site logo. */
 .brand-logo {
   width: 1.3em;
@@ -1027,6 +998,15 @@ body {
 ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* Shoelace buttons render their interactive element inside shadow DOM, so the
+   global :focus-visible rule above can't reach it. Pierce to ::part(base) so
+   keyboard focus stays visible on sl-button / sl-icon-button in both themes. */
+sl-button::part(base):focus-visible,
+sl-icon-button::part(base):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Inline code chips (not the log/console panes). */
 :not(pre) > code {
   background: var(--surface-2);
@@ -1071,18 +1051,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 .routes-table tbody tr:hover { background: var(--hover-overlay); }
 .score, .score-breakdown-table td:last-child { font-variant-numeric: tabular-nums; }
 
-/* Modals — depth + a soft backdrop blur. */
-.modal { box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.6); }
-.modal-backdrop { backdrop-filter: blur(2px); }
-
 /* Collapsibles (settings / setup details / why-panel) — hover affordance. */
 .settings-section > summary:hover,
 .setup-form details > summary:hover { background: var(--hover-overlay); }
-
-/* Progress fill picks up the accent gradient. */
-.progress-fill {
-  background: linear-gradient(90deg, var(--accent-strong), var(--accent));
-}
 
 /* ===========================================================================
    Brand redesign — Phase 3: landing hero + page-header polish (both themes).
@@ -1154,8 +1125,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 /* --- Checkboxes / radios ---------------------------------------------------
    The broad `.setup-form input { display:block; width:100% }` rule was inflating
    checkboxes into full-width blocks. Restore their natural size and lay the
-   label + box out on one baseline-aligned row (covers .checkbox-inline,
-   .checkbox-row, .inline-check, and bare <label><input type=checkbox> ...). */
+   label + box out on one baseline-aligned row (covers .inline-check and bare
+   <label><input type=checkbox> ...). */
 input[type="checkbox"], input[type="radio"],
 .setup-form input[type="checkbox"], .setup-form input[type="radio"] {
   display: inline-block;
@@ -1165,7 +1136,7 @@ input[type="checkbox"], input[type="radio"],
   flex: none;
   vertical-align: middle;
 }
-.checkbox-inline, .checkbox-row, .inline-check,
+.inline-check,
 label:has(> input[type="checkbox"]),
 label:has(> input[type="radio"]) {
   display: inline-flex;
@@ -1174,31 +1145,6 @@ label:has(> input[type="radio"]) {
   font-weight: normal;
   margin-bottom: 0.35rem;
 }
-
-/* --- Dropdown menus --------------------------------------------------------
-   Was a flat bordered rectangle flush to the bar. Make it a proper floating
-   menu: raised surface, shadow, padding, rounded rows with hover. */
-.navmenu {
-  min-width: 12rem;
-  padding: 0.3rem;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 14px 32px -14px rgba(0, 0, 0, 0.55);
-}
-.navmenu a {
-  padding: 0.45rem 0.6rem;
-  border-radius: 6px;
-}
-.navmenu a:hover {
-  background: var(--hover-overlay);
-  color: var(--accent);
-}
-.navmenu a.active {
-  color: var(--accent);
-  background: var(--hover-overlay);
-}
-.navgroup-label { display: inline-flex; align-items: center; gap: 0.25em; }
 
 /* --- Form spacing rhythm ---------------------------------------------------- */
 .field-group { gap: 0.3rem; margin-bottom: 0.95rem; }
@@ -1220,11 +1166,11 @@ h3.field-label:first-child { margin-top: 0.25rem; }
 .content h3 { margin-top: 1.3rem; margin-bottom: 0.4rem; }
 .content h1:first-child, .content h2:first-child,
 .page-header h1, .dashboard > h1 { margin-top: 0; }
-.settings-section { margin-bottom: 1.25rem; }
+/* settings-section margin-bottom now set in the Bundle H block above */
 
-/* Settings-section forms are flex-column, which stretches the submit button to
-   full width — pin it to its natural size, left-aligned. (The setup wizard
-   forms aren't flex, so they're unaffected.) */
+/* Settings-section forms are flex-column, which stretches submit controls to
+   full width — pin sl-button and native button to their natural size. */
+.settings-section .setup-form sl-button { align-self: flex-start; }
 .settings-section .setup-form button { align-self: flex-start; }
 
 /* ===========================================================================
@@ -1262,7 +1208,7 @@ textarea {
 /* Bare <button>/<input type=submit> with NO class were rendering as raw browser
    buttons (e.g. the trending "Re-detect", several setup-step "Save" buttons).
    Give unclassed buttons a clean neutral style — classed buttons (.btn*,
-   .button, .navgroup-label, .theme-toggle, .rate-btn) are untouched. */
+   .button, .theme-toggle) are untouched. */
 button:not([class]),
 input[type="submit"]:not([class]),
 input[type="button"]:not([class]) {
@@ -1284,3 +1230,221 @@ input[type="button"]:not([class]):hover {
   color: var(--accent);
 }
 button:not([class]):disabled { opacity: 0.55; cursor: default; }
+
+/* ===========================================================================
+   App-shell layout (P0). Sidebar | (topbar / [rail | main]). Tokens from :root.
+   =========================================================================== */
+.app-shell { display: grid; grid-template-columns: 236px 1fr; min-height: 100vh; }
+.app-sidebar {
+  grid-row: 1 / -1; display: flex; flex-direction: column; gap: 0.1rem;
+  background: var(--card-bg); border-right: 1px solid var(--border);
+  padding: 1rem 0.7rem; position: sticky; top: 0; height: 100vh; overflow: auto;
+}
+.app-brand {
+  display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.6rem 1rem;
+  font-family: var(--font-display); font-weight: 600; font-size: 1.12rem; color: var(--fg); text-decoration: none;
+}
+.app-brand .brand-logo { width: 1.3em; height: 1.3em; fill: currentColor; }
+.app-nav-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin: 0.9rem 0.6rem 0.25rem; }
+.app-nav-link { display: flex; align-items: center; gap: 0.55rem; padding: 0.45rem 0.6rem; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 0.88rem; }
+.app-nav-link sl-icon { font-size: 1.05rem; }
+.app-nav-link:hover { background: var(--surface-2); color: var(--fg); text-decoration: none; }
+.app-nav-link.active { background: color-mix(in srgb, var(--accent-strong) 24%, transparent); color: #fff; }
+.app-sidebar-foot { margin-top: auto; padding: 0.6rem; }
+
+.app-main-col { display: flex; flex-direction: column; min-width: 0; }
+.app-topbar {
+  position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 0.75rem;
+  height: 56px; padding: 0 1.25rem; background: var(--card-bg);
+  border-bottom: 1px solid var(--border); box-shadow: inset 0 -2px 0 0 var(--brand-red);
+}
+.app-sidebar-toggle { display: none; }
+.app-topbar-crumbs { min-width: 0; }
+.app-ask-btn { margin-left: auto; }
+.app-crumbs { font-size: 0.9rem; color: var(--muted); }
+.app-crumbs a { color: var(--muted); text-decoration: none; }
+.app-crumbs a:hover { color: var(--accent); }
+.app-crumbs .sep { margin: 0 0.4rem; opacity: 0.5; }
+.app-crumbs .cur { color: var(--fg); font-weight: 600; }
+
+.app-body { flex: 1; display: flex; min-height: 0; }
+.app-rail { width: 236px; flex: none; border-right: 1px solid var(--border); padding: 1.1rem 1rem; overflow: auto; }
+.app-main { flex: 1; min-width: 0; max-width: none; margin: 0; padding: 1.5rem 1.75rem; }
+.site-footer { max-width: none; }
+
+.ask-drawer-actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.5rem; }
+.ask-drawer-result { margin-top: 0.8rem; }
+
+@media (max-width: 900px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .app-sidebar { position: fixed; left: 0; top: 0; z-index: 60; width: 236px; transform: translateX(-100%); transition: transform 0.18s ease; }
+  .app-shell.sidebar-open .app-sidebar { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.5); }
+  .app-sidebar-toggle { display: inline-flex; }
+  .app-body { flex-direction: column; }
+  .app-rail { width: auto; border-right: none; border-bottom: 1px solid var(--border); }
+}
+
+.health-badge { font-size: 0.8rem; }
+
+/* paper-card as sl-card */
+sl-card.paper-card { width: 100%; display: block; }
+sl-card.paper-card::part(base) { width: 100%; }
+
+/* Corpus detail (/corpus/{doi}): stack the page-header + section cards as a
+   flex column so consecutive .card sections (Extraction, Score, Related work,
+   Actions) and the lazy HTMX fragment slots get even vertical spacing instead
+   of sitting flush against each other. */
+.paper-detail { display: flex; flex-direction: column; gap: 1rem; }
+
+/* --- Corpus Health: inline filter toolbar + frozen-header table (P4) --- */
+/* Single horizontal toolbar above the table; wraps on narrow screens. Each
+   control is capped ~13rem so several fit on one line (rubric #1). */
+.corpus-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+/* Each control is narrow and allowed to shrink so Search + Source type + Status
+   gap + Sort all fit on ONE line at desktop width (review #1); they still wrap on
+   narrow screens via the toolbar's flex-wrap. */
+.corpus-toolbar sl-input,
+.corpus-toolbar sl-select { flex: 1 1 10rem; min-width: 0; max-width: 12rem; }
+
+/* The bottom pager row carries the per-page (limit) select next to prev/next +
+   the "X–Y of Z" count. The limit select is narrow — it's a setting, not a
+   filter (review #2). */
+.corpus-pager { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-top: 0.75rem; }
+.corpus-pager sl-select[name="limit"] { width: 5rem; max-width: 5rem; }
+.corpus-pager .per-page-label { font-size: 0.85rem; color: var(--muted); }
+/* The per-page control is an inline "Per page" label + a label-less select,
+   sitting to the LEFT of the "X–Y of N" count (review item 4). */
+.corpus-pager .per-page-form { display: flex; align-items: center; gap: 0.4rem; margin: 0; }
+
+/* rubric #15: cap the corpus results height so the (long) paper list scrolls
+   inside its own region instead of stretching the whole page (like the digest
+   box). Sticky header keeps the column labels visible while scrolling. */
+.corpus-results { min-width: 0; overflow: auto; max-height: 40rem; }
+/* table-layout:fixed + per-cell nowrap/ellipsis keep every row on ONE line. */
+.corpus-results table.corpus-table { table-layout: fixed; width: 100%; }
+.corpus-results table.corpus-table td,
+.corpus-results table.corpus-table th {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The Updated column shows the full date on one line (no truncation). */
+.corpus-results table.corpus-table td.updated-cell { overflow: visible; }
+/* Frozen header: solid background + z-index so it stays opaque while scrolling
+   inside .corpus-results (which is the scroll container — sticky resolves
+   against it). */
+.corpus-results table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--card-bg);
+  z-index: 1;
+}
+/* Column widths: Title widest (truncated), Updated wide enough for the date,
+   the status-dot columns narrow. */
+.corpus-table col.col-title { width: 32%; }
+.corpus-table col.col-doi { width: 16%; }
+.corpus-table col.col-year { width: 5rem; }
+.corpus-table col.col-source { width: 6rem; }
+.corpus-table col.col-conf { width: 6rem; }
+.corpus-table col.col-dot { width: 5.5rem; }
+.corpus-table col.col-updated { width: 7rem; }
+
+/* rubric #15: cap the extraction list height so one section can't stretch the
+   page; it scrolls inside the card instead (100+ extraction fields are common). */
+.extraction-scroll { max-height: 28rem; overflow: auto; }
+
+/* review #6: extraction renders as a Field | Value | Confidence table. Values
+   wrap (scientific text is long); the Field/Confidence columns stay compact. */
+.extraction-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.extraction-table th, .extraction-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.extraction-table thead th { color: var(--muted); font-weight: 600; }
+.extraction-table tbody th { font-weight: 600; width: 14rem; white-space: nowrap; }
+.extraction-table td { white-space: normal; word-break: break-word; }
+.extraction-table td:last-child { width: 7rem; white-space: nowrap; }
+
+/* review #4: the per-paper detail action buttons. Zotero red + Obsidian purple
+   (white text) — brand-token-driven, no new color literals. */
+sl-button.btn-zotero::part(base) {
+  background: var(--cta-bg);
+  border-color: var(--cta-bg);
+  color: #fff;
+}
+sl-button.btn-zotero::part(base):hover {
+  background: var(--cta-bg-hover);
+  border-color: var(--cta-bg-hover);
+}
+sl-button.btn-obsidian::part(base) {
+  background: var(--brand-purple);
+  border-color: var(--brand-purple);
+  color: #fff;
+}
+sl-button.btn-obsidian::part(base):hover {
+  background: var(--brand-purple-bright);
+  border-color: var(--brand-purple-bright);
+}
+.rate-summary { cursor: pointer; display: inline-block; font-size: 0.82rem; }
+.home-card { width: 100%; }
+.home-card a { text-decoration: none; color: inherit; display: block; }
+
+/* Stats banner — four-stat corpus overview, shown on all non-excluded pages */
+.stats-banner { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+@media (max-width: 900px) { .stats-banner { grid-template-columns: repeat(2, 1fr); } }
+.stat-card::part(base) { width: 100%; }
+.stat-card { display: block; }
+.stat-eyebrow { display: block; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.stat-value { display: block; font-family: var(--font-display); font-size: 2rem; font-weight: 600; line-height: 1.1; margin: 0.35rem 0 0.25rem; }
+.stat-delta { font-size: 0.82rem; }
+.stat-delta.up { color: var(--accent); }
+
+.stat-delta.muted { color: var(--muted); }
+.mono { font-family: var(--font-mono); }
+
+/* P2-polish: single-line controls capped to the Settings width; textareas fill full width */
+.setup-form sl-input, .setup-form sl-select { display: block; width: 100%; max-width: 28rem; }
+.setup-form sl-textarea { display: block; width: 100%; max-width: none; }
+.setup-form { display: flex; flex-direction: column; gap: 1.1rem; }
+.settings-section .setup-form { gap: 1.1rem; }
+/* P2-polish: action buttons size to their content, not full-width stretch.
+   (Covers Save / Save and test / + Add search / Add researcher and the per-card
+   Remove buttons — the flex column otherwise stretches them edge-to-edge.) */
+.setup-form sl-button, .topics-row sl-button { align-self: flex-start; }
+
+/* Step 6: keyword cloud paragraph inside concepts theme/unclustered details */
+.keyword-cloud { color: var(--muted); line-height: 1.7; margin: 0.5rem 0 0; }
+
+/* Step 6: spacing between warning card and "Showing:" field-note */
+.showing-line { margin-top: 1.25rem; }
+
+/* Step 8: vertical spacing around the advanced YAML editor textarea */
+.yaml-editor-block { margin: 1rem 0; }
+
+/* P2-polish: responsive card grid for the topics/researchers row editors.
+   Legibility-first: min 22rem per card, so it drops to fewer columns rather than cramming. */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr)); gap: 1rem; margin: 1rem 0; }
+.card-grid .topics-row { margin: 0; }
+
+/* Step 7: top margin so the form doesn't cramp against the Optional warning card */
+.researchers-intro-gap { margin-top: 1rem; }
+
+/* P3: form rubric for dashboard control forms (parity with .setup-form). */
+.dashboard form sl-input, .dashboard form sl-select { display: block; width: 100%; max-width: 28rem; }
+.dashboard form sl-textarea { display: block; width: 100%; max-width: none; }
+.dashboard form sl-button, .dashboard form button { align-self: flex-start; }
+.dashboard .control-form { display: flex; flex-direction: column; gap: 1rem; align-items: flex-start; }
+
+/* P3.1: compact last-run card — responsive multi-column stat grid */
+/* Last-run summary: a single compact inline row (Run ID dropped per review). */
+.last-run-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 1.5rem; margin: 0; }
+.last-run-line > span { white-space: nowrap; }
+.last-run-line .stat-eyebrow { display: inline; margin-right: 0.4rem; }

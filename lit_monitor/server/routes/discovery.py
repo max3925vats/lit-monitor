@@ -17,18 +17,25 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import logging
-from datetime import UTC, date, datetime
+import os
+import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 
+import markdown
+import nh3
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from lit_monitor.api.queries import (
+    discovery_run_same_day_ordinal,
     get_discovery_run,
+    get_discovery_run_history,
     get_discovery_run_papers,
     get_discovery_runs,
 )
+from lit_monitor.output.digest_renderer import digest_filename, render_digest
 from lit_monitor.server.app import templates
 from lit_monitor.server.routes.sse import stream_log
 from lit_monitor.server.runtime import get_runtime
@@ -42,8 +49,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 # FG-3: valid retrieval modes for the discovery start form's rag_mode select.
 _VALID_RAG_MODES = ("vector", "graph", "hybrid")
 
-# AR-7: page size for the paginated discovery-runs table on the dashboard.
-_RUNS_PAGE_SIZE = 20
+# P4: page size for the paginated Run History card on the dashboard.
+_RUNS_PAGE_SIZE = 10
 
 
 def _graph_extra_available() -> bool:
@@ -112,40 +119,39 @@ def _digests_folder_name() -> str:
         return "Literature/Digests"
 
 
-def _todays_digest() -> tuple[Path | None, str | None]:
-    """Locate today's digest file, if any. Returns (path, content_or_None).
+def _digest_options(db) -> list[dict]:
+    """Newest-first ``[{id, date, ordinal}, ...]`` for the digest-viewer dropdown.
 
-    The discovery pipeline writes to ``{vault}/{digests_folder}/Discovery_{YYYY-MM-DD}.md``
-    using ``date.today()`` (local timezone). Falls back to the most recent
-    ``Discovery_*.md`` if today's exact filename is missing.
+    One entry per discovery run. The label is ``Discovery_{date}`` for the day's
+    first run and ``Discovery_{date}_{ordinal}`` for later same-day runs, so two
+    runs on the same date get DISTINCT labels (the bug was two identical
+    ``Discovery_{date}`` options pointing at the same file). Derived from
+    ``get_discovery_run_history`` so the dropdown mirrors the Run History card.
+    Defensive: any failure (or no db) yields an empty list, so the viewer shows
+    a friendly empty state instead of 500-ing.
     """
-    vault = _vault_root()
-    if vault is None:
-        return None, None
-    folder = vault / _digests_folder_name()
-    if not folder.exists() or not folder.is_dir():
-        return None, None
-    today = date.today().strftime("%Y-%m-%d")
-    exact = folder / f"Discovery_{today}.md"
-    if exact.exists():
-        try:
-            return exact, exact.read_text(encoding="utf-8")
-        except OSError:
-            logger.warning("Cannot read digest %s", exact, exc_info=True)
-            return exact, None
-    # Fallback: newest Discovery_*.md in the folder.
-    candidates = sorted(
-        folder.glob("Discovery_*.md"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    if not candidates:
-        return None, None
-    newest = candidates[0]
+    if db is None:
+        return []
     try:
-        return newest, newest.read_text(encoding="utf-8")
-    except OSError:
-        return newest, None
+        result = get_discovery_run_history(db, limit=50, offset=0)
+        runs = result.get("runs", []) or []
+    except Exception:
+        logger.warning("digest_options: history query failed", exc_info=True)
+        return []
+    options: list[dict] = []
+    for r in runs:
+        rid = r.get("id")
+        if rid is None:
+            continue
+        try:
+            ordinal = discovery_run_same_day_ordinal(db, rid)
+        except Exception:
+            logger.warning("digest_options: ordinal query failed", exc_info=True)
+            ordinal = 1
+        options.append(
+            {"id": rid, "date": (r.get("started_at") or "")[:10], "ordinal": ordinal}
+        )
+    return options
 
 
 @router.get("/discovery", response_class=HTMLResponse)
@@ -164,63 +170,143 @@ def dashboard(
         except Exception:
             logger.warning("get_recent_runs_by_type failed", exc_info=True)
 
-    # P8: also fetch structured discovery_runs (have id, total_found, total_ingested)
-    # to populate the run-history table with links to /discovery/{run_id}.
-    # AR-7: this table is now paginated (corpus-style offset/limit) so a long run
-    # history no longer renders unbounded. The "latest run" summary always shows
-    # the newest run (offset 0) independent of the table's current page.
-    discovery_runs: list[dict] = []
-    latest_discovery_run: dict | None = None
+    # P4: unified Run History — discovery_runs LEFT JOIN run_log so a single
+    # paginated card carries both structured run metadata (id, found, ingested)
+    # AND the per-paper processed/skipped/failed counts. Historical rows (no
+    # run_log FK) return None for the three count columns; the template renders
+    # those as em-dashes. Paginated by 10 (offset-link prev/next).
+    run_history: list[dict] = []
     runs_total = 0
-    # AR-7: clamp the requested offset to >= 0. A hand-crafted ?runs_offset= past
-    # the end yields an empty table, but the runs pager renders unconditionally so
-    # Prev (shown whenever offset > 0) still navigates back to a valid page.
+    # Clamp the requested offset to >= 0. A hand-crafted ?runs_offset= past the
+    # end yields an empty card, but the pager renders whenever rows exist so Prev
+    # (shown whenever offset > 0) still navigates back to a valid page.
     offset = max(runs_offset, 0)
     if db is not None:
         try:
             state_db = get_runtime().state_db
-            result = get_discovery_runs(
+            result = get_discovery_run_history(
                 state_db, limit=_RUNS_PAGE_SIZE, offset=offset
             )
-            discovery_runs = result.get("runs", [])
+            run_history = result.get("runs", [])
             # Coerce defensively: a non-int total (e.g. a partial test double)
             # would break the has_next arithmetic at render time.
             try:
                 runs_total = int(result.get("total", 0))
             except (TypeError, ValueError):
-                runs_total = len(discovery_runs)
-            # The latest run is always the newest row (offset 0), shown in the
-            # summary card regardless of which page the table is on.
-            if offset == 0:
-                latest_discovery_run = discovery_runs[0] if discovery_runs else None
-            else:
-                head = get_discovery_runs(state_db, limit=1, offset=0).get("runs", [])
-                latest_discovery_run = head[0] if head else None
+                runs_total = len(run_history)
         except Exception:
-            logger.warning("get_discovery_runs failed", exc_info=True)
+            logger.warning("get_discovery_run_history failed", exc_info=True)
 
-    digest_path, digest_content = _todays_digest()
+    # Digest viewer: newest-first dropdown options ({id, date}); the template
+    # auto-loads the newest into #digest-view via /api/discovery/digest.
+    digest_options = _digest_options(db)
     return templates.TemplateResponse(
         request,
         "discovery/index.html",
         {
             "last_run": last_run,
             "recent_runs": recent_runs,
-            # P8: structured discovery_runs with id field for linking
-            "discovery_runs": discovery_runs,
-            "latest_discovery_run": latest_discovery_run,
-            # AR-7: pagination context for the discovery-runs table.
+            # P4: unified run-history rows for the single Run History card.
+            "run_history": run_history,
+            # P4: pagination context for the Run History card (page size 10).
             "runs_total": runs_total,
             "runs_offset": offset,
             "runs_has_prev": offset > 0,
             "runs_has_next": offset + _RUNS_PAGE_SIZE < runs_total,
             "runs_prev_offset": max(offset - _RUNS_PAGE_SIZE, 0),
             "runs_next_offset": offset + _RUNS_PAGE_SIZE,
-            "digest_path": str(digest_path) if digest_path else None,
-            "digest_content": digest_content,
+            "digest_options": digest_options,
             "db_unavailable": db is None,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Digest viewer fragment — render a stored (or freshly-created) digest as HTML
+# ---------------------------------------------------------------------------
+
+# markdown.markdown extensions: GFM-ish tables, fenced code, and sane (PEP-style)
+# list nesting so the rendered digest reads like the Obsidian note does.
+_MD_EXTENSIONS = ["tables", "fenced_code", "sane_lists"]
+
+
+@router.get("/api/discovery/digest", response_class=HTMLResponse)
+def discovery_digest(run_id: int = Query(...)) -> HTMLResponse:
+    """Render the ``Discovery_{date}.md`` digest for a run as sanitized HTML.
+
+    Exists path → read the file. Missing → render it from the run's papers via
+    ``render_digest`` and write it atomically into the vault, then render.
+
+    Every body is an HTMX-swappable fragment (never a 500): missing run →
+    ``Run not found`` (404), no vault → a field-note, IO/render failure → a
+    generic card (the absolute path is logged server-side, NOT leaked — A3-5).
+    """
+    state_db = get_runtime().state_db
+    run = get_discovery_run(state_db, run_id)
+    if run is None:
+        return HTMLResponse(
+            '<div class="card danger">Run not found.</div>', status_code=404
+        )
+
+    vault = _vault_root()
+    if vault is None:
+        return HTMLResponse(
+            '<p class="field-note">Vault path not configured.</p>'
+        )
+
+    date_str = (run.get("started_at") or "")[:10]
+    # Same-day runs each get their own file via a per-day ordinal suffix, so the
+    # day's 2nd run reads/creates Discovery_{date}_2.md (its own papers) instead
+    # of colliding on the bare file (which holds the 1st run's content).
+    ordinal = discovery_run_same_day_ordinal(state_db, run_id)
+    path = vault / _digests_folder_name() / digest_filename(date_str, ordinal)
+
+    try:
+        if path.exists():
+            md = path.read_text(encoding="utf-8")
+        else:
+            papers = get_discovery_run_papers(state_db, run_id, top_k=1000)
+            md = render_digest(run, papers)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # Atomic write: temp file in the same dir, then os.replace.
+            fd, tmp_name = tempfile.mkstemp(
+                dir=str(path.parent), prefix=".digest-", suffix=".md.tmp"
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    fh.write(md)
+                os.replace(tmp_name, path)
+            except OSError:
+                # Best-effort cleanup of the stray temp file before re-raising.
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+                raise
+
+        html_body = markdown.markdown(md, extensions=_MD_EXTENSIONS)
+        # nh3's default allowlist permits headings/p/ul/ol/li/a/code/pre/em/
+        # strong/blockquote and full tables — and strips <script>/<style>/event
+        # handlers. This is the XSS boundary for user/LLM-authored digest text.
+        safe = nh3.clean(html_body)
+    except OSError:
+        # A3-5 info-leak guard: the OSError embeds the absolute vault path. Log
+        # it (with traceback) server-side; the client gets a generic card only.
+        logger.error("discovery_digest: digest IO failed", exc_info=True)
+        return HTMLResponse(
+            '<div class="card danger">Could not render digest — '
+            "check server logs.</div>",
+            status_code=500,
+        )
+    except Exception:  # noqa: BLE001 — render failure must not 500-leak either
+        logger.error("discovery_digest: render failed", exc_info=True)
+        return HTMLResponse(
+            '<div class="card danger">Could not render digest — '
+            "check server logs.</div>",
+            status_code=500,
+        )
+
+    return HTMLResponse(f'<div class="digest-rendered">{safe}</div>')
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +353,12 @@ def discovery_run_detail(request: Request, run_id: int) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "discovery/run_detail.html",
-        {"run": run, "papers": papers, "show_feedback_buttons": show_feedback_buttons},
+        {
+            "run": run,
+            "papers": papers,
+            "show_feedback_buttons": show_feedback_buttons,
+            "detail_crumb": f"Run {run_id}",
+        },
     )
 
 

@@ -1,0 +1,32 @@
+{# Corpus stats banner — included by base.html on non-excluded pages.
+   `banner_stats()` is a read-only Jinja global (api.queries.get_dashboard_stats). #}
+{% set s = banner_stats() %}
+<section class="stats-banner" aria-label="Corpus stats">
+  <sl-card class="stat-card">
+    <span class="stat-eyebrow">Papers Indexed</span>
+    <span class="stat-value">{{ s.papers.value }}</span>
+    {% if s.papers.delta is not none and s.papers.delta != 0 %}
+      <span class="stat-delta up">&#9650; {{ s.papers.delta }} this run</span>
+    {% else %}<span class="stat-delta muted">stable</span>{% endif %}
+  </sl-card>
+  <sl-card class="stat-card">
+    <span class="stat-eyebrow">Graph Nodes</span>
+    <span class="stat-value">{{ s.graph_nodes.value }}</span>
+    {% if s.graph_nodes.delta is not none and s.graph_nodes.delta != 0 %}
+      <span class="stat-delta up">&#9650; {{ s.graph_nodes.delta }} this run</span>
+    {% else %}<span class="stat-delta muted">stable</span>{% endif %}
+  </sl-card>
+  <sl-card class="stat-card">
+    <span class="stat-eyebrow">Themes</span>
+    <span class="stat-value">{{ s.themes.value }}</span>
+    {% if s.themes.delta is not none and s.themes.delta != 0 %}
+      <span class="stat-delta up">&#9650; {{ s.themes.delta }} this run</span>
+    {% else %}<span class="stat-delta muted">stable</span>{% endif %}
+  </sl-card>
+  <sl-card class="stat-card">
+    <span class="stat-eyebrow">Last Run</span>
+    <span class="stat-value">{{ s.last_run.relative }}</span>
+    {% if s.last_run.status %}<span class="stat-delta muted">{{ s.last_run.status }}</span>
+    {% else %}<span class="stat-delta muted">&mdash;</span>{% endif %}
+  </sl-card>
+</section>

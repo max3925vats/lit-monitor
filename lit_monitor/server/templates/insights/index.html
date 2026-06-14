@@ -1,5 +1,14 @@
-{# FI-2: read-only /insights page — learning state, cluster weights,
-   server-SVG signal mix, recent events. Supersedes the old /feedback page. #}
+{# FI-2: read-only /insights page — learning state, cluster weights, signal mix,
+   recent events. Supersedes the old /feedback page.
+
+   P4 (Shoelace redesign): the learning-state block is a compact, always-visible
+   `.last-run-line` summary row (reused from /discovery); the six other sections
+   are each their own COLLAPSED <sl-details>. The three Chart.js sections carry a
+   `data-chart-details` hook so site.js can (re)init/resize the canvas on
+   `sl-after-show` (a canvas inside a collapsed details has 0 width at first
+   render). Each chart keeps its <table> degradation fallback. The recent-events
+   pager swaps in place via #insights-events-body; the two lazy fragments fetch on
+   first expand (sl-show once). #}
 {% extends "base.html" %}
 {% block title %}Insights — lit-monitor{% endblock %}
 {# CU-2: Chart.js via CDN, loaded on this page only. Charts degrade gracefully
@@ -13,29 +22,34 @@
     <p class="field-note">
       Read-only view of what the active-learning engine has learned from your
       engagement signals (save / dismiss / rate on discoveries). Nothing here
-      writes or recomputes. Capture buttons on paper cards require
+      writes or recomputes. To shape the other discovery-ranking signal,
+      <a href="/domain">Tune the domain signal &rarr;</a>. Capture buttons on
+      paper cards require
       <code>web_ui.show_feedback_buttons: true</code> in
-      <a href="/settings">Advanced Settings</a>.
+      <a href="/setup/step-9">Tuning (setup step 9)</a>.
     </p>
   </div>
 
   {# ----------------------------------------------------------------- #}
-  {# 1. Learning state                                                 #}
+  {# 1. Learning state — compact, always-visible stat row (req #1).    #}
+  {#    Reuses the /discovery `.last-run-line` + `.stat-eyebrow` style; #}
+  {#    NOT collapsed — this is the at-a-glance engine summary.         #}
   {# ----------------------------------------------------------------- #}
   <h2>Learning state</h2>
   {% if learning.available %}
-  <dl class="kv">
-    <dt>Feedback events</dt><dd>{{ learning.n_events }}</dd>
-    <dt>Soft-gate</dt>
-    <dd>
-      {{ "%.2f" | format(learning.soft_gate | float) }}
-      {% if learning.inert %}
-      <span class="pill warning">INERT — below cold-start floor (10)</span>
-      {% endif %}
-    </dd>
-    <dt>Interest-vector dim</dt><dd>{{ learning.dim }}</dd>
-    <dt>Computed at</dt><dd class="field-note">{{ learning.computed_at }}</dd>
-  </dl>
+  <div class="card last-run-card">
+    <p class="last-run-line">
+      <span><span class="stat-eyebrow">Feedback events</span>{{ learning.n_events }}</span>
+      <span>
+        <span class="stat-eyebrow">Soft-gate</span>{{ "%.2f" | format(learning.soft_gate | float) }}
+        {% if learning.inert %}
+        <sl-badge variant="warning" pill>INERT — below cold-start floor (10)</sl-badge>
+        {% endif %}
+      </span>
+      <span><span class="stat-eyebrow">Interest-vector dim</span>{{ learning.dim }}</span>
+      <span><span class="stat-eyebrow">Computed at</span>{% if learning.computed_at %}{{ learning.computed_at }}{% else %}&mdash;{% endif %}</span>
+    </p>
+  </div>
   {% if learning.inert %}
   <p class="field-note">
     The interest vector exists but is gated to zero influence until at least
@@ -48,207 +62,241 @@
     discoveries to build an interest vector.
   </p>
   {% endif %}
-  {# FI-3: top library papers aligned with the interest vector. Lazy HTMX
-     load — the fragment replaces this container's own contents on page load so
-     the page renders instantly. #}
-  <div id="insights-top-papers"
-       hx-get="/insights/top-papers"
-       hx-trigger="load"
-       hx-target="this"
-       hx-swap="innerHTML"></div>
 
   {# ----------------------------------------------------------------- #}
-  {# 2. Cluster weights                                                #}
+  {# 2. Top papers — collapsed; lazy fragment fetches on first expand. #}
+  {#    (req #2 + #5: hx-trigger="sl-show once" from the enclosing      #}
+  {#    sl-details, so the fetch happens only when the user opens it.)  #}
   {# ----------------------------------------------------------------- #}
-  <h2>Cluster weights</h2>
-  {% if clusters.clusters %}
-  <p class="field-note">
-    Per-theme atrophy weight (1.0 = full attention; lower = de-emphasised by
-    your dismissals). Weights never decay below the floor of
-    {{ "%.2f" | format(clusters.floor | float) }}.
-  </p>
-  {# CU-2: Chart.js bar chart of per-theme weights. JSON island carries the
-     labels + values; site.js builds the chart, reading colors from the palette
-     tokens. The table below remains the exact-values + degradation fallback. #}
-  {% set _cw_labels = [] %}
-  {% set _cw_data = [] %}
-  {% for c in clusters.clusters %}
-  {% set _ = _cw_labels.append(c.name) %}
-  {% set _ = _cw_data.append(c.weight | float) %}
-  {% endfor %}
-  <div class="chart-box"><canvas data-chart="cluster-weights"></canvas></div>
-  <script type="application/json" data-chart="cluster-weights-data">{{ {"labels": _cw_labels, "data": _cw_data, "max": 1.0} | tojson }}</script>
-  <table class="papers-table">
-    <thead>
-      <tr><th>Theme</th><th>Weight</th><th>At floor?</th></tr>
-    </thead>
-    <tbody>
-      {% for c in clusters.clusters %}
-      <tr>
-        <td>{{ c.name }}</td>
-        <td>{{ "%.2f" | format(c.weight | float) }}</td>
-        <td>
-          {% if c.at_floor %}<span class="pill warning">at floor</span>
-          {% else %}&mdash;{% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p class="field-note">
-    No themes yet — run a brain-build to cluster papers.
-  </p>
-  {% endif %}
-
-  {# ----------------------------------------------------------------- #}
-  {# 3. Signal mix (server-rendered inline SVG; no client-side chart lib) #}
-  {# ----------------------------------------------------------------- #}
-  <h2>Signal mix</h2>
-  {% set _sig_rows = [] %}
-  {% set _sig_max = namespace(v=0) %}
-  {% for signal, count in summary.items() | sort %}
-  {% set _ = _sig_rows.append({"label": signal, "count": count}) %}
-  {% if (count | int) > _sig_max.v %}{% set _sig_max.v = count | int %}{% endif %}
-  {% endfor %}
-  {% if _sig_rows and _sig_max.v > 0 %}
-  {# CU-2: Chart.js bar chart + JSON data island; table kept beside it. #}
-  {% set _sig_labels = [] %}
-  {% set _sig_data = [] %}
-  {% for row in _sig_rows %}
-  {% set _ = _sig_labels.append(row.label) %}
-  {% set _ = _sig_data.append(row.count | int) %}
-  {% endfor %}
-  <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start;">
-    <div style="flex: 1; min-width: 280px; max-width: 480px;">
-      <div class="chart-box"><canvas data-chart="signal-mix"></canvas></div>
-      <script type="application/json" data-chart="signal-mix-data">{{ {"labels": _sig_labels, "data": _sig_data} | tojson }}</script>
+  <sl-details summary="Top aligned papers">
+    <div id="insights-top-papers"
+         hx-get="/insights/top-papers"
+         hx-trigger="sl-show once from:closest sl-details"
+         hx-target="this"
+         hx-swap="innerHTML">
+      <p class="field-note">Expand to load top-aligned papers…</p>
     </div>
-    <table class="papers-table" style="flex: 0 0 auto;">
-      <thead><tr><th>Signal</th><th>Count</th></tr></thead>
+  </sl-details>
+
+  {# ----------------------------------------------------------------- #}
+  {# 3. Cluster weights — collapsed; Chart.js inside (data-chart-details #}
+  {#    hooks the site.js sl-after-show (re)init/resize).               #}
+  {# ----------------------------------------------------------------- #}
+  <sl-details summary="Cluster weights" data-chart-details>
+    {% if clusters.clusters %}
+    <p class="field-note">
+      Per-theme atrophy weight (1.0 = full attention; lower = de-emphasised by
+      your dismissals). Weights never decay below the floor of
+      {{ "%.2f" | format(clusters.floor | float) }}.
+    </p>
+    {# CU-2: Chart.js bar chart of per-theme weights. JSON island carries the
+       labels + values; site.js builds the chart, reading colors from the palette
+       tokens. The table below remains the exact-values + degradation fallback. #}
+    {% set _cw_labels = [] %}
+    {% set _cw_data = [] %}
+    {% for c in clusters.clusters %}
+    {% set _ = _cw_labels.append(c.name) %}
+    {% set _ = _cw_data.append(c.weight | float) %}
+    {% endfor %}
+    <div class="chart-box"><canvas data-chart="cluster-weights"></canvas></div>
+    <script type="application/json" data-chart="cluster-weights-data">{{ {"labels": _cw_labels, "data": _cw_data, "max": 1.0} | tojson }}</script>
+    <table class="papers-table">
+      <thead>
+        <tr><th>Theme</th><th>Weight</th><th>At floor?</th></tr>
+      </thead>
       <tbody>
-        {% for row in _sig_rows %}
-        <tr><td>{{ row.label }}</td><td>{{ row.count }}</td></tr>
+        {% for c in clusters.clusters %}
+        <tr>
+          <td>{{ c.name }}</td>
+          <td>{{ "%.2f" | format(c.weight | float) }}</td>
+          <td>
+            {% if c.at_floor %}<span class="pill warning">at floor</span>
+            {% else %}&mdash;{% endif %}
+          </td>
+        </tr>
         {% endfor %}
       </tbody>
     </table>
-  </div>
-  {% else %}
-  <p class="field-note">No feedback events yet — give feedback (save / dismiss) on discoveries to build the signal mix.</p>
-  {% endif %}
+    {% else %}
+    <p class="field-note">
+      No themes yet — run a brain-build to cluster papers.
+    </p>
+    {% endif %}
+  </sl-details>
 
   {# ----------------------------------------------------------------- #}
-  {# 3b. Feedback by source (FI-6; server-rendered inline SVG)          #}
+  {# 4. Signal mix — collapsed; Chart.js + table fallback.             #}
   {# ----------------------------------------------------------------- #}
-  <h2>Feedback by source</h2>
-  {% set _src_rows = [] %}
-  {% set _src_max = namespace(v=0) %}
-  {# Sort descending by count so the heaviest source leads the chart. #}
-  {% for source, count in summary_by_source.items() | sort(attribute='1', reverse=true) %}
-  {% set _ = _src_rows.append({"label": source, "count": count}) %}
-  {% if (count | int) > _src_max.v %}{% set _src_max.v = count | int %}{% endif %}
-  {% endfor %}
-  {% if _src_rows and _src_max.v > 0 %}
-  <p class="field-note">
-    Where each feedback signal came from (e.g. discovery cards, the themes page,
-    or an implicit Zotero save). Open-ended; <code>unknown</code> groups events
-    recorded without a source tag.
-  </p>
-  {# CU-2: Chart.js bar chart + JSON data island; table kept beside it. #}
-  {% set _src_labels = [] %}
-  {% set _src_data = [] %}
-  {% for row in _src_rows %}
-  {% set _ = _src_labels.append(row.label) %}
-  {% set _ = _src_data.append(row.count | int) %}
-  {% endfor %}
-  <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start;">
-    <div style="flex: 1; min-width: 280px; max-width: 480px;">
-      <div class="chart-box"><canvas data-chart="by-source"></canvas></div>
-      <script type="application/json" data-chart="by-source-data">{{ {"labels": _src_labels, "data": _src_data} | tojson }}</script>
+  <sl-details summary="Signal mix" data-chart-details>
+    {% set _sig_rows = [] %}
+    {% set _sig_max = namespace(v=0) %}
+    {% for signal, count in summary.items() | sort %}
+    {% set _ = _sig_rows.append({"label": signal, "count": count}) %}
+    {% if (count | int) > _sig_max.v %}{% set _sig_max.v = count | int %}{% endif %}
+    {% endfor %}
+    {% if _sig_rows and _sig_max.v > 0 %}
+    {# CU-2: Chart.js bar chart + JSON data island; table kept beside it. #}
+    {% set _sig_labels = [] %}
+    {% set _sig_data = [] %}
+    {% for row in _sig_rows %}
+    {% set _ = _sig_labels.append(row.label) %}
+    {% set _ = _sig_data.append(row.count | int) %}
+    {% endfor %}
+    <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start;">
+      <div style="flex: 1; min-width: 280px; max-width: 480px;">
+        <div class="chart-box"><canvas data-chart="signal-mix"></canvas></div>
+        <script type="application/json" data-chart="signal-mix-data">{{ {"labels": _sig_labels, "data": _sig_data} | tojson }}</script>
+      </div>
+      <table class="papers-table" style="flex: 0 0 auto;">
+        <thead><tr><th>Signal</th><th>Count</th></tr></thead>
+        <tbody>
+          {% for row in _sig_rows %}
+          <tr><td>{{ row.label }}</td><td>{{ row.count }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
-    <table class="papers-table" style="flex: 0 0 auto;">
-      <caption class="field-note" style="text-align: left;">By source, all-time totals.</caption>
-      <thead><tr><th>Source</th><th>Count</th></tr></thead>
-      <tbody>
-        {% for row in _src_rows %}
-        <tr><td>{{ row.label }}</td><td>{{ row.count }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="field-note">No feedback events yet — no source breakdown to show.</p>
-  {% endif %}
+    {% else %}
+    <p class="field-note">No feedback events yet — give feedback (save / dismiss) on discoveries to build the signal mix.</p>
+    {% endif %}
+  </sl-details>
 
   {# ----------------------------------------------------------------- #}
-  {# 4. Recent events                                                  #}
+  {# 5. Feedback by source (FI-6) — collapsed; Chart.js + table.       #}
   {# ----------------------------------------------------------------- #}
-  <h2>Recent events</h2>
-  {% if recent %}
-  <table class="papers-table">
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>DOI</th>
-        <th>Signal</th>
-        <th>Weight</th>
-        <th>Rating</th>
-        <th>Source</th>
-        <th>Created</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for ev in recent %}
-      <tr>
-        <td>{{ ev.id }}</td>
-        <td>
-          {% if ev.doi %}
-          <a href="https://doi.org/{{ ev.doi }}" target="_blank" rel="noopener" class="doi">{{ ev.doi }}</a>
-          {% else %}&mdash;{% endif %}
-        </td>
-        <td>{{ ev.signal_type }}</td>
-        <td>{{ "%.2f" | format(ev.weight | float) }}</td>
-        <td>{% if ev.rating %}{{ ev.rating }}{% else %}&mdash;{% endif %}</td>
-        <td>{% if ev.source %}{{ ev.source }}{% else %}&mdash;{% endif %}</td>
-        <td class="field-note">{% if ev.created_at %}{{ ev.created_at }}{% else %}&mdash;{% endif %}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% elif events_total %}
-  <p class="field-note">No events on this page.</p>
-  {% else %}
-  <p class="field-note">No recent events yet — give feedback (save / dismiss / rate) on discoveries to populate this log.</p>
-  {% endif %}
-
-  {# AR-7: corpus-style prev/next pagination for recent events (page size 100).
-     Rendered whenever any events exist (not gated on the current slice) so an
-     over-the-end offset still shows Prev to navigate back. Prev is hidden at
-     offset 0; Next is hidden on the last page. #}
-  {% if events_total %}
-  <div class="button-row" style="margin-top: 0.75rem;">
-    <span class="field-note">
-      {{ events_offset + 1 }}&ndash;{{ events_offset + recent|length }} of {{ events_total }}
-    </span>
-    {% if events_has_prev %}
-    <a class="btn btn-secondary btn-sm" href="/insights?events_offset={{ events_prev_offset }}">
-      &larr; Prev
-    </a>
+  <sl-details summary="Feedback by source" data-chart-details>
+    {% set _src_rows = [] %}
+    {% set _src_max = namespace(v=0) %}
+    {# Sort descending by count so the heaviest source leads the chart. #}
+    {% for source, count in summary_by_source.items() | sort(attribute='1', reverse=true) %}
+    {% set _ = _src_rows.append({"label": source, "count": count}) %}
+    {% if (count | int) > _src_max.v %}{% set _src_max.v = count | int %}{% endif %}
+    {% endfor %}
+    {% if _src_rows and _src_max.v > 0 %}
+    <p class="field-note">
+      Where each feedback signal came from (e.g. discovery cards, the themes page,
+      or an implicit Zotero save). Open-ended; <code>unknown</code> groups events
+      recorded without a source tag.
+    </p>
+    {# CU-2: Chart.js bar chart + JSON data island; table kept beside it. #}
+    {% set _src_labels = [] %}
+    {% set _src_data = [] %}
+    {% for row in _src_rows %}
+    {% set _ = _src_labels.append(row.label) %}
+    {% set _ = _src_data.append(row.count | int) %}
+    {% endfor %}
+    <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start;">
+      <div style="flex: 1; min-width: 280px; max-width: 480px;">
+        <div class="chart-box"><canvas data-chart="by-source"></canvas></div>
+        <script type="application/json" data-chart="by-source-data">{{ {"labels": _src_labels, "data": _src_data} | tojson }}</script>
+      </div>
+      <table class="papers-table" style="flex: 0 0 auto;">
+        <caption class="field-note" style="text-align: left;">By source, all-time totals.</caption>
+        <thead><tr><th>Source</th><th>Count</th></tr></thead>
+        <tbody>
+          {% for row in _src_rows %}
+          <tr><td>{{ row.label }}</td><td>{{ row.count }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="field-note">No feedback events yet — no source breakdown to show.</p>
     {% endif %}
-    {% if events_has_next %}
-    <a class="btn btn-secondary btn-sm" href="/insights?events_offset={{ events_next_offset }}">
-      Next &rarr;
-    </a>
-    {% endif %}
-  </div>
-  {% endif %}
+  </sl-details>
 
-  {# FI-3: feedback timeline chart. Lazy HTMX load — the fragment replaces this
-     container's own contents on page load so the page renders instantly. #}
-  <div id="insights-timeline"
-       hx-get="/insights/timeline?granularity=week&amp;dimension=signal"
-       hx-trigger="load"
-       hx-target="this"
-       hx-swap="innerHTML"></div>
+  {# ----------------------------------------------------------------- #}
+  {# 6. Recent events — collapsed; in-place HTMX pager (req #4). The    #}
+  {#    table + Prev/Next live inside #insights-events-body so paging   #}
+  {#    swaps only that wrapper (hx-select), leaving the <sl-details>   #}
+  {#    open. The plain href is the no-JS / keyboard fallback.          #}
+  {# ----------------------------------------------------------------- #}
+  <sl-details summary="Recent events">
+    <div id="insights-events-body">
+      {% if recent %}
+      <table class="papers-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>DOI</th>
+            <th>Signal</th>
+            <th>Weight</th>
+            <th>Rating</th>
+            <th>Source</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ev in recent %}
+          <tr>
+            <td>{{ ev.id }}</td>
+            <td>
+              {% if ev.doi %}
+              <a href="https://doi.org/{{ ev.doi }}" target="_blank" rel="noopener" class="doi">{{ ev.doi }}</a>
+              {% else %}&mdash;{% endif %}
+            </td>
+            <td>{{ ev.signal_type }}</td>
+            <td>{{ "%.2f" | format(ev.weight | float) }}</td>
+            <td>{% if ev.rating %}{{ ev.rating }}{% else %}&mdash;{% endif %}</td>
+            <td>{% if ev.source %}{{ ev.source }}{% else %}&mdash;{% endif %}</td>
+            <td class="field-note">{% if ev.created_at %}{{ ev.created_at }}{% else %}&mdash;{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% elif events_total %}
+      <p class="field-note">No events on this page.</p>
+      {% else %}
+      <p class="field-note">No recent events yet — give feedback (save / dismiss / rate) on discoveries to populate this log.</p>
+      {% endif %}
+
+      {# AR-7: corpus-style prev/next pagination for recent events (page size 100).
+         Rendered whenever any events exist (not gated on the current slice) so an
+         over-the-end offset still shows Prev to navigate back. Prev is hidden at
+         offset 0; Next is hidden on the last page.
+
+         P4 in-place HTMX (P3.4 pattern): hx-get fetches the full page, hx-select
+         keeps only #insights-events-body, leaving this <sl-details> open. The
+         plain href is the no-JS / keyboard fallback. #}
+      {% if events_total %}
+      <div class="button-row" style="margin-top: 0.75rem;">
+        <span class="field-note">
+          {{ events_offset + 1 }}&ndash;{{ events_offset + recent|length }} of {{ events_total }}
+        </span>
+        {% if events_has_prev %}
+        <a class="btn btn-secondary btn-sm" role="button"
+           href="/insights?events_offset={{ events_prev_offset }}"
+           hx-get="/insights?events_offset={{ events_prev_offset }}"
+           hx-target="#insights-events-body" hx-select="#insights-events-body" hx-swap="outerHTML">
+          &larr; Prev
+        </a>
+        {% endif %}
+        {% if events_has_next %}
+        <a class="btn btn-secondary btn-sm" role="button"
+           href="/insights?events_offset={{ events_next_offset }}"
+           hx-get="/insights?events_offset={{ events_next_offset }}"
+           hx-target="#insights-events-body" hx-select="#insights-events-body" hx-swap="outerHTML">
+          Next &rarr;
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>{# /#insights-events-body #}
+  </sl-details>
+
+  {# ----------------------------------------------------------------- #}
+  {# 7. Timeline — collapsed; lazy fragment fetches on first expand.    #}
+  {#    The Chart.js canvas renders only after the details is shown, so #}
+  {#    it sizes correctly without the sl-after-show resize dance.      #}
+  {# ----------------------------------------------------------------- #}
+  <sl-details summary="Feedback timeline">
+    <div id="insights-timeline"
+         hx-get="/insights/timeline?granularity=week&amp;dimension=signal"
+         hx-trigger="sl-show once from:closest sl-details"
+         hx-target="this"
+         hx-swap="innerHTML">
+      <p class="field-note">Expand to load the feedback timeline…</p>
+    </div>
+  </sl-details>
 </section>
 {% endblock %}

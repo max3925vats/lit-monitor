@@ -1,51 +1,36 @@
 <section class="discovery-controls card"
-  hx-get="/api/discovery/controls" hx-trigger="every 5s" hx-swap="outerHTML">
+  data-running="{{ 'true' if is_running else 'false' }}"
+  hx-get="/api/discovery/controls" hx-trigger="every 5s, dischange from:body" hx-swap="outerHTML">
   {% if is_running %}
   <p class="pill warning">
     {% if dry_run %}dry-run{% else %}running{% endif %} —
     pid {{ pid }}, started {{ started_at }}
   </p>
-  <form hx-post="/api/discovery/stop" hx-target="#discovery-result" hx-swap="innerHTML">
-    <button type="submit" class="button danger">Stop</button>
+  <form hx-post="/api/discovery/stop" hx-swap="none"
+        hx-on::after-request="htmx.trigger(document.body, 'dischange')"
+        style="margin-top: 1rem;">
+    <sl-button variant="danger" type="submit">Stop</sl-button>
     <p class="field-note">Sends SIGTERM; SIGKILL fallback after 30 seconds.</p>
   </form>
   {% else %}
-  {# FG-3: rag_mode select macro — included in each form so the chosen mode is
-     submitted regardless of which button is pressed. Default comes from
-     retrieval.default_mode (default_rag_mode in context). #}
-  {% macro rag_mode_select() %}
-  <label class="field-note" style="display:block; margin-bottom:0.25rem;">
-    Retrieval mode
-    <select name="rag_mode">
+  {# Single form with ONE rag_mode selector; both buttons carry dry_run via name/value. #}
+  <form class="control-form" hx-post="/api/discovery/start"
+        hx-swap="none"
+        hx-on::after-request="htmx.trigger(document.body, 'dischange')"
+        hx-encoding="multipart/form-data">
+    <sl-select name="rag_mode" label="Retrieval mode" value="{{ default_rag_mode }}" style="max-width:14rem">
       {% for m in (rag_modes or ("vector", "graph", "hybrid")) %}
-      <option value="{{ m }}"{% if m == default_rag_mode %} selected{% endif %}>{{ m }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  {% endmacro %}
-  <div class="discovery-buttons">
-    <form hx-post="/api/discovery/start"
-          hx-target="#discovery-result" hx-swap="innerHTML"
-          hx-encoding="multipart/form-data"
-          style="display:inline-block; margin-right:0.5rem;">
-      <input type="hidden" name="dry_run" value="false">
-      {{ rag_mode_select() }}
-      <button type="submit" class="button">Run now</button>
-    </form>
-    <form hx-post="/api/discovery/start"
-          hx-target="#discovery-result" hx-swap="innerHTML"
-          hx-encoding="multipart/form-data"
-          style="display:inline-block;">
-      <input type="hidden" name="dry_run" value="true">
-      {{ rag_mode_select() }}
-      <button type="submit" class="button">Dry-run (preview only)</button>
-    </form>
-  </div>
+      <sl-option value="{{ m }}">{{ m }}</sl-option>{% endfor %}
+    </sl-select>
+    <div class="button-row">
+      <sl-button variant="primary" type="submit" name="dry_run" value="false">Run now</sl-button>
+      <sl-button variant="default" type="submit" name="dry_run" value="true">Dry-run (preview only)</sl-button>
+    </div>
+  </form>
   <p class="field-note">
     "Run now" ingests + writes to vault + state DB.
     "Dry-run" only previews — no writes.
     Graph/hybrid modes require the <code>[graph]</code> extra.
   </p>
   {% endif %}
-  <div id="discovery-result"></div>
 </section>

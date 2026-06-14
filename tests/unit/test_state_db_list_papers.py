@@ -107,3 +107,58 @@ def test_list_papers_sort_year_desc(db):
     rows, _ = db.list_papers(sort="year", order="desc")
     years = [x["year"] or 0 for x in rows]
     assert years == sorted(years, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# P4: exclude_status — the corpus list shows only INGESTED papers, never the
+# hundreds of un-ingested 'discovered' candidates discovery surfaces per run.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mixed_status_db(tmp_path):
+    """Seed a corpus mixing ingested rows with un-ingested 'discovered' ones."""
+    state = StateDB(str(tmp_path / "state.db"))
+    seeds = [
+        ("10.1/a", "Ingested paper A", "extraction_complete"),
+        ("10.2/b", "Ingested review B", "extraction_complete"),
+        ("10.3/c", "No-markdown paper C", "no_markdown"),
+        ("10.4/d", "Discovery candidate D", "discovered"),
+        ("10.5/e", "Discovery candidate E", "discovered"),
+        ("10.6/f", "Discovery candidate F", "discovered"),
+    ]
+    for idx, (doi, title, status) in enumerate(seeds):
+        state.upsert_paper(
+            {
+                "doi": doi,
+                "title": title,
+                "year": 2020 + idx,
+                "source_type": "paper",
+                "status": status,
+                "extraction_json": json.dumps({"core_finding": "x"}),
+                "last_updated": f"2026-06-0{idx + 1}",
+            }
+        )
+    return state
+
+
+def test_list_papers_default_excludes_discovered(mixed_status_db):
+    # Default call (no exclude_status passed) must drop the 3 'discovered' rows
+    # from BOTH the rows and the total count.
+    rows, total = mixed_status_db.list_papers(limit=50, offset=0)
+    statuses = {r["status"] for r in rows}
+    assert "discovered" not in statuses
+    assert len(rows) == 3 and total == 3
+
+
+def test_list_papers_explicit_exclude_status(mixed_status_db):
+    rows, total = mixed_status_db.list_papers(exclude_status=("discovered",))
+    assert all(r["status"] != "discovered" for r in rows)
+    assert len(rows) == 3 and total == 3
+
+
+def test_list_papers_empty_exclude_status_returns_all(mixed_status_db):
+    # exclude_status=() disables the filter → every row (incl. discovered).
+    rows, total = mixed_status_db.list_papers(exclude_status=(), limit=50)
+    assert len(rows) == 6 and total == 6
+    assert sum(1 for r in rows if r["status"] == "discovered") == 3

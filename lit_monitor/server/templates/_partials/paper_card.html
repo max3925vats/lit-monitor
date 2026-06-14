@@ -21,7 +21,7 @@
 {% set _idx = card_index if card_index is defined else loop.index %}
 {% set _source = feedback_source if feedback_source is defined else "discovery" %}
 
-<div class="paper-card card" id="paper-{{ _idx }}">
+<sl-card class="paper-card" id="paper-{{ _idx }}">
   <h3>
     {% if paper.doi %}
     <a href="https://doi.org/{{ paper.doi }}" target="_blank" rel="noopener">{{ paper.title or "Untitled" }}</a>
@@ -39,10 +39,10 @@
     &middot;
     <span class="score">score {{ "%.3f" | format(paper.score or 0 | float) }}</span>
     {% if paper.ingested %}
-      &middot; <span class="badge ingested">ingested</span>
+      &middot; <sl-badge variant="success" pill>ingested</sl-badge>
     {% endif %}
     {% if paper.distance_to_centroid is defined and paper.distance_to_centroid is not none %}
-      &middot; <span class="badge distance">dist {{ "%.3f" | format(paper.distance_to_centroid | float) }}</span>
+      &middot; <sl-badge variant="neutral" pill>dist {{ "%.3f" | format(paper.distance_to_centroid | float) }}</sl-badge>
     {% endif %}
   </p>
 
@@ -58,34 +58,34 @@
   {# Bundle H: feedback buttons — gated by web_ui.show_feedback_buttons (P4: default true). #}
   {% if show_feedback_buttons %}
   <div class="feedback-row">
-    <button type="button" class="btn btn-sm btn-action"
+    <sl-button size="small" variant="default"
             hx-post="/api/feedback"
             hx-vals='{"doi": "{{ paper.doi }}", "signal_type": "saved", "source": "{{ _source }}"}'
             hx-swap="none"
-            title="Save this paper">&#128190; Save</button>
-    <button type="button" class="btn btn-sm btn-action"
+            title="Save this paper">&#128190; Save</sl-button>
+    <sl-button size="small" variant="default"
             hx-post="/api/feedback"
             hx-vals='{"doi": "{{ paper.doi }}", "signal_type": "dismissed", "source": "{{ _source }}"}'
             hx-swap="none"
-            title="Dismiss this paper">&#10007; Dismiss</button>
-    <button type="button" class="btn btn-sm btn-action"
+            title="Dismiss this paper">&#10007; Dismiss</sl-button>
+    <sl-button size="small" variant="default"
             hx-post="/api/feedback"
             hx-vals='{"doi": "{{ paper.doi }}", "signal_type": "thumbs_up", "source": "{{ _source }}"}'
             hx-swap="none"
-            title="Thumbs up">&#128077;</button>
-    <button type="button" class="btn btn-sm btn-action"
+            title="Thumbs up">&#128077;</sl-button>
+    <sl-button size="small" variant="default"
             hx-post="/api/feedback"
             hx-vals='{"doi": "{{ paper.doi }}", "signal_type": "thumbs_down", "source": "{{ _source }}"}'
             hx-swap="none"
-            title="Thumbs down">&#128078;</button>
+            title="Thumbs down">&#128078;</sl-button>
     <details class="rate-widget">
-      <summary class="btn btn-sm btn-action">&#11088; Rate</summary>
+      <summary class="rate-summary">&#11088; Rate</summary>
       <form class="rate-form"
             hx-post="/api/feedback"
             hx-vals='{"doi": "{{ paper.doi }}", "signal_type": "rated", "source": "{{ _source }}"}'
             hx-swap="none">
         {% for r in [1, 2, 3, 4, 5] %}
-        <button type="submit" name="rating" value="{{ r }}" class="btn btn-sm rate-btn">{{ r }}</button>
+        <sl-button type="submit" size="small" name="rating" value="{{ r }}">{{ r }}</sl-button>
         {% endfor %}
       </form>
     </details>
@@ -100,15 +100,15 @@
     Double-encoding would produce "%2F" in the request path and break the route.
   #}
   <div class="action-row">
-    <button type="button" class="btn btn-secondary btn-sm"
+    <sl-button size="small" variant="default"
             hx-post="/api/papers/{{ paper.doi }}/relink"
             hx-target="#paper-{{ _idx }} .action-result"
-            hx-swap="innerHTML">Relink</button>
-    <button type="button" class="btn btn-secondary btn-sm"
+            hx-swap="innerHTML">Relink</sl-button>
+    <sl-button size="small" variant="default"
             hx-post="/api/papers/{{ paper.doi }}/re-extract"
             hx-target="#paper-{{ _idx }} .action-result"
-            hx-swap="innerHTML">Re-extract</button>
+            hx-swap="innerHTML">Re-extract</sl-button>
     <span class="action-result"></span>
   </div>
   {% endif %}
-</div>
+</sl-card>

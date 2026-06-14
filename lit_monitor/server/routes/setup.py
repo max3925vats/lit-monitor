@@ -37,6 +37,19 @@ from lit_monitor.server.runtime import get_runtime
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/setup", tags=["setup"])
 
+
+def _load_extraction_config() -> dict[str, Any]:
+    """Return current extraction.yaml content as a dict (best-effort).
+
+    Moved here from routes/settings.py when the standalone /settings page was
+    folded into the wizard as step-9 (Tuning). Used to pre-fill the tuning
+    form's current advanced values.
+    """
+    try:
+        return load_config("extraction")
+    except Exception:  # noqa: BLE001 — defensive: best-effort pre-fill
+        return {}
+
 # F3.3: the build-vocabulary subprocess now lives in the shared process
 # registry at ``runtime.processes["vocabulary"]``. The previous module-level
 # globals (``_vocab_proc``, ``_vocab_lock``, ``_vocab_output``) are gone.
@@ -419,13 +432,17 @@ def _build_step_descriptors(checks: dict[str, tuple[bool, str]]) -> list[dict[st
         {"num": 6, "title": "Concepts (vocabulary)", "status": "ok" if step6_ok else "missing", "url": "/setup/step-6", "optional": True},
         {"num": 7, "title": "Researchers", "status": "ok" if step7_ok else "missing", "url": "/setup/step-7", "optional": True},
         {"num": 8, "title": "Item routing (advanced)", "status": "ok" if step8_ok else "missing", "url": "/setup/step-8", "optional": False},
+        # Step 9 is OPTIONAL advanced tuning (ranking / clustering / feedback).
+        # Every setting has a default, so it never blocks the completion gate —
+        # its status is a static "ok" (mirrors the optional steps 6/7 pattern).
+        {"num": 9, "title": "Tuning (ranking / clustering / feedback)", "status": "ok", "url": "/setup/step-9", "optional": True},
     ]
 
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
 def landing(request: Request) -> HTMLResponse:
-    """Wizard landing — one status card per step (8 total)."""
+    """Wizard landing — one status card per step (9 total)."""
     from lit_monitor.setup.check_configured import check_configured
 
     checks = check_configured()
@@ -671,20 +688,31 @@ def collections_options(request: Request, current: str = "") -> HTMLResponse:
 
     from html import escape
 
+    current_esc = escape(current, quote=True)
+
     if not names:
-        current_esc = escape(current, quote=True)
+        # Fallback: sl-input (valid form-associated element) + warning banner.
+        # Using sl-input (not raw <input>) keeps the name="collection_name"
+        # field consistent and avoids invalid DOM (bare <input> inside <sl-select>).
         html = (
-            f'<input type="text" name="collection_name" value="{current_esc}">'
+            f'<sl-input name="collection_name" value="{current_esc}"'
+            f' label="Collection name"></sl-input>'
             '<div class="banner warning">Complete step 1 first to see your collections, '
             'or type a name manually.</div>'
         )
     else:
+        # Emit the full sl-select so value= can be set on the host element.
+        # innerHTML-swap cannot reach the host's attributes, so the wrapper div
+        # in step_paths.html is the hx-target and we return the whole control.
         opts = "\n".join(
-            f'<option value="{escape(n, quote=True)}"'
-            f'{" selected" if n == current else ""}>{escape(n)}</option>'
+            f'  <sl-option value="{escape(n, quote=True)}">{escape(n)}</sl-option>'
             for n in names
         )
-        html = opts
+        html = (
+            f'<sl-select name="collection_name" value="{current_esc}">\n'
+            f'{opts}\n'
+            f'</sl-select>'
+        )
 
     return HTMLResponse(html)
 
@@ -1342,6 +1370,27 @@ def save_routing(
     )
 
 
+# --- Step 9: Tuning (folded-in Advanced Settings) ----------------------
+
+
+@router.get("/step-9", response_class=HTMLResponse)
+def step_tuning_form(request: Request) -> HTMLResponse:
+    """Step 9 (optional): advanced ranking / clustering / feedback tuning.
+
+    This is the former standalone /settings page, folded into the wizard. It
+    pre-fills the three sections from the current extraction.yaml and posts to
+    the unchanged /api/settings/{section} per-section save API.
+    """
+    cfg = _load_extraction_config()
+    ctx = {
+        "current_step": 9,
+        "ranking": cfg.get("ranking", {}) or {},
+        "clustering": cfg.get("clustering", {}) or {},
+        "web_ui": cfg.get("web_ui", {}) or {},
+    }
+    return templates.TemplateResponse(request, "setup/step_tuning.html", ctx)
+
+
 # --- F2.12: completion checklist ---------------------------------------
 
 
@@ -1464,9 +1513,12 @@ def setup_check(request: Request, name: str) -> HTMLResponse:
             status_code=404,
         )
 
-    # Aggregate the sub-checks into one pill.
-    all_ok = all(ok for ok, _msg in results.values())
-    failing = [n for n, (ok, _msg) in results.items() if not ok]
+    # Aggregate the sub-checks into one pill. Tolerate both plain (ok, msg)
+    # 2-tuples (ollama/zotero/vault checks) AND the 3-field CheckResult
+    # NamedTuple (ok, message, severity) returned by check_configured() — the
+    # latter previously raised "too many values to unpack" and 500'd this row.
+    all_ok = all(ok for ok, *_rest in results.values())
+    failing = [n for n, (ok, *_rest) in results.items() if not ok]
     if all_ok:
         return HTMLResponse(
             f'<span class="pill success">all OK ({len(results)} checks)</span>'

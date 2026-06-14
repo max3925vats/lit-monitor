@@ -151,7 +151,9 @@ CREATE TABLE IF NOT EXISTS discovery_runs (
     status           TEXT NOT NULL DEFAULT 'running',
     total_found      INTEGER DEFAULT 0,
     total_ingested   INTEGER DEFAULT 0,
-    run_params_json  TEXT
+    run_params_json  TEXT,
+    run_log_id       TEXT,         -- FK → run_log.run_id (uuid); NULL for pre-FK historical rows
+    trigger          TEXT NOT NULL DEFAULT 'manual'  -- 'manual' (web/CLI) | 'scheduled' (OS scheduler)
 );
 CREATE TABLE IF NOT EXISTS discovery_paper_results (
     -- P1: one row per ranked candidate seen by a discovery run.
@@ -263,6 +265,15 @@ CREATE TABLE IF NOT EXISTS interest_vectors (
     vector       BLOB,
     n_events     INTEGER NOT NULL DEFAULT 0,
     computed_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS corpus_stat_snapshots (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    papers        INTEGER NOT NULL DEFAULT 0,
+    graph_nodes   INTEGER NOT NULL DEFAULT 0,
+    themes        INTEGER NOT NULL DEFAULT 0,
+    run_type      TEXT,
+    run_id        TEXT
 );
 """
 # ---------------------------------------------------------------------------
@@ -470,6 +481,16 @@ class StateDB:
                 # when a score_breakdown dict is provided.
                 ("discovery_paper_results", "score_breakdown_json",
                  "ALTER TABLE discovery_paper_results ADD COLUMN score_breakdown_json TEXT"),
+                # Discovery history join: FK linking discovery_runs → run_log.run_id (uuid).
+                # NULL for historical rows written before this column existed.
+                ("discovery_runs", "run_log_id",
+                 "ALTER TABLE discovery_runs ADD COLUMN run_log_id TEXT"),
+                # Trigger marker: how this run was started — 'manual' (web "Run now"
+                # / CLI) vs 'scheduled' (OS scheduler). SQLite permits adding a NOT
+                # NULL column only with a non-NULL default; 'manual' backfills any
+                # pre-existing rows.
+                ("discovery_runs", "trigger",
+                 "ALTER TABLE discovery_runs ADD COLUMN trigger TEXT NOT NULL DEFAULT 'manual'"),
             ]
             for table, column, sql in additive_migrations:
                 if self._column_exists(conn, table, column):
@@ -721,6 +742,7 @@ class StateDB:
         order: str = "desc",
         limit: int = 50,
         offset: int = 0,
+        exclude_status: tuple[str, ...] = ("discovered",),
     ) -> tuple[list[dict], int]:
         """FE2-1: search / filter / sort / paginate the processed papers corpus.
 
@@ -777,6 +799,17 @@ class StateDB:
         if source_type:
             where.append("source_type = ?")
             params.append(source_type)
+
+        # P4: exclude un-ingested 'discovered' candidates by default. Discovery
+        # surfaces hundreds of candidates per run; only the top-K get ingested.
+        # The corpus list is a read lens over INGESTED papers, so those rows are
+        # filtered out of both the rows WHERE and the COUNT WHERE. One ? per
+        # value — exclude_status is a trusted code-default, but parameterising
+        # keeps the SQL-safety invariant uniform. exclude_status=() disables it.
+        if exclude_status:
+            placeholders = ", ".join("?" for _ in exclude_status)
+            where.append(f"status NOT IN ({placeholders})")
+            params.extend(exclude_status)
 
         # Column-based status gaps map to a trusted predicate; low_confidence is
         # handled in Python below (its predicate lives inside extraction_json).
@@ -1555,14 +1588,53 @@ class StateDB:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def write_corpus_snapshot(
+        self,
+        *,
+        papers: int,
+        graph_nodes: int,
+        themes: int,
+        run_type: str | None = None,
+        run_id: str | None = None,
+    ) -> None:
+        """Record one corpus-state snapshot (papers/graph_nodes/themes) for the
+        stats-banner deltas. Called at run completion only."""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO corpus_stat_snapshots "
+                "(papers, graph_nodes, themes, run_type, run_id) VALUES (?, ?, ?, ?, ?)",
+                (int(papers), int(graph_nodes), int(themes), run_type, run_id),
+            )
+
+    def get_recent_snapshots(self, limit: int = 2) -> list[dict]:
+        """Return the most recent corpus snapshots, newest first."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, snapshot_at, papers, graph_nodes, themes, run_type, run_id "
+                "FROM corpus_stat_snapshots ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     # -- P1: structured discovery-run tracking --
 
-    def start_discovery_run(self, run_params: dict) -> int:
+    def start_discovery_run(
+        self,
+        run_params: dict,
+        run_log_id: str | None = None,
+        trigger: str = "manual",
+    ) -> int:
         """P1: insert a discovery_runs row with status='running'; return new run_id.
 
         Args:
             run_params: Arbitrary dict of run parameters (topics, since_days,
                 rag_mode, etc.) serialised as JSON for later auditing.
+            run_log_id: The uuid of the sibling run_log row (from start_run), so
+                discovery history can join the two tables. None for callers that
+                don't create a run_log row (e.g. dry-run paths / legacy tests),
+                which leaves the column NULL.
+            trigger: How this run was started — 'manual' (web "Run now" / CLI) or
+                'scheduled' (OS scheduler). Defaults to 'manual'.
 
         Returns:
             Integer primary-key of the newly inserted row.
@@ -1570,8 +1642,9 @@ class StateDB:
         import json as _json
         with self._connect() as conn:
             cur = conn.execute(
-                "INSERT INTO discovery_runs (run_params_json) VALUES (?)",
-                (_json.dumps(run_params),),
+                "INSERT INTO discovery_runs (run_params_json, run_log_id, trigger) "
+                "VALUES (?, ?, ?)",
+                (_json.dumps(run_params), run_log_id, trigger),
             )
             # _connect() commits on context-manager exit, but we need lastrowid
             # before that happens — SQLite guarantees it is set after execute().

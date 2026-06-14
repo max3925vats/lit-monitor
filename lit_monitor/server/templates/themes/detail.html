@@ -12,26 +12,30 @@
       {% endif %}
       &middot; computed {{ (cluster.computed_at or "")[:10] or "—" }}
     </p>
+    {# Primary actions at the TOP of the page (rubric #6). #}
     <div class="button-row">
-      <a href="/themes" class="btn btn-secondary">&larr; All themes</a>
-      <button type="button" class="btn btn-secondary btn-sm"
+      <sl-button href="/themes" variant="default" size="small">&larr; All themes</sl-button>
+      <sl-button size="small" variant="default"
               hx-post="/api/themes/{{ cluster.id }}/write-back/tags"
               hx-target="#writeback-result"
-              hx-swap="innerHTML">
+              hx-swap="innerHTML"
+              title="Dry-run: preview tag changes in Zotero">
         Write tags (dry-run)
-      </button>
-      <button type="button" class="btn btn-secondary btn-sm"
+      </sl-button>
+      <sl-button size="small" variant="default"
               hx-post="/api/themes/{{ cluster.id }}/write-back/collections"
               hx-target="#writeback-result"
-              hx-swap="innerHTML">
+              hx-swap="innerHTML"
+              title="Dry-run: preview sub-collection changes in Zotero">
         Write collection (dry-run)
-      </button>
+      </sl-button>
     </div>
-    <div id="writeback-result" class="dev-result"></div>
+    {# Neutral result callout (NOT the amber dev-output style). #}
+    <div id="writeback-result" class="writeback-result"></div>
   </div>
 
   {% if not papers %}
-    <p class="field-note">No papers in this cluster.</p>
+    <p class="field-note">No papers in this cluster yet — run <code>lit-monitor cluster assign</code> to populate it.</p>
   {% else %}
   <div class="paper-cards">
     {% for p in papers %}

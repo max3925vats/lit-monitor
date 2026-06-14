@@ -16,19 +16,21 @@
 
    All content is rendered through Jinja autoescape ONLY — never |safe.
 #}
-<div class="card" id="corpus-related-card">
-  <h2>Related work</h2>
-
-  {# Mode toggle: each link re-requests this fragment for a different retrieval
-     mode and swaps itself back into #corpus-related. The DOI path is literal;
-     the mode query value is urlencode'd. #}
+{# P4: rendered inside the detail page's <sl-details summary="Related work">, so
+   no inner card/<h2> heading here — the sl-details summary IS the heading
+   (rubric #12). #}
+<div id="corpus-related-card">
+  {# Mode TABS: each button re-requests this fragment for a different retrieval
+     mode and swaps itself back into #corpus-related (HTMX only — NO href, which
+     would navigate to the raw fragment URL instead of swapping in place). The
+     DOI path is literal; the mode query value is urlencode'd. #}
   <p class="button-row" role="group" aria-label="Retrieval mode">
     {% for m in ["vector", "graph", "hybrid"] %}
-    <a class="btn btn-secondary btn-sm{% if m == mode %} active{% endif %}"
+    <sl-button size="small"
+       variant="{% if m == mode %}primary{% else %}default{% endif %}"
        hx-get="/corpus/{{ doi }}/related?mode={{ m | urlencode }}"
        hx-target="#corpus-related"
-       hx-swap="innerHTML"
-       href="/corpus/{{ doi }}/related?mode={{ m | urlencode }}">{{ m }}</a>
+       hx-swap="innerHTML">{{ m }}</sl-button>
     {% endfor %}
   </p>
 
@@ -38,11 +40,7 @@
     {# No-data path is mode-specific so we never lie about why it's empty:
        graph/hybrid need the graph built; vector needs embeddings. #}
     {% if mode == "vector" %}
-  <p class="field-note">
-    No embedded neighbours found — this paper has no vector embeddings yet, so
-    similar papers can't be computed. Run <code>lit-monitor brain-build</code>
-    to embed the corpus.
-  </p>
+  <p class="field-note">No related works found in Corpus.</p>
     {% else %}
   <p class="field-note">
     No knowledge graph is built yet, so related work cannot be computed. Run
@@ -50,9 +48,11 @@
   </p>
     {% endif %}
   {% elif related %}
+  {# The "Via" column is redundant — the active mode tab already states how these
+     were retrieved (vector / graph / hybrid). #}
   <table class="papers-table">
     <thead>
-      <tr><th>Paper</th><th>Via</th><th>Score</th></tr>
+      <tr><th>Paper</th><th>Score</th></tr>
     </thead>
     <tbody>
       {% for item in related %}
@@ -62,27 +62,12 @@
              detail route matches. #}
           <a href="/corpus/{{ item.doi }}">{{ item.title or item.doi }}</a>
         </td>
-        <td>
-          {# Truthful per-result provenance: derived from each row's own
-             `source` field (how it was actually retrieved), NOT from the active
-             mode toggle. A vector neighbour is labelled as such even if the
-             toggle were somehow inconsistent. #}
-          {% if item.source == "vector" %}
-          <span class="pill" title="found by embedding cosine similarity">via vector similarity</span>
-          {% elif item.source == "graph" %}
-          <span class="pill" title="found via the knowledge graph">via knowledge graph</span>
-          {% elif item.source == "hybrid" %}
-          <span class="pill" title="found by fusing vector + graph">via hybrid (vector + graph)</span>
-          {% else %}
-          <span class="muted">&mdash;</span>
-          {% endif %}
-        </td>
         <td><span class="score">{{ "%.3f" | format(item.score or 0 | float) }}</span></td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
   {% else %}
-  <p class="field-note">No related papers found for this mode.</p>
+  <p class="field-note">No related works found in Corpus.</p>
   {% endif %}
 </div>

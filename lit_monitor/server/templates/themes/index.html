@@ -12,8 +12,9 @@
   </div>
 
   {% if not themes %}
+    {# Real empty state (rubric #5) referencing the actual CLI command. #}
     <p class="field-note">
-      No clusters found. Run a brain-build to generate theme clusters.
+      No themes built yet — run <code>lit-monitor cluster recompute</code> to group your corpus.
     </p>
   {% else %}
   <table class="papers-table">
@@ -30,33 +31,44 @@
       {% for theme in themes %}
       <tr>
         <td><a href="/themes/{{ theme.id }}">{{ theme.display_name }}</a></td>
-        <td>{{ theme.n_papers }}</td>
+        {# Count links to Corpus Health pre-filtered to this cluster (rubric #17).
+           The corpus filter dropdown keys on display_name, so ?theme= lands on
+           exactly this cluster's ingested papers. #}
+        <td><a href="/corpus?theme={{ theme.display_name | urlencode }}">{{ theme.n_papers }}</a></td>
         <td>
           {% if theme.cohesion_score is not none %}
-            {{ "%.3f" | format(theme.cohesion_score | float) }}
+            {# Numeric value plus a qualitative <sl-badge> cue (rubric #16).
+               Threshold 0.5 is a DISPLAY heuristic only — tight (success) vs
+               loose (neutral); it does not gate any behaviour. #}
+            {% set _coh = theme.cohesion_score | float %}
+            <sl-badge variant="{{ 'success' if _coh >= 0.5 else 'neutral' }}" pill>
+              {{ "%.2f" | format(_coh) }}
+            </sl-badge>
           {% else %}
             &mdash;
           {% endif %}
         </td>
-        <td class="field-note">{{ (theme.computed_at or "")[:10] or "—" }}</td>
+        <td class="field-note">{% if theme.computed_at %}{{ theme.computed_at[:10] }}{% else %}&mdash;{% endif %}</td>
         <td>
           <div class="button-row">
-            <button type="button" class="btn btn-secondary btn-sm"
+            {# Dry-run PREVIEW posts — all HTMX attrs preserved. #}
+            <sl-button size="small" variant="default"
                     hx-post="/api/themes/{{ theme.id }}/write-back/tags"
                     hx-target="#writeback-result-{{ theme.id }}"
                     hx-swap="innerHTML"
                     title="Dry-run: preview tag changes in Zotero">
               Write tags (dry-run)
-            </button>
-            <button type="button" class="btn btn-secondary btn-sm"
+            </sl-button>
+            <sl-button size="small" variant="default"
                     hx-post="/api/themes/{{ theme.id }}/write-back/collections"
                     hx-target="#writeback-result-{{ theme.id }}"
                     hx-swap="innerHTML"
                     title="Dry-run: preview sub-collection changes in Zotero">
               Write collection (dry-run)
-            </button>
+            </sl-button>
           </div>
-          <div id="writeback-result-{{ theme.id }}" class="dev-result"></div>
+          {# Neutral result callout (NOT the amber dev-output style). #}
+          <div id="writeback-result-{{ theme.id }}" class="writeback-result"></div>
         </td>
       </tr>
       {% endfor %}
