@@ -54,6 +54,30 @@ def _reset_config_cache():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_ambient_config(tmp_path_factory, monkeypatch):
+    """Make ``config absent`` the default for unit tests, matching CI.
+
+    ``lit_monitor.core.config.config_dir()`` resolves the active config dir with
+    a three-tier precedence; tier 2 is ``~/.config/lit-monitor`` *when it already
+    holds paths.yaml*. On a developer's machine that file usually exists, so
+    ``get_config()`` succeeds and config-dependent routes/helpers render their
+    configured path. **CI has no such file**, so the same code degrades / errors
+    there — which is exactly how a green local run can hide a red CI (the
+    Shoelace P0–P5 merge tripped this: 5 route tests passed locally, failed CI).
+
+    Pinning ``LIT_MONITOR_ROOT`` to an empty temp dir (tier 1, highest
+    precedence) makes ``config_dir()/paths.yaml`` absent everywhere, so local ==
+    CI. Tests that need config must provide it explicitly — by monkeypatching
+    ``get_config`` / ``get_runtime`` (the established pattern), or by setting
+    their own ``LIT_MONITOR_ROOT`` / ``delenv``-ing it, which override this via
+    the shared function-scoped monkeypatch.
+    """
+    empty_root = tmp_path_factory.mktemp("lm-no-ambient-config")
+    monkeypatch.setenv("LIT_MONITOR_ROOT", str(empty_root))
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _reset_chromadb_shared_system_cache():
     """Drop ChromaDB's cached System objects before every unit test."""
     try:
