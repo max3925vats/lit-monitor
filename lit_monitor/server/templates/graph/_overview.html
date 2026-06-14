@@ -47,8 +47,9 @@
     {% endif %}
   </p>
 
-  {# --- Entities by type (open by default) --------------------------------- #}
-  <sl-details summary="Entities by type ({{ by_type | length }})" open>
+  {# --- Entities by type (open only when non-empty — don't auto-open an empty
+         section) ------------------------------------------------------------ #}
+  <sl-details summary="Entities by type ({{ by_type | length }})"{% if by_type %} open{% endif %}>
     {% if by_type %}
     <table class="papers-table">
       <thead><tr><th>Type</th><th>Count</th></tr></thead>

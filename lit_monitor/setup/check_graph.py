@@ -28,10 +28,12 @@ logger = logging.getLogger(__name__)
 
 
 def _indexed_total() -> tuple[int, int]:
-    """Return ``(graph_indexed_count, total_papers)`` from the state DB.
+    """Return ``(graph_indexed_count, ingested_total)`` from the state DB.
 
-    Mirrors the count idiom in ``scripts/cli.py`` (``SELECT COUNT(*) FROM papers
-    WHERE graph_indexed = 1`` and the unfiltered total). Opens a fresh
+    ``graph_indexed_count`` = ``COUNT(*) WHERE graph_indexed = 1``. The total is
+    the INGESTED papers (``status != 'discovered'``) — graph-indexing only
+    applies to papers brain-build actually ingested, so the denominator excludes
+    the discovery long-tail (matches Corpus Health's scoping). Opens a fresh
     :class:`StateDB` via the same config accessor the CLI uses.
 
     Defensive: any failure (missing config, unbuilt DB, schema mismatch) returns
@@ -46,7 +48,14 @@ def _indexed_total() -> tuple[int, int]:
             indexed = conn.execute(
                 "SELECT COUNT(*) FROM papers WHERE graph_indexed = 1"
             ).fetchone()[0]
-            total = conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0]
+            # Denominator = INGESTED papers only (exclude discovery candidates,
+            # status='discovered'). Graph-indexing applies to papers brain-build
+            # actually ingested, not the discovery long-tail — so "X/total
+            # graph-indexed" measures against the relevant population (matches
+            # Corpus Health's ingested-only scoping), not the full papers table.
+            total = conn.execute(
+                "SELECT COUNT(*) FROM papers WHERE status != 'discovered'"
+            ).fetchone()[0]
         return int(indexed), int(total)
     except Exception as exc:  # noqa: BLE001 — health check must never raise
         logger.debug("check_graph._indexed_total failed: %s", exc)
