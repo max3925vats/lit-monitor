@@ -93,6 +93,10 @@ def breadcrumb_trail(path: str, detail: str | None = None) -> list[tuple[str, st
     for group in NAV_GROUPS:
         for item in group.items:
             if path == item.href:
+                if group.label == item.label:
+                    # Collapse the duplicate (e.g. the Setup index): one crumb,
+                    # not "Setup › Setup".
+                    return [(item.label, None)]
                 return [(group.label, None), (item.label, None)]
             if path.startswith(item.href.rstrip("/") + "/"):
                 if group.label == item.label:

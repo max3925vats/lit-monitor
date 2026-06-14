@@ -76,6 +76,12 @@ def test_breadcrumb_setup_detail_default_label_when_no_detail():
     ]
 
 
+def test_breadcrumb_setup_index_is_single_crumb():
+    """The /setup INDEX (exact match) must also collapse the duplicate: when
+    group.label == item.label, render a single "Setup" crumb, not "Setup › Setup"."""
+    assert breadcrumb_trail("/setup") == [("Setup", None)]
+
+
 def test_breadcrumb_non_setup_detail_shape_unchanged():
     """The collapse must apply ONLY when group.label == item.label. The normal
     3-crumb shape (group, item-with-href, detail) must be preserved elsewhere."""
