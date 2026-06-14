@@ -17,6 +17,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
+from lit_monitor.graph.trending import detect_and_persist_trending
 from lit_monitor.server.config_io import safe_save_topics
 from lit_monitor.server.runtime import get_runtime
 
@@ -48,6 +49,51 @@ def get_trending_suggestions() -> list[dict]:
     except Exception as exc:
         logger.warning("E: get_trending_suggestions failed: %s", exc)
         return []
+
+
+@router.post("/api/trending/detect", response_class=HTMLResponse)
+def detect_trending(request: Request) -> HTMLResponse:
+    """Re-run trending detection (same path as ``lit-monitor trending suggest``).
+
+    Wired to the Trending page's "Re-detect trending concepts" button. The button
+    reloads the page via ``hx-on::after-request`` regardless of this body, so the
+    returned card is mostly cosmetic — its job is just to never 500-leak.
+
+    Behaviour:
+    - ``trending_concepts.enabled`` False → a friendly "disabled" card (200).
+    - On success → a success card with the count of new suggestions.
+    - On failure (graph not built / DB error) → a generic error card; the real
+      exception is logged server-side WITH traceback (A3-5 info-leak guard — the
+      graph/DB path is never leaked to the browser).
+    """
+    rt = get_runtime()
+    cfg = rt.config
+    state_db = rt.state_db
+
+    if not cfg.trending_concepts.enabled:
+        return HTMLResponse(
+            '<div class="card warning">Trending detection is disabled — '
+            "enable trending_concepts in extraction settings.</div>"
+        )
+
+    try:
+        # Sync route: FastAPI runs this in a threadpool, so the (potentially
+        # slow) graph query won't block the event loop.
+        count = detect_and_persist_trending(cfg, state_db)
+    except Exception:
+        # A3-5 info-leak guard: the exception can embed the absolute graph/DB
+        # path. Log it (with traceback) server-side; the client gets a generic
+        # message only.
+        logger.error("E: trending detection failed", exc_info=True)
+        return HTMLResponse(
+            '<div class="card danger">Could not run trending detection — '
+            "check the server logs.</div>",
+            status_code=500,
+        )
+
+    return HTMLResponse(
+        f'<div class="card success">Detected {count} new trending concept(s).</div>'
+    )
 
 
 @router.post("/api/trending/{suggestion_id}/accept")

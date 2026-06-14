@@ -311,3 +311,79 @@ class TestFindTrendingConcepts:
         result = find_trending_concepts(graph_db, state_db, bare_cfg)
         # Should use defaults and not raise
         assert isinstance(result, list)
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for detect_and_persist_trending (shared CLI/route helper)
+# ---------------------------------------------------------------------------
+
+class TestDetectAndPersistTrending:
+    """The shared helper opens the graph, runs detection, persists each
+    suggestion, and returns the count. It must NOT gate on `enabled` (callers
+    do that) and must raise (not swallow into a wrong count) if the graph
+    cannot be opened.
+    """
+
+    def test_persists_each_suggestion_and_returns_count(self, monkeypatch):
+        from lit_monitor.graph import trending as _trending_mod
+
+        fake_suggestions = [
+            {
+                "concept_text": "biorefinery",
+                "concept_type": "topic",
+                "n_mentions_new": 20,
+                "n_mentions_prev": 5,
+                "growth_rate": 3.0,
+            },
+            {
+                "concept_text": "distillation",
+                "concept_type": "method",
+                "n_mentions_new": 12,
+                "n_mentions_prev": 4,
+                "growth_rate": 2.0,
+            },
+        ]
+
+        # Stub find_trending_concepts to return two fake suggestions — no real
+        # graph query runs.
+        monkeypatch.setattr(
+            _trending_mod, "find_trending_concepts", lambda *a, **k: fake_suggestions
+        )
+
+        # Stub GraphDB so no real Kuzu DB is opened. It must behave as a context
+        # manager (the helper opens it with `with`).
+        fake_graph = MagicMock()
+        fake_graph.__enter__ = MagicMock(return_value=fake_graph)
+        fake_graph.__exit__ = MagicMock(return_value=False)
+        graph_ctor = MagicMock(return_value=fake_graph)
+        monkeypatch.setattr(_trending_mod, "GraphDB", graph_ctor)
+
+        # In-memory db that records persist calls.
+        db = MagicMock()
+        cfg = _make_cfg()
+
+        count = _trending_mod.detect_and_persist_trending(cfg, db)
+
+        assert count == 2
+        assert db.persist_trending_suggestion.call_count == 2
+        # The persisted kwargs reflect the suggestions.
+        first_kwargs = db.persist_trending_suggestion.call_args_list[0].kwargs
+        assert first_kwargs["concept_text"] == "biorefinery"
+        assert first_kwargs["growth_rate"] == 3.0
+
+    def test_raises_when_graph_cannot_open(self, monkeypatch):
+        from lit_monitor.graph import trending as _trending_mod
+
+        # GraphDB constructor blows up — the helper must propagate, not return 0.
+        monkeypatch.setattr(
+            _trending_mod,
+            "GraphDB",
+            MagicMock(side_effect=RuntimeError("graph not built")),
+        )
+        db = MagicMock()
+        cfg = _make_cfg()
+
+        with pytest.raises(RuntimeError):
+            _trending_mod.detect_and_persist_trending(cfg, db)
+        # Nothing persisted on failure.
+        db.persist_trending_suggestion.assert_not_called()

@@ -30,6 +30,7 @@ from typing import Any
 import yaml
 
 from lit_monitor.core.path_utils import resolve_path as _resolve_path
+from lit_monitor.graph.db import GraphDB
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,52 @@ def find_trending_concepts(
     except Exception as exc:
         logger.warning("E: trending detection failed: %s", exc)
         return []
+
+
+def detect_and_persist_trending(cfg: Any, state_db: Any) -> int:
+    """Open the graph, detect trending concepts, persist them, return the count.
+
+    Shared code path for the CLI ``trending suggest`` command and the web
+    ``POST /api/trending/detect`` route, so both run identical detection +
+    persistence (DRY). Opens the Kuzu graph at
+    ``cfg.retrieval.graph_db.persist_dir``, runs ``find_trending_concepts``, and
+    persists each result via ``state_db.persist_trending_suggestion``.
+
+    This helper does NOT gate on ``cfg.trending_concepts.enabled`` — callers are
+    responsible for that feature gate. It is also deliberately *not* defensive
+    about opening the graph: if the graph DB cannot be opened, the underlying
+    exception propagates so the caller can surface a real error rather than a
+    misleading count of 0.
+
+    Args:
+        cfg:      Config namespace (reads ``cfg.retrieval.graph_db.persist_dir``).
+        state_db: StateDB instance used for cooldown lookup + persistence.
+
+    Returns:
+        The number of suggestions persisted.
+
+    Raises:
+        Exception: Whatever the GraphDB constructor raises if the graph cannot
+            be opened (e.g. graph not built / DB error).
+    """
+    graph_path = Path(cfg.retrieval.graph_db.persist_dir).expanduser()
+    # GraphDB construction may raise (missing extra, graph not built, corrupt
+    # store) — let it propagate; the caller decides how to surface it.
+    graph_db = GraphDB(str(graph_path))
+    with graph_db:
+        suggestions = find_trending_concepts(graph_db, state_db, cfg)
+
+    persisted = 0
+    for s in suggestions:
+        state_db.persist_trending_suggestion(
+            concept_text=s["concept_text"],
+            concept_type=s["concept_type"],
+            n_mentions_new=s["n_mentions_new"],
+            n_mentions_prev=s["n_mentions_prev"],
+            growth_rate=s["growth_rate"],
+        )
+        persisted += 1
+    return persisted
 
 
 def _query_mention_counts(graph_db: Any) -> list[dict]:

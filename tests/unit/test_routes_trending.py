@@ -292,6 +292,82 @@ class TestTrendingPageShoelace:
         assert "No pending suggestions" in empty
 
 
+class TestDetectTrendingRoute:
+    """POST /api/trending/detect runs the shared detection helper and reloads.
+
+    The helper (detect_and_persist_trending) is monkeypatched in every test so
+    no real graph DB is opened and no real state.db is written.
+    """
+
+    def _runtime_with_enabled(self, enabled: bool) -> MagicMock:
+        rt = MagicMock()
+        rt.config.trending_concepts.enabled = enabled
+        rt.state_db = MagicMock()
+        return rt
+
+    def test_enabled_calls_helper_and_returns_success_count(self, client):
+        rt = self._runtime_with_enabled(True)
+        with (
+            patch(
+                "lit_monitor.server.routes.trending.get_runtime", return_value=rt
+            ),
+            patch(
+                "lit_monitor.server.routes.trending.detect_and_persist_trending",
+                return_value=3,
+            ) as mock_detect,
+        ):
+            resp = client.post("/api/trending/detect")
+
+        assert resp.status_code == 200
+        mock_detect.assert_called_once()
+        # The helper got the resolved cfg + state_db.
+        args = mock_detect.call_args.args
+        assert args[0] is rt.config
+        assert args[1] is rt.state_db
+        # The success card reflects the returned count.
+        assert "success" in resp.text
+        assert "3" in resp.text
+
+    def test_disabled_returns_warning_and_skips_helper(self, client):
+        rt = self._runtime_with_enabled(False)
+        with (
+            patch(
+                "lit_monitor.server.routes.trending.get_runtime", return_value=rt
+            ),
+            patch(
+                "lit_monitor.server.routes.trending.detect_and_persist_trending",
+            ) as mock_detect,
+        ):
+            resp = client.post("/api/trending/detect")
+
+        assert resp.status_code == 200
+        mock_detect.assert_not_called()
+        assert "warning" in resp.text
+        assert "disabled" in resp.text.lower()
+
+    def test_helper_error_returns_generic_card_no_leak(self, client):
+        rt = self._runtime_with_enabled(True)
+        secret_path = "/Users/secret/.config/lit-monitor/graph.kuzu"
+        with (
+            patch(
+                "lit_monitor.server.routes.trending.get_runtime", return_value=rt
+            ),
+            patch(
+                "lit_monitor.server.routes.trending.detect_and_persist_trending",
+                side_effect=RuntimeError(f"cannot open {secret_path}"),
+            ),
+        ):
+            resp = client.post("/api/trending/detect")
+
+        # Page must still reload cleanly — never a raw 500 traceback page.
+        assert resp.status_code in (200, 500)
+        assert "danger" in resp.text
+        # No info-leak: neither the graph path nor the exception text is in the body.
+        assert secret_path not in resp.text
+        assert "cannot open" not in resp.text
+        assert "check the server logs" in resp.text.lower()
+
+
 class TestSafeSaveTopics:
     def test_atomic_add_creates_file(self, tmp_path):
         from lit_monitor.server.config_io import safe_save_topics
