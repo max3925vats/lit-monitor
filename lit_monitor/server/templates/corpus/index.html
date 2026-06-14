@@ -69,16 +69,9 @@
       <sl-option value="status">Status</sl-option>
     </sl-select>
 
-    {# Page-size selector drives the route's `limit` param; value preserved on
-       the host. Changing it re-fetches via the same HTMX swap. #}
-    <sl-select name="limit" label="Per page" value="{{ limit }}">
-      <sl-option value="10">10</sl-option>
-      <sl-option value="20">20</sl-option>
-      <sl-option value="50">50</sl-option>
-      <sl-option value="100">100</sl-option>
-    </sl-select>
-
-    {# order/offset are carried as hidden fields (no toolbar control). New
+    {# Per-page (limit) is NOT a filter — it moved out of this toolbar to sit
+       beside the pager below the table (see corpus/_table.html). order/offset are
+       carried as hidden fields (no toolbar control). New
        filters reset paging to offset 0. #}
     <input type="hidden" name="order" value="{{ order }}" />
     <input type="hidden" name="offset" value="0" />

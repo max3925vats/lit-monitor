@@ -238,7 +238,10 @@ def test_get_corpus_detail_renders_extraction(client, monkeypatch):
     assert r.status_code == 200
     assert "Carta 2009" in r.text and "membrane chromatography scales" in r.text
     assert "zotero://select" in r.text and "ABCD1234" in r.text
-    assert "Carta 2009.md" in r.text
+    # review #4: the full note-path text is no longer rendered on the page; the
+    # note is reachable only via the Obsidian deep-link button (vault-gated, not
+    # configured here). The old "Obsidian note: <path>" text line is removed.
+    assert "Obsidian note:" not in r.text
     assert (
         'hx-post="/api/papers/10.1/carta/relink"' in r.text or "relink" in r.text
     )
@@ -632,3 +635,291 @@ def test_get_related_graph_none_when_no_graph(monkeypatch):
 
     monkeypatch.setattr(corpus_mod, "safe_graph_db", lambda: None)
     assert corpus_mod._get_related("10.1/a", "graph", 10) is None
+
+
+# --- P4 review refinements (2026-06-13): list filters/pager + detail page -----
+
+
+def _detail_paper(_doi, **over):
+    """Helper: a baseline _get_paper_row dict for the detail-page tests.
+
+    The positional arg is the route DOI; pass ``doi=...`` in ``over`` to override
+    the stored doi value (e.g. doi="" for the no-DOI case).
+    """
+    base = {
+        "doi": _doi,
+        "title": "Carta 2009",
+        "authors": ["A. Carta"],
+        "year": 2009,
+        "journal": "J Chrom",
+        "source_type": "paper",
+        "zotero_key": "ABCD1234",
+        "note_path": None,
+        "extraction": {},
+    }
+    base.update(over)
+    return base
+
+
+def test_corpus_toolbar_holds_only_filters_not_limit(client, monkeypatch):
+    # P4 review #2: the per-page selector moves OUT of the top filter toolbar to
+    # the bottom near the pager. The toolbar holds only the 4 filters; the limit
+    # select renders after the table (it's a different kind of setting).
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._list_papers", lambda **k: ([], 0)
+    )
+    r = client.get("/corpus?limit=50")
+    assert r.status_code == 200
+    # Split the page at the toolbar form's close + the table region so we can
+    # assert the limit select is NOT inside the toolbar but IS after the table.
+    toolbar_start = r.text.index('class="corpus-toolbar"')
+    toolbar_end = r.text.index("</form>", toolbar_start)
+    toolbar = r.text[toolbar_start:toolbar_end]
+    # The 4 filters live in the toolbar…
+    assert 'name="search"' in toolbar
+    assert 'name="source_type"' in toolbar
+    assert 'name="status_gap"' in toolbar
+    assert 'name="sort"' in toolbar
+    # …but the per-page (limit) select does NOT.
+    assert 'name="limit"' not in toolbar
+    # The limit select still renders on the page (after the table), value kept.
+    assert 'name="limit"' in r.text and 'value="50"' in r.text
+    # "Per page" label sits with the pager, not the toolbar.
+    assert "Per page" in r.text[toolbar_end:]
+
+
+def test_corpus_limit_select_in_table_fragment_near_pager(client, monkeypatch):
+    # P4 review #2: the limit select is part of the _table.html fragment (so it
+    # swaps with the pager) and drives the route via the same HTMX swap.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._list_papers",
+        lambda **k: ([], 0),
+    )
+    r = client.get("/corpus?limit=50", headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    # Fragment (table region) carries the limit select with the active value.
+    assert 'name="limit"' in r.text and 'value="50"' in r.text
+    # It re-fetches via the same #corpus-table swap as the rest of the controls.
+    assert 'hx-target="#corpus-table"' in r.text
+
+
+def test_corpus_table_doi_links_externally(client, monkeypatch):
+    # P4 review #3: the DOI cell now links to the EXTERNAL doi.org URL (new tab),
+    # while the TITLE keeps linking to the internal /corpus/{doi} detail page.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._list_papers",
+        lambda **k: (
+            [
+                {
+                    "doi": "10.1/a",
+                    "title": "Chromatography study",
+                    "year": 2021,
+                    "source_type": "paper",
+                    "confidence": 0.8,
+                    "embeddings_indexed": 1,
+                    "graph_indexed": 1,
+                    "notes_synced": 1,
+                    "last_updated": "2026-06-01",
+                }
+            ],
+            1,
+        ),
+    )
+    r = client.get("/corpus", headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    # DOI cell → external doi.org, new tab, noopener, truncation tooltip kept.
+    assert 'href="https://doi.org/10.1/a"' in r.text
+    assert 'target="_blank"' in r.text and 'rel="noopener"' in r.text
+    assert "doi-cell" in r.text and 'title="10.1/a"' in r.text
+    # Title still links to the internal detail page.
+    assert 'href="/corpus/10.1/a"' in r.text
+
+
+def test_corpus_table_no_doi_plain_text(client, monkeypatch):
+    # P4 review #3: a row with no DOI shows a plain placeholder, no external link.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._list_papers",
+        lambda **k: (
+            [
+                {
+                    "doi": "",
+                    "title": "No-DOI paper",
+                    "year": 2021,
+                    "source_type": "paper",
+                    "confidence": None,
+                    "embeddings_indexed": 0,
+                    "graph_indexed": 0,
+                    "notes_synced": 0,
+                    "last_updated": "2026-06-01",
+                }
+            ],
+            1,
+        ),
+    )
+    r = client.get("/corpus", headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    assert "https://doi.org/" not in r.text  # no external DOI link for a no-DOI row
+
+
+# --- P4 review: detail page — 3 inline buttons, single cards, extraction table -
+
+
+def test_corpus_detail_three_inline_buttons_no_text_links(client, monkeypatch):
+    # P4 review #4: the DOI text link + "Open in Zotero" anchor + "Obsidian note:
+    # path" text are replaced by THREE <sl-button>s with the right hrefs/classes.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_paper_row",
+        lambda doi: _detail_paper(doi, note_path="Literature/Papers/Carta 2009.md"),
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_score_breakdown", lambda doi: None
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._vault_name", lambda: "MyVault"
+    )
+    r = client.get("/corpus/10.1/carta")
+    assert r.status_code == 200
+    # Open DOI button → external doi.org, new tab.
+    assert "Open DOI" in r.text
+    assert 'href="https://doi.org/10.1/carta"' in r.text
+    # Open in Zotero button → zotero:// deep link, Zotero-red class.
+    assert "zotero://select/library/items/ABCD1234" in r.text
+    assert "btn-zotero" in r.text
+    # Open in Obsidian button → obsidian:// deep link, purple class.
+    assert "obsidian://open?vault=MyVault" in r.text
+    assert "btn-obsidian" in r.text
+    # The OLD text affordances are GONE: no <a class="doi"> text line, no
+    # "Obsidian note:" path text.
+    assert 'class="doi"' not in r.text
+    assert "Obsidian note:" not in r.text
+
+
+def test_corpus_detail_obsidian_button_absent_without_uri(client, monkeypatch):
+    # P4 review #4: the Obsidian button only renders when obsidian_uri is set.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_paper_row",
+        lambda doi: _detail_paper(doi, note_path=None),
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_score_breakdown", lambda doi: None
+    )
+    r = client.get("/corpus/10.1/carta")
+    assert r.status_code == 200
+    assert "btn-obsidian" not in r.text and "obsidian://open" not in r.text
+    # Zotero + DOI buttons still present.
+    assert "Open DOI" in r.text and "btn-zotero" in r.text
+
+
+def test_corpus_detail_doi_button_absent_without_doi(client, monkeypatch):
+    # P4 review #4: the Open DOI button only renders when paper.doi is set.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_paper_row",
+        lambda doi: _detail_paper(doi, doi=""),
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_score_breakdown", lambda doi: None
+    )
+    r = client.get("/corpus/10.1/carta")
+    assert r.status_code == 200
+    assert "Open DOI" not in r.text and "https://doi.org/" not in r.text
+
+
+def test_corpus_detail_sections_not_double_carded(client, monkeypatch):
+    # P4 review #5: each <sl-details> is its own bordered card — class="card" on
+    # it adds a SECOND nested card box, so it must be removed from every section.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_paper_row",
+        lambda doi: _detail_paper(doi, extraction={"core_finding": "x"}),
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_score_breakdown",
+        lambda doi: {"doi": doi, "run_id": "r", "breakdown": {"cosine": 0.5}},
+    )
+    r = client.get("/corpus/10.1/carta")
+    assert r.status_code == 200
+    # No <sl-details> carries class="card".
+    for tag in re.findall(r"<sl-details[^>]*>", r.text):
+        assert 'class="card"' not in tag and "card" not in tag
+
+
+def test_corpus_detail_extraction_renders_table_with_confidence(client, monkeypatch):
+    # P4 review #6: the raw <dl class="extraction-list"> dump is replaced by a
+    # 3-column Field | Value | Confidence table. Each field's _confidence sibling
+    # is folded into its row; metadata (_*) and *_confidence keys are skipped.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_paper_row",
+        lambda doi: _detail_paper(
+            doi,
+            extraction={
+                "limitations": "small sample size",
+                "limitations_confidence": "explicit",
+                "assumptions": "linear binding",
+                "assumptions_confidence": "high",
+                "_overall_confidence": 0.7,
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_score_breakdown", lambda doi: None
+    )
+    r = client.get("/corpus/10.1/carta")
+    assert r.status_code == 200
+    # The old <dl> dump is gone, a <table> ships instead.
+    assert 'class="extraction-list"' not in r.text
+    # A "Confidence" column header is present.
+    assert "Confidence" in r.text
+    # Humanized field name (underscore → space, capitalized first letter).
+    assert "Limitations" in r.text
+    # The field's value + its folded confidence both render.
+    assert "small sample size" in r.text and "explicit" in r.text
+    assert "linear binding" in r.text and "high" in r.text
+    # The *_confidence keys are NOT surfaced as their own rows / humanized labels.
+    assert "Limitations confidence" not in r.text
+    # Overall confidence line still present above the table.
+    assert "Overall confidence" in r.text
+    # Still inside the height-capped scroll container.
+    assert "extraction-scroll" in r.text
+
+
+def test_corpus_detail_extraction_empty_state(client, monkeypatch):
+    # P4 review #6: an empty extraction still shows the no-fields notice.
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_paper_row",
+        lambda doi: _detail_paper(doi, extraction={}),
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_score_breakdown", lambda doi: None
+    )
+    r = client.get("/corpus/10.1/carta")
+    assert r.status_code == 200
+    assert "No extraction fields" in r.text
+
+
+def test_corpus_detail_actions_not_card_buttons_match_size(client, monkeypatch):
+    # P4 review #7: the Actions block is a section, not a .card; its Relink /
+    # Re-extract buttons match the top Open-in-* button size (medium, not small).
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_paper_row",
+        lambda doi: _detail_paper(doi),
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._get_score_breakdown", lambda doi: None
+    )
+    r = client.get("/corpus/10.1/carta")
+    assert r.status_code == 200
+    # The action block keeps its id + header but is NOT a .card.
+    actions_start = r.text.index('id="corpus-actions"')
+    # Walk back to the opening tag of the actions container.
+    open_tag_start = r.text.rindex("<div", 0, actions_start)
+    open_tag = r.text[open_tag_start : r.text.index(">", actions_start) + 1]
+    assert "card" not in open_tag
+    assert "<h2>Actions</h2>" in r.text
+    # Relink / Re-extract buttons are size="medium" (not small) to match the top.
+    assert 'hx-post="/api/papers/10.1/carta/relink"' in r.text
+    assert 'hx-post="/api/papers/10.1/carta/re-extract"' in r.text
+    # No small buttons left in the detail page BODY (the base.html top-bar "Ask"
+    # button is size="small" but is shell chrome, not detail content).
+    detail_start = r.text.index("paper-detail")
+    detail_end = r.text.index("</section>", detail_start)
+    body = r.text[detail_start:detail_end]
+    assert 'size="small"' not in body

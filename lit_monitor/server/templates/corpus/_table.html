@@ -55,7 +55,9 @@
       </td>
       <td class="doi-cell">
         {%- if row.doi -%}
-        <a href="/corpus/{{ row.doi }}" title="{{ row.doi }}">{{ row.doi }}</a>
+        {# review #3: the DOI links EXTERNALLY to doi.org (the title is the
+           internal detail link). New tab + noopener; truncation tooltip kept. #}
+        <a href="https://doi.org/{{ row.doi }}" target="_blank" rel="noopener" title="{{ row.doi }}">{{ row.doi }}</a>
         {%- else -%}
         <span class="muted">&mdash;</span>
         {%- endif -%}
@@ -85,7 +87,32 @@
    the page-size selection survives paging. #}
 {%- set filter_qs %}search={{ search | urlencode }}&amp;source_type={{ source_type | urlencode }}&amp;status_gap={{ status_gap | urlencode }}&amp;theme={{ theme | urlencode }}&amp;sort={{ sort | urlencode }}&amp;order={{ order | urlencode }}&amp;limit={{ limit }}{% endset -%}
 
-<div class="button-row" style="margin-top: 0.75rem;">
+<div class="corpus-pager">
+  {# review #2: the per-page (limit) select lives here beside the pager, not in
+     the top filter toolbar — it's a different kind of setting. Its own little
+     form carries the active filters as hidden fields and re-fetches via the SAME
+     #corpus-table swap (auto-applies on sl-change; resets to offset 0). The
+     value is preserved on the HOST (Shoelace initial-value gotcha). #}
+  <form class="per-page-form"
+        hx-get="/corpus"
+        hx-target="#corpus-table"
+        hx-select="#corpus-table"
+        hx-swap="outerHTML"
+        hx-trigger="sl-change from:sl-select">
+    <input type="hidden" name="search" value="{{ search }}" />
+    <input type="hidden" name="source_type" value="{{ source_type }}" />
+    <input type="hidden" name="status_gap" value="{{ status_gap }}" />
+    <input type="hidden" name="theme" value="{{ theme }}" />
+    <input type="hidden" name="sort" value="{{ sort }}" />
+    <input type="hidden" name="order" value="{{ order }}" />
+    <input type="hidden" name="offset" value="0" />
+    <sl-select name="limit" label="Per page" value="{{ limit }}" size="small">
+      <sl-option value="10">10</sl-option>
+      <sl-option value="20">20</sl-option>
+      <sl-option value="50">50</sl-option>
+      <sl-option value="100">100</sl-option>
+    </sl-select>
+  </form>
   <span class="field-note">
     {% if total %}{{ offset + 1 }}&ndash;{{ offset + rows|length }} of {{ total }}{% else %}0 of 0{% endif %}
   </span>

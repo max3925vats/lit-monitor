@@ -1476,9 +1476,18 @@ sl-card.paper-card::part(base) { width: 100%; }
   align-items: end;
   margin-bottom: 1rem;
 }
+/* Each control is narrow and allowed to shrink so Search + Source type + Status
+   gap + Sort all fit on ONE line at desktop width (review #1); they still wrap on
+   narrow screens via the toolbar's flex-wrap. */
 .corpus-toolbar sl-input,
-.corpus-toolbar sl-select { width: 13rem; max-width: 13rem; }
-.corpus-toolbar sl-input[name="search"] { width: 16rem; max-width: 16rem; }
+.corpus-toolbar sl-select { flex: 1 1 10rem; min-width: 0; max-width: 12rem; }
+
+/* The bottom pager row carries the per-page (limit) select next to prev/next +
+   the "X–Y of Z" count. The limit select is narrow — it's a setting, not a
+   filter (review #2). */
+.corpus-pager { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-top: 0.75rem; }
+.corpus-pager sl-select[name="limit"] { width: 7rem; max-width: 7rem; }
+.corpus-pager .per-page-label { font-size: 0.85rem; color: var(--muted); }
 
 /* rubric #15: cap the corpus results height so the (long) paper list scrolls
    inside its own region instead of stretching the whole page (like the digest
@@ -1516,6 +1525,41 @@ sl-card.paper-card::part(base) { width: 100%; }
 /* rubric #15: cap the extraction list height so one section can't stretch the
    page; it scrolls inside the card instead (100+ extraction fields are common). */
 .extraction-scroll { max-height: 28rem; overflow: auto; }
+
+/* review #6: extraction renders as a Field | Value | Confidence table. Values
+   wrap (scientific text is long); the Field/Confidence columns stay compact. */
+.extraction-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.extraction-table th, .extraction-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.extraction-table thead th { color: var(--muted); font-weight: 600; }
+.extraction-table tbody th { font-weight: 600; width: 14rem; white-space: nowrap; }
+.extraction-table td { white-space: normal; word-break: break-word; }
+.extraction-table td:last-child { width: 7rem; white-space: nowrap; }
+
+/* review #4: the per-paper detail action buttons. Zotero red + Obsidian purple
+   (white text) — brand-token-driven, no new color literals. */
+sl-button.btn-zotero::part(base) {
+  background: var(--cta-bg);
+  border-color: var(--cta-bg);
+  color: #fff;
+}
+sl-button.btn-zotero::part(base):hover {
+  background: var(--cta-bg-hover);
+  border-color: var(--cta-bg-hover);
+}
+sl-button.btn-obsidian::part(base) {
+  background: var(--brand-purple);
+  border-color: var(--brand-purple);
+  color: #fff;
+}
+sl-button.btn-obsidian::part(base):hover {
+  background: var(--brand-purple-bright);
+  border-color: var(--brand-purple-bright);
+}
 .rate-summary { cursor: pointer; display: inline-block; font-size: 0.82rem; }
 .home-card { width: 100%; }
 .home-card a { text-decoration: none; color: inherit; display: block; }

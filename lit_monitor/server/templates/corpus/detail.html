@@ -24,63 +24,72 @@
       {% if paper.journal %} &middot; {{ paper.journal }}{% endif %}
       {% if paper.source_type %} &middot; <span class="badge">{{ paper.source_type }}</span>{% endif %}
     </p>
-    <p class="paper-meta field-note">
+    {# review #4: three inline action buttons (same size) replace the old DOI
+       text link + "Open in Zotero" anchor + "Obsidian note: path" text. Each is
+       only shown when its target exists. All hrefs pass through Jinja autoescape
+       safely — no |safe. #}
+    <div class="button-row paper-links">
       {% if paper.doi %}
-        <a class="doi" href="https://doi.org/{{ paper.doi }}" target="_blank" rel="noopener">{{ paper.doi }}</a>
-      {% else %}
-        <span class="doi">(no DOI)</span>
+      <sl-button size="medium" variant="default"
+                 href="https://doi.org/{{ paper.doi }}"
+                 target="_blank" rel="noopener">Open DOI</sl-button>
       {% endif %}
-    </p>
-
-    <p class="button-row paper-links">
       {% if paper.zotero_key %}
-      <a class="btn btn-secondary btn-sm"
-         href="zotero://select/library/items/{{ paper.zotero_key }}">Open in Zotero</a>
+      <sl-button size="medium" variant="default" class="btn-zotero"
+                 href="zotero://select/library/items/{{ paper.zotero_key }}">Open in Zotero</sl-button>
       {% endif %}
-      {% if paper.note_path %}
-      {# PF-2: when a vault is configured, obsidian_uri is an
-         obsidian://open?vault=…&file=… deep link (built server-side in
-         _obsidian_uri); the readable note path is the link label. When no vault
-         is configured obsidian_uri is None and we fall back to the plain path.
-         The obsidian:// href passes through Jinja autoescape safely — no |safe. #}
       {% if obsidian_uri %}
-      <span class="field-note note-path">Obsidian note:
-        <a href="{{ obsidian_uri }}"><code>{{ paper.note_path }}</code></a></span>
-      {% else %}
-      <span class="field-note note-path">Obsidian note: <code>{{ paper.note_path }}</code></span>
+      {# PF-2: obsidian_uri is the obsidian://open?vault=…&file=… deep link built
+         server-side in _obsidian_uri (None when no vault is configured → no
+         button). This does exactly what the old "Obsidian note: path" link did. #}
+      <sl-button size="medium" variant="default" class="btn-obsidian"
+                 href="{{ obsidian_uri }}">Open in Obsidian</sl-button>
       {% endif %}
-      {% endif %}
-    </p>
+    </div>
   </div>
 
   {# --- Extraction (open by default — the primary content) --------------- #}
   {# P4 (Shoelace/rubric #3): the section cards become <sl-details>. Extraction
      is the primary content so it ships `open`; the rest are collapsed. #}
-  <sl-details summary="Extraction" open class="card">
+  <sl-details summary="Extraction" open>
     {% if paper.extraction and paper.extraction.get("_overall_confidence") is not none %}
     <p class="field-note">Overall confidence:
       {{ "%.3f" | format(paper.extraction.get("_overall_confidence") | float) }}</p>
     {% endif %}
-    {# Collect non-underscore keys; "_"-prefixed keys (e.g. _overall_confidence)
-       are metadata, surfaced separately above and skipped here. #}
-    {% set _visible = [] %}
+    {# review #6: pair each substantive field with its `_confidence` sibling.
+       SKIP "_"-prefixed metadata keys (e.g. _overall_confidence, surfaced above)
+       and SKIP keys ending in "_confidence" (folded into their base row). Each
+       remaining key K → (humanized K, value, value of K + "_confidence" or "—"). #}
+    {% set _rows = [] %}
     {% for key, value in paper.extraction.items() %}
-      {% if not key.startswith("_") %}{% set _ = _visible.append((key, value)) %}{% endif %}
+      {% if not key.startswith("_") and not key.endswith("_confidence") %}
+        {% set _ = _rows.append((key, value, paper.extraction.get(key ~ "_confidence"))) %}
+      {% endif %}
     {% endfor %}
-    {% if _visible %}
-    {# rubric #15: the extraction <dl> can carry 100+ fields, so its container is
+    {% if _rows %}
+    {# rubric #15: the extraction table can carry 100+ fields, so its container is
        height-capped and scrolls inside the card rather than stretching the page. #}
     <div class="extraction-scroll">
-      <dl class="extraction-list">
-        {% for key, value in _visible %}
-        {# Plain Jinja autoescape renders any injected markup inert as text
-           (e.g. <img onerror=...> becomes &lt;img onerror=...&gt;). Do NOT strip
-           tags here: that would delete legitimate scientific text containing
-           angle brackets (p<0.05, n>3, IC50 < 5 uM). No |safe anywhere. #}
-        <dt>{{ key }}</dt>
-        <dd>{{ value }}</dd>
-        {% endfor %}
-      </dl>
+      <table class="extraction-table">
+        <thead>
+          <tr><th>Field</th><th>Value</th><th>Confidence</th></tr>
+        </thead>
+        <tbody>
+          {% for key, value, conf in _rows %}
+          {# Plain Jinja autoescape renders any injected markup inert as text
+             (e.g. <img onerror=...> becomes &lt;img onerror=...&gt;). Do NOT strip
+             tags here: that would delete legitimate scientific text containing
+             angle brackets (p<0.05, n>3, IC50 < 5 uM). No |safe anywhere. #}
+          <tr>
+            <th scope="row">{{ key.replace("_", " ") | capitalize }}</th>
+            <td>{{ value }}</td>
+            <td>
+              {% if conf is not none %}<sl-badge variant="neutral" pill>{{ conf }}</sl-badge>{% else %}<span class="muted">&mdash;</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
     {% else %}
     <p class="field-note">No extraction fields stored for this paper.</p>
@@ -89,7 +98,7 @@
 
   {# --- Score decomposition (only when a breakdown exists) — collapsed ---- #}
   {% if breakdown and breakdown.breakdown %}
-  <sl-details summary="Score decomposition" class="card">
+  <sl-details summary="Score decomposition">
     <table class="score-breakdown-table">
       <thead>
         <tr><th>Signal</th><th>Score</th></tr>
@@ -110,7 +119,7 @@
      actually opens the section. The DOI is embedded literally in the path so the
      {doi:path} fragment routes match (no urlencode — "/" → "%2F" breaks it). #}
   {% if paper.doi %}
-  <sl-details summary="Related work" class="card">
+  <sl-details summary="Related work">
     <div id="corpus-related"
          hx-get="/corpus/{{ paper.doi }}/related"
          hx-trigger="sl-show once"
@@ -119,7 +128,7 @@
       <p class="field-note">Expand to load related work&hellip;</p>
     </div>
   </sl-details>
-  <sl-details summary="Knowledge graph" class="card">
+  <sl-details summary="Knowledge graph">
     <div id="corpus-graph"
          hx-get="/corpus/{{ paper.doi }}/graph"
          hx-trigger="sl-show once"
@@ -140,13 +149,15 @@
     {doi:path} route (which accepts "10.x/y" verbatim) matches. Double-encoding
     would yield "%2F" in the path and break the route.
   #}
-  <div class="card action-row" id="corpus-actions">
+  {# review #7: Actions is a section like the others, NOT a .card. Button size
+     matches the top Open-in-* buttons (medium). #}
+  <div class="action-row" id="corpus-actions">
     <h2>Actions</h2>
-    <sl-button variant="default" size="small"
+    <sl-button variant="default" size="medium"
                hx-post="/api/papers/{{ paper.doi }}/relink"
                hx-target="#corpus-actions .action-result"
                hx-swap="innerHTML">Relink</sl-button>
-    <sl-button variant="default" size="small"
+    <sl-button variant="default" size="medium"
                hx-post="/api/papers/{{ paper.doi }}/re-extract"
                hx-target="#corpus-actions .action-result"
                hx-swap="innerHTML">Re-extract</sl-button>
