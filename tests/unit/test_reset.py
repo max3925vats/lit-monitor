@@ -722,6 +722,28 @@ def test_perform_state_reset_handles_missing_graph_dir(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_vectors_targets_is_chroma_only(tmp_path: Path) -> None:
+    """RR1: vectors_targets returns exactly one target labelled 'ChromaDB persist dir'."""
+    cfg = _fake_config(
+        state_db_path=tmp_path / "state.db",
+        vault_path=tmp_path / "vault",
+    )
+    targets = reset_mod.vectors_targets(cfg)
+    assert [t.label for t in targets] == ["ChromaDB persist dir"]
+
+
+@pytest.mark.unit
+def test_graph_targets_is_graph_only(tmp_path: Path) -> None:
+    """RR1: graph_targets returns exactly one target labelled 'graph DB'."""
+    cfg = _fake_config(
+        state_db_path=tmp_path / "state.db",
+        vault_path=tmp_path / "vault",
+    )
+    targets = reset_mod.graph_targets(cfg)
+    assert [t.label for t in targets] == ["graph DB"]
+
+
+@pytest.mark.unit
 def test_perform_state_reset_removes_graph_sentinel(tmp_path: Path) -> None:
     """G12: perform_state_reset also removes the .schema_version sentinel."""
     state_db = tmp_path / "state.db"
