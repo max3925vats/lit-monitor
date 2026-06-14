@@ -638,24 +638,41 @@ def get_discovery_run_history(
     ]
     # Optional trigger filter applied identically to both the rows SELECT and
     # the total COUNT so pagination math stays consistent with the filtered set.
-    where = "WHERE dr.trigger = ? " if trigger is not None else ""
-    where_params: tuple = (trigger,) if trigger is not None else ()
+    # Two fully-literal SQL variants (no f-string into .execute()) keep the
+    # self-audit's SQL-injection guard happy; the trigger value is always a
+    # ``?`` placeholder, never interpolated.
+    total: int
     with state_db._connect() as conn:
-        rows = conn.execute(
-            "SELECT dr.id, dr.started_at, dr.finished_at, dr.status, "
-            "dr.total_found, dr.total_ingested, "
-            "rl.papers_processed, rl.papers_skipped, rl.papers_failed, "
-            "dr.trigger "
-            "FROM discovery_runs dr "
-            "LEFT JOIN run_log rl ON dr.run_log_id = rl.run_id "
-            f"{where}"
-            "ORDER BY dr.started_at DESC, dr.id DESC LIMIT ? OFFSET ?",
-            (*where_params, limit, offset),
-        ).fetchall()
-        total: int = conn.execute(
-            f"SELECT COUNT(*) FROM discovery_runs dr {where}",
-            where_params,
-        ).fetchone()[0]
+        if trigger is not None:
+            rows = conn.execute(
+                "SELECT dr.id, dr.started_at, dr.finished_at, dr.status, "
+                "dr.total_found, dr.total_ingested, "
+                "rl.papers_processed, rl.papers_skipped, rl.papers_failed, "
+                "dr.trigger "
+                "FROM discovery_runs dr "
+                "LEFT JOIN run_log rl ON dr.run_log_id = rl.run_id "
+                "WHERE dr.trigger = ? "
+                "ORDER BY dr.started_at DESC, dr.id DESC LIMIT ? OFFSET ?",
+                (trigger, limit, offset),
+            ).fetchall()
+            total = conn.execute(
+                "SELECT COUNT(*) FROM discovery_runs dr WHERE dr.trigger = ?",
+                (trigger,),
+            ).fetchone()[0]
+        else:
+            rows = conn.execute(
+                "SELECT dr.id, dr.started_at, dr.finished_at, dr.status, "
+                "dr.total_found, dr.total_ingested, "
+                "rl.papers_processed, rl.papers_skipped, rl.papers_failed, "
+                "dr.trigger "
+                "FROM discovery_runs dr "
+                "LEFT JOIN run_log rl ON dr.run_log_id = rl.run_id "
+                "ORDER BY dr.started_at DESC, dr.id DESC LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+            total = conn.execute(
+                "SELECT COUNT(*) FROM discovery_runs dr"
+            ).fetchone()[0]
     return {"runs": [dict(zip(cols, r)) for r in rows], "total": total}
 
 
