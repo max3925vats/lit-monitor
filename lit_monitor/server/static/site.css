@@ -566,6 +566,12 @@ a:hover {
 .live-progress-wrap { margin-top: 1.5rem; }
 .live-progress-wrap[hidden] { display: none !important; }
 .live-progress { margin: 1rem 0; }
+
+/* `.card { display: block }` (author origin) otherwise beats the UA
+   `[hidden] { display: none }` rule, so a `.card` with the `hidden` attribute
+   (e.g. the Reset & Rebuild "Not set up yet" banner) would stay visible even
+   when JS sets `hidden`. Restore the attribute's effect for all `.card`s. */
+.card[hidden] { display: none !important; }
 .live-progress-pane {
   height: 30vh;            /* fixed height so the pane stops growing and the
                               browser HAS something to scroll inside */
