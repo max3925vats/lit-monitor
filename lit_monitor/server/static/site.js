@@ -511,6 +511,10 @@
     wrap.hidden = false;
     if (hint) hint.hidden = false;
 
+    // Clear any lines from a previous run so a re-run never interleaves stale
+    // output with fresh output.
+    lines.innerHTML = "";
+
     // POST to start the rebuild.
     var body = new URLSearchParams();
     if (enrich) body.set("enrich", "true");
