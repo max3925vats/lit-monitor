@@ -124,22 +124,26 @@
        have vector related-work to lazy-load. A not-embedded paper shows a plain
        note — no HTMX, no lazy div — so the UI never promises data it can't have. #}
     {% if paper.embeddings_indexed %}
+    {# `from:closest sl-details` is REQUIRED: sl-show fires on the <sl-details>
+       ancestor and bubbles UP, not down to this child — a bare `sl-show once`
+       never fires, so the fetch must listen on the closest details (matches the
+       insights lazy-fragment fix). Empty result → "No related works found". #}
     <div id="corpus-related"
          hx-get="/corpus/{{ paper.doi }}/related"
-         hx-trigger="sl-show once"
+         hx-trigger="sl-show once from:closest sl-details"
          hx-target="this"
          hx-swap="innerHTML">
       <p class="field-note">Expand to load related work&hellip;</p>
     </div>
     {% else %}
-    <p class="field-note">No related work &mdash; this paper isn't embedded yet.</p>
+    <p class="field-note">No related works found in Corpus.</p>
     {% endif %}
   </sl-details>
   <sl-details summary="Knowledge graph">
     {% if paper.graph_indexed %}
     <div id="corpus-graph"
          hx-get="/corpus/{{ paper.doi }}/graph"
-         hx-trigger="sl-show once"
+         hx-trigger="sl-show once from:closest sl-details"
          hx-target="this"
          hx-swap="innerHTML">
       <p class="field-note">Expand to load the knowledge graph&hellip;</p>

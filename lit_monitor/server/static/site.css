@@ -949,8 +949,10 @@ a:hover {
 .action-row#corpus-actions {
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.75rem;
+  gap: 0.4rem;
 }
+/* Tighten the space under the "Actions" header → button row (review). */
+.action-row#corpus-actions h2 { margin: 0; }
 
 /* --- Bundle H: settings page --- */
 .settings-section { background: var(--card-bg); border: 1px solid var(--border);

@@ -40,11 +40,7 @@
     {# No-data path is mode-specific so we never lie about why it's empty:
        graph/hybrid need the graph built; vector needs embeddings. #}
     {% if mode == "vector" %}
-  <p class="field-note">
-    No embedded neighbours found — this paper has no vector embeddings yet, so
-    similar papers can't be computed. Run <code>lit-monitor brain-build</code>
-    to embed the corpus.
-  </p>
+  <p class="field-note">No related works found in Corpus.</p>
     {% else %}
   <p class="field-note">
     No knowledge graph is built yet, so related work cannot be computed. Run

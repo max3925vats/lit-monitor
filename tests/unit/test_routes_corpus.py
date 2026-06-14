@@ -605,7 +605,8 @@ def test_related_vector_no_embeddings_shows_neighbour_notice(client, monkeypatch
     assert r.status_code == 200
     txt = r.text.lower()
     assert "backfill" not in txt  # graph notice must NOT appear in vector mode
-    assert "neighbour" in txt or "embedded" in txt  # distinct no-data state
+    # vector empty-state is the simple "no related works found" message (review)
+    assert "no related works found" in txt
 
 
 # --- PF-1: direct unit tests of the real _get_related logic ------------------
@@ -983,8 +984,8 @@ def test_corpus_detail_related_honest_when_not_embedded(client, monkeypatch):
     )
     r = client.get("/corpus/10.1/carta")
     assert r.status_code == 200
-    # The Related-work section is present but shows the honest "not embedded" note…
-    assert "isn't embedded yet" in r.text
+    # The Related-work section is present but shows the honest empty note…
+    assert "No related works found in Corpus." in r.text
     # …and does NOT lazy-load (no related #corpus-related hx-trigger).
     rel_start = r.text.index('summary="Related work"')
     rel_end = r.text.index("</sl-details>", rel_start)
@@ -1008,8 +1009,9 @@ def test_corpus_detail_related_lazy_when_embedded(client, monkeypatch):
     rel_end = r.text.index("</sl-details>", rel_start)
     rel_block = r.text[rel_start:rel_end]
     assert 'id="corpus-related"' in rel_block
-    assert 'hx-trigger="sl-show once"' in rel_block
-    assert "isn't embedded yet" not in rel_block
+    # `from:closest sl-details` is required for the trigger to fire on expand.
+    assert 'hx-trigger="sl-show once from:closest sl-details"' in rel_block
+    assert "No related works found in Corpus." not in rel_block
 
 
 def test_corpus_detail_graph_honest_when_not_graph_indexed(client, monkeypatch):
@@ -1047,7 +1049,7 @@ def test_corpus_detail_graph_lazy_when_graph_indexed(client, monkeypatch):
     g_end = r.text.index("</sl-details>", g_start)
     g_block = r.text[g_start:g_end]
     assert 'id="corpus-graph"' in g_block
-    assert 'hx-trigger="sl-show once"' in g_block
+    assert 'hx-trigger="sl-show once from:closest sl-details"' in g_block
     assert "isn't graph-indexed yet" not in g_block
 
 
