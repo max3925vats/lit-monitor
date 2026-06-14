@@ -65,6 +65,28 @@ def show_stats_banner(path: str) -> bool:
     return True
 
 
+def active_item_href(path: str) -> str | None:
+    """Return the href of the single most-specific nav item matching ``path``.
+
+    Exact match wins; otherwise the longest-prefix item wins (so /setup/reset
+    highlights only the Reset & Rebuild item, not its /setup parent, and
+    /setup/step-3 — which has no exact item — falls back to /setup).
+    """
+    # Pass 1: exact match wins outright.
+    for group in NAV_GROUPS:
+        for item in group.items:
+            if path == item.href:
+                return item.href
+    # Pass 2: longest-prefix match for sub-paths.
+    best: tuple[int, str] | None = None
+    for group in NAV_GROUPS:
+        for item in group.items:
+            if path.startswith(item.href.rstrip("/") + "/"):
+                if best is None or len(item.href) > best[0]:
+                    best = (len(item.href), item.href)
+    return best[1] if best else None
+
+
 def active_group_for_path(path: str) -> str | None:
     """Return the label of the group whose any item is a prefix of `path`.
 

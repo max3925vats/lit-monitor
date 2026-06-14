@@ -44,11 +44,11 @@ def test_reset_status_first_run_safe(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["configured"] is False
-    # All component metrics should be empty/zeroed
+    # All component metrics should be empty/zeroed (new shape: count/unit/size_bytes)
     for comp in ("vectors", "graph", "notes"):
         assert comp in data["components"]
         assert data["components"][comp]["present"] is False
-        assert data["components"][comp]["files"] == 0
+        assert data["components"][comp]["count"] == 0
         assert data["components"][comp]["size_bytes"] == 0
     # enrichment and busy must always be present
     assert "enrichment" in data
@@ -525,3 +525,178 @@ def test_rebuild_stream_emits_buffered_lines(client):
         "SSE body must contain 'event: progress' lines; "
         "the JS rebuild log listener subscribes to the 'progress' named event"
     )
+
+
+# ---------------------------------------------------------------------------
+# Reviewer bugs — FIX 2: configured=True contract
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_status_configured_true_with_valid_runtime(tmp_path):
+    """FIX 2: GET /api/reset/status returns configured=True when runtime has a valid config.
+
+    Locks the contract so configured can't silently flip to False when config is present.
+    """
+    from lit_monitor.core.state_db import StateDB
+
+    # Create a real temp StateDB so count_embeddings_indexed / count_graph_indexed work.
+    db_path = tmp_path / "state.db"
+    real_state_db = StateDB(str(db_path))
+
+    # Temp dirs that "exist" — so targets are present.
+    chroma_dir = tmp_path / "chroma"
+    chroma_dir.mkdir()
+    graph_file = tmp_path / "graph.kuzu"
+    graph_file.write_bytes(b"")
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+
+    fake_config = MagicMock()
+    fake_config.state_db.path = str(db_path)
+    fake_config.obsidian.vault_path = str(vault_dir)
+    # retrieval.graph_db.persist_dir is consulted by _graph_persist_dir
+    fake_config.retrieval.graph_db.persist_dir = str(graph_file)
+
+    idle_slot = MagicMock()
+    idle_slot.is_running.return_value = False
+    idle_slot.sequence_active = False
+
+    fake_runtime = MagicMock()
+    fake_runtime.config = fake_config
+    fake_runtime.state_db = real_state_db
+    fake_runtime.processes = {
+        "brain_build": idle_slot,
+        "discovery": idle_slot,
+        "vocabulary": idle_slot,
+        "rebuild_vectors": idle_slot,
+        "rebuild_graph": idle_slot,
+        "rebuild_notes": idle_slot,
+    }
+
+    client = TestClient(create_app())
+    with patch("lit_monitor.server.routes.reset.get_runtime", return_value=fake_runtime):
+        resp = client.get("/api/reset/status")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["configured"] is True, (
+        f"Expected configured=True with valid runtime, got {data['configured']!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Reviewer bugs — FIX 3: status shows paper/note counts, not raw file counts
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_status_counts_are_papers_not_files(tmp_path):
+    """FIX 3: /api/reset/status components.vectors.count is paper count, not file count.
+
+    Seeds a real StateDB with N papers where M have embeddings_indexed=1 and K have
+    graph_indexed=1. Asserts that the JSON response reflects M and K, not filesystem
+    file counts.
+    """
+    from lit_monitor.core.state_db import StateDB
+
+    db_path = tmp_path / "state.db"
+    real_state_db = StateDB(str(db_path))
+
+    # Upsert 5 papers; mark 3 embeddings_indexed=1 and 2 graph_indexed=1 directly.
+    for i in range(5):
+        real_state_db.upsert_paper({
+            "doi": f"10.0/p{i}",
+            "title": f"Paper {i}",
+            "year": 2024,
+            "embeddings_indexed": 1 if i < 3 else 0,
+        })
+    # Set graph_indexed via the dedicated setter (R28 invariant).
+    for i in range(2):
+        real_state_db.set_graph_indexed(f"10.0/p{i}", 1)
+
+    # Temp chroma dir with some internal ChromaDB files (should NOT be the count).
+    chroma_dir = tmp_path / "chroma"
+    chroma_dir.mkdir()
+    for j in range(9):
+        (chroma_dir / f"file{j}.bin").write_bytes(b"x")  # 9 internal files
+
+    # Graph file: a single file (should yield 0 from old logic).
+    graph_file = tmp_path / "graph.kuzu"
+    graph_file.write_bytes(b"")
+
+    # Vault dir with some .md notes.
+    vault_dir = tmp_path / "vault" / "Literature" / "Papers"
+    vault_dir.mkdir(parents=True)
+    for j in range(4):
+        (vault_dir / f"note{j}.md").write_bytes(b"")
+
+    fake_config = MagicMock()
+    fake_config.state_db.path = str(db_path)
+    fake_config.obsidian.vault_path = str(tmp_path / "vault")
+    fake_config.obsidian.papers_folder = "Literature/Papers"
+    fake_config.obsidian.digests_folder = "Literature/Digests"
+    fake_config.obsidian.connections_folder = "Literature/Connections"
+    fake_config.retrieval.graph_db.persist_dir = str(graph_file)
+
+    idle_slot = MagicMock()
+    idle_slot.is_running.return_value = False
+    idle_slot.sequence_active = False
+
+    fake_runtime = MagicMock()
+    fake_runtime.config = fake_config
+    fake_runtime.state_db = real_state_db
+    fake_runtime.processes = {
+        "brain_build": idle_slot,
+        "discovery": idle_slot,
+        "vocabulary": idle_slot,
+        "rebuild_vectors": idle_slot,
+        "rebuild_graph": idle_slot,
+        "rebuild_notes": idle_slot,
+    }
+
+    client = TestClient(create_app())
+    with patch("lit_monitor.server.routes.reset.get_runtime", return_value=fake_runtime):
+        resp = client.get("/api/reset/status")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    comps = data["components"]
+
+    # vectors: count must be 3 (embeddings_indexed=1), NOT 9 (chroma internal files).
+    assert comps["vectors"]["count"] == 3, (
+        f"vectors.count should be 3 (embedded papers), got {comps['vectors']['count']}"
+    )
+    assert comps["vectors"]["unit"] == "paper"
+
+    # graph: count must be 2 (graph_indexed=1), NOT 0 (single-file kuzu).
+    assert comps["graph"]["count"] == 2, (
+        f"graph.count should be 2 (graph-indexed papers), got {comps['graph']['count']}"
+    )
+    assert comps["graph"]["unit"] == "paper"
+
+    # notes: 4 .md files in Papers folder.
+    assert comps["notes"]["count"] == 4, (
+        f"notes.count should be 4, got {comps['notes']['count']}"
+    )
+    assert comps["notes"]["unit"] == "note"
+
+    # Old 'files' key must be gone.
+    assert "files" not in comps["vectors"], "Legacy 'files' key must be removed"
+    assert "files" not in comps["graph"], "Legacy 'files' key must be removed"
+
+
+@pytest.mark.unit
+def test_status_first_run_safe_new_shape(client):
+    """FIX 3: config-absent status still returns count/unit/size_bytes shape (not files)."""
+    resp = client.get("/api/reset/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["configured"] is False
+    for comp in ("vectors", "graph", "notes"):
+        assert "count" in data["components"][comp], (
+            f"{comp} missing 'count' key"
+        )
+        assert "unit" in data["components"][comp], (
+            f"{comp} missing 'unit' key"
+        )
+        assert data["components"][comp]["count"] == 0
+        assert data["components"][comp]["size_bytes"] == 0

@@ -130,27 +130,67 @@ def get_reset_status() -> JSONResponse:
         enrichment = {"nlp": False, "ollama_key": False}
 
     # Attempt to read component metrics from config. Degrade gracefully.
-    empty_component = {"present": False, "files": 0, "size_bytes": 0}
     try:
         config = runtime.config
 
-        def _summarise(targets: list) -> dict:
-            present = any(t.exists for t in targets)
-            files = sum(t.file_count for t in targets)
-            size = sum(t.size_bytes for t in targets)
-            return {"present": present, "files": files, "size_bytes": size}
+        def _sum_size(targets: list) -> int:
+            return sum(t.size_bytes for t in targets)
+
+        def _sum_md_files(targets: list) -> int:
+            """Count *.md files across vault target directories."""
+            total = 0
+            for tgt in targets:
+                if tgt.exists:
+                    total += sum(1 for _ in tgt.path.rglob("*.md"))
+            return total
+
+        # vectors: meaningful count = papers with embeddings in ChromaDB.
+        vtgts = vectors_targets(config)
+        try:
+            v_count = runtime.state_db.count_embeddings_indexed()
+        except Exception:
+            v_count = 0
+
+        # graph: meaningful count = papers indexed into KuzuDB.
+        gtgts = graph_targets(config)
+        try:
+            g_count = runtime.state_db.count_graph_indexed()
+        except Exception:
+            g_count = 0
+
+        # notes: meaningful count = *.md files in vault target dirs.
+        ntgts = vault_targets(config)
+        try:
+            n_count = _sum_md_files(ntgts)
+        except Exception:
+            n_count = 0
 
         components = {
-            "vectors": _summarise(vectors_targets(config)),
-            "graph": _summarise(graph_targets(config)),
-            "notes": _summarise(vault_targets(config)),
+            "vectors": {
+                "present": any(t.exists for t in vtgts),
+                "count": v_count,
+                "unit": "paper",
+                "size_bytes": _sum_size(vtgts),
+            },
+            "graph": {
+                "present": any(t.exists for t in gtgts),
+                "count": g_count,
+                "unit": "paper",
+                "size_bytes": _sum_size(gtgts),
+            },
+            "notes": {
+                "present": any(t.exists for t in ntgts),
+                "count": n_count,
+                "unit": "note",
+                "size_bytes": _sum_size(ntgts),
+            },
         }
         configured = True
     except Exception:
         components = {
-            "vectors": dict(empty_component),
-            "graph": dict(empty_component),
-            "notes": dict(empty_component),
+            "vectors": {"present": False, "count": 0, "unit": "paper", "size_bytes": 0},
+            "graph": {"present": False, "count": 0, "unit": "paper", "size_bytes": 0},
+            "notes": {"present": False, "count": 0, "unit": "note", "size_bytes": 0},
         }
         configured = False
 

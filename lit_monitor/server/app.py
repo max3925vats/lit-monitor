@@ -43,9 +43,10 @@ def configure_templates(t):
     sidebar needs nav_groups / active_group_for_path on every render)."""
     import json as _json
 
-    from lit_monitor.server.nav import NAV_GROUPS, active_group_for_path
+    from lit_monitor.server.nav import NAV_GROUPS, active_group_for_path, active_item_href
     t.env.globals["nav_groups"] = NAV_GROUPS
     t.env.globals["active_group_for_path"] = active_group_for_path
+    t.env.globals["active_item_href"] = active_item_href
     from lit_monitor.server.nav import breadcrumb_trail, show_stats_banner
     t.env.globals["breadcrumb_trail"] = breadcrumb_trail
     t.env.globals["show_stats_banner"] = show_stats_banner

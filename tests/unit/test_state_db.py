@@ -1368,3 +1368,57 @@ def test_reset_graph_stamps_clears_all_three(tmp_path):
     assert row["graph_indexed"] == 0
     assert row["ner_processed_at"] is None
     assert row["rel_processed_at"] is None
+
+
+# ---------------------------------------------------------------------------
+# FIX 3: count_embeddings_indexed / count_graph_indexed helpers
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_count_embeddings_indexed_empty(tmp_path):
+    """FIX 3: count_embeddings_indexed returns 0 for a fresh DB."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(tmp_path / "state.db")
+    assert db.count_embeddings_indexed() == 0
+
+
+@pytest.mark.unit
+def test_count_embeddings_indexed_counts_flagged_papers(tmp_path):
+    """FIX 3: count_embeddings_indexed returns only papers with embeddings_indexed=1."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(tmp_path / "state.db")
+    # 3 embedded, 2 not.
+    for i in range(3):
+        db.upsert_paper({
+            "doi": f"10.0/e{i}",
+            "title": f"E {i}",
+            "embeddings_indexed": 1,
+        })
+    for i in range(2):
+        db.upsert_paper({
+            "doi": f"10.0/n{i}",
+            "title": f"N {i}",
+            "embeddings_indexed": 0,
+        })
+    assert db.count_embeddings_indexed() == 3
+
+
+@pytest.mark.unit
+def test_count_graph_indexed_empty(tmp_path):
+    """FIX 3: count_graph_indexed returns 0 for a fresh DB."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(tmp_path / "state.db")
+    assert db.count_graph_indexed() == 0
+
+
+@pytest.mark.unit
+def test_count_graph_indexed_counts_flagged_papers(tmp_path):
+    """FIX 3: count_graph_indexed returns only papers with graph_indexed=1."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(tmp_path / "state.db")
+    # Insert 4 papers; graph-index 2 of them.
+    for i in range(4):
+        db.upsert_paper({"doi": f"10.0/g{i}", "title": f"G {i}"})
+    db.set_graph_indexed("10.0/g0", 1)
+    db.set_graph_indexed("10.0/g1", 1)
+    assert db.count_graph_indexed() == 2

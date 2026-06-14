@@ -431,7 +431,7 @@
     if (info.present) {
       el.innerHTML =
         '<span class="status-dot ok" title="Present" aria-label="Present"></span> ' +
-        info.files + " file" + (info.files !== 1 ? "s" : "") +
+        info.count + " " + info.unit + (info.count !== 1 ? "s" : "") +
         " · " + humanSize(info.size_bytes);
     } else {
       el.innerHTML =

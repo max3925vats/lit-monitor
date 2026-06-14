@@ -1242,6 +1242,20 @@ class StateDB:
             ).fetchone()
         return row[0] if row else 0
 
+    def count_embeddings_indexed(self) -> int:
+        """Number of papers with vectors in ChromaDB (embeddings_indexed=1)."""
+        with self._connect() as conn:
+            return int(conn.execute(
+                "SELECT COUNT(*) FROM papers WHERE embeddings_indexed = 1"
+            ).fetchone()[0])
+
+    def count_graph_indexed(self) -> int:
+        """Number of papers indexed into the knowledge graph (graph_indexed=1)."""
+        with self._connect() as conn:
+            return int(conn.execute(
+                "SELECT COUNT(*) FROM papers WHERE graph_indexed = 1"
+            ).fetchone()[0])
+
     def reset_extractions(self) -> int:
         """Wipe all extraction_json values and reset brain_build_progress.
 

@@ -150,3 +150,31 @@ def test_setup_group_has_two_items():
     labels = [i.label for i in setup.items]
     assert hrefs == ["/setup", "/setup/reset"]
     assert labels == ["Setup", "Reset & Rebuild"]
+
+
+# ---------------------------------------------------------------------------
+# Reviewer bugs — active_item_href helper (FIX 1)
+# ---------------------------------------------------------------------------
+
+def test_active_item_href_setup_reset_is_exact():
+    """FIX 1: /setup/reset must resolve to its OWN item, not the /setup prefix."""
+    from lit_monitor.server.nav import active_item_href
+    assert active_item_href("/setup/reset") == "/setup/reset"
+
+
+def test_active_item_href_setup_index():
+    """FIX 1: /setup exact match resolves to /setup."""
+    from lit_monitor.server.nav import active_item_href
+    assert active_item_href("/setup") == "/setup"
+
+
+def test_active_item_href_setup_step_falls_back_to_parent():
+    """FIX 1: /setup/step-3 has no exact item → longest-prefix fallback to /setup."""
+    from lit_monitor.server.nav import active_item_href
+    assert active_item_href("/setup/step-3") == "/setup"
+
+
+def test_active_item_href_discovery_detail():
+    """FIX 1: /discovery/2 has no exact item → longest-prefix fallback to /discovery."""
+    from lit_monitor.server.nav import active_item_href
+    assert active_item_href("/discovery/2") == "/discovery"
