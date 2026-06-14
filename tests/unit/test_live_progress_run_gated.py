@@ -22,7 +22,33 @@ from lit_monitor.server.app import create_app
 
 
 @pytest.fixture
-def client() -> TestClient:
+def client(tmp_path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    """A client whose brain-build/discovery routes see an isolated, *configured*
+    runtime: a real (empty) temp StateDB plus a benign config.
+
+    These tests assert the full configured-dashboard markup contract
+    (``#live-progress-wrap``, ``sse-connect=…``). That markup only renders once
+    the route has a usable state_db; without one the dashboards correctly
+    degrade to a "DB unavailable" card (which omits the live-progress pane). On a
+    developer's machine an ambient ``~/.config/lit-monitor/paths.yaml`` happened
+    to supply config, so a bare ``create_app()`` passed locally but fell back in
+    CI. Injecting the runtime here removes that hidden dependency.
+    """
+    from unittest.mock import MagicMock
+
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.server.runtime import reset_runtime
+
+    reset_runtime()
+    db = StateDB(tmp_path / "state.db")
+    fake_runtime = MagicMock()
+    fake_runtime.state_db = db
+    fake_runtime.config.obsidian.vault_path = ""
+    for route_mod in ("brain_build", "discovery"):
+        monkeypatch.setattr(
+            f"lit_monitor.server.routes.{route_mod}.get_runtime",
+            lambda: fake_runtime,
+        )
     return TestClient(create_app())
 
 

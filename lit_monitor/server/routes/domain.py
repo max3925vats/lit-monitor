@@ -158,11 +158,22 @@ def post_reject(row_id: int) -> dict:
 
 @router.get("/domain", response_class=HTMLResponse)
 def get_domain_page(request: Request) -> HTMLResponse:
-    """Render the domain review UI."""
+    """Render the domain review UI.
+
+    First-run-safe: if the runtime cannot produce a state_db (e.g. before setup,
+    when ``config/paths.yaml`` does not exist yet), degrade to the empty
+    extraction state rather than 500-ing — matching the brain-build/discovery
+    dashboards' graceful behaviour.
+    """
     # Imported here so create_app() can wire `templates` first.
     from lit_monitor.server.app import templates
 
-    extraction = get_runtime().state_db.list_domain_extraction()
+    try:
+        extraction = get_runtime().state_db.list_domain_extraction()
+    except Exception:
+        # No config / no state_db yet (first run) — render the empty state.
+        logger.warning("domain extraction unavailable", exc_info=True)
+        extraction = {}
     return templates.TemplateResponse(
         request,
         "domain/index.html",

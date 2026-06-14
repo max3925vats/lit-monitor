@@ -272,3 +272,38 @@ def test_domain_actions_use_sl_button():
     assert "<sl-button" in html and 'hx-post="/api/domain/analyze"' in html
     # Specifically, the analyze trigger must NOT be a native button
     assert "<button hx-post=\"/api/domain/analyze\"" not in html
+
+
+@pytest.mark.unit
+def test_domain_page_is_first_run_safe_when_state_db_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GET /domain must render 200, not 500, when the runtime cannot produce a
+    state_db (e.g. first run before setup — no config/paths.yaml on disk).
+
+    Mirrors brain-build/discovery's first-run-safe degradation: a runtime whose
+    ``.state_db`` raises (here, FileNotFoundError, the real config-absent path)
+    must not 500 the page; it should fall back to the empty extraction state.
+    """
+    from unittest.mock import MagicMock, PropertyMock
+
+    from fastapi.testclient import TestClient
+
+    from lit_monitor.server.app import create_app
+
+    # A runtime whose .state_db access raises FileNotFoundError, exactly as the
+    # real ServerRuntime.config -> get_config() does when paths.yaml is absent.
+    broken_runtime = MagicMock()
+    type(broken_runtime).state_db = PropertyMock(
+        side_effect=FileNotFoundError("Config file not found: config/paths.yaml")
+    )
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.domain.get_runtime",
+        lambda: broken_runtime,
+    )
+
+    client = TestClient(create_app())
+    resp = client.get("/domain")
+    assert resp.status_code == 200, "the /domain page must degrade gracefully, not 500"
+    # The empty-state copy renders when there is no extraction to show.
+    assert "No extraction yet" in resp.text
