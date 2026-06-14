@@ -360,6 +360,111 @@ def test_rebuild_unknown_component_404(client):
     assert resp.status_code == 404
 
 
+# ---------------------------------------------------------------------------
+# RR5-review — regression tests for the monotonic-counter / front-drop fix
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_process_slot_total_appended_monotonic():
+    """total_appended keeps climbing even when the bounded buffer drops front lines.
+
+    Specifically: after cap+150 appends the counter must equal cap+150 while the
+    buffer holds at most ``output_cap`` lines.  The first line ("L0") must have
+    been evicted from the front of the buffer.
+    """
+    from lit_monitor.server.runtime import ProcessSlot
+
+    slot = ProcessSlot()
+    cap = slot.output_cap  # 1000
+    n = cap + 150
+
+    for i in range(n):
+        slot.append_line(f"L{i}")
+
+    assert slot.total_appended == n, (
+        f"total_appended should be {n}, got {slot.total_appended}"
+    )
+    assert len(slot.output) <= cap, (
+        f"buffer should be capped at {cap}, got {len(slot.output)}"
+    )
+    # The front was dropped — "L0" must no longer be in the buffer.
+    assert slot.output[0] != "L0", "L0 should have been evicted from the buffer front"
+    # The last appended line must still be present.
+    assert slot.output[-1] == f"L{n - 1}", "last line must be in the buffer"
+
+
+@pytest.mark.unit
+def test_new_lines_helper_no_gap_after_front_drop():
+    """_new_lines emits ALL buffered lines with no gap or IndexError after a front-drop.
+
+    Simulates: total_appended=1100, buffer holds 901 lines (indices 199..1099).
+    A follower that last emitted idx=199 must get all 901 lines in one pass,
+    ending at idx=1100, with no gap.
+    """
+    from lit_monitor.server.routes.reset import _new_lines
+
+    total = 1100
+    buf_len = 901  # total - buf_len = 199 = base (first buffered line has absolute index 199)
+    # Simulate slot.output: lines for absolute indices 199..1099
+    out = [f"L{i}" for i in range(199, 1100)]
+    assert len(out) == buf_len
+
+    # Follower arrives claiming it has emitted up to idx=199 (base exactly).
+    lines, new_idx = _new_lines(out, total, 199)
+
+    assert len(lines) == buf_len, (
+        f"expected {buf_len} lines, got {len(lines)}"
+    )
+    assert new_idx == total, f"new_idx should be {total}, got {new_idx}"
+    assert lines[0] == "L199", f"first emitted line should be 'L199', got {lines[0]!r}"
+    assert lines[-1] == "L1099", f"last emitted line should be 'L1099', got {lines[-1]!r}"
+
+
+@pytest.mark.unit
+def test_new_lines_helper_clamps_idx_below_base():
+    """_new_lines clamps idx forward to base when the follower fell behind a front-drop.
+
+    Simulates a follower stuck at idx=50 while the buffer has already dropped
+    the first 199 lines (base=199).  The follower must NOT skip lines 199..1099.
+    """
+    from lit_monitor.server.routes.reset import _new_lines
+
+    total = 1100
+    out = [f"L{i}" for i in range(199, 1100)]  # base=199
+
+    # Follower is stuck at idx=50 (below base).
+    lines, new_idx = _new_lines(out, total, 50)
+
+    # It must emit all 901 buffered lines (no lines were skipped).
+    assert len(lines) == 901
+    assert new_idx == total
+    assert lines[0] == "L199"
+
+
+@pytest.mark.unit
+def test_new_lines_old_logic_would_skip_lines():
+    """Demonstrate that the OLD min()-clamp logic silently skips lines.
+
+    This test encodes the OLD buggy logic and asserts it produces fewer lines
+    than expected — proving the regression would have been caught.
+    """
+    # base=199 (absolute index of out[0] = total_appended - len(out) = 1100 - 901)
+    out = [f"L{i}" for i in range(199, 1100)]  # len=901
+
+    # OLD logic: idx = min(idx, len(out))  then emit out[idx:]
+    old_idx = 50
+    old_idx = min(old_idx, len(out))  # stays 50 — does NOT clamp to base
+    # out[50] is actually "L249", not "L199" → lines 199..248 are silently skipped
+    lines_old = out[old_idx:]
+
+    assert len(lines_old) < 901, (
+        "old logic should produce fewer than 901 lines (it skips the first 50 buffer entries)"
+    )
+    assert lines_old[0] != "L199", (
+        f"old logic starts at {lines_old[0]!r}, not 'L199' — proving lines were skipped"
+    )
+
+
 @pytest.mark.unit
 def test_rebuild_stream_emits_buffered_lines(client):
     """GET /api/rebuild/vectors/stream returns SSE with buffered lines and a done event."""
@@ -368,6 +473,7 @@ def test_rebuild_stream_emits_buffered_lines(client):
     # Set up the vectors slot with pre-buffered output and sequence inactive.
     vectors_slot = MagicMock()
     vectors_slot.output = ["a", "b"]
+    vectors_slot.total_appended = 2  # required by the monotonic-counter follower
     vectors_slot.sequence_active = False
     vectors_slot.is_running.return_value = False
     fake_runtime.processes["rebuild_vectors"] = vectors_slot

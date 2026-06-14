@@ -344,6 +344,29 @@ async def post_rebuild_component(component: str, request: Request) -> JSONRespon
 # Rebuild: SSE buffer-follower
 # ---------------------------------------------------------------------------
 
+def _new_lines(
+    out: list[str],
+    total: int,
+    idx: int,
+) -> tuple[list[str], int]:
+    """Return lines not yet seen by the stream and the updated absolute index.
+
+    ``out``   — current snapshot of ``slot.output`` (bounded buffer).
+    ``total`` — ``slot.total_appended`` (monotonic; never decremented).
+    ``idx``   — absolute count of lines this stream has already emitted.
+
+    When the buffer drops lines from its front (a front-drop), ``idx`` may
+    point before ``out[0]``.  We detect that via ``base = total - len(out)``
+    and clamp ``idx`` forward to ``base`` so no lines are silently skipped.
+    """
+    base = total - len(out)  # absolute index of out[0]
+    if idx < base:
+        # We fell behind a front-drop; resume from the earliest buffered line.
+        idx = base
+    lines = out[idx - base : total - base]  # out[idx-base .. len(out)-1]
+    return lines, idx + len(lines)
+
+
 @router.get("/api/rebuild/{component}/stream")
 async def rebuild_stream(request: Request, component: str) -> object:
     """SSE stream that follows ``slot.output`` as the rebuild job appends to it.
@@ -353,6 +376,11 @@ async def rebuild_stream(request: Request, component: str) -> object:
     the pipe; it drains each line into ``slot.output`` via ``slot.append_line``.
     A second reader on the same pipe would cause corruption — hence the buffer
     model here.
+
+    Front-drop safety: ``slot.total_appended`` is a monotonic counter that
+    never decrements even when ``append_line`` drops lines from the buffer's
+    front.  ``_new_lines`` uses it to compute the correct slice offset so no
+    buffered lines are silently skipped after a front-drop.
     """
     import asyncio  # noqa: PLC0415
     from html import escape  # noqa: PLC0415
@@ -370,26 +398,20 @@ async def rebuild_stream(request: Request, component: str) -> object:
     slot = runtime.processes[slot_name(component)]
 
     async def _gen():
-        idx = 0
+        idx = 0  # absolute count of lines this stream has emitted
         while True:
             if await request.is_disconnected():
                 return
 
-            # Guard against the bounded buffer truncating old lines:
-            # if append_line dropped from the front, len(out) may be < idx.
-            out = slot.output
-            idx = min(idx, len(out))
-
-            # Emit any lines appended since the last poll.
-            while idx < len(out):
+            lines, idx = _new_lines(slot.output, slot.total_appended, idx)
+            for line in lines:
                 yield {
                     "event": "progress",
-                    "data": f'<div class="log-line">{escape(out[idx])}</div>',
+                    "data": f'<div class="log-line">{escape(line)}</div>',
                 }
-                idx += 1
 
             # Done when the sequence is no longer active AND the buffer is drained.
-            if not is_rebuild_busy(slot) and idx >= len(slot.output):
+            if not is_rebuild_busy(slot) and idx >= slot.total_appended:
                 yield {"event": "done", "data": "rebuild finished"}
                 return
 

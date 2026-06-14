@@ -60,12 +60,17 @@ class ProcessSlot:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     output: list[str] = field(default_factory=list)
     output_cap: int = 1000
+    # Monotonic count of every line ever appended — never decremented even when
+    # the bounded buffer drops lines from the front.  SSE followers use this to
+    # detect front-drops and resume at the correct buffer offset.
+    total_appended: int = 0
     # Free-form per-slot metadata (e.g. state.db mtime snapshot for dev_dryrun).
     metadata: dict = field(default_factory=dict)
 
     def append_line(self, line: str) -> None:
         """Append a line, truncating from the start if cap exceeded."""
         self.output.append(line)
+        self.total_appended += 1  # always increment, independent of drops
         if len(self.output) > self.output_cap:
             # Drop ~10% from the front so we don't reallocate every line.
             drop = max(1, self.output_cap // 10)
