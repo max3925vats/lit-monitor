@@ -348,6 +348,15 @@ class TestThemesListShoelaceMarkup:
         assert "field-note" in html
         assert "lit-monitor cluster" in html
 
+    def test_count_links_to_filtered_corpus(self, seeded_db, monkeypatch):
+        # P5 cross-link (rubric #17): each theme's n_papers count links to Corpus
+        # Health pre-filtered to that cluster (the corpus list filters on
+        # display_name via its ?theme= query param). "Topic A" → Topic%20A.
+        db, _ = seeded_db
+        client, _ = _make_html_client(db, monkeypatch)
+        html = client.get("/themes").text
+        assert 'href="/corpus?theme=Topic%20A"' in html
+
 
 # ---------------------------------------------------------------------------
 # P4 (Shoelace redesign) — themes detail markup

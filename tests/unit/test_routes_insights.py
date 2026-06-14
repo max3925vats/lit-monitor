@@ -213,6 +213,17 @@ def test_nav_tune_has_insights(client):
     assert 'href="/insights"' in r.text and "Insights" in r.text
 
 
+def test_insights_intro_links_to_domain(client):
+    # P5 cross-link (rubric #17): the intro/description area carries an inline
+    # link to /domain — domain focus feeds the discovery ranking signal, the
+    # natural neighbour of the learned signals Insights surfaces. Assert the
+    # link plus its descriptive anchor text so this is the CONTENT cross-link,
+    # not the sidebar nav entry (which also targets /domain).
+    r = client.get("/insights")
+    assert r.status_code == 200
+    assert 'href="/domain">Tune the domain signal' in r.text
+
+
 def test_insights_loads_chartjs(client, monkeypatch):
     # CU-2 contract REVERSAL: this assertion was previously test_no_chartjs_or_cdn,
     # which asserted Chart.js was ABSENT (FI-2 was offline-only / inline-SVG).

@@ -77,6 +77,19 @@ def test_corpus_page_is_corpus_health(client, monkeypatch):
     assert "<h1>Corpus Health</h1>" in r.text
 
 
+def test_corpus_intro_links_to_discovery(client, monkeypatch):
+    # P5 cross-link (rubric #17): the intro note mentions discovery's un-ingested
+    # candidates — that phrase links to /discovery so the user can jump to where
+    # those candidates live. Assert the link plus its inline anchor text so this
+    # is the CONTENT cross-link, not the sidebar nav entry (also /discovery).
+    monkeypatch.setattr(
+        "lit_monitor.server.routes.corpus._list_papers", lambda **k: ([], 0)
+    )
+    r = client.get("/corpus")
+    assert r.status_code == 200
+    assert 'href="/discovery">discovery' in r.text
+
+
 def test_corpus_list_has_inline_toolbar_no_rail(client, monkeypatch):
     # P4: the left filter rail is GONE — filters live in a single inline toolbar
     # above the table. The toolbar holds Shoelace controls (search input + the
