@@ -53,6 +53,10 @@ class ProcessSlot:
     # Set by /api/discovery/start so the controls fragment can label the run
     # as "dry-run" vs "running". Other slots ignore this field.
     dry_run: bool = False
+    # True while a multi-command rebuild sequence is in flight. Stays True
+    # between individual commands (when process.returncode is briefly 0 but the
+    # chain hasn't finished). run_rebuild_sequence manages this flag.
+    sequence_active: bool = False
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     output: list[str] = field(default_factory=list)
     output_cap: int = 1000

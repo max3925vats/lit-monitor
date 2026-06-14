@@ -12,9 +12,14 @@ import asyncio
 import importlib.util
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Repo root: lit_monitor/server/rebuild_jobs.py → parents[0]=server,
+# parents[1]=lit_monitor, parents[2]=repo root.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _SLOT_FOR = {
     "vectors": "rebuild_vectors",
@@ -58,10 +63,24 @@ def enrichment_capability() -> dict[str, bool]:
     return {"nlp": nlp_ok, "ollama_key": bool(os.environ.get("OLLAMA_API_KEY"))}
 
 
+def is_rebuild_busy(slot: Any) -> bool:
+    """True while a rebuild sequence is in flight.
+
+    Covers the gap between chained commands where ``slot.process`` briefly
+    points at a finished (exit-0) process, making ``is_running()`` return
+    False prematurely. ``sequence_active`` stays True for the whole chain.
+    """
+    return bool(getattr(slot, "sequence_active", False)) or slot.is_running()
+
+
 async def run_rebuild_sequence(slot: Any, argvs: list[list[str]]) -> int:
     """Run each argv in ``argvs`` sequentially inside ``slot``, streaming stdout
     into ``slot.append_line(...)``. Aborts the chain on the first non-zero exit.
     Returns the exit code of the last command run (0 = all succeeded).
+
+    Each CLI command is spawned as ``uv run <argv>`` from ``_REPO_ROOT`` so
+    config_dir() walks up from the repo root — matching the production pattern
+    in ``routes/control.py::_spawn_brain_build``.
 
     Locking mirrors ``dev_graph_backfill_start``: ``slot.lock`` is held ONLY
     around the spawn (setting ``slot.process``/``slot.started_at``), then released
@@ -72,34 +91,51 @@ async def run_rebuild_sequence(slot: Any, argvs: list[list[str]]) -> int:
     """
     from datetime import UTC, datetime
 
+    # Signal that a multi-command sequence is running so concurrent status polls
+    # see "busy" even between commands (when process.returncode is already 0).
+    slot.sequence_active = True
+    # Clear any output from a prior run so lines don't bleed across runs.
+    slot.output.clear()
+
     last_rc = 0
-    for argv in argvs:
-        # Spawn under the lock so a concurrent stop()/status sees a consistent
-        # (process, started_at) pair, exactly like dev_graph_backfill_start.
-        async with slot.lock:
-            try:
-                process = await asyncio.create_subprocess_exec(
-                    *argv,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                )
-            except Exception:  # noqa: BLE001 — surface any spawn failure as a line
-                logger.exception("rebuild spawn failed: %s", argv)
-                slot.append_line("✗ rebuild step failed (spawn error)")
-                return 1
-            slot.process = process
-            slot.started_at = datetime.now(UTC).isoformat(timespec="seconds")
+    try:
+        for argv in argvs:
+            # Prepend "uv run" so the CLI resolves via the venv/project and
+            # cwd=_REPO_ROOT ensures config_dir() finds the correct project root.
+            full_argv = ["uv", "run", *argv]
 
-        # Drain stdout OUTSIDE the lock — the lock guards spawn/stop atomicity,
-        # not the (potentially long) read loop.
-        if process.stdout is not None:
-            async for raw in process.stdout:
-                slot.append_line(raw.decode("utf-8", errors="replace").rstrip())
+            # Spawn under the lock so a concurrent stop()/status sees a consistent
+            # (process, started_at) pair, exactly like dev_graph_backfill_start.
+            async with slot.lock:
+                try:
+                    process = await asyncio.create_subprocess_exec(
+                        *full_argv,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                        cwd=str(_REPO_ROOT),
+                    )
+                except Exception:  # noqa: BLE001 — surface any spawn failure as a line
+                    logger.exception("rebuild spawn failed: %s", full_argv)
+                    slot.append_line("✗ rebuild step failed (spawn error)")
+                    return 1
+                slot.process = process
+                slot.started_at = datetime.now(UTC).isoformat(timespec="seconds")
 
-        rc = await process.wait()
-        last_rc = rc
-        if rc != 0:
-            slot.append_line(f"✗ rebuild step failed (exit {rc})")
-            return rc
+            # Drain stdout OUTSIDE the lock — the lock guards spawn/stop atomicity,
+            # not the (potentially long) read loop.
+            if process.stdout is not None:
+                async for raw in process.stdout:
+                    slot.append_line(raw.decode("utf-8", errors="replace").rstrip())
 
-    return last_rc
+            rc = await process.wait()
+            last_rc = rc
+            if rc != 0:
+                slot.append_line(f"✗ rebuild step failed (exit {rc})")
+                return rc
+
+        return last_rc
+    finally:
+        # Always clear the flag and the stale process reference so status polls
+        # and stop() see a clean idle state after the sequence ends (or fails).
+        slot.sequence_active = False
+        slot.process = None

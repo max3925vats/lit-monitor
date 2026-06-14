@@ -140,14 +140,29 @@ class _FakeSlot:
         self.append_line = self.output.append
         self.process = None
         self.started_at = None
+        self.sequence_active: bool = False
+
+    def is_running(self) -> bool:
+        return self.process is not None and self.process.returncode is None
 
 
-def _patch_exec(monkeypatch, processes: list[_FakeProcess], recorded: list[list[str]]):
-    """Patch create_subprocess_exec to hand out ``processes`` in order, recording argvs."""
+def _patch_exec(
+    monkeypatch,
+    processes: list[_FakeProcess],
+    recorded: list[list[str]],
+    recorded_kwargs: list[dict] | None = None,
+):
+    """Patch create_subprocess_exec to hand out ``processes`` in order.
+
+    Appends the positional argv to ``recorded`` and, when ``recorded_kwargs``
+    is provided, appends the kwargs dict there too.
+    """
     it = iter(processes)
 
     async def _fake_exec(*argv, **kwargs):
         recorded.append(list(argv))
+        if recorded_kwargs is not None:
+            recorded_kwargs.append(dict(kwargs))
         return next(it)
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
@@ -171,8 +186,8 @@ def test_run_rebuild_sequence_streams_and_chains(monkeypatch):
     rc = asyncio.run(run_rebuild_sequence(slot, argvs))
 
     assert rc == 0
-    # Both commands spawned, in order.
-    assert recorded == argvs
+    # Both commands spawned with uv run prefix, in order.
+    assert recorded == [["uv", "run", *a] for a in argvs]
     # Streamed stdout captured into the slot's buffer.
     assert "line1" in slot.output
     assert "line2" in slot.output
@@ -198,6 +213,91 @@ def test_run_rebuild_sequence_aborts_on_first_failure(monkeypatch):
 
     assert rc == 3
     # Only the first command was spawned — chain aborted.
-    assert recorded == [argvs[0]]
+    assert recorded == [["uv", "run", *argvs[0]]]
     # A clear failure line was appended.
     assert any("3" in ln and ("fail" in ln.lower() or "✗" in ln) for ln in slot.output)
+
+
+# ---------------------------------------------------------------------------
+# New tests for RR3 reviewer fixes
+# ---------------------------------------------------------------------------
+
+def test_repo_root_is_repo():
+    """_REPO_ROOT must point at the project root (confirmed by pyproject.toml)."""
+    from lit_monitor.server.rebuild_jobs import _REPO_ROOT
+
+    assert (_REPO_ROOT / "pyproject.toml").exists(), (
+        f"_REPO_ROOT={_REPO_ROOT!r} does not contain pyproject.toml"
+    )
+
+
+def test_run_rebuild_sequence_uses_uv_run_and_cwd(monkeypatch):
+    """Every subprocess spawn must start with ('uv', 'run', 'lit-monitor', ...)
+    and pass cwd=str(_REPO_ROOT)."""
+    from lit_monitor.server.rebuild_jobs import _REPO_ROOT, run_rebuild_sequence
+
+    recorded: list[list[str]] = []
+    recorded_kwargs: list[dict] = []
+    procs = [_FakeProcess([b"ok\n"], returncode=0)]
+    _patch_exec(monkeypatch, procs, recorded, recorded_kwargs)
+
+    slot = _FakeSlot()
+    argvs = [["lit-monitor", "graph", "backfill", "--all"]]
+    asyncio.run(run_rebuild_sequence(slot, argvs))
+
+    assert len(recorded) == 1
+    # The spawn argv must start with "uv run lit-monitor".
+    assert recorded[0][:3] == ["uv", "run", "lit-monitor"], (
+        f"Expected ['uv', 'run', 'lit-monitor', ...], got {recorded[0]!r}"
+    )
+    # The cwd must be the repo root.
+    assert recorded_kwargs[0]["cwd"] == str(_REPO_ROOT), (
+        f"Expected cwd={str(_REPO_ROOT)!r}, got {recorded_kwargs[0].get('cwd')!r}"
+    )
+
+
+def test_is_rebuild_busy_true_during_sequence(monkeypatch):
+    """sequence_active is True while the sequence runs; False + process=None after."""
+    from lit_monitor.server.rebuild_jobs import run_rebuild_sequence
+
+    slot = _FakeSlot()
+    observed_active_during: list[bool] = []
+
+    async def _fake_exec(*argv, **kwargs):
+        # At spawn time the flag must already be set.
+        observed_active_during.append(slot.sequence_active)
+        return _FakeProcess([b"line\n"], returncode=0)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+
+    asyncio.run(run_rebuild_sequence(slot, [["lit-monitor", "embeddings", "rebuild", "--confirm"]]))
+
+    # Flag was True when the subprocess was spawned.
+    assert observed_active_during == [True]
+    # After the sequence, both flag and stale process reference are cleared.
+    assert slot.sequence_active is False
+    assert slot.process is None
+
+
+def test_run_rebuild_sequence_spawn_error_returns_1(monkeypatch):
+    """A FileNotFoundError from create_subprocess_exec must: return non-zero,
+    append a failure line, and always clear sequence_active and process."""
+    from lit_monitor.server.rebuild_jobs import run_rebuild_sequence
+
+    async def _boom(*argv, **kwargs):
+        raise FileNotFoundError("uv not found")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _boom)
+
+    slot = _FakeSlot()
+    rc = asyncio.run(
+        run_rebuild_sequence(slot, [["lit-monitor", "embeddings", "rebuild", "--confirm"]])
+    )
+
+    assert rc != 0, "Expected non-zero exit on spawn failure"
+    assert any("fail" in ln.lower() or "✗" in ln for ln in slot.output), (
+        f"Expected a failure line in output, got {slot.output!r}"
+    )
+    # finally block must fire even on spawn error.
+    assert slot.sequence_active is False
+    assert slot.process is None
