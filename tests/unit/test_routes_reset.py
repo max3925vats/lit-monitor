@@ -465,6 +465,25 @@ def test_new_lines_old_logic_would_skip_lines():
     )
 
 
+# ---------------------------------------------------------------------------
+# RR7 — Page structure (four component cards)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_reset_page_has_component_cards():
+    """GET /setup/reset renders the four required component sections.
+
+    First-run-safe: page must return 200 even with no config present (the
+    JS handles the 'not configured' state client-side; the template must not
+    require config to render).
+    """
+    # Re-use the module-level imports (TestClient + create_app are already at
+    # the top of this file); creating a fresh client here avoids shared state.
+    html = TestClient(create_app()).get("/setup/reset").text
+    for token in ("Vectors", "Knowledge graph", "Obsidian notes", "Reset Everything"):
+        assert token in html, f"Expected card token {token!r} not found in /setup/reset"
+
+
 @pytest.mark.unit
 def test_rebuild_stream_emits_buffered_lines(client):
     """GET /api/rebuild/vectors/stream returns SSE with buffered lines and a done event."""
