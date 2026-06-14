@@ -136,6 +136,10 @@ dev = [
     "mypy",
     "playwright",
     "pytest-playwright",
+    # Pillow: pixel-diff for the opt-in visual-regression baseline suite
+    # (tests/visual/test_visual_baselines.py). Decodes PNG screenshots so the
+    # fresh capture can be compared to the committed baseline. Test-only.
+    "pillow",
 ]
 # Documentation site (MkDocs Material). Preview locally with:
 #   uv run --extra docs mkdocs serve
