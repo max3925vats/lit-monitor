@@ -329,6 +329,11 @@ a:hover {
   color: var(--fg);
 }
 
+/* A primary-action row inside a card (e.g. Trending "Re-detect", Domain
+   "Re-analyze") — give the button breathing room above and below so it isn't
+   cramped against the description and the result/empty-state. */
+.card-action { margin: 1.5rem 0; }
+
 .card:hover {
   border-color: var(--accent);
   text-decoration: none;
