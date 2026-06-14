@@ -217,3 +217,178 @@ def test_reset_unknown_component_returns_404(client):
     """POST /api/reset/bogus → 404."""
     resp = client.post("/api/reset/bogus")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# RR5 — Rebuild endpoints
+# ---------------------------------------------------------------------------
+
+def _make_idle_runtime():
+    """Return a fake runtime with all slots idle (no rebuild/pipeline running)."""
+    idle = MagicMock()
+    idle.is_running.return_value = False
+    idle.sequence_active = False
+    runtime = MagicMock()
+    runtime.processes = {
+        "brain_build": idle,
+        "discovery": idle,
+        "vocabulary": idle,
+        "rebuild_vectors": idle,
+        "rebuild_graph": idle,
+        "rebuild_notes": idle,
+    }
+    return runtime
+
+
+@pytest.mark.unit
+def test_rebuild_graph_enrich_blocked_without_capability(client):
+    """POST /api/rebuild/graph with enrich=true → 400 when capability is missing.
+
+    _schedule_rebuild must NOT be called.
+    """
+    fake_runtime = _make_idle_runtime()
+    schedule_mock = MagicMock()
+
+    with (
+        patch("lit_monitor.server.routes.reset.get_runtime", return_value=fake_runtime),
+        patch(
+            "lit_monitor.server.routes.reset.enrichment_capability",
+            return_value={"nlp": False, "ollama_key": False},
+        ),
+        patch("lit_monitor.server.routes.reset._schedule_rebuild", schedule_mock),
+    ):
+        resp = client.post("/api/rebuild/graph", data={"enrich": "true"})
+
+    assert resp.status_code == 400
+    data = resp.json()
+    assert "enrichment unavailable" in data["error"]
+    assert "capability" in data
+    schedule_mock.assert_not_called()
+
+
+@pytest.mark.unit
+def test_rebuild_blocked_when_busy(client):
+    """POST /api/rebuild/vectors → 409 when any pipeline slot is running.
+
+    _schedule_rebuild must NOT be called.
+    """
+    # brain_build is running
+    busy_slot = MagicMock()
+    busy_slot.is_running.return_value = True
+    idle = MagicMock()
+    idle.is_running.return_value = False
+    idle.sequence_active = False
+
+    fake_runtime = MagicMock()
+    fake_runtime.processes = {
+        "brain_build": busy_slot,
+        "discovery": idle,
+        "vocabulary": idle,
+        "rebuild_vectors": idle,
+        "rebuild_graph": idle,
+        "rebuild_notes": idle,
+    }
+
+    schedule_mock = MagicMock()
+
+    with (
+        patch("lit_monitor.server.routes.reset.get_runtime", return_value=fake_runtime),
+        patch("lit_monitor.server.routes.reset._schedule_rebuild", schedule_mock),
+    ):
+        resp = client.post("/api/rebuild/vectors")
+
+    assert resp.status_code == 409
+    schedule_mock.assert_not_called()
+
+
+@pytest.mark.unit
+def test_rebuild_idle_schedules(client):
+    """POST /api/rebuild/notes → 200 and _schedule_rebuild called once with correct argvs."""
+    fake_runtime = _make_idle_runtime()
+    # Give the notes slot a real output list so SSE could follow it
+    fake_runtime.processes["rebuild_notes"].output = []
+
+    schedule_mock = MagicMock()
+
+    with (
+        patch("lit_monitor.server.routes.reset.get_runtime", return_value=fake_runtime),
+        patch("lit_monitor.server.routes.reset._schedule_rebuild", schedule_mock),
+    ):
+        resp = client.post("/api/rebuild/notes")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["started"] is True
+    assert data["component"] == "notes"
+
+    schedule_mock.assert_called_once()
+    # Verify the slot and argvs passed to _schedule_rebuild
+    call_args = schedule_mock.call_args
+    slot_arg, argvs_arg = call_args[0]
+    assert argvs_arg == [["lit-monitor", "obsidian", "rerender"]]
+
+
+@pytest.mark.unit
+def test_rebuild_graph_base_schedules_without_capability(client):
+    """POST /api/rebuild/graph (no enrich) → 200 even if capability is absent.
+
+    The base graph rebuild is NOT capability-gated.
+    """
+    fake_runtime = _make_idle_runtime()
+    schedule_mock = MagicMock()
+
+    with (
+        patch("lit_monitor.server.routes.reset.get_runtime", return_value=fake_runtime),
+        patch(
+            "lit_monitor.server.routes.reset.enrichment_capability",
+            return_value={"nlp": False, "ollama_key": False},
+        ),
+        patch("lit_monitor.server.routes.reset._schedule_rebuild", schedule_mock),
+    ):
+        resp = client.post("/api/rebuild/graph")  # no enrich field
+
+    assert resp.status_code == 200
+    schedule_mock.assert_called_once()
+    _, argvs_arg = schedule_mock.call_args[0]
+    assert argvs_arg == [["lit-monitor", "graph", "backfill", "--all"]]
+
+
+@pytest.mark.unit
+def test_rebuild_unknown_component_404(client):
+    """POST /api/rebuild/bogus → 404."""
+    resp = client.post("/api/rebuild/bogus")
+    assert resp.status_code == 404
+
+
+@pytest.mark.unit
+def test_rebuild_stream_emits_buffered_lines(client):
+    """GET /api/rebuild/vectors/stream returns SSE with buffered lines and a done event."""
+    fake_runtime = _make_idle_runtime()
+
+    # Set up the vectors slot with pre-buffered output and sequence inactive.
+    vectors_slot = MagicMock()
+    vectors_slot.output = ["a", "b"]
+    vectors_slot.sequence_active = False
+    vectors_slot.is_running.return_value = False
+    fake_runtime.processes["rebuild_vectors"] = vectors_slot
+
+    with (
+        patch("lit_monitor.server.routes.reset.get_runtime", return_value=fake_runtime),
+        patch(
+            "lit_monitor.server.routes.reset.is_rebuild_busy",
+            return_value=False,
+        ),
+    ):
+        resp = client.get(
+            "/api/rebuild/vectors/stream",
+            headers={"accept": "text/event-stream"},
+        )
+
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.headers.get("content-type", "")
+    body = resp.text
+    # Both buffered lines must appear in the SSE body
+    assert "a" in body
+    assert "b" in body
+    # A done event must close the stream
+    assert "done" in body

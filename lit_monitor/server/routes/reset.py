@@ -27,7 +27,13 @@ from pathlib import Path
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse
 
-from lit_monitor.server.rebuild_jobs import enrichment_capability, is_rebuild_busy
+from lit_monitor.server.rebuild_jobs import (
+    enrichment_capability,
+    is_rebuild_busy,
+    rebuild_argvs,
+    run_rebuild_sequence,
+    slot_name,
+)
 from lit_monitor.server.runtime import get_runtime, reset_runtime
 from lit_monitor.setup.reset import (
     graph_targets,
@@ -47,6 +53,20 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 _PIPELINE_SLOTS = ("brain_build", "discovery", "vocabulary")
 _REBUILD_SLOTS = ("rebuild_vectors", "rebuild_graph", "rebuild_notes")
+
+# Valid component names for the rebuild endpoints.
+_REBUILD_COMPONENTS = ("vectors", "graph", "notes")
+
+
+def _schedule_rebuild(slot: object, argvs: list[list[str]]) -> None:
+    """Schedule ``run_rebuild_sequence(slot, argvs)`` as a background asyncio task.
+
+    Defined as a module-level function so tests can patch it without touching
+    the asyncio event loop.
+    """
+    import asyncio  # noqa: PLC0415
+
+    asyncio.create_task(run_rebuild_sequence(slot, argvs))
 
 
 def _busy_slot(runtime: object) -> str | None:
@@ -251,6 +271,131 @@ async def post_reset_component(
             "results": _result_summary(all_results),
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Rebuild: spawn
+# ---------------------------------------------------------------------------
+
+@router.post("/api/rebuild/{component}")
+async def post_rebuild_component(component: str, request: Request) -> JSONResponse:
+    """Spawn a background rebuild job for the given component.
+
+    Guards (in order):
+    1. Unknown component → 404.
+    2. Any pipeline/rebuild slot busy → 409.
+    3. graph + enrich requested but NLP/Ollama-key unavailable → 400.
+    4. Schedules ``run_rebuild_sequence`` via ``_schedule_rebuild`` and returns 200.
+    """
+    # Guard: unknown component
+    if component not in _REBUILD_COMPONENTS:
+        return JSONResponse(
+            {"error": f"unknown rebuild component: {component!r}"},
+            status_code=404,
+        )
+
+    # Guard: busy
+    runtime = get_runtime()
+    busy = _busy_slot(runtime)
+    if busy:
+        return JSONResponse(
+            {"error": f"cannot rebuild while {busy!r} is running", "busy": busy},
+            status_code=409,
+        )
+
+    # Parse form data to read the optional `enrich` field.
+    try:
+        form = await request.form()
+        enrich_raw = form.get("enrich", "")
+    except Exception:
+        enrich_raw = ""
+    enrich = str(enrich_raw).lower() in ("true", "1", "on")
+
+    # Guard: graph enrichment requires NLP extra + Ollama key.
+    if component == "graph" and enrich:
+        try:
+            cap = enrichment_capability()
+        except Exception:
+            cap = {"nlp": False, "ollama_key": False}
+        if not (cap["nlp"] and cap["ollama_key"]):
+            return JSONResponse(
+                {"error": "enrichment unavailable", "capability": cap},
+                status_code=400,
+            )
+
+    # Build the argv sequence and schedule.
+    try:
+        argvs = rebuild_argvs(component, enrich=enrich)
+        slot = runtime.processes[slot_name(component)]
+        _schedule_rebuild(slot, argvs)
+    except Exception as exc:
+        logger.error(
+            "Rebuild schedule failed for component %r: %s", component, exc, exc_info=True
+        )
+        return JSONResponse(
+            {"error": "rebuild schedule failed — check server logs"},
+            status_code=500,
+        )
+
+    return JSONResponse({"started": True, "component": component, "enrich": enrich})
+
+
+# ---------------------------------------------------------------------------
+# Rebuild: SSE buffer-follower
+# ---------------------------------------------------------------------------
+
+@router.get("/api/rebuild/{component}/stream")
+async def rebuild_stream(request: Request, component: str) -> object:
+    """SSE stream that follows ``slot.output`` as the rebuild job appends to it.
+
+    This endpoint reads from the in-memory ``slot.output`` buffer, NOT from the
+    subprocess stdout pipe.  ``run_rebuild_sequence`` is the sole reader of
+    the pipe; it drains each line into ``slot.output`` via ``slot.append_line``.
+    A second reader on the same pipe would cause corruption — hence the buffer
+    model here.
+    """
+    import asyncio  # noqa: PLC0415
+    from html import escape  # noqa: PLC0415
+
+    from sse_starlette.sse import EventSourceResponse  # noqa: PLC0415
+
+    if component not in _REBUILD_COMPONENTS:
+        # Emit a single SSE error event then close.
+        async def _err_gen():
+            yield {"event": "error", "data": f"unknown component: {component!r}"}
+
+        return EventSourceResponse(_err_gen(), ping=15)
+
+    runtime = get_runtime()
+    slot = runtime.processes[slot_name(component)]
+
+    async def _gen():
+        idx = 0
+        while True:
+            if await request.is_disconnected():
+                return
+
+            # Guard against the bounded buffer truncating old lines:
+            # if append_line dropped from the front, len(out) may be < idx.
+            out = slot.output
+            idx = min(idx, len(out))
+
+            # Emit any lines appended since the last poll.
+            while idx < len(out):
+                yield {
+                    "event": "progress",
+                    "data": f'<div class="log-line">{escape(out[idx])}</div>',
+                }
+                idx += 1
+
+            # Done when the sequence is no longer active AND the buffer is drained.
+            if not is_rebuild_busy(slot) and idx >= len(slot.output):
+                yield {"event": "done", "data": "rebuild finished"}
+                return
+
+            await asyncio.sleep(0.5)
+
+    return EventSourceResponse(_gen(), ping=15)
 
 
 __all__ = ["router"]
