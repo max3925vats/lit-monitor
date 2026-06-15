@@ -35,6 +35,7 @@ import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from lit_monitor.core.path_utils import resolve_path as _resolve_path
+from lit_monitor.llm.prompt_safety import sanitize_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -209,12 +210,14 @@ def field_prompt(content_type: str, name: str) -> str:
         fdef = _get_paper_schema().get_field(name)
         if fdef is None:
             raise KeyError(f"Field {name!r} not found in paper schema")
-        return fdef.prompt.strip().format_map(ctx)
+        # Sanitize after format_map so any role markers injected via {domain_focus}
+        # are stripped — matches extractor.py / ranker.py behaviour (Audit-6 #7).
+        return sanitize_for_prompt(fdef.prompt.strip().format_map(ctx), strip_code_fences=False)
     if content_type == "review":
         fdef = _get_review_schema().get_field(name)
         if fdef is None:
             raise KeyError(f"Field {name!r} not found in review schema")
-        return fdef.prompt.strip().format_map(ctx)
+        return sanitize_for_prompt(fdef.prompt.strip().format_map(ctx), strip_code_fences=False)
     raise ValueError(f"Unknown content_type: {content_type!r}")
 
 
