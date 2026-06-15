@@ -39,12 +39,27 @@ def test_format_query_canonical_form():
 # ---------------------------------------------------------------------------
 
 class _FakeStateDB:
-    """Minimal stand-in exposing only known_dois() for filter_known_dois."""
+    """Minimal stand-in for filter_known_dois.
+
+    The old AR-4 tests treated the 'known' set as "everything already seen"
+    (the old known_dois() semantic). Under the lifecycle relaxation (Task 3),
+    filter_known_dois now calls library_dois() + surfaced_dois() instead of
+    known_dois(). We map the old 'known' set to library_dois() here so the
+    AR-4 tests continue to exercise their intended behavior: a DOI that is in
+    the library is suppressed.
+    """
 
     def __init__(self, known):
         self._known = set(known)
 
+    def library_dois(self):
+        return self._known
+
+    def surfaced_dois(self):
+        return set()
+
     def known_dois(self):
+        # kept for reference but must NOT be called by filter_known_dois
         return self._known
 
 
@@ -70,6 +85,44 @@ def test_filter_known_dois_keeps_genuinely_new():
     papers = [{"doi": "10.2/b", "title": "new"}]
     out = filter_known_dois(papers, state_db)
     assert len(out) == 1
+
+
+# ---------------------------------------------------------------------------
+# Task 3 / lifecycle Part B: filter_known_dois must use library/surfaced only
+# ---------------------------------------------------------------------------
+
+class _FakeStateDB_lifecycle:
+    """Stand-in that raises if known_dois() is called — the new filter must NOT use it."""
+
+    def __init__(self, library, surfaced):
+        self._library = set(library)
+        self._surfaced = set(surfaced)
+
+    def library_dois(self):
+        return set(self._library)
+
+    def surfaced_dois(self):
+        return set(self._surfaced)
+
+    # known_dois must NOT be consulted by the new filter:
+    def known_dois(self):
+        raise AssertionError("filter_known_dois must use library/surfaced, not known_dois")
+
+
+def test_filter_known_dois_suppresses_library_and_shown_keeps_unshown():
+    from lit_monitor.search.search_runner import filter_known_dois
+
+    papers = [
+        {"doi": "10.1/lib"},                    # in library -> drop
+        {"doi": "https://doi.org/10.1/SHOWN"},  # shown (normalized match) -> drop
+        {"doi": "10.1/unshown"},                # retrieved-only -> keep
+        {"doi": ""},                            # no doi -> keep
+    ]
+    db = _FakeStateDB_lifecycle(library={"10.1/lib"}, surfaced={"10.1/shown"})
+    out = filter_known_dois(papers, db)
+    dois = [p["doi"] for p in out]
+    assert "10.1/unshown" in dois and "" in dois
+    assert "10.1/lib" not in dois and "https://doi.org/10.1/SHOWN" not in dois
 
 
 def test_convert_findpapers_results_normalizes_stored_doi():
