@@ -31,7 +31,8 @@ def backfill_ingested(state_db: Any) -> int:
     flipped = 0
 
     for doi in state_db.surfaced_dois():
-        if normalize_doi(doi) not in library:
+        normed = normalize_doi(doi)
+        if normed not in library:
             continue
 
         # Use the paper's own last_updated as the backfill timestamp so the
@@ -40,7 +41,10 @@ def backfill_ingested(state_db: Any) -> int:
         # checked inside mark_discovery_recommendations_ingested.  If the field
         # is NULL (e.g. a paper row written by an older schema version), pass
         # when=None and let the method stamp datetime('now').
-        paper = state_db.get_paper(doi) or {}
+        # Look up by the normalized DOI: discovery-sourced papers store
+        # already-normalized DOIs (search_runner applies normalize_doi before
+        # upsert_paper), so normed == the stored key for all real cases.
+        paper = state_db.get_paper(normed) or {}
         when: str | None = paper.get("last_updated")  # None → method uses now()
 
         n = state_db.mark_discovery_recommendations_ingested(doi, when=when)

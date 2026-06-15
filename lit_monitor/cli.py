@@ -3531,14 +3531,14 @@ def discovery_export_md(
 def discovery_backfill_ingested() -> None:
     """Mark historical recommendations as ingested where the paper is now in
     the library (one-time catch-up for runs predating attribution)."""
-    from pathlib import Path as _Path
+    from pathlib import Path
 
     from lit_monitor.core.config import get_config
     from lit_monitor.core.state_db import StateDB
     from lit_monitor.pipelines.discovery_backfill import backfill_ingested
 
     cfg = get_config()
-    state_db = StateDB(_Path(cfg.state_db.path).expanduser())
+    state_db = StateDB(Path(cfg.state_db.path).expanduser())
     n = backfill_ingested(state_db)
     click.echo(f"Backfilled {n} recommendation DOI(s) as ingested.")
 

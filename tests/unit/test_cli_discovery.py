@@ -125,7 +125,7 @@ def test_backfill_ingested_flips_recommended_and_library_papers(tmp_path):
 def test_backfill_ingested_is_idempotent(tmp_path):
     """Running backfill_ingested twice should not double-count: second call
     still returns 1 (the row matched) but the timestamp is unchanged
-    (COALESCE keeps the first ingested_at)."""
+    (COALESCE keeps the first ingested_at — "first ingested_at wins")."""
     from lit_monitor.api.queries import get_discovery_run_papers
     from lit_monitor.core.state_db import StateDB
     from lit_monitor.pipelines.discovery_backfill import backfill_ingested
@@ -143,12 +143,27 @@ def test_backfill_ingested_is_idempotent(tmp_path):
     db.upsert_paper({"doi": "10.2/paper", "status": "extraction_complete"})
 
     first = backfill_ingested(db)
-    second = backfill_ingested(db)
     assert first == 1
+
+    # Capture ingested_at after the first run — this is the timestamp that must survive.
+    papers_after_first = {
+        p["doi"]: p for p in get_discovery_run_papers(db, run_id, top_k=10)
+    }
+    ingested_at_first = papers_after_first["10.2/paper"]["ingested_at"]
+    assert ingested_at_first is not None, "ingested_at should be set after first backfill"
+
+    second = backfill_ingested(db)
     assert second == 1  # still matches 1 DOI
 
-    papers = {p["doi"]: p for p in get_discovery_run_papers(db, run_id, top_k=10)}
-    assert papers["10.2/paper"]["ingested"] == 1
+    # The second run must NOT move the timestamp — COALESCE keeps the first value.
+    papers_after_second = {
+        p["doi"]: p for p in get_discovery_run_papers(db, run_id, top_k=10)
+    }
+    assert papers_after_second["10.2/paper"]["ingested"] == 1
+    assert papers_after_second["10.2/paper"]["ingested_at"] == ingested_at_first, (
+        "ingested_at changed on a second backfill run — COALESCE should preserve "
+        "the first timestamp"
+    )
 
 
 def test_backfill_ingested_cli_command(tmp_path, monkeypatch):
