@@ -752,6 +752,34 @@ def get_discovery_run_papers(
     return [dict(zip(cols, r)) for r in rows]
 
 
+def get_discovery_run_conversion(state_db: Any, run_id: int) -> dict[str, int]:
+    """Recommendation→ingestion counts for a run: total recommendations and how
+    many have since been ingested.
+
+    Distinct from ``discovery_runs.total_ingested`` (which counts Zotero items
+    ingested DURING the run); this counts per-paper rows in
+    ``discovery_paper_results`` that were later flipped to ``ingested=1`` via
+    ``mark_discovery_recommendations_ingested``, regardless of when that happened.
+
+    Args:
+        state_db: StateDB instance.
+        run_id:   Primary key of the discovery_runs row.
+
+    Returns:
+        Dict with ``recommendations`` (total rows) and ``ingested`` (rows where
+        ``ingested=1``).  Both values are ints; returns zeros when run_id has no
+        paper rows.
+    """
+    with state_db._connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS rec, "
+            "COALESCE(SUM(CASE WHEN ingested = 1 THEN 1 ELSE 0 END), 0) AS ing "
+            "FROM discovery_paper_results WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+    return {"recommendations": int(row["rec"]), "ingested": int(row["ing"])}
+
+
 def get_schema_text(graph_db: Any) -> str:
     """Markdown-formatted schema description for prompt inclusion.
 

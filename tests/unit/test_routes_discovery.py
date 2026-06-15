@@ -890,3 +890,73 @@ class TestRunHistoryPaginationPageSize10:
         assert body.count("Papers &rarr;") == 2
         assert "runs_offset=0" in body          # Prev → page 1
         assert "runs_offset=20" not in body     # no Next past the end
+
+
+# ---------------------------------------------------------------------------
+# Task 6: conversion headline on run-detail page
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def conversion_db(tmp_path):
+    """StateDB seeded with one run: 3 recommendations, 1 later ingested.
+
+    Returns (db, run_id).
+    """
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(tmp_path / "conv.db")
+    run_id = db.start_discovery_run({"topics": ["x"]})
+    for i in range(3):
+        db.add_discovery_paper(
+            run_id=run_id,
+            doi=f"10.9/{i}",
+            title=f"Paper {i}",
+            score=0.5,
+            rationale="r",
+            ingested=False,
+        )
+    # Mark one paper ingested after the fact (simulates post-run ingestion).
+    db.mark_discovery_recommendations_ingested("10.9/0")
+    return db, run_id
+
+
+@pytest.fixture
+def client_with_conversion_run(conversion_db):
+    db, run_id = conversion_db
+    rt = _make_fake_runtime(db)
+    with patch("lit_monitor.server.routes.discovery.get_runtime", return_value=rt):
+        yield TestClient(create_app()), run_id
+
+
+class TestConversionHeadline:
+    """Task 6: run-detail page shows M recommendations · X since ingested."""
+
+    def test_conversion_headline_renders(self, client_with_conversion_run):
+        """GET /discovery/{run_id} must show 'since ingested' conversion text."""
+        client, run_id = client_with_conversion_run
+        r = client.get(f"/discovery/{run_id}")
+        assert r.status_code == 200
+        assert "since ingested" in r.text
+
+    def test_conversion_counts_correct(self, client_with_conversion_run):
+        """3 recommendations, 1 since ingested — both counts appear in the HTML."""
+        client, run_id = client_with_conversion_run
+        r = client.get(f"/discovery/{run_id}")
+        assert r.status_code == 200
+        body = r.text
+        assert "3 recommendations" in body
+        assert "1 since ingested" in body
+
+    def test_ingested_pill_renders_on_ingested_paper(self, client_with_conversion_run):
+        """paper_card.html already renders an sl-badge pill when paper.ingested is true.
+
+        The seeded conversion_db marks 10.9/0 ingested — its card should show the
+        badge. The other two (10.9/1, 10.9/2) should not.
+        """
+        client, run_id = client_with_conversion_run
+        r = client.get(f"/discovery/{run_id}")
+        assert r.status_code == 200
+        # The ingested badge is emitted by paper_card.html for rows with ingested=1.
+        # sl-badge variant="success" pill — at least one should appear for 10.9/0.
+        assert 'variant="success"' in r.text

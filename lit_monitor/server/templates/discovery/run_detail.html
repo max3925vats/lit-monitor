@@ -13,6 +13,11 @@
       &middot;
       {{ run.total_ingested or 0 }} ingested / {{ run.total_found or 0 }} found
     </p>
+    <p class="field-note">
+      {{ conversion.recommendations or 0 }} recommendations
+      &middot;
+      {{ conversion.ingested or 0 }} since ingested
+    </p>
     <sl-button variant="default" href="/discovery">&larr; Back to discovery</sl-button>
   </div>
 
