@@ -35,6 +35,7 @@ except ImportError:  # pragma: no cover
 from lit_monitor.core.doi import normalize_doi
 from lit_monitor.core.strict_mode import strict_fallback
 from lit_monitor.search._constants import FINDPAPERS_TIMEOUT_SECONDS
+from lit_monitor.search.window import SearchWindow
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +68,8 @@ def _load_api_secrets() -> dict[str, str | None]:
 
 def run_searches(
     config,
+    window: SearchWindow | None = None,
     databases: list[str] | None = None,
-    since_days: int = 14,
     limit: int = 200,
 ) -> list[dict[str, Any]]:
     """
@@ -78,12 +79,13 @@ def run_searches(
     ----------
     config:
         Config object with .topics (list of topic strings).
+    window:
+        Search window with ``since`` and optional ``until`` (None = open-ended,
+        meaning "today").  When None, defaults to the last 14 days.
     databases:
         Override database list. Defaults to DEFAULT_DATABASES.
         Must be lowercase identifiers from findpapers 0.6.x:
         pubmed, arxiv, scopus, ieee, acm, biorxiv, medrxiv.
-    since_days:
-        Search window in days from today.
     limit:
         Maximum results per database per query.
 
@@ -102,7 +104,10 @@ def run_searches(
         logger.warning("No topics configured — skipping topic searches")
         return []
 
-    since = datetime.date.today() - datetime.timedelta(days=since_days)
+    # Resolve search window: default to last 14 days, open-ended.
+    if window is None:
+        window = SearchWindow(since=datetime.date.today() - datetime.timedelta(days=14), until=None)
+    since = window.since
     secrets = _load_api_secrets()
     scopus_key = secrets.get("scopus_api_key")
     ieee_key = secrets.get("ieee_api_key")
@@ -124,6 +129,7 @@ def run_searches(
                     outputpath=tmp,
                     query=_format_query(topic),
                     since=since,
+                    until=window.until,
                     databases=databases,
                     limit_per_database=limit,
                     scopus_api_token=scopus_key,
@@ -174,7 +180,7 @@ def run_searches(
         for topic in topics:
             try:
                 logger.info("S2 search for topic: %r", topic[:60])
-                s2_results = search_semantic_scholar(topic, since_days=since_days)
+                s2_results = search_semantic_scholar(topic, window=window)
                 added = 0
                 for paper in s2_results:
                     # AR-4: same canonical key as the findpapers loop so an S2

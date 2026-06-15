@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from lit_monitor.pipelines.discovery import run_discovery
+from lit_monitor.search.window import SearchWindow
 
 
 # ---------------------------------------------------------------------------
@@ -427,10 +428,10 @@ def test_since_days_computed_from_last_run_date(tmp_path):
     zotero_client.get_current_version.return_value = 101
     zotero_client.get_items_since.return_value = []
 
-    captured_since: list[int] = []
+    captured_windows: list[SearchWindow] = []
 
-    def capture_run_searches(cfg, since_days=14, **kwargs):
-        captured_since.append(since_days)
+    def capture_run_searches(cfg, window=None, **kwargs):
+        captured_windows.append(window)
         return []
 
     with patch("lit_monitor.pipelines.discovery.run_searches",
@@ -444,9 +445,12 @@ def test_since_days_computed_from_last_run_date(tmp_path):
                         dry_run=False,
                     )
 
-    assert len(captured_since) == 1
-    # 30 days ago → since_days = 31 (inclusive of today)
-    assert captured_since[0] == 31
+    assert len(captured_windows) == 1
+    # 30 days ago → since = today - 31 days (inclusive of today)
+    import datetime as dt
+    expected_since = dt.date.today() - dt.timedelta(days=31)
+    assert captured_windows[0].since == expected_since
+    assert captured_windows[0].until is None
 
 # ===========================================================================
 

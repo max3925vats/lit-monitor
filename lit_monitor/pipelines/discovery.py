@@ -29,7 +29,7 @@ import math
 import time as _time
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -73,6 +73,7 @@ from lit_monitor.pipelines.brain_build import (
 from lit_monitor.search.researcher_tracker import run_researcher_searches
 from lit_monitor.search.search_runner import DEFAULT_DATABASES, filter_known_dois, run_searches
 from lit_monitor.search.semantic_scholar import enrich_paper
+from lit_monitor.search.window import SearchWindow
 
 logger = logging.getLogger(__name__)
 
@@ -235,12 +236,19 @@ def run_discovery(
         since_days = 14
         logger.warning("No last_run_date stored — defaulting search window to 14 days")
 
+    # Bridge: translate the legacy since_days scalar into a SearchWindow so
+    # the search layer can propagate the upper bound.  until=None means
+    # "open-ended" (up to today), which preserves the existing behaviour.
+    # The frontier/override logic is a LATER task — this bundle only threads
+    # the type through without changing behaviour.
+    _window = SearchWindow(since=date.today() - timedelta(days=since_days), until=None)
+
     # ----------------------------------------------------------------
     # Discovery block
     # ----------------------------------------------------------------
     try:
         try:
-            raw_papers, search_errors = _run_discovery(config, since_days=since_days)
+            raw_papers, search_errors = _run_discovery(config, window=_window)
             summary.errors.extend(search_errors)
             # Bundle K-b: SUPPLEMENT topic results with graph-expanded exploration
             # searches for under-engaged clusters. Fully gated + non-fatal: with no
@@ -249,7 +257,7 @@ def run_discovery(
             # appended (never replace topic results) and capped to ~budget_pct of
             # the topic pool; they de-dup + rank through the same downstream path.
             _explore_papers = _run_exploration_searches(
-                config, state_db, raw_papers, since_days=since_days
+                config, state_db, raw_papers, window=_window
             )
             if _explore_papers:
                 raw_papers = raw_papers + _explore_papers
@@ -811,26 +819,27 @@ def assemble_with_soft_floor(
 # Discovery helpers
 # ---------------------------------------------------------------------------
 def _run_discovery(
-    config, since_days: int = 14
+    config, window: SearchWindow | None = None
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Run topic + researcher searches and merge results.
 
     Parameters
     ----------
-    since_days:
-        Search window in days from today. Computed from the stored
-        'last_run_date' kv_store entry so that skipped weeks are
-        automatically caught up on the next run.
+    window:
+        Search window with ``since`` and optional ``until``.  Computed from the
+        stored 'last_run_date' kv_store entry so that skipped weeks are
+        automatically caught up on the next run.  When None, defaults to the
+        last 14 days.
     """
     papers: list[dict[str, Any]] = []
     errors: list[str] = []
     try:
-        papers.extend(run_searches(config, since_days=since_days))
+        papers.extend(run_searches(config, window=window))
     except Exception as exc:
         logger.warning("Topic searches failed: %s", exc)
         errors.append(f"topic_search: {exc}")
     try:
-        papers.extend(run_researcher_searches(config, since_days=since_days))
+        papers.extend(run_researcher_searches(config, window=window))
     except Exception as exc:
         logger.warning("Researcher searches failed: %s", exc)
         errors.append(f"researcher_search: {exc}")
@@ -882,7 +891,7 @@ def _run_exploration_searches(
     state_db: Any,
     topic_results: list[dict[str, Any]],
     *,
-    since_days: int,
+    window: SearchWindow | None = None,
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """K-b: build + run graph-expanded exploration searches for under-engaged
@@ -983,7 +992,7 @@ def _run_exploration_searches(
         # run_searches reads only `.topics` off config (API keys come from
         # config.toml), so the shim is sufficient and reuses findpapers + S2.
         explore_cfg = SimpleNamespace(topics=list(queries))
-        explore_results = run_searches(explore_cfg, since_days=since_days)
+        explore_results = run_searches(explore_cfg, window=window)
         # AR-5 Fix 1 (Finding 5 + 4): drop exploration candidates already present
         # in the topic pool BEFORE the budget cap, so duplicate hits never consume
         # budget slots and the configured exploration rate is actually honoured.

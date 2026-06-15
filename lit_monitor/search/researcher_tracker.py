@@ -28,6 +28,7 @@ from lit_monitor._vendor import findpapers as _findpapers
 from lit_monitor._vendor.findpapers.utils.persistence_util import load as _fp_load
 from lit_monitor.core.doi import normalize_doi
 from lit_monitor.search._constants import FINDPAPERS_TIMEOUT_SECONDS
+from lit_monitor.search.window import SearchWindow
 
 logger = logging.getLogger(__name__)
 _OPENALEX_AUTHOR_URL = "https://api.openalex.org/works"
@@ -42,8 +43,8 @@ def _researcher_dedup_key(paper: dict) -> str:
 
 def run_researcher_searches(
     config,
+    window: SearchWindow | None = None,
     databases: list[str] | None = None,
-    since_days: int = 14,
     limit_per_author: int = 50,
 ) -> list[dict[str, Any]]:
     """
@@ -55,10 +56,11 @@ def run_researcher_searches(
     ----------
     config:
         Config object with .researchers (list of {name, orcid?}).
+    window:
+        Search window with ``since`` and optional ``until`` (None = open-ended,
+        meaning "today").  When None, defaults to the last 14 days.
     databases:
         Override database list (default: DEFAULT_DATABASES).
-    since_days:
-        Search window in days from today.
     limit_per_author:
         Max results per author per database.
 
@@ -77,7 +79,10 @@ def run_researcher_searches(
     if databases is None:
         databases = _DEFAULT_DATABASES
 
-    since = datetime.date.today() - datetime.timedelta(days=since_days)
+    # Resolve search window: default to last 14 days, open-ended.
+    if window is None:
+        window = SearchWindow(since=datetime.date.today() - datetime.timedelta(days=14), until=None)
+    since = window.since
     secrets = _load_api_secrets()
     scopus_key = secrets.get("scopus_api_key")
     ieee_key = secrets.get("ieee_api_key")
@@ -106,6 +111,7 @@ def run_researcher_searches(
                     outputpath=tmp,
                     query=au_query,
                     since=since,
+                    until=window.until,
                     databases=databases,
                     limit_per_database=limit_per_author,
                     scopus_api_token=scopus_key,

@@ -5,10 +5,13 @@ All findpapers Engine calls are mocked. No network access required.
 from __future__ import annotations
 
 import datetime
+from datetime import date, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from lit_monitor.search.window import SearchWindow
 
 
 # ---------------------------------------------------------------------------
@@ -59,10 +62,11 @@ def test_search_runner_converts_findpapers_output(tmp_path):
     """run_searches returns correctly structured paper dicts."""
     from lit_monitor.search.search_runner import run_searches
     mock_result = _make_mock_result([_make_mock_paper()])
+    window = SearchWindow(since=date.today() - timedelta(days=7), until=None)
     with patch("lit_monitor.search.search_runner._S2_AVAILABLE", False):
         with patch("lit_monitor.search.search_runner._findpapers"):
             with patch("lit_monitor.search.search_runner._fp_load", return_value=mock_result):
-                results = run_searches(_make_config(), since_days=7)
+                results = run_searches(_make_config(), window=window)
     assert len(results) == 1
     paper = results[0]
     assert paper["doi"] == "10.1234/test.2024"
@@ -77,10 +81,11 @@ def test_search_runner_deduplicates_same_doi():
     from lit_monitor.search.search_runner import run_searches
     mock_result = _make_mock_result([_make_mock_paper(doi="10.1/same")])
     config = _make_config(topics=["query1 AND ProteinA", "query2 AND UF"])
+    window = SearchWindow(since=date.today() - timedelta(days=7), until=None)
     with patch("lit_monitor.search.search_runner._S2_AVAILABLE", False):
         with patch("lit_monitor.search.search_runner._findpapers"):
             with patch("lit_monitor.search.search_runner._fp_load", return_value=mock_result):
-                results = run_searches(config, since_days=7)
+                results = run_searches(config, window=window)
     assert len(results) == 1
 @pytest.mark.unit
 def test_known_dois_filtered(tmp_path):
@@ -107,11 +112,12 @@ def test_missing_api_key_logs_warning_not_error(caplog, tmp_path):
     from lit_monitor.search.search_runner import run_searches
     mock_result = _make_mock_result([])
     config = _make_config(wos_key=None, scopus_key=None)
+    window = SearchWindow(since=date.today() - timedelta(days=7), until=None)
     with caplog.at_level(logging.WARNING):
         with patch("lit_monitor.search.search_runner._S2_AVAILABLE", False):
             with patch("lit_monitor.search.search_runner._findpapers"):
                 with patch("lit_monitor.search.search_runner._fp_load", return_value=mock_result):
-                    run_searches(config, since_days=7)
+                    run_searches(config, window=window)
     assert any("Scopus" in rec.message for rec in caplog.records)
 @pytest.mark.unit
 def test_search_runner_topic_search_failure_continues():
@@ -119,12 +125,13 @@ def test_search_runner_topic_search_failure_continues():
     from lit_monitor.search.search_runner import run_searches
     second_result = _make_mock_result([_make_mock_paper(doi="10.1/second")])
     config = _make_config(topics=["query_one", "query_two"])
+    window = SearchWindow(since=date.today() - timedelta(days=7), until=None)
     with patch("lit_monitor.search.search_runner._S2_AVAILABLE", False):
         with patch("lit_monitor.search.search_runner._findpapers") as mock_fp:
             # First call to _findpapers.search raises; second succeeds (no-op)
             mock_fp.search.side_effect = [RuntimeError("Network error"), None]
             with patch("lit_monitor.search.search_runner._fp_load", return_value=second_result):
-                results = run_searches(config, since_days=7)
+                results = run_searches(config, window=window)
     assert any(p["doi"] == "10.1/second" for p in results)
 @pytest.mark.unit
 def test_no_topics_returns_empty():
@@ -145,9 +152,10 @@ def test_researcher_tracker_sets_tracked_flag():
     researcher = {"name": "Author2 G"}
     config = _make_config(researchers=[researcher])
     mock_result = _make_mock_result([_make_mock_paper(doi="10.1/author2_2024")])
+    window = SearchWindow(since=date.today() - timedelta(days=7), until=None)
     with patch("lit_monitor.search.researcher_tracker._findpapers"):
         with patch("lit_monitor.search.researcher_tracker._fp_load", return_value=mock_result):
-            results = run_researcher_searches(config, since_days=7)
+            results = run_researcher_searches(config, window=window)
     assert all(p["tracked_author"] is True for p in results)
 @pytest.mark.unit
 def test_researcher_tracker_deduplicates():
@@ -155,9 +163,10 @@ def test_researcher_tracker_deduplicates():
     from lit_monitor.search.researcher_tracker import run_researcher_searches
     config = _make_config(researchers=[{"name": "Author2 G"}, {"name": "Author1 A"}])
     mock_result = _make_mock_result([_make_mock_paper(doi="10.1/shared")])
+    window = SearchWindow(since=date.today() - timedelta(days=7), until=None)
     with patch("lit_monitor.search.researcher_tracker._findpapers"):
         with patch("lit_monitor.search.researcher_tracker._fp_load", return_value=mock_result):
-            results = run_researcher_searches(config, since_days=7)
+            results = run_researcher_searches(config, window=window)
     assert sum(1 for p in results if p["doi"] == "10.1/shared") == 1
 @pytest.mark.unit
 def test_researcher_tracker_no_researchers_returns_empty():
