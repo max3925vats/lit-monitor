@@ -766,3 +766,21 @@ class TestImplicitZoteroSave:
         # Ingestion completed despite the feedback failure (R28 invariant).
         assert ok and err is None
         db.record_feedback_event = original  # type: ignore[method-assign]
+
+
+# ---------------------------------------------------------------------------
+# Audit-6 #1 — shared embed-metadata builder
+# ---------------------------------------------------------------------------
+
+
+def test_build_embed_paper_metadata_includes_note_title():
+    from lit_monitor.pipelines._ingest import build_embed_paper_metadata
+    meta = build_embed_paper_metadata(title="T", year=2021, note_title="Smith2021")
+    assert meta == {"source_type": "paper", "title": "T", "year": 2021, "note_title": "Smith2021"}
+
+
+def test_build_embed_paper_metadata_defaults_blank_note_title():
+    from lit_monitor.pipelines._ingest import build_embed_paper_metadata
+    meta = build_embed_paper_metadata(title="T", year=None, note_title="")
+    assert meta["note_title"] == ""
+    assert meta["source_type"] == "paper"

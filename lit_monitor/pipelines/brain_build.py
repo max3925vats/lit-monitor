@@ -39,6 +39,7 @@ from lit_monitor.llm.extractor import extract_fields, extract_paper
 from lit_monitor.llm.llm_client import RateLimitError
 from lit_monitor.output.obsidian_writer import write_paper_note
 from lit_monitor.pipelines._ingest import (
+    build_embed_paper_metadata,
     build_graph_tuples,
     build_ner_mention_edges,
     index_embeddings_and_mark_phases,
@@ -645,12 +646,9 @@ def _process_paper(
     # AND the graph payload (which needs Zotero authors/keywords for G3).
     # ChromaDB metadata stays unchanged; the graph payload extends it on the
     # side so the embeddings call is not broken by list values.
-    _embed_paper_meta: dict[str, Any] = {
-        "source_type": "paper",
-        "title": title,
-        "year": year,
-        "note_title": note_title,
-    }
+    _embed_paper_meta: dict[str, Any] = build_embed_paper_metadata(
+        title=title, year=year, note_title=note_title,
+    )
     if graph_db is not None:
         _graph_paper_meta = dict(_embed_paper_meta)
         _graph_paper_meta["journal"] = journal
