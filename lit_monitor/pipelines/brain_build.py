@@ -597,17 +597,7 @@ def _process_paper(
     # write is deferred to `lit-monitor obsidian sync`; notes_synced stays 0.
     # R28 GUARD: this block sits BEFORE index_embeddings_and_mark_phases so
     # the embed/graph phase marks are always written regardless of the flag.
-    _auto_write = True
-    try:
-        _auto_write = bool(
-            getattr(
-                getattr(getattr(config, "discovery", None), "notes", None),
-                "auto_write_per_paper",
-                True,
-            )
-        )
-    except Exception:
-        _auto_write = True  # safe default — never silently stop writing notes
+    _auto_write = _resolve_auto_write(config)
 
     note_path: str = ""
     note_title: str = ""
@@ -784,6 +774,27 @@ def _check_item_quality(data: dict[str, Any]) -> tuple[bool, str]:
         logger.debug("Item %r has unparseable date %r — year will default to 0", title[:60], date_str)
 
     return True, ""
+
+def _resolve_auto_write(config) -> bool:
+    """Read discovery.notes.auto_write_per_paper from config, defaulting True.
+
+    Warns (instead of silently swallowing) when the config attribute chain
+    raises an exception, so the caller can see that the fallback was taken.
+    """
+    try:
+        return bool(
+            getattr(
+                getattr(getattr(config, "discovery", None), "notes", None),
+                "auto_write_per_paper",
+                True,
+            )
+        )
+    except Exception as exc:
+        logger.warning(
+            "auto_write_per_paper config unreadable (%s); defaulting to write notes.", exc
+        )
+        return True
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
