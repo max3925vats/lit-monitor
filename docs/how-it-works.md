@@ -78,19 +78,21 @@ selectable per query.
 
 ## Score decomposition
 
-The final ranking score is a weighted sum of six signals — three from the vector
-side, three from the graph:
+The final ranking score is a weighted sum of seven signals — a `vector` baseline,
+three more library-side legs, and three from the graph. Every leg beyond `vector`
+is opt-in and weighted in config:
 
 | Signal | What it measures |
 |---|---|
 | `vector` | Cosine similarity of the candidate to your Zotero library centroid |
 | `domain_context` | Cosine similarity to the optional free-text domain focus paragraph |
 | `cluster_centroid` | Similarity to the nearest theme cluster in your library |
+| `feedback` | Alignment with your learned interest vector (Rocchio), built from save / dismiss / open feedback; inert until you have ≥10 feedback events |
 | `graph_entity_overlap` | How many named entities the candidate shares with your graph |
 | `graph_citation` | Citation edges (CITES / EXTENDS) to papers already in the graph |
 | `graph_shared_authors` | Authors appearing in both the candidate and your graph |
 
-Every paper in a discovery result carries a `score_breakdown` dict with all six
+Every paper in a discovery result carries a `score_breakdown` dict with all seven
 values, and the web UI's paper card renders the decomposition as a stacked bar so
 you can see *why* a paper ranked where it did. Signal weights live under
 `ranking:` in `config/extraction.yaml`; see
@@ -217,7 +219,7 @@ to edit them, see [Configuration](configuration.md#the-config-files-at-a-glance)
 | File | Feeds |
 |---|---|
 | `paths.yaml` | The library itself — which Zotero collection gets embedded, and where notes/DBs are written. Nothing ranks without it. |
-| `extraction.yaml` | The `ranking:` weights that combine the six signals above, plus model selection, `clustering:`, `embeddings:`, and the discovery delivery flags. |
+| `extraction.yaml` | The `ranking:` weights that combine the seven signals above, plus model selection, `clustering:`, `embeddings:`, and the discovery delivery flags. |
 | `topics.yaml` | The candidate stream — the recurring searches that produce the papers to be ranked. |
 | `domain_context.yaml` | The `domain_context` signal (after `domain analyze` extracts structured concepts). |
 | `concepts.yaml` | Theme assignment and the `cluster_centroid` signal's named themes. |

@@ -59,6 +59,7 @@ lit-monitor trending suggest             # surface rising entity types
 lit-monitor trending view                # list pending / accepted / dismissed suggestions
 lit-monitor trending accept <id>         # add concept to active topics
 lit-monitor trending dismiss <id>        # suppress concept until next cycle
+lit-monitor topics expansions suggest "ion exchange"   # co-occurring entities to broaden a topic query
 ```
 
 ## Embeddings
@@ -74,6 +75,7 @@ lit-monitor embeddings rebuild           # re-embed library under new model
 ```bash
 lit-monitor graph status                 # node + edge counts
 lit-monitor graph backfill --all         # index existing papers into the graph
+lit-monitor graph rebuild --all          # drop + rebuild the whole graph from state.db
 lit-monitor graph propose-aliases        # suggest entity normalization rules
 ```
 
@@ -82,6 +84,7 @@ lit-monitor graph propose-aliases        # suggest entity normalization rules
 ```bash
 lit-monitor obsidian relink              # update Related Work sections
 lit-monitor obsidian rerender            # regenerate notes from stored extractions
+lit-monitor obsidian re-extract --doi <doi>     # re-run LLM extraction on one paper
 lit-monitor obsidian sync --all          # write deferred per-paper notes
 lit-monitor obsidian synthesize --topic "..."   # chunk-level RAG with reranking
 ```
@@ -100,7 +103,13 @@ lit-monitor learning view                # show the interest vector (--per-clust
 lit-monitor check                        # config + Ollama + Zotero reachability
 lit-monitor diagnose                     # strict-mode config audit
 lit-monitor status                       # extraction + embedding + graph counts
-lit-monitor reset state                  # reset pipeline state (also reset vault / reset all)
+lit-monitor reset state                  # wipe state DB + all regenerable views (also: reset vault / reset all)
+lit-monitor reset vectors                # wipe just the ChromaDB vector store
+lit-monitor reset graph                  # wipe just the KuzuDB knowledge graph
 ```
+
+Each `reset` subcommand prompts for a typed confirmation. The web UI offers the
+same per-component reset **and** rebuild from the **Reset & Rebuild** console
+(`/setup/reset`).
 
 See also [Configuration](configuration.md) for strict mode and provider routing.

@@ -35,19 +35,20 @@ To configure the same settings by hand instead, see
 ## Dashboards
 
 After setup, the dashboards take over. The top nav groups the pages by what
-you're doing — **Run**, **Ask**, **Explore**, **Tune**, **Setup**.
+you're doing — **Monitor**, **Semantics**, **Explore**, **Tune**, **Setup**.
 
 | URL | Group | What |
 |---|---|---|
-| `/discovery` | Run | Latest discovery run summary, run history, per-paper cards with one-click relink / re-extract actions. Run-now / Dry-run / Stop buttons. |
-| `/brain-build` | Run | Extract your existing Zotero library into the index. Progress bar, per-paper table, recent runs. Start / Stop / Resume. Live JSONL log stream. |
-| `/schedule` | Run | Install or remove a recurring schedule (launchd / systemd). |
-| `/ask` | Ask | Ask natural-language questions of your corpus (the `lit-monitor ask` pipeline in the browser): prose answer + results table, with show/edit Cypher, recent-questions history, and save-to-vault. Requires the knowledge graph (`lit-monitor graph backfill --all`). |
+| `/discovery` | Monitor | Latest discovery run summary, run history, per-paper cards with one-click relink / re-extract actions. Run-now / Dry-run / Stop buttons. |
+| `/brain-build` | Monitor | Extract your existing Zotero library into the index. Progress bar, per-paper table, recent runs. Start / Stop / Resume. Live JSONL log stream. |
+| `/schedule` | Monitor | Install or remove a recurring schedule (launchd / systemd). |
+| `/ask` | Semantics | Ask natural-language questions of your corpus (the `lit-monitor ask` pipeline in the browser): prose answer + results table, with show/edit Cypher, recent-questions history, and save-to-vault. Requires the knowledge graph (`lit-monitor graph backfill --all`). |
 | `/corpus` | Explore | A read lens on every processed paper in the state DB: searchable list with a theme filter, plus a per-paper detail view (extraction, score, knowledge-graph, related work, Zotero / Obsidian links, relink / re-extract). Related work works without a knowledge graph (vector similarity, each result labelled by source) and the Obsidian link is a clickable deep-link into your vault. Not a Zotero replacement — it reads what the pipeline already processed. |
 | `/graph` | Explore | A read-only, corpus-wide overview of the knowledge graph: entity counts by type, edges by predicate, entity counts by NER source, and graph-indexed coverage. Read lens only — running a graph backfill is a CLI action. |
 | `/themes` | Explore | Review the theme clusters your library has been grouped into: per-theme paper counts and a drill-in to the papers in each theme. |
 | `/trending` | Explore | The trending-concept suggestion queue — concepts rising in your recent library activity, with accept / dismiss actions. |
 | `/domain` | Tune | Edit the free-text domain-focus paragraph and run the LLM extraction that turns it into the structured `domain_context` ranking signal. |
 | `/insights` | Tune | A read-only window into the active-learning engine: the current interest-vector state with top-aligned papers, per-cluster atrophy weights, the feedback mix by signal and source plus its timeline, and recent feedback events. Read lens only — feedback is still captured through the discovery and themes buttons. |
-| `/settings` | Tune | Advanced settings — edit ranking weights, clustering, embeddings, and discovery/delivery config sections from the browser. |
+| `/setup` → step 9 (Tuning) | Tune | Advanced settings — ranking weights, clustering, embeddings, and discovery / delivery config sections. Folded into the setup wizard's optional final step; there is no standalone `/settings` page (the `POST /api/settings/{section}` endpoint still backs it). |
 | `/setup` | Setup | The 8-step onboarding wizard (see above). |
+| `/setup/reset` | Setup | Reset & Rebuild console — reset and rebuild individual components (vectors / graph / notes) or wipe everything, with confirmation guards. |

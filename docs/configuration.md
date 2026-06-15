@@ -82,7 +82,7 @@ Three configurations, from zero to fully customised.
 
 Enough to get a recurring discovery feed and Obsidian notes.
 
-1. `cp config/*.example.yaml config/` (if you didn't run `install.sh`).
+1. `lit-monitor first-run` — seeds your config files from the packaged examples (if you didn't run `install.sh`).
 2. Add Zotero credentials to `~/.config/lit-monitor/config.toml`.
 3. Set `obsidian_vault_path` and `zotero_library_id` in `config/paths.yaml`.
 4. Add 2–3 search topics in `config/topics.yaml`.
@@ -152,17 +152,19 @@ lit-monitor's defaults are seeded for biopharma / downstream-process research,
 but nothing in the engine is domain-specific — it ranks against *your* library,
 whatever field that is. To start somewhere closer to your own area:
 
-`config/examples/` ships filled-in, synthetic config sets for `bioprocessing/`,
-`ml-research/`, and `climate-science/`. Pick the closest one and copy its
+The package ships filled-in, synthetic config sets for `bioprocessing/`,
+`ml-research/`, and `climate-science/` under
+`lit_monitor/_data/config_examples/examples/`. Pick the closest one and copy its
 `topics.yaml`, `domain_context.yaml`, `concepts.yaml`, and `researchers.yaml`
 into your config dir as a head start, then edit:
 
 ```bash
-cp config/examples/ml-research/*.yaml config/   # or bioprocessing/ climate-science/
+# from a source checkout (a pip install ships these under site-packages/lit_monitor/...)
+cp lit_monitor/_data/config_examples/examples/ml-research/*.yaml config/   # or bioprocessing/ climate-science/
 ```
 
-The non-domain configs (`paths.yaml`, `extraction.yaml`) still come from
-`config/*.example.yaml`. See the
+The base configs (`paths.yaml`, `extraction.yaml`, …) are seeded for you by
+`lit-monitor first-run` from the same packaged examples. See the
 [bundled example configs](https://github.com/max3925vats/lit-monitor/tree/main/lit_monitor/_data/config_examples/examples).
 Whatever your field, the first real step is the same: `brain-build` indexes your
 existing library so the vector signal has something to rank against.

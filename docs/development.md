@@ -20,8 +20,9 @@ cd lit-monitor
 ```
 
 The script installs [`uv`](https://docs.astral.sh/uv/) if needed, creates a
-project-local `.venv`, resolves all dependencies, and seeds working configs from
-`config/*.example.yaml`. From there the usual loop applies: branch, make a small
+project-local `.venv`, and resolves all dependencies (run `lit-monitor first-run`
+afterward to seed your config files from the packaged examples). From there the
+usual loop applies: branch, make a small
 focused change, open a pull request. Issues and PRs are the right place to discuss
 anything non-trivial before investing a lot of work — open one early and we can
 shape the approach together.

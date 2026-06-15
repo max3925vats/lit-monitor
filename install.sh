@@ -9,12 +9,14 @@
 # What it does:
 #   1. Installs uv (Astral's Python package manager) if not present.
 #   2. Creates a project-local .venv via uv.
-#   3. Resolves and installs all dependencies (including the cloud extras).
-#      uv handles the findpapers <-> chromadb typer conflict automatically
-#      via the [tool.uv] override-dependencies block in pyproject.toml.
-#   4. Copies each config/*.example.yaml into its real config/*.yaml on first
-#      run, leaving any pre-existing real configs untouched.
-#   5. Prints the remaining first-time-setup steps.
+#   3. Resolves and installs all dependencies (dev tooling + LiteLLM cloud
+#      routing). uv handles the findpapers <-> chromadb typer conflict
+#      automatically via the [tool.uv] override-dependencies block in
+#      pyproject.toml. (BioBERT NER is the heavy [nlp] extra — opt in with
+#      `uv sync --extra nlp` only if you want it.)
+#   4. Hands off to `lit-monitor first-run`, which seeds your config files
+#      (from the packaged examples under lit_monitor/_data/config_examples/)
+#      and opens the setup wizard.
 
 set -euo pipefail
 
@@ -47,32 +49,14 @@ fi
 
 # --- 3. dependencies ---
 echo ">> installing dependencies (this can take a few minutes on first run)"
-uv sync --extra dev --extra cloud --extra server
+uv sync --extra dev --extra litellm
 echo
 
-# --- 4. seed configs from examples ---
-declare -a CONFIGS=(concepts topics domain_context researchers paths)
-for name in "${CONFIGS[@]}"; do
-    real="config/${name}.yaml"
-    example="config/${name}.example.yaml"
-    if [ ! -f "$real" ] && [ -f "$example" ]; then
-        cp "$example" "$real"
-        echo "   seeded $real from $example"
-    fi
-done
-
-# --- seed prompt files from examples ---
-for example in config/prompts/*.example.yaml; do
-    [ -f "$example" ] || continue
-    real="${example%.example.yaml}.yaml"
-    if [ ! -f "$real" ]; then
-        cp "$example" "$real"
-        echo "   seeded $real from $example"
-    fi
-done
-echo
-
-# --- 5. next steps ---
+# --- 4. next steps ---
+# Config seeding is handled by `lit-monitor first-run` (below), which copies the
+# packaged example configs into ~/.config/lit-monitor/. We intentionally do NOT
+# seed repo-relative ./config/ here: once first-run creates ~/.config/lit-monitor/
+# config_dir() resolves there, so a ./config/ copy would just be shadowed.
 echo ">> install complete."
 echo
 echo "Launch lit-monitor now?"

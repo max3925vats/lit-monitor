@@ -24,9 +24,9 @@ paragraph are the only inputs it needs.
 The default configuration and some examples lean toward downstream
 biopharmaceutical process development — the domain the tool was originally
 developed against — but ready-made starting configs for other fields (ML
-research, climate science, and more) ship in
-[`config/examples/`](config/examples/). See
-[Installation](docs/installation.md).
+research, climate science, and more) ship with the package in
+[`lit_monitor/_data/config_examples/examples/`](lit_monitor/_data/config_examples/examples/).
+See [Installation](docs/installation.md).
 
 Drive it from a **localhost web UI** (`lit-monitor serve`) for setup and
 day-to-day operation, or from the **CLI** (`lit-monitor --help`) for scripted
@@ -117,8 +117,9 @@ cd lit-monitor
 ```
 
 The script installs [`uv`](https://docs.astral.sh/uv/) if needed, creates a
-project-local `.venv`, resolves all dependencies, and seeds working configs
-from `config/*.example.yaml`.
+project-local `.venv`, and resolves all dependencies, then offers to run
+`lit-monitor first-run`, which seeds your config files (from the packaged
+examples) and launches the web UI.
 
 ## Quickstart
 

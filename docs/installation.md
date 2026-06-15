@@ -32,8 +32,9 @@ cd lit-monitor
 ```
 
 The script installs [`uv`](https://docs.astral.sh/uv/) if needed, creates a
-project-local `.venv`, resolves all dependencies, and seeds working configs from
-`config/*.example.yaml`.
+project-local `.venv`, and resolves all dependencies, then offers to run
+`lit-monitor first-run`, which seeds your config files (from the packaged
+examples) and launches the web UI.
 
 !!! tip "Not in biopharma?"
     lit-monitor ranks against *your* library, whatever the field — and ships
@@ -48,7 +49,7 @@ To drive `uv` yourself instead of running `install.sh`:
 ```bash
 uv venv && source .venv/bin/activate
 uv sync                                  # web UI, graph, MCP, notifications all included
-for f in config/*.example.yaml; do cp -n "$f" "${f%.example.yaml}.yaml"; done
+lit-monitor first-run                    # seeds config files, then launches the UI
 ```
 
 ## Optional extras
