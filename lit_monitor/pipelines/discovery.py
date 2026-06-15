@@ -76,6 +76,46 @@ from lit_monitor.search.semantic_scholar import enrich_paper
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# coverage_until frontier helpers (Task 2 — discovery search window)
+# ---------------------------------------------------------------------------
+
+_COVERAGE_UNTIL_KEY = "coverage_until"
+
+
+def read_coverage_until(state_db) -> date | None:
+    """The coverage high-water mark (latest publication date any completed
+    search has covered), or None if unset/unparseable."""
+    raw = state_db.get_kv(_COVERAGE_UNTIL_KEY)
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw).date()
+    except ValueError:
+        logger.warning("coverage_until %r unparseable — treating as unset", raw)
+        return None
+
+
+def advance_coverage_until(state_db, *, covered_to: date) -> None:
+    """Move the frontier forward to max(existing, covered_to). Never moves it back."""
+    current = read_coverage_until(state_db)
+    if current is None or covered_to > current:
+        state_db.set_kv(_COVERAGE_UNTIL_KEY, str(covered_to))
+
+
+def seed_coverage_until(state_db) -> None:
+    """First-upgrade migration: if coverage_until is unset, seed it from
+    last_run_date so existing installs don't suddenly re-fetch a wide range."""
+    if read_coverage_until(state_db) is not None:
+        return
+    raw = state_db.get_kv("last_run_date")
+    if raw:
+        try:
+            state_db.set_kv(_COVERAGE_UNTIL_KEY, str(datetime.fromisoformat(raw).date()))
+        except ValueError:
+            pass
+
+
 # Historical default for the notification deep-link target; used when no
 # [server] block is configured or the [server] extra isn't installed.
 _DEFAULT_APP_URL = "http://localhost:8765"
