@@ -14,7 +14,8 @@
   </form>
   {% else %}
   {# Single form with ONE rag_mode selector; both buttons carry dry_run via name/value. #}
-  <form class="control-form" hx-post="/api/discovery/start"
+  <form class="control-form" id="discovery-start-form"
+        hx-post="/api/discovery/start"
         hx-swap="none"
         hx-on::after-request="htmx.trigger(document.body, 'dischange')"
         hx-encoding="multipart/form-data">

@@ -15,6 +15,7 @@ KuzuDB graph MOCKED — NO live external API calls. Asserts:
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -23,6 +24,10 @@ import pytest
 
 import lit_monitor.pipelines.discovery as discovery
 from lit_monitor.core.state_db import StateDB
+from lit_monitor.search.window import SearchWindow
+
+# Default test window — matches the old since_days=14 default.
+_WINDOW_14 = SearchWindow(since=date.today() - timedelta(days=14), until=None)
 
 # --------------------------------------------------------------------------- #
 # Fakes
@@ -120,7 +125,7 @@ def test_under_engaged_cluster_is_explored_recent_is_not(db, monkeypatch):
 
     issued_queries: list[list[str]] = []
 
-    def _fake_run_searches(cfg, since_days=14):
+    def _fake_run_searches(cfg, window=None, **kwargs):
         issued_queries.append(list(cfg.topics))
         # Return 3 fresh exploration candidates (none in the topic pool).
         return [
@@ -132,7 +137,7 @@ def test_under_engaged_cluster_is_explored_recent_is_not(db, monkeypatch):
 
     topic_results = [{"doi": f"10.1/t{i}", "title": f"t{i}"} for i in range(10)]
     out = discovery._run_exploration_searches(
-        _cfg(pct=0.20), db, topic_results, since_days=14
+        _cfg(pct=0.20), db, topic_results, window=_WINDOW_14
     )
 
     # Exploration ran: queries were issued, and they came from cluster A's
@@ -157,7 +162,7 @@ def test_budget_zero_disables_exploration(db, monkeypatch):
         lambda *a, **k: pytest.fail("no searches when budget=0"),
     )
     out = discovery._run_exploration_searches(
-        _cfg(pct=0.0), db, [{"doi": "10.1/t0"}], since_days=14
+        _cfg(pct=0.0), db, [{"doi": "10.1/t0"}], window=_WINDOW_14
     )
     assert out == []
 
@@ -175,7 +180,7 @@ def test_empty_topic_pool_skips_exploration_no_searches(db, monkeypatch):
         discovery, "run_searches",
         lambda *a, **k: pytest.fail("no exploration searches on an empty topic pool"),
     )
-    out = discovery._run_exploration_searches(_cfg(pct=0.20), db, [], since_days=14)
+    out = discovery._run_exploration_searches(_cfg(pct=0.20), db, [], window=_WINDOW_14)
     assert out == []
 
 
@@ -190,7 +195,7 @@ def test_no_clusters_no_exploration(db, monkeypatch):
         lambda *a, **k: pytest.fail("no searches with no clusters"),
     )
     out = discovery._run_exploration_searches(
-        _cfg(pct=0.20), db, [{"doi": "10.1/t0"}], since_days=14
+        _cfg(pct=0.20), db, [{"doi": "10.1/t0"}], window=_WINDOW_14
     )
     assert out == []
 
@@ -203,7 +208,7 @@ def test_no_graph_no_exploration(db, monkeypatch):
         lambda *a, **k: pytest.fail("no searches when graph unavailable"),
     )
     out = discovery._run_exploration_searches(
-        _cfg(pct=0.20), db, [{"doi": "10.1/t0"}], since_days=14
+        _cfg(pct=0.20), db, [{"doi": "10.1/t0"}], window=_WINDOW_14
     )
     assert out == []
 
@@ -219,7 +224,7 @@ def test_no_central_entities_skips_exploration(db, monkeypatch):
         lambda *a, **k: pytest.fail("no searches when graph has no entities"),
     )
     out = discovery._run_exploration_searches(
-        _cfg(pct=0.20), db, [{"doi": "10.1/t0"}], since_days=14
+        _cfg(pct=0.20), db, [{"doi": "10.1/t0"}], window=_WINDOW_14
     )
     assert out == []
 
@@ -233,7 +238,7 @@ def test_exploration_finds_nothing_no_fake_fill(db, monkeypatch):
     # Searches run but return zero candidates → proceed normally, no fake-fill.
     monkeypatch.setattr(discovery, "run_searches", lambda *a, **k: [])
     out = discovery._run_exploration_searches(
-        _cfg(pct=0.20), db, [{"doi": "10.1/t0"}], since_days=14
+        _cfg(pct=0.20), db, [{"doi": "10.1/t0"}], window=_WINDOW_14
     )
     assert out == []
 
@@ -250,7 +255,7 @@ def test_exploration_candidates_already_in_topic_pool_dropped(db, monkeypatch):
         lambda *a, **k: [{"doi": "10.1/t0", "title": "dup"}],
     )
     out = discovery._run_exploration_searches(
-        _cfg(pct=0.20), db, [{"doi": "10.1/t0"}], since_days=14
+        _cfg(pct=0.20), db, [{"doi": "10.1/t0"}], window=_WINDOW_14
     )
     assert out == []
 
@@ -274,7 +279,7 @@ def test_near_floor_dismissed_cluster_excluded(db, monkeypatch):
         lambda *a, **k: pytest.fail("dismissed cluster must not be explored"),
     )
     out = discovery._run_exploration_searches(
-        _cfg(pct=0.20), db, [{"doi": "10.1/t0"}], since_days=14
+        _cfg(pct=0.20), db, [{"doi": "10.1/t0"}], window=_WINDOW_14
     )
     assert out == []
 
@@ -302,7 +307,7 @@ def test_url_wrapped_duplicates_dedup_before_cap_budget_buys_unique(db, monkeypa
 
     topic_results = [{"doi": f"10.1/t{i}", "title": f"t{i}"} for i in range(10)]
 
-    def _fake_run_searches(cfg, since_days=14):
+    def _fake_run_searches(cfg, window=None, **kwargs):
         # 2 URL-wrapped duplicates of topic DOIs FIRST (front of the list, so a
         # cap-first or non-canonical-dedup order would let them eat the budget),
         # then 3 genuinely-new candidates.
@@ -317,7 +322,7 @@ def test_url_wrapped_duplicates_dedup_before_cap_budget_buys_unique(db, monkeypa
     monkeypatch.setattr(discovery, "run_searches", _fake_run_searches)
 
     out = discovery._run_exploration_searches(
-        _cfg(pct=0.20), db, topic_results, since_days=14
+        _cfg(pct=0.20), db, topic_results, window=_WINDOW_14
     )
 
     # cap = ceil(0.20 * 10) = 2; the budget is fully spent on UNIQUE papers.
@@ -341,6 +346,6 @@ def test_non_fatal_on_search_error(db, monkeypatch):
     monkeypatch.setattr(discovery, "run_searches", _boom)
     # Must not raise — discovery is never broken by exploration.
     out = discovery._run_exploration_searches(
-        _cfg(pct=0.20), db, [{"doi": "10.1/t0"}], since_days=14
+        _cfg(pct=0.20), db, [{"doi": "10.1/t0"}], window=_WINDOW_14
     )
     assert out == []

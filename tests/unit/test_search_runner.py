@@ -147,3 +147,83 @@ def test_convert_findpapers_results_normalizes_stored_doi():
     )
     out = _convert_findpapers_results([fake_paper], tracked_author=False)
     assert out[0]["doi"] == "10.1234/abc"
+
+
+# ---------------------------------------------------------------------------
+# Tasks 3+4+5: SearchWindow threading (since + until)
+# ---------------------------------------------------------------------------
+
+def _make_empty_search_result():
+    from unittest.mock import MagicMock
+    r = MagicMock()
+    r.papers = []
+    return r
+
+
+def test_run_searches_passes_since_and_until_to_findpapers():
+    """run_searches with a bounded SearchWindow passes both since AND until to
+    _findpapers.search.  Monkeypatches _findpapers.search to capture kwargs."""
+    from datetime import date
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from lit_monitor.search.search_runner import run_searches
+    from lit_monitor.search.window import SearchWindow
+
+    window = SearchWindow(since=date(2025, 1, 1), until=date(2025, 2, 1))
+    captured_kwargs: list[dict] = []
+
+    def _fake_search(**kwargs):
+        captured_kwargs.append(kwargs)
+
+    config = SimpleNamespace(topics=["filtration"])
+    with patch("lit_monitor.search.search_runner._S2_AVAILABLE", False):
+        with patch("lit_monitor.search.search_runner._findpapers") as mock_fp:
+            mock_fp.search.side_effect = _fake_search
+            with patch(
+                "lit_monitor.search.search_runner._fp_load",
+                return_value=_make_empty_search_result(),
+            ):
+                with patch(
+                    "lit_monitor.search.search_runner._load_api_secrets",
+                    return_value={},
+                ):
+                    run_searches(config, window=window)
+
+    assert len(captured_kwargs) == 1, "findpapers.search must be called once"
+    assert captured_kwargs[0]["since"] == date(2025, 1, 1)
+    assert captured_kwargs[0]["until"] == date(2025, 2, 1)
+
+
+def test_run_searches_open_ended_window_passes_none_until():
+    """An open-ended window (until=None) passes until=None to _findpapers.search."""
+    from datetime import date
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from lit_monitor.search.search_runner import run_searches
+    from lit_monitor.search.window import SearchWindow
+
+    window = SearchWindow(since=date(2025, 1, 1), until=None)
+    captured_kwargs: list[dict] = []
+
+    def _fake_search(**kwargs):
+        captured_kwargs.append(kwargs)
+
+    config = SimpleNamespace(topics=["filtration"])
+    with patch("lit_monitor.search.search_runner._S2_AVAILABLE", False):
+        with patch("lit_monitor.search.search_runner._findpapers") as mock_fp:
+            mock_fp.search.side_effect = _fake_search
+            with patch(
+                "lit_monitor.search.search_runner._fp_load",
+                return_value=_make_empty_search_result(),
+            ):
+                with patch(
+                    "lit_monitor.search.search_runner._load_api_secrets",
+                    return_value={},
+                ):
+                    run_searches(config, window=window)
+
+    assert len(captured_kwargs) == 1
+    assert captured_kwargs[0]["since"] == date(2025, 1, 1)
+    assert captured_kwargs[0]["until"] is None

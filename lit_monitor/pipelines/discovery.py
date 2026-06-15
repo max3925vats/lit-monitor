@@ -29,7 +29,7 @@ import math
 import time as _time
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -73,8 +73,51 @@ from lit_monitor.pipelines.brain_build import (
 from lit_monitor.search.researcher_tracker import run_researcher_searches
 from lit_monitor.search.search_runner import DEFAULT_DATABASES, filter_known_dois, run_searches
 from lit_monitor.search.semantic_scholar import enrich_paper
+from lit_monitor.search.window import SearchWindow
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# coverage_until frontier helpers (Task 2 — discovery search window)
+# ---------------------------------------------------------------------------
+
+_COVERAGE_UNTIL_KEY = "coverage_until"
+
+
+def read_coverage_until(state_db) -> date | None:
+    """The coverage high-water mark (latest publication date any completed
+    search has covered), or None if unset/unparseable."""
+    raw = state_db.get_kv(_COVERAGE_UNTIL_KEY)
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw).date()
+    except ValueError:
+        logger.warning("coverage_until %r unparseable — treating as unset", raw)
+        return None
+
+
+def advance_coverage_until(state_db, *, covered_to: date) -> None:
+    """Move the frontier forward to max(existing, covered_to). Never moves it back."""
+    current = read_coverage_until(state_db)
+    if current is None or covered_to > current:
+        state_db.set_kv(_COVERAGE_UNTIL_KEY, str(covered_to))
+
+
+def seed_coverage_until(state_db) -> None:
+    """First-upgrade migration: if coverage_until is unset, seed it from
+    last_run_date so existing installs don't suddenly re-fetch a wide range."""
+    if read_coverage_until(state_db) is not None:
+        return
+    raw = state_db.get_kv("last_run_date")
+    if raw:
+        try:
+            state_db.set_kv(_COVERAGE_UNTIL_KEY, str(datetime.fromisoformat(raw).date()))
+        except ValueError:
+            logger.warning(
+                "last_run_date %r unparseable — skipping coverage_until seed", raw
+            )
+
 
 # Historical default for the notification deep-link target; used when no
 # [server] block is configured or the [server] extra isn't installed.
@@ -118,6 +161,7 @@ def run_discovery(
     top_k: int = 20,
     sim_threshold: float = 0.3,
     rag_mode: str | None = None,
+    window_override: SearchWindow | None = None,
     trigger: str = "manual",
 ) -> _RunSummary:
     """
@@ -146,6 +190,9 @@ def run_discovery(
         One of "vector", "graph", "hybrid". Default reads from
         config.retrieval.default_mode; falls back to "vector".
         When "graph" or "hybrid", graph proximity is used for paper ranking.
+    window_override:
+        Explicit search-window override from the CLI/web; when None the adaptive
+        coverage frontier is used.
     trigger:
         How this run was started — "manual" (web "Run now" / CLI) or
         "scheduled" (OS scheduler). Recorded on the discovery_runs row.
@@ -177,28 +224,31 @@ def run_discovery(
             trigger=trigger,
         )
 
-    # A4: compute search window from last successful run date.
-    # Cap at 90 days to avoid overwhelming databases after a long gap.
-    _MAX_SINCE_DAYS = 90
-    last_run_date_str = state_db.get_kv("last_run_date")
-    if last_run_date_str:
-        try:
-            last_run = datetime.fromisoformat(last_run_date_str).date()
-            since_days = min((date.today() - last_run).days + 1, _MAX_SINCE_DAYS)
-            logger.warning("Search window: %d days (last run: %s)", since_days, last_run_date_str)
-        except ValueError:
-            since_days = 14
-            logger.warning("Could not parse last_run_date %r — defaulting to 14 days", last_run_date_str)
+    # Discovery search window. Explicit CLI/web override wins; otherwise the
+    # DEFAULT window starts at the coverage frontier (the latest date any prior
+    # successful search covered) and runs to today. The frontier advances only
+    # on a clean, non-dry run (below), so the default never leaves a gap and
+    # never re-fetches a covered range. Cold start (no frontier yet) = 14 days.
+    # NOTE: the default is intentionally UNCAPPED — a long absence yields a
+    # correspondingly wide catch-up (bounded by findpapers' per-DB limit); the
+    # old 90-day cap belonged to the retired last_run_date model and is dropped.
+    if not dry_run:
+        seed_coverage_until(state_db)  # first-upgrade migration; no-op once set
+    if window_override is not None:
+        _window = window_override
     else:
-        since_days = 14
-        logger.warning("No last_run_date stored — defaulting search window to 14 days")
+        _frontier = read_coverage_until(state_db)
+        _since = _frontier or (date.today() - timedelta(days=14))
+        _window = SearchWindow(since=_since, until=None)
+    logger.info("Discovery search window: %s → %s",
+                _window.since, _window.until or "today")
 
     # ----------------------------------------------------------------
     # Discovery block
     # ----------------------------------------------------------------
     try:
         try:
-            raw_papers, search_errors = _run_discovery(config, since_days=since_days)
+            raw_papers, search_errors = _run_discovery(config, window=_window)
             summary.errors.extend(search_errors)
             # Bundle K-b: SUPPLEMENT topic results with graph-expanded exploration
             # searches for under-engaged clusters. Fully gated + non-fatal: with no
@@ -207,7 +257,7 @@ def run_discovery(
             # appended (never replace topic results) and capped to ~budget_pct of
             # the topic pool; they de-dup + rank through the same downstream path.
             _explore_papers = _run_exploration_searches(
-                config, state_db, raw_papers, since_days=since_days
+                config, state_db, raw_papers, window=_window
             )
             if _explore_papers:
                 raw_papers = raw_papers + _explore_papers
@@ -217,6 +267,15 @@ def run_discovery(
             # the write so dry runs do not silently mutate kv_store.
             if not dry_run:
                 state_db.set_kv("last_run_date", str(date.today()))
+                # Advance the coverage frontier ONLY when the search block ran
+                # clean (no per-topic errors). A failed/partial search must NOT
+                # advance it, or the un-covered range is skipped forever. A 1-day
+                # boundary overlap is fine — the shown-only suppression layer
+                # (filter_known_dois) absorbs duplicates.
+                if not search_errors:
+                    advance_coverage_until(
+                        state_db, covered_to=(_window.until or date.today())
+                    )
         except Exception as exc:
             logger.error("Discovery searches failed: %s", exc, exc_info=True)
             summary.errors.append(f"discovery: {exc}")
@@ -769,26 +828,28 @@ def assemble_with_soft_floor(
 # Discovery helpers
 # ---------------------------------------------------------------------------
 def _run_discovery(
-    config, since_days: int = 14
+    config, window: SearchWindow | None = None
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Run topic + researcher searches and merge results.
 
     Parameters
     ----------
-    since_days:
-        Search window in days from today. Computed from the stored
-        'last_run_date' kv_store entry so that skipped weeks are
-        automatically caught up on the next run.
+    window:
+        Search window with ``since`` and optional ``until``. Resolved by
+        ``run_discovery`` — either an explicit override or the default
+        ``coverage_until`` frontier (latest date prior runs covered → today),
+        so successive runs march forward without gaps. When None, defaults to
+        the last 14 days.
     """
     papers: list[dict[str, Any]] = []
     errors: list[str] = []
     try:
-        papers.extend(run_searches(config, since_days=since_days))
+        papers.extend(run_searches(config, window=window))
     except Exception as exc:
         logger.warning("Topic searches failed: %s", exc)
         errors.append(f"topic_search: {exc}")
     try:
-        papers.extend(run_researcher_searches(config, since_days=since_days))
+        papers.extend(run_researcher_searches(config, window=window))
     except Exception as exc:
         logger.warning("Researcher searches failed: %s", exc)
         errors.append(f"researcher_search: {exc}")
@@ -840,7 +901,7 @@ def _run_exploration_searches(
     state_db: Any,
     topic_results: list[dict[str, Any]],
     *,
-    since_days: int,
+    window: SearchWindow | None = None,
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """K-b: build + run graph-expanded exploration searches for under-engaged
@@ -941,7 +1002,7 @@ def _run_exploration_searches(
         # run_searches reads only `.topics` off config (API keys come from
         # config.toml), so the shim is sufficient and reuses findpapers + S2.
         explore_cfg = SimpleNamespace(topics=list(queries))
-        explore_results = run_searches(explore_cfg, since_days=since_days)
+        explore_results = run_searches(explore_cfg, window=window)
         # AR-5 Fix 1 (Finding 5 + 4): drop exploration candidates already present
         # in the topic pool BEFORE the budget cap, so duplicate hits never consume
         # budget slots and the configured exploration rate is actually honoured.

@@ -28,6 +28,7 @@ from lit_monitor._vendor import findpapers as _findpapers
 from lit_monitor._vendor.findpapers.utils.persistence_util import load as _fp_load
 from lit_monitor.core.doi import normalize_doi
 from lit_monitor.search._constants import FINDPAPERS_TIMEOUT_SECONDS
+from lit_monitor.search.window import SearchWindow
 
 logger = logging.getLogger(__name__)
 _OPENALEX_AUTHOR_URL = "https://api.openalex.org/works"
@@ -42,8 +43,8 @@ def _researcher_dedup_key(paper: dict) -> str:
 
 def run_researcher_searches(
     config,
+    window: SearchWindow | None = None,
     databases: list[str] | None = None,
-    since_days: int = 14,
     limit_per_author: int = 50,
 ) -> list[dict[str, Any]]:
     """
@@ -55,10 +56,11 @@ def run_researcher_searches(
     ----------
     config:
         Config object with .researchers (list of {name, orcid?}).
+    window:
+        Search window with ``since`` and optional ``until`` (None = open-ended,
+        meaning "today").  When None, defaults to the last 14 days.
     databases:
         Override database list (default: DEFAULT_DATABASES).
-    since_days:
-        Search window in days from today.
     limit_per_author:
         Max results per author per database.
 
@@ -77,7 +79,10 @@ def run_researcher_searches(
     if databases is None:
         databases = _DEFAULT_DATABASES
 
-    since = datetime.date.today() - datetime.timedelta(days=since_days)
+    # Resolve search window: default to last 14 days, open-ended.
+    if window is None:
+        window = SearchWindow(since=datetime.date.today() - datetime.timedelta(days=14), until=None)
+    since = window.since
     secrets = _load_api_secrets()
     scopus_key = secrets.get("scopus_api_key")
     ieee_key = secrets.get("ieee_api_key")
@@ -106,6 +111,7 @@ def run_researcher_searches(
                     outputpath=tmp,
                     query=au_query,
                     since=since,
+                    until=window.until,
                     databases=databases,
                     limit_per_database=limit_per_author,
                     scopus_api_token=scopus_key,
@@ -144,7 +150,9 @@ def run_researcher_searches(
         # Supplementary: OpenAlex ORCID lookup (if orcid provided)
         if orcid:
             try:
-                openalex_papers = _openalex_author_lookup(orcid, since, config)
+                openalex_papers = _openalex_author_lookup(
+                    orcid, since, config, until=window.until
+                )
                 for paper in openalex_papers:
                     doi = _researcher_dedup_key(paper)
                     if doi and doi not in all_papers:
@@ -257,16 +265,23 @@ def _openalex_author_lookup(
     orcid: str,
     since: datetime.date,
     config,
+    until: datetime.date | None = None,
 ) -> list[dict[str, Any]]:
     """
     Query OpenAlex works API filtered by author ORCID.
     Returns a list of paper dicts (tracked_author=True).
+
+    ``until`` (when set) bounds the upper publication date so the OpenAlex leg
+    honors an explicit search-window range, matching the findpapers leg. None
+    (the default/adaptive path) leaves it open-ended.
     """
     from lit_monitor.core.http_client import get_json
     orcid_url = orcid if orcid.startswith("http") else f"https://orcid.org/{orcid}"
     from_date = since.isoformat()
+    _until_filter = f",to_publication_date:{until.isoformat()}" if until else ""
     params_str = (
         f"?filter=author.orcid:{orcid_url},from_publication_date:{from_date}"
+        f"{_until_filter}"
         f"&per-page=50&select=id,doi,title,authorships,publication_year,"
         f"primary_location,keywords,abstract_inverted_index"
     )

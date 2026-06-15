@@ -11,11 +11,14 @@ Covers:
 """
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+
+from lit_monitor.search.window import SearchWindow
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1062,7 +1065,8 @@ class TestS2Cap:
             mock_s2_cls.return_value = mock_s2
             # Two papers with no relevance_score key (default behavior)
             mock_s2.search_paper.return_value = [mock_paper, mock_paper]
-            results = search_semantic_scholar("test query", since_days=7, limit=10)
+            window = SearchWindow(since=date.today() - timedelta(days=7), until=None)
+            results = search_semantic_scholar("test query", window=window, limit=10)
         # Both papers pass through (no cap applied)
         assert len(results) == 2
 
@@ -1090,8 +1094,9 @@ class TestS2Cap:
             mock_s2 = MagicMock()
             mock_s2_cls.return_value = mock_s2
             mock_s2.search_paper.return_value = [high, low]
+            window = SearchWindow(since=date.today() - timedelta(days=7), until=None)
             results = search_semantic_scholar(
-                "test query", since_days=7, limit=10, min_relevance=0.5
+                "test query", window=window, limit=10, min_relevance=0.5
             )
         # Only the high-relevance paper should remain
         assert len(results) == 1
@@ -1122,9 +1127,10 @@ class TestS2Cap:
             mock_s2 = MagicMock()
             mock_s2_cls.return_value = mock_s2
             mock_s2.search_paper.return_value = papers
+            window = SearchWindow(since=date.today() - timedelta(days=7), until=None)
             with caplog.at_level(logging.INFO, logger="lit_monitor.search.semantic_scholar"):
                 search_semantic_scholar(
-                    "test query", since_days=7, limit=10, min_relevance=0.35
+                    "test query", window=window, limit=10, min_relevance=0.35
                 )
         # At least one log message should mention dropping
         assert any("cap" in r.getMessage().lower() or "dropped" in r.getMessage().lower()

@@ -330,6 +330,124 @@
   });
 })();
 
+// Task 8 — Discovery search time-range card.
+//
+// POLL-SAFE: the card (#discovery-window-card) lives in a NON-POLLED sibling
+// section, so the controls 5s self-refresh never touches its inputs. The
+// selection is injected into the start POST at submit time via
+// htmx:configRequest on #discovery-start-form — a pure parameter injection, so
+// no hidden field needs to live inside the polled form.
+//
+// Behaviour:
+//   - radio change toggles which mode-row is visible (the others get `hidden`);
+//   - rolling mode's two inputs are bidirectionally linked
+//     (days N  -> since = today - N;  since date -> days = (today - date).days);
+//   - on submit, the active mode's values are added to the outgoing parameters
+//     (default mode adds only window_mode=default; the route maps it to no flags).
+(function () {
+  "use strict";
+
+  // Local-midnight "today" so day-diff math matches the user's calendar (the
+  // server computes the same with date.today()). Returns a Date at 00:00 local.
+  function todayLocal() {
+    var d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  // YYYY-MM-DD in LOCAL time (toISOString would shift by the UTC offset).
+  function fmtDate(d) {
+    var m = String(d.getMonth() + 1).padStart(2, "0");
+    var day = String(d.getDate()).padStart(2, "0");
+    return d.getFullYear() + "-" + m + "-" + day;
+  }
+  // Parse a YYYY-MM-DD string to a local-midnight Date, or null if blank/bad.
+  function parseDate(s) {
+    if (!s) return null;
+    var parts = s.split("-");
+    if (parts.length !== 3) return null;
+    var y = Number(parts[0]), mo = Number(parts[1]), da = Number(parts[2]);
+    if (!y || !mo || !da) return null;
+    return new Date(y, mo - 1, da);
+  }
+  function dayDiff(from, to) {
+    // Whole days between two local-midnight dates.
+    return Math.round((to.getTime() - from.getTime()) / 86400000);
+  }
+
+  function $(id) { return document.getElementById(id); }
+
+  // Toggle the visible mode-row; the inactive rows get `hidden`.
+  function showMode(mode) {
+    var rolling = $("discovery-window-rolling");
+    var range = $("discovery-window-range");
+    if (rolling) rolling.toggleAttribute("hidden", mode !== "rolling");
+    if (range) range.toggleAttribute("hidden", mode !== "range");
+  }
+
+  function init() {
+    var card = $("discovery-window-card");
+    if (!card) return; // not the discovery dashboard
+    var group = $("discovery-window-mode");
+    var daysInput = $("discovery-window-days");
+    var sinceInput = $("discovery-window-since");
+
+    if (group) {
+      group.addEventListener("sl-change", function () {
+        showMode(group.value);
+      });
+      showMode(group.value || "default");
+    }
+
+    // Bidirectional link: editing days back -> since = today - N.
+    if (daysInput && sinceInput) {
+      daysInput.addEventListener("sl-input", function () {
+        var n = Number(daysInput.value);
+        if (daysInput.value === "" || isNaN(n) || n < 0) return;
+        var since = todayLocal();
+        since.setDate(since.getDate() - n);
+        sinceInput.value = fmtDate(since);
+      });
+      // Editing since -> days = (today - since).days.
+      sinceInput.addEventListener("sl-input", function () {
+        var d = parseDate(sinceInput.value);
+        if (!d) return;
+        var n = dayDiff(d, todayLocal());
+        if (n < 0) n = 0; // a future "since" clamps to 0 days back
+        daysInput.value = String(n);
+      });
+    }
+  }
+
+  // Inject the active mode's values into the discovery start POST. Reads the
+  // card live at submit time (it is never re-rendered by the poll), so whatever
+  // the user typed is what gets sent.
+  document.body.addEventListener("htmx:configRequest", function (evt) {
+    var form = evt.target;
+    if (!form || form.id !== "discovery-start-form") return;
+    var group = $("discovery-window-mode");
+    var mode = (group && group.value) || "default";
+    var p = evt.detail.parameters;
+    p.window_mode = mode;
+    if (mode === "rolling") {
+      var daysInput = $("discovery-window-days");
+      var sinceInput = $("discovery-window-since");
+      if (daysInput && daysInput.value !== "") p.since_days = daysInput.value;
+      if (sinceInput && sinceInput.value) p.since = sinceInput.value;
+    } else if (mode === "range") {
+      var fromInput = $("discovery-window-from");
+      var toInput = $("discovery-window-to");
+      if (fromInput && fromInput.value) p.from_date = fromInput.value;
+      if (toInput && toInput.value) p.to_date = toInput.value;
+    }
+    // default mode: only window_mode is sent -> route maps to no window flags.
+  });
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+
 // Run-gated live-progress pane (brain-build + discovery dashboards).
 //
 // The log pane (#live-progress-wrap) should be visible only while a run is

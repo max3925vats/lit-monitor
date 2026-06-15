@@ -611,6 +611,16 @@ a:hover {
 .collection-switcher #collection-field sl-input { max-width: 28rem; }
 .collection-switcher sl-button[type="submit"] { align-self: flex-start; }
 
+/* --- Discovery search time-range card (Task 8) --- */
+/* The card sits below the controls. The summary line + radio group stack; the
+   two inputs in the active mode-row sit on one line, each bounded (per the P3+
+   rubric: bound the chrome). Generous vertical rhythm between the radio group
+   and the inputs. */
+.discovery-window-summary { margin: 0 0 0.75rem; }
+.discovery-window-mode { display: block; margin-bottom: 1rem; }
+.discovery-window-row { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; }
+.discovery-window-row sl-input { max-width: 14rem; flex: 0 1 14rem; }
+
 /* --- Discovery digest viewer --- */
 /* Bound the chrome (the select, per the P3+ rubric ~28rem); free the content
    (the rendered box fills full width). */

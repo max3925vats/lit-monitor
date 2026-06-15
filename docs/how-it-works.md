@@ -209,6 +209,24 @@ matching is by DOI today; papers identified only by PMID or arXiv ID are a plann
 extension.) If you adopted lit-monitor before this tracking existed, run
 `lit-monitor discovery backfill-ingested` once to populate it for past runs.
 
+### The search window — a forward coverage frontier
+
+Each run searches a time window. By default that window runs from the **latest
+date any prior run already covered** (the *coverage frontier*) up to today, so
+successive runs move forward without leaving gaps or re-fetching the same range —
+under a regular schedule the window is just "since you last ran." The frontier
+advances only after a *successful* run (a failed search doesn't skip its range),
+and a dry run never moves it.
+
+You can override the window for a one-off — a wider look-back or a historical
+catch-up — from the CLI (`--since-days` / `--since` / `--from`+`--to`) or the
+**Search time range** card on the discovery page. An explicit *older* range
+(e.g. backfilling last summer) is searched as requested but does **not** pull the
+frontier backward, so your next default run still resumes from where regular
+coverage left off. Coverage is a single forward frontier, not a set of intervals:
+gaps you deliberately skip aren't auto-filled — search them explicitly when you
+want them.
+
 ## Local-first and open source
 
 lit-monitor is **MIT-licensed, free, and local-first by design** — built to help

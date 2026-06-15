@@ -8,7 +8,7 @@ Two entry points:
     open-access PDF URL.  Returns a dict of ``s2_*`` keys to be merged into
     the paper's ``extraction_json``.
 
-(b) ``search_semantic_scholar(query, since_days, limit)`` — discovery search.
+(b) ``search_semantic_scholar(query, window, limit)`` — discovery search.
     Returns paper dicts in pipeline format (same schema as findpapers results)
     so they can be merged with findpapers results and passed through
     ``filter_known_dois → rank_papers`` unchanged.
@@ -29,6 +29,7 @@ from typing import Any
 
 from lit_monitor.core.strict_mode import strict_fallback
 from lit_monitor.search._constants import S2_TIMEOUT_SECONDS
+from lit_monitor.search.window import SearchWindow
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,7 @@ def enrich_paper(
 
 def search_semantic_scholar(
     query: str,
-    since_days: int = 14,
+    window: SearchWindow | None = None,
     limit: int = 100,
     *,
     api_key: str | None = _DEFAULT_S2_API_KEY,
@@ -148,8 +149,9 @@ def search_semantic_scholar(
     query : str
         Search query.  Findpapers ``[bracket]`` notation is stripped
         automatically so the same topic strings from ``topics.yaml`` work here.
-    since_days : int
-        Only return papers published in the last N days.
+    window : SearchWindow | None
+        Search window with ``since`` and optional ``until`` (None = open-ended,
+        meaning "today").  When None, defaults to the last 14 days.
     limit : int
         Maximum results to return (Semantic Scholar API cap per request).
     api_key : str | None
@@ -177,9 +179,14 @@ def search_semantic_scholar(
     # S2 does relevance ranking, not Boolean search — strip findpapers syntax.
     clean_query = _strip_findpapers_format(query)
 
-    since_date = date.today() - timedelta(days=since_days)
-    # S2 publication_date_or_year: "YYYY-MM-DD:" means "from this date onward".
-    pub_date_filter = f"{since_date}:"
+    # Resolve search window: default to last 14 days, open-ended.
+    if window is None:
+        window = SearchWindow(since=date.today() - timedelta(days=14), until=None)
+    # S2 publication_date_or_year: "<since>:<until>" for a bounded range, or
+    # "<since>:" for open-ended (no upper bound).
+    pub_date_filter = f"{window.since}:{window.until or ''}"
+    # Use window.since for logging (replaces the old since_date variable).
+    since_date = window.since
 
     sch = _SemanticScholar(api_key=api_key, timeout=S2_TIMEOUT_SECONDS)
     try:

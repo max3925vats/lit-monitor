@@ -142,10 +142,12 @@ class TestEnrichPaper:
 
 class TestSearchSemanticScholar:
     def test_returns_papers_in_pipeline_format(self):
+        from lit_monitor.search.window import SearchWindow
         mock_sch = MagicMock()
         mock_sch.search_paper.return_value = [_mock_search_result()]
+        window = SearchWindow(since=date.today() - timedelta(days=14), until=None)
         with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
-            results = search_semantic_scholar("filtration", since_days=14)
+            results = search_semantic_scholar("filtration", window=window)
         assert len(results) == 1
         p = results[0]
         assert p["doi"] == "10.1016/j.foo.2024.001"
@@ -177,13 +179,15 @@ class TestSearchSemanticScholar:
         mock_cls.assert_not_called()
 
     def test_passes_publication_date_filter(self):
-        """publication_date_or_year should be 'YYYY-MM-DD:' based on since_days."""
+        """publication_date_or_year should be '<since>:' for an open-ended window."""
+        from lit_monitor.search.window import SearchWindow
         mock_sch = MagicMock()
         mock_sch.search_paper.return_value = []
-        with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
-            search_semantic_scholar("query", since_days=30)
-        call_kwargs = mock_sch.search_paper.call_args.kwargs
         expected_date = date.today() - timedelta(days=30)
+        window = SearchWindow(since=expected_date, until=None)
+        with patch("lit_monitor.search.semantic_scholar._SemanticScholar", return_value=mock_sch):
+            search_semantic_scholar("query", window=window)
+        call_kwargs = mock_sch.search_paper.call_args.kwargs
         assert call_kwargs["publication_date_or_year"] == f"{expected_date}:"
 
     def test_strips_findpapers_brackets_before_querying(self):
@@ -240,3 +244,52 @@ class TestStripFindpapersFormat:
         # Should not have leading/trailing whitespace or double spaces
         assert out == out.strip()
         assert "  " not in out
+
+
+# ---------------------------------------------------------------------------
+# Tasks 3+4+5: SearchWindow date-filter tests
+# ---------------------------------------------------------------------------
+
+class TestSearchSemanticScholarWindow:
+    """Verify that SearchWindow produces the correct publication_date_or_year string."""
+
+    def test_bounded_window_builds_since_colon_until_filter(self):
+        """A bounded window (since + until) must produce '<since>:<until>'."""
+        from datetime import date
+        from unittest.mock import MagicMock, patch
+
+        from lit_monitor.search.semantic_scholar import search_semantic_scholar
+        from lit_monitor.search.window import SearchWindow
+
+        window = SearchWindow(since=date(2025, 1, 1), until=date(2025, 2, 1))
+        mock_sch = MagicMock()
+        mock_sch.search_paper.return_value = []
+        with patch(
+            "lit_monitor.search.semantic_scholar._SemanticScholar",
+            return_value=mock_sch,
+        ):
+            search_semantic_scholar("filtration", window=window)
+
+        call_kwargs = mock_sch.search_paper.call_args.kwargs
+        assert call_kwargs["publication_date_or_year"] == "2025-01-01:2025-02-01"
+
+    def test_open_ended_window_builds_since_colon_filter(self):
+        """An open-ended window (until=None) must produce '<since>:' (no end date)."""
+        from datetime import date
+        from unittest.mock import MagicMock, patch
+
+        from lit_monitor.search.semantic_scholar import search_semantic_scholar
+        from lit_monitor.search.window import SearchWindow
+
+        window = SearchWindow(since=date(2025, 1, 1), until=None)
+        mock_sch = MagicMock()
+        mock_sch.search_paper.return_value = []
+        with patch(
+            "lit_monitor.search.semantic_scholar._SemanticScholar",
+            return_value=mock_sch,
+        ):
+            search_semantic_scholar("filtration", window=window)
+
+        call_kwargs = mock_sch.search_paper.call_args.kwargs
+        # until=None → open-ended → "<since>:"
+        assert call_kwargs["publication_date_or_year"] == "2025-01-01:"

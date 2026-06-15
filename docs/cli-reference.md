@@ -19,6 +19,9 @@ lit-monitor brain-build --resume         # extract every paper in the collection
 ```bash
 lit-monitor run                          # discover new papers + ingest new Zotero items
 lit-monitor run --dry-run                # preview without writes
+lit-monitor run --since-days 30          # search the last 30 days (override the adaptive window)
+lit-monitor run --since 2026-01-01       # search from a date to today
+lit-monitor run --from 2025-08-01 --to 2025-09-01   # search an explicit date range (catch-up/backfill)
 lit-monitor discovery view --run latest  # rich-table view of the latest results
 lit-monitor discovery export-md --to ~/digest.md   # on-demand Markdown export
 lit-monitor discovery backfill-ingested  # mark past recommendations that are now in your library as ingested
@@ -28,6 +31,13 @@ lit-monitor discovery backfill-ingested  # mark past recommendations that are no
 discovery digest that is now in your library, it records that the recommendation
 was ingested, so older run views show their true conversion. It is forward-only
 and safe to re-run.
+
+**Search window.** With no window flag, each run covers from the latest date any
+prior run already searched (the *coverage frontier*) up to today — so runs march
+forward without gaps or re-fetching. `--since-days` / `--since` / `--from`+`--to`
+are mutually exclusive overrides for a one-off wider look-back or a historical
+catch-up; an explicit range is honored as-is (no cap) and does **not** disturb the
+frontier unless it extends past it.
 
 ## Ask
 

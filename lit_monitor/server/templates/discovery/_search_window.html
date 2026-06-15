@@ -1,0 +1,58 @@
+{# Task 8 — Search time-range card.
+
+   POLL-SAFE BY CONSTRUCTION. This card lives in its OWN <section> on
+   index.html, OUTSIDE the .discovery-controls section that re-renders itself
+   every 5s. Nothing here is an HTMX swap target, so a mid-edit poll can never
+   reset these inputs (CLAUDE.md P3 note #13: keep the live element stable;
+   don't re-render it on a poll). The values are carried into the start POST at
+   submit time by site.js (htmx:configRequest on #discovery-start-form) — a pure
+   parameter injection, so no hidden field needs to live inside the polled form.
+
+   Defaults (window_default_days / window_default_since) are server-rendered from
+   the coverage_until frontier so the summary + the pre-populated rolling inputs
+   match the adaptive window an untouched run would use.
+
+   Shoelace initial-value gotcha: sl-input takes value= on the host (fine);
+   sl-radio-group pre-selects via value= on the host (NOT `checked` on options). #}
+<section class="card discovery-window-card"
+         id="discovery-window-card"
+         data-window-default-days="{{ window_default_days }}"
+         data-window-default-since="{{ window_default_since }}">
+  <sl-details summary="Search time range">
+    <p class="field-note discovery-window-summary" id="discovery-window-summary">
+      Default: last {{ window_default_days }} day{{ "" if window_default_days == 1 else "s" }}
+      &middot; since {{ window_default_since }}
+    </p>
+
+    <sl-radio-group name="window_mode" value="default"
+                    id="discovery-window-mode" class="discovery-window-mode">
+      <sl-radio value="default">Adaptive (default)</sl-radio>
+      <sl-radio value="rolling">Rolling window</sl-radio>
+      <sl-radio value="range">Custom range</sl-radio>
+    </sl-radio-group>
+
+    {# Rolling: two bidirectionally-linked inputs. site.js keeps them in sync
+       (days → date = today - N; date → days = (today - date).days). Pre-filled
+       with the frontier values so an untouched switch-to-rolling reproduces the
+       adaptive window. #}
+    <div class="discovery-window-row" id="discovery-window-rolling" hidden>
+      <sl-input type="number" min="0" step="1"
+                id="discovery-window-days" label="Days back"
+                value="{{ window_default_days }}"></sl-input>
+      <sl-input type="date"
+                id="discovery-window-since" label="Since"
+                value="{{ window_default_since }}"></sl-input>
+    </div>
+
+    {# Custom range: From → To. #}
+    <div class="discovery-window-row" id="discovery-window-range" hidden>
+      <sl-input type="date" id="discovery-window-from" label="From"></sl-input>
+      <sl-input type="date" id="discovery-window-to" label="To"></sl-input>
+    </div>
+
+    <p class="field-note">
+      Applies to the next run only. Leave on <strong>Adaptive</strong> to search
+      forward from where the last run left off.
+    </p>
+  </sl-details>
+</section>

@@ -15,6 +15,12 @@
     <p class="field-note">Loading controls…</p>
   </section>
 
+  {# Task 8 — Search time-range card. Placed as a NON-POLLED sibling immediately
+     below the controls (the controls <section> re-renders every 5s and would
+     wipe these inputs mid-edit if the card lived inside it). site.js carries the
+     selection into the start POST via htmx:configRequest on the form. #}
+  {% include "discovery/_search_window.html" %}
+
   {# Run-gated log pane. The wrapper is a STABLE element (never re-rendered by
      the controls 5s poll), so its sse-connect child mounts once and keeps its
      EventSource alive. site.js toggles `hidden` on this wrapper from the
