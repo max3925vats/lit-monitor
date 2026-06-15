@@ -10,10 +10,10 @@
 #   1. Installs uv (Astral's Python package manager) if not present.
 #   2. Creates a project-local .venv via uv.
 #   3. Resolves and installs all dependencies (dev tooling + LiteLLM cloud
-#      routing). uv handles the findpapers <-> chromadb typer conflict
-#      automatically via the [tool.uv] override-dependencies block in
-#      pyproject.toml. (BioBERT NER is the heavy [nlp] extra — opt in with
-#      `uv sync --extra nlp` only if you want it.)
+#      routing). findpapers is vendored into lit_monitor/_vendor (its old
+#      typer<0.4 metadata pin conflicted with click>=8 / chromadb), so there is
+#      no resolver conflict to work around. (BioBERT NER is the heavy [nlp]
+#      extra — opt in with `uv sync --extra nlp` only if you want it.)
 #   4. Hands off to `lit-monitor first-run`, which seeds your config files
 #      (from the packaged examples under lit_monitor/_data/config_examples/)
 #      and opens the setup wizard.
