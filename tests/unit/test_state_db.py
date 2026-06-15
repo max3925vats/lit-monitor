@@ -1538,6 +1538,17 @@ def test_library_dois_excludes_discovered_status(tmp_path):
 
 
 @pytest.mark.unit
+def test_library_dois_includes_null_status(tmp_path):
+    """A paper upserted without an explicit status stores NULL; it is still a
+    library paper (not a 'discovered' candidate) and MUST be returned, else it
+    would stop being suppressed in discovery (regression guard)."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    db.upsert_paper({"doi": "10.1/nostatus", "title": "K", "source_type": "paper"})
+    assert "10.1/nostatus" in db.library_dois()
+
+
+@pytest.mark.unit
 def test_surfaced_dois_distinct_nonempty(tmp_path):
     """surfaced_dois returns DOIs from discovery_paper_results, excluding empty strings."""
     from lit_monitor.core.state_db import StateDB

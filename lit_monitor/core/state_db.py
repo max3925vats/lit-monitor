@@ -2025,11 +2025,19 @@ class StateDB:
         return {r["doi"] for r in rows}
 
     def library_dois(self) -> set[str]:
-        """DOIs of papers actually in the library (any ingestion status),
-        EXCLUDING bare 'discovered' candidates that were merely retrieved."""
+        """DOIs of papers actually in the library (any ingestion status, incl.
+        a NULL/absent status), EXCLUDING only bare 'discovered' candidates that
+        were merely retrieved-and-ranked.
+
+        The ``status IS NULL OR`` clause matters: a paper upserted without an
+        explicit status stores NULL, and a plain ``status != 'discovered'``
+        would silently drop NULL rows (SQL three-valued logic), so a real
+        library paper would stop being suppressed in discovery. Only an
+        explicit 'discovered' status excludes a row here."""
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT doi FROM papers WHERE status != 'discovered'"
+                "SELECT doi FROM papers "
+                "WHERE status IS NULL OR status != 'discovered'"
             ).fetchall()
         return {r["doi"] for r in rows if r["doi"]}
 
