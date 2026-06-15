@@ -273,7 +273,8 @@ def _score_extraction(
     Args:
         score: The per-model score accumulator, mutated in place.
         extraction: The model's extraction output for one paper.
-        mode: Comparison mode ("paper").
+        mode: Comparison mode — "paper" or "review". Selects the required-field
+            set scored against (reviews omit study_type; Audit-6 #4).
         reference: The reference_papers entry for this paper's DOI, or None
             when the paper has no ground-truth entry. When present, its
             ``expected_null`` list names fields the paper genuinely LACKS;
