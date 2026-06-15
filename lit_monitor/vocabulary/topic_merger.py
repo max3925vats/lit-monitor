@@ -118,8 +118,8 @@ def _splice_into_list_block(text: str, block_key: str, new_entry: str) -> str:
             break
 
     if block_line == -1:
-        # Key not found — fall back to plain EOF append.
-        return text.rstrip("\n") + "\n" + new_entry
+        logger.warning("Block key %r not found; skipping splice to avoid corrupting the file.", block_key)
+        return text
 
     # Auto-detect item indentation from the first real list item.
     item_indent = 0

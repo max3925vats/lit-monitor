@@ -797,3 +797,26 @@ def test_brain_build_default_uses_collection_endpoint(tmp_path):
 
     zotero_client.get_collection_items.assert_called_once()
     zotero_client.get_all_library_items.assert_not_called()
+
+
+@pytest.mark.unit
+def test_resolve_auto_write_defaults_true_and_warns_on_bad_config(caplog):
+    import logging
+
+    from lit_monitor.pipelines.brain_build import _resolve_auto_write
+    class Boom:
+        @property
+        def discovery(self):  # attribute access raises
+            raise RuntimeError("bad config")
+    with caplog.at_level(logging.WARNING):
+        assert _resolve_auto_write(Boom()) is True
+    assert any("auto_write" in r.message.lower() for r in caplog.records)
+
+
+@pytest.mark.unit
+def test_resolve_auto_write_reads_false():
+    from types import SimpleNamespace
+
+    from lit_monitor.pipelines.brain_build import _resolve_auto_write
+    cfg = SimpleNamespace(discovery=SimpleNamespace(notes=SimpleNamespace(auto_write_per_paper=False)))
+    assert _resolve_auto_write(cfg) is False

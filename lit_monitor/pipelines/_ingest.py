@@ -61,6 +61,13 @@ except Exception:  # ImportError or missing optional dep
     extract_llm_relationships = None  # type: ignore[assignment]
 
 
+def build_embed_paper_metadata(*, title: str, year: Any, note_title: str) -> dict:
+    """Base ChromaDB paper-level metadata. Shared by brain_build and discovery so
+    the two ingest paths can't drift (Audit-6 #1: note_title was missing in
+    discovery). Graph callers extend this with journal/authors/keywords."""
+    return {"source_type": "paper", "title": title, "year": year, "note_title": note_title}
+
+
 def build_graph_tuples(
     extraction: dict[str, Any],
     paper_metadata: dict[str, Any],
@@ -325,8 +332,9 @@ def index_embeddings_and_mark_phases(
                 exc,
             )
 
-    for phase in phases_to_mark:
-        state_db.mark_brain_build_phase(zotero_key, phase)
+    # Audit-6 #2: mark all phases in ONE transaction so a mid-loop failure
+    # can't leave partial state committed.
+    state_db.mark_brain_build_phases(zotero_key, list(phases_to_mark))
 
     # P4 Part C: implicit positive feedback for a saved-then-ingested
     # recommendation.  Opt-in (brain-build only) so discovery's own

@@ -54,6 +54,7 @@ from lit_monitor.llm.ranker import (
 from lit_monitor.obsidian_tools.relink import relink_note
 from lit_monitor.output.obsidian_writer import write_paper_note
 from lit_monitor.pipelines._ingest import (
+    build_embed_paper_metadata,
     build_graph_tuples,
     build_ner_mention_edges,
     index_embeddings_and_mark_phases,
@@ -1293,9 +1294,9 @@ def _run_ingestion(
                         logger.warning("Chunking failed for %s (non-fatal): %s", doi, exc)
                 # R28 + G6: helper centralises add_paper + add_chunks + graph write + phase marks.
                 # ChromaDB metadata stays scalar-only; graph payload extends on the side.
-                _embed_paper_meta: dict[str, Any] = {
-                    "source_type": "paper", "title": title, "year": year,
-                }
+                _embed_paper_meta: dict[str, Any] = build_embed_paper_metadata(
+                    title=title, year=year, note_title=note_title,
+                )
                 if graph_db is not None:
                     _graph_paper_meta = dict(_embed_paper_meta)
                     _graph_paper_meta["journal"] = journal

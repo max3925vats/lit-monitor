@@ -1422,3 +1422,15 @@ def test_count_graph_indexed_counts_flagged_papers(tmp_path):
     db.set_graph_indexed("10.0/g0", 1)
     db.set_graph_indexed("10.0/g1", 1)
     assert db.count_graph_indexed() == 2
+
+
+@pytest.mark.unit
+def test_mark_brain_build_phases_is_all_or_nothing(tmp_path):
+    """Audit-6 #2: phases are marked in a single transaction."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(str(tmp_path / "state.db"))
+    db.upsert_brain_build_progress("ZKEY", doi="10.1/x")
+    db.mark_brain_build_phases("ZKEY", ["simple", "complex"])
+    prog = db.get_brain_build_progress("ZKEY")
+    assert prog["simple_complete"] == 1
+    assert prog["complex_complete"] == 1

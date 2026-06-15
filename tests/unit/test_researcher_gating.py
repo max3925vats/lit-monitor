@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -109,3 +111,18 @@ class TestShouldFireForResearcher:
             recent_topic_entities=["topic"],
             min_overlap=1,
         ) is True
+
+
+# ---------------------------------------------------------------------------
+# Audit-6 #12: DOI dedup key normalisation
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_researcher_dedup_key_normalizes_doi():
+    from lit_monitor.search.researcher_tracker import _researcher_dedup_key
+    # URL-wrapped and bare forms collapse to the same dedup key
+    assert _researcher_dedup_key({"doi": "https://doi.org/10.1/ABC"}) == _researcher_dedup_key({"doi": "10.1/abc"})
+    # a real key is produced
+    assert _researcher_dedup_key({"doi": "10.1/abc"}) == "10.1/abc"
+    # empty/missing doi → empty string (caller skips empties)
+    assert _researcher_dedup_key({}) == ""

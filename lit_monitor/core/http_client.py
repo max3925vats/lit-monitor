@@ -6,7 +6,13 @@ that are not handled by findpapers or pyzotero.
 from __future__ import annotations
 
 import logging
+from importlib.metadata import version as _pkg_version
 from typing import Any
+
+try:
+    _UA_VERSION = _pkg_version("lit-monitor")
+except Exception:
+    _UA_VERSION = "dev"
 
 import requests
 from tenacity import (
@@ -19,7 +25,7 @@ from tenacity import (
 logger = logging.getLogger(__name__)
 _SESSION = requests.Session()
 _SESSION.headers.update({
-    "User-Agent": "lit-monitor/0.1.0 (personal research tool; contact via GitHub)"
+    "User-Agent": f"lit-monitor/{_UA_VERSION} (personal research tool; contact via GitHub)"
 })
 _RETRY_DECORATOR = retry(
     retry=retry_if_exception_type(requests.RequestException),

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -316,3 +318,38 @@ class TestPushCollectionsToZotero:
         # Should describe at least 2 sub-collections to create
         total_ops = report.get("collections_to_create", 0) + report.get("items_to_add", 0)
         assert total_ops > 0
+
+
+# ---------------------------------------------------------------------------
+# Audit-6 #8 — _tag_value_for_theme must not embed '/' in the theme part
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_theme_slash_does_not_break_tag():
+    from lit_monitor.clustering.write_back import _tag_value_for_theme
+    val = _tag_value_for_theme("ion exchange / HIC")
+    assert val.startswith("lm/")
+    assert "/" not in val.split("/", 1)[1]  # no slash AFTER the namespace prefix
+
+
+# ---------------------------------------------------------------------------
+# Audit-6 #9 — sub-collection index must be FIRST-wins + WARN on duplicate names
+# (silent last-wins could route papers to the wrong collection, no warning)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_index_subcollections_first_wins_and_warns(caplog):
+    import logging
+
+    from lit_monitor.clustering.write_back import _index_subcollections
+    # Real shape (ZoteroClient.get_all_collections): flat dicts with
+    # "name", "key", "parent_collection_key".
+    cols = [
+        {"name": "Theme A", "key": "K1", "parent_collection_key": "P"},
+        {"name": "Theme A", "key": "K2", "parent_collection_key": "P"},
+        {"name": "Other", "key": "K3", "parent_collection_key": "Q"},  # different parent — excluded
+    ]
+    with caplog.at_level(logging.WARNING):
+        idx = _index_subcollections(cols, parent_key="P")
+    assert idx == {"Theme A": "K1"}  # first-wins (K1), and Q-parented excluded
+    assert any("duplicate" in r.message.lower() and "Theme A" in r.message for r in caplog.records)

@@ -23,11 +23,11 @@ def test_happy_path_marks_all_phases():
     assert ok and err is None
     embeddings_db.add_paper.assert_called_once()
     embeddings_db.add_chunks.assert_called_once()
-    # mark_brain_build_phase must be called with the ZOTERO_KEY, not the DOI
-    calls = state_db.mark_brain_build_phase.call_args_list
-    assert len(calls) == 2
-    assert calls[0].args == ("ZKEY123", "simple")
-    assert calls[1].args == ("ZKEY123", "complex")
+    # Audit-6 #2: phases marked atomically in ONE call with the ZOTERO_KEY
+    # (not the DOI), passing the full phase list.
+    state_db.mark_brain_build_phases.assert_called_once_with(
+        "ZKEY123", ["simple", "complex"]
+    )
 
 
 def test_add_paper_failure_skips_phase_marks():
@@ -48,7 +48,7 @@ def test_add_paper_failure_skips_phase_marks():
     )
     assert not ok
     assert "add_paper_failed" in err
-    state_db.mark_brain_build_phase.assert_not_called()
+    state_db.mark_brain_build_phases.assert_not_called()
 
 
 def test_add_chunks_failure_still_marks_phases():
@@ -69,7 +69,7 @@ def test_add_chunks_failure_still_marks_phases():
         logger=logging.getLogger("test"),
     )
     assert ok and err is None
-    state_db.mark_brain_build_phase.assert_called_once_with("ZKEY555", "simple")
+    state_db.mark_brain_build_phases.assert_called_once_with("ZKEY555", ["simple"])
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +165,9 @@ class TestIngestWithGraph:
         # set_graph_indexed must NOT have been called when graph_db is None.
         assert not state_db.set_graph_indexed.called
         # Phase marks still fire — vector-only ingest is unaffected.
-        assert state_db.mark_brain_build_phase.call_count == 2
+        state_db.mark_brain_build_phases.assert_called_once_with(
+            "ZKEY6", ["simple", "complex"]
+        )
 
     def test_graph_success_sets_graph_indexed(self):
         """G6: graph add_paper success -> set_graph_indexed(doi, 1) AND phase marks fire."""
@@ -180,7 +182,9 @@ class TestIngestWithGraph:
         # set_graph_indexed flipped to 1
         state_db.set_graph_indexed.assert_called_once_with("10.g6/x", 1)
         # Phase marks fired
-        assert state_db.mark_brain_build_phase.call_count == 2
+        state_db.mark_brain_build_phases.assert_called_once_with(
+            "ZKEY6", ["simple", "complex"]
+        )
 
     def test_graph_failure_does_not_block_phase_marks(self):
         """G6 R28 INVARIANT: graph add_paper raises -> phase marks STILL fire,
@@ -200,7 +204,9 @@ class TestIngestWithGraph:
         # set_graph_indexed was NEVER called — graph_indexed stays 0.
         assert not state_db.set_graph_indexed.called
         # Phase marks still fired — this is the invariant proof.
-        assert state_db.mark_brain_build_phase.call_count == 2
+        state_db.mark_brain_build_phases.assert_called_once_with(
+            "ZKEY6", ["simple", "complex"]
+        )
 
     def test_embed_failure_with_graph_db_does_not_attempt_graph(self):
         """G6: when ChromaDB add_paper fails, graph_db.add_paper is NOT attempted.
@@ -220,7 +226,7 @@ class TestIngestWithGraph:
         # set_graph_indexed must NOT have been called.
         assert not state_db.set_graph_indexed.called
         # Phase marks must NOT have fired — embed failure is the only gate.
-        assert not state_db.mark_brain_build_phase.called
+        assert not state_db.mark_brain_build_phases.called
 
     def test_graph_db_passes_entities_and_relationships(self):
         """G6: graph_entities and graph_relationships flow through to graph_db.add_paper."""
@@ -260,7 +266,11 @@ class TestIngestWithGraph:
         assert ok and err is None
         assert graph_db.add_paper.call_count == 1
         state_db.set_graph_indexed.assert_called_once_with("10.g6/y", 1)
-        assert state_db.mark_brain_build_phase.call_count == phase_count
+        # Audit-6 #2: phases are marked in ONE atomic call with the full list
+        # (the StateDB method no-ops internally on an empty list).
+        state_db.mark_brain_build_phases.assert_called_once_with(
+            "ZKEY7", list(phases)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -766,3 +776,21 @@ class TestImplicitZoteroSave:
         # Ingestion completed despite the feedback failure (R28 invariant).
         assert ok and err is None
         db.record_feedback_event = original  # type: ignore[method-assign]
+
+
+# ---------------------------------------------------------------------------
+# Audit-6 #1 — shared embed-metadata builder
+# ---------------------------------------------------------------------------
+
+
+def test_build_embed_paper_metadata_includes_note_title():
+    from lit_monitor.pipelines._ingest import build_embed_paper_metadata
+    meta = build_embed_paper_metadata(title="T", year=2021, note_title="Smith2021")
+    assert meta == {"source_type": "paper", "title": "T", "year": 2021, "note_title": "Smith2021"}
+
+
+def test_build_embed_paper_metadata_defaults_blank_note_title():
+    from lit_monitor.pipelines._ingest import build_embed_paper_metadata
+    meta = build_embed_paper_metadata(title="T", year=None, note_title="")
+    assert meta["note_title"] == ""
+    assert meta["source_type"] == "paper"

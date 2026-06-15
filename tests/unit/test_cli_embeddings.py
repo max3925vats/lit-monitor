@@ -9,6 +9,7 @@ Coverage:
 """
 from __future__ import annotations
 
+import pytest
 from click.testing import CliRunner
 
 
@@ -190,6 +191,45 @@ class TestSwitchProviderSafeSwap:
 
         # The OLD collection must NEVER be dropped on the failure path.
         assert "lit_monitor_v1" not in dropped
+
+    @pytest.mark.unit
+    def test_failed_rebuild_reraises_original_even_if_cleanup_fails(
+        self, tmp_path, monkeypatch
+    ):
+        """Regression-lock (Audit-6 #3, verified non-bug): when the rebuild
+        raises AND the half-built-collection cleanup ALSO raises, the bare
+        ``raise`` in ``switch_provider`` must re-surface the ORIGINAL rebuild
+        error — never the cleanup error. The cleanup error is logged, not
+        propagated. If a future refactor swallowed the original (e.g.
+        ``raise cleanup_exc``) this test goes red."""
+        from lit_monitor.pipelines import embeddings_migration as mig
+
+        self._setup_current(tmp_path)
+        self._patch_config(tmp_path, monkeypatch)
+
+        # Auto-confirm the interactive "Continue?" cost prompt.
+        monkeypatch.setattr(mig, "_count_papers", lambda *a, **k: 5)
+        import click as _click
+        monkeypatch.setattr(_click, "confirm", lambda *a, **k: True)
+
+        def boom_rebuild(**kwargs):
+            raise RuntimeError("rebuild boom")
+
+        def boom_cleanup(name, persist_dir):
+            raise RuntimeError("cleanup boom")
+
+        monkeypatch.setattr(mig, "_rebuild_collection", boom_rebuild)
+        monkeypatch.setattr(mig, "_drop_collection", boom_cleanup)
+
+        # The ORIGINAL rebuild error must surface, not the cleanup error.
+        with pytest.raises(RuntimeError, match="rebuild boom"):
+            mig.switch_provider(
+                provider="litellm",
+                model="text-embedding-3-large",
+                dim=3072,
+                keep_old=False,
+                confirm=True,
+            )
 
     def test_destructive_success_swaps_then_drops_old(self, tmp_path, monkeypatch):
         """B3 happy path: a successful destructive switch builds into a NEW

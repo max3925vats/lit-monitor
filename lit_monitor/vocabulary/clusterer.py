@@ -20,6 +20,7 @@ from pathlib import Path
 
 import yaml
 
+from lit_monitor.core.atomic_write import atomic_write_text
 from lit_monitor.llm.llm_client import LLMClient, parse_llm_json
 from lit_monitor.llm.prompt_registry import load_clustering_prompts
 from lit_monitor.llm.prompt_safety import sanitize_for_prompt
@@ -516,6 +517,19 @@ def _refine_clustering(
     )
 
 
+def _write_draft(output_path: Path, merged: dict) -> None:
+    """Write *merged* clustering result to *output_path* atomically.
+
+    Uses atomic_write_text (temp-file + fsync + os.replace) so a crash
+    mid-write never leaves a half-written concepts_draft.yaml.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(
+        output_path,
+        yaml.dump(merged, default_flow_style=False, allow_unicode=True, sort_keys=False),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -607,9 +621,7 @@ def build_vocabulary(
     if not canonical_list:
         logger.warning("build_vocabulary: keyword list is empty — returning empty clusters")
         result: dict = {"themes": [], "unclustered": []}
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, "w", encoding="utf-8") as f:
-            yaml.dump(result, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        _write_draft(output_path, result)
         return result
 
     # N1: smart-size the chunks; the CLI `--chunk-size` (if >0) is a hard cap.
@@ -684,10 +696,8 @@ def build_vocabulary(
             debug_output_path=_refine_debug_path,
         )
 
-    # Write draft YAML
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        yaml.dump(merged, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    # Write draft YAML — atomic so a crash never leaves a half-written file.
+    _write_draft(output_path, merged)
     logger.info(
         "build_vocabulary: wrote %s — %d themes, %d unclustered keywords",
         output_path, len(merged["themes"]), len(merged["unclustered"]),

@@ -111,10 +111,16 @@ def _build_referenced_by_block(
     if len(lines) == 1:
         lines.append("*(populated by `lit-monitor obsidian relink`)*")
     return "\n".join(lines) + "\n"
-def _replace_persist_zone_content(note_content: str, zone_name: str, new_body: str) -> str:
+def _replace_persist_zone_content(note_content: str, zone_name: str, new_body: str) -> tuple[str, bool]:
     """
     Replace the content inside a named persist zone.
     Leaves the {% persist %} and {% endpersist %} markers intact.
+
+    Returns
+    -------
+    tuple[str, bool]
+        (updated_content, replaced) where replaced=True means at least one
+        zone was found and replaced, False means the zone was not found.
     """
     pattern = re.compile(
         r'(\{%\s*persist\s+"' + re.escape(zone_name) + r'"\s*%\})'
@@ -127,7 +133,7 @@ def _replace_persist_zone_content(note_content: str, zone_name: str, new_body: s
     updated, count = pattern.subn(replacer, note_content)
     if count == 0:
         logger.warning("Zone %r not found in note — skipping relink for this zone", zone_name)
-    return updated
+    return updated, count > 0
 def _resolve_cited_notes(doi: str, state_db: StateDB) -> list[dict[str, Any]]:
     """
     Return cited-note dicts for outgoing citation edges with a resolved target_doi.
@@ -239,7 +245,7 @@ def relink_note(
     # Pass 2a: outgoing citations — papers this note cites (E2)
     cited = _resolve_cited_notes(doi, state_db) if doi else []
     related_work = build_related_work_block(similar, cited)
-    updated_content = _replace_persist_zone_content(note_content, "related_work", related_work)
+    updated_content, _rw_ok = _replace_persist_zone_content(note_content, "related_work", related_work)
     # Pass 2b: incoming citations — papers that cite this note (E2)
     citing_sources: list[dict[str, Any]] = []
     if doi:
@@ -249,7 +255,7 @@ def relink_note(
                 citing_sources.append({"note_title": paper["note_title"]})
     if citing_sources:
         referenced_by = _build_referenced_by_block(citing_sources)
-        updated_content = _replace_persist_zone_content(updated_content, "referenced_by", referenced_by)
+        updated_content, _rb_ok = _replace_persist_zone_content(updated_content, "referenced_by", referenced_by)
     atomic_write_text(note_path, updated_content)
     logger.info(
         "Relinked: %s (%d similar, %d cited, %d citing)",

@@ -980,6 +980,23 @@ class StateDB:
         with self._connect() as conn:
             conn.execute(update_col_sql, (1 if complete else 0, zotero_key))
             conn.execute(update_fully_sql, (zotero_key,))
+    @staticmethod
+    def _phase_column(phase: str) -> str:
+        """Resolve a brain-build phase name to its `*_complete` column (M4).
+
+        Static map from validated phase name → column, mirroring
+        _PASS_COMPLETE_COLUMNS.  Never interpolate `phase` into SQL: this is
+        the single injection-safe identifier resolver shared by every
+        phase-marking method.
+        """
+        phase_columns: dict[str, str] = {
+            "simple": "simple_complete",
+            "complex": "complex_complete",
+        }
+        if phase not in phase_columns:
+            raise ValueError(f"phase must be 'simple' or 'complex', got {phase!r}")
+        return phase_columns[phase]
+
     def mark_brain_build_phase(
         self, zotero_key: str, phase: str, complete: bool = True
     ) -> None:
@@ -990,20 +1007,45 @@ class StateDB:
         should use this method; mark_brain_build_pass() is kept for backward
         compatibility with the legacy 3-pass system.
         """
-        # M4: static map from validated phase name → column, mirroring
-        # _PASS_COMPLETE_COLUMNS.  Never interpolate `phase` into SQL.
-        phase_columns: dict[str, str] = {
-            "simple": "simple_complete",
-            "complex": "complex_complete",
-        }
-        if phase not in phase_columns:
-            raise ValueError(f"phase must be 'simple' or 'complex', got {phase!r}")
-        col = phase_columns[phase]
+        col = self._phase_column(phase)
         update_col_sql = (
             "UPDATE brain_build_progress SET " + col + " = ? WHERE zotero_key = ?"
         )
         with self._connect() as conn:
             conn.execute(update_col_sql, (1 if complete else 0, zotero_key))
+            conn.execute(
+                "UPDATE brain_build_progress SET fully_complete = 1 "
+                "WHERE zotero_key = ? AND simple_complete = 1 AND complex_complete = 1",
+                (zotero_key,),
+            )
+
+    def mark_brain_build_phases(
+        self, zotero_key: str, phases: list[str]
+    ) -> None:
+        """Mark several extraction phases complete in ONE transaction (Audit-6 #2).
+
+        All-or-nothing: every phase column is updated inside a single
+        ``_connect()`` block, so a failure on a later phase rolls back the
+        earlier ones (``_connect()`` commits on clean exit, rolls back on any
+        exception).  Replaces a per-phase Python loop that could leave partial
+        state if a second call raised after the first committed.
+
+        Column names come from the same static-map resolver
+        (``_phase_column``) used by ``mark_brain_build_phase`` — phases are
+        never interpolated into SQL.  Empty list is a no-op.
+        """
+        if not phases:
+            return
+        # Resolve every column up front so an invalid phase fails BEFORE any
+        # write happens (rather than mid-transaction).
+        cols = [self._phase_column(phase) for phase in phases]
+        with self._connect() as conn:
+            for col in cols:
+                conn.execute(
+                    "UPDATE brain_build_progress SET " + col + " = 1 "
+                    "WHERE zotero_key = ?",
+                    (zotero_key,),
+                )
             conn.execute(
                 "UPDATE brain_build_progress SET fully_complete = 1 "
                 "WHERE zotero_key = ? AND simple_complete = 1 AND complex_complete = 1",

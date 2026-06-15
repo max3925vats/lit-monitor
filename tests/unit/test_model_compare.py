@@ -303,6 +303,33 @@ def test_null_honesty_no_reference_contributes_zero():
 
 
 @pytest.mark.unit
+def test_review_not_penalised_for_missing_study_type():
+    """Reviews must be scored against the review schema (no study_type), not the paper schema.
+
+    Audit-6 #4: _PAPER_REQUIRED includes study_type which was dropped from the review
+    schema (R-10). A review extraction with the 3 review-schema required fields present
+    should score 0 required_fields_missing — not 1 (as it would if scored against
+    _PAPER_REQUIRED which includes study_type).
+    """
+    from lit_monitor.pipelines.model_compare import _ModelScore, _score_extraction
+
+    review_extraction = {
+        "core_finding": "x",
+        "methods_summary": "y",
+        "results_summary": "z",
+        # study_type intentionally absent — it is NOT in the review schema (R-10)
+    }
+    score = _ModelScore(model="m")
+    _score_extraction(score, review_extraction, "review", reference=None)
+    assert score.required_fields_missing == 0, (
+        f"Expected 0 missing required fields for a complete review extraction; "
+        f"got {score.required_fields_missing}. "
+        "Likely cause: _score_extraction is using _PAPER_REQUIRED (which includes "
+        "study_type) instead of _REVIEW_REQUIRED when mode='review'."
+    )
+
+
+@pytest.mark.unit
 def test_summary_includes_null_honesty_in_json_and_markdown(tmp_path):
     """scores.json carries null_honesty_violations and the markdown table has the column."""
     import json
