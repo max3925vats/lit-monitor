@@ -1350,3 +1350,15 @@ def test_assign_themes_warning_is_one_shot_per_process(tmp_path, caplog):
         if r.levelno == logging.WARNING and "non-string keyword" in r.message
     ]
     assert len(warnings) == 1, f"Expected 1 warning across 3 calls; got {len(warnings)}"
+
+
+@pytest.mark.unit
+def test_write_draft_roundtrips_via_atomic(tmp_path):
+    import yaml
+
+    from lit_monitor.vocabulary.clusterer import _write_draft
+    data = {"themes": [{"name": "A", "keywords": ["x"]}], "unclustered": []}
+    out = tmp_path / "sub" / "concepts_draft.yaml"
+    _write_draft(out, data)
+    assert out.exists()
+    assert yaml.safe_load(out.read_text()) == data
