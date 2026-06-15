@@ -537,3 +537,16 @@ def test_default_paths_resolve_to_config_dir(tmp_path, monkeypatch):
     assert "system fouling" in appended
     # And nothing was created under the CWD.
     assert not (elsewhere / "config").exists()
+
+
+@pytest.mark.unit
+def test_splice_warns_and_noops_when_block_missing(caplog):
+    import logging
+
+    from lit_monitor.vocabulary import topic_merger
+    text = "# yaml with no searches block\nother: 1\n"
+    with caplog.at_level(logging.WARNING):
+        out = topic_merger._splice_into_list_block(text, "searches:", "  - name: foo\n")
+    assert "name: foo" not in out
+    assert out == text
+    assert any("not found" in r.message.lower() for r in caplog.records)
