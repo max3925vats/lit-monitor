@@ -930,23 +930,23 @@ def client_with_conversion_run(conversion_db):
 
 
 class TestConversionHeadline:
-    """Task 6: run-detail page shows M recommendations · X since ingested."""
+    """Task 6: run-detail shows M recommendations · X added to your library."""
 
     def test_conversion_headline_renders(self, client_with_conversion_run):
-        """GET /discovery/{run_id} must show 'since ingested' conversion text."""
+        """GET /discovery/{run_id} must show the recommendation-conversion text."""
         client, run_id = client_with_conversion_run
         r = client.get(f"/discovery/{run_id}")
         assert r.status_code == 200
-        assert "since ingested" in r.text
+        assert "added to your library" in r.text
 
     def test_conversion_counts_correct(self, client_with_conversion_run):
-        """3 recommendations, 1 since ingested — both counts appear in the HTML."""
+        """3 recommendations, 1 converted — both counts appear in the HTML."""
         client, run_id = client_with_conversion_run
         r = client.get(f"/discovery/{run_id}")
         assert r.status_code == 200
         body = r.text
         assert "3 recommendations" in body
-        assert "1 since ingested" in body
+        assert "1 added to your library so far" in body
 
     def test_ingested_pill_renders_on_ingested_paper(self, client_with_conversion_run):
         """paper_card.html already renders an sl-badge pill when paper.ingested is true.
