@@ -1518,3 +1518,36 @@ def test_mark_discovery_recommendations_ingested_rejects_bad_when(tmp_path):
     db = StateDB(db_path=tmp_path / "s.db")
     with _pytest.raises(ValueError):
         db.mark_discovery_recommendations_ingested("10.1/x", when="yesterday")
+
+
+# ---------------------------------------------------------------------------
+# Task 2: library_dois + surfaced_dois read helpers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_library_dois_excludes_discovered_status(tmp_path):
+    """library_dois returns papers in the library (any non-'discovered' status)
+    and excludes bare 'discovered' candidates."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    db.upsert_paper({"doi": "10.1/lib", "status": "extraction_complete"})
+    db.upsert_paper({"doi": "10.1/nomd", "status": "no_markdown"})
+    db.upsert_paper({"doi": "10.1/cand", "status": "discovered"})
+    lib = db.library_dois()
+    assert "10.1/lib" in lib and "10.1/nomd" in lib
+    assert "10.1/cand" not in lib
+
+
+@pytest.mark.unit
+def test_surfaced_dois_distinct_nonempty(tmp_path):
+    """surfaced_dois returns DOIs from discovery_paper_results, excluding empty strings."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    run_id = db.start_discovery_run({}, trigger="manual")
+    db.add_discovery_paper(run_id=run_id, doi="10.1/shown", title="t",
+                           score=0.5, rationale="", ingested=False)
+    db.add_discovery_paper(run_id=run_id, doi="", title="nodoi",
+                           score=0.4, rationale="", ingested=False)
+    s = db.surfaced_dois()
+    assert "10.1/shown" in s and "" not in s

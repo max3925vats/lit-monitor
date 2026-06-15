@@ -2023,6 +2023,24 @@ class StateDB:
         with self._connect() as conn:
             rows = conn.execute("SELECT doi FROM papers").fetchall()
         return {r["doi"] for r in rows}
+
+    def library_dois(self) -> set[str]:
+        """DOIs of papers actually in the library (any ingestion status),
+        EXCLUDING bare 'discovered' candidates that were merely retrieved."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT doi FROM papers WHERE status != 'discovered'"
+            ).fetchall()
+        return {r["doi"] for r in rows if r["doi"]}
+
+    def surfaced_dois(self) -> set[str]:
+        """DOIs ever shown in a discovery digest (any run)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT doi FROM discovery_paper_results WHERE doi != ''"
+            ).fetchall()
+        return {r["doi"] for r in rows if r["doi"]}
+
     def count_by_status(self) -> dict[str, int]:
         with self._connect() as conn:
             rows = conn.execute(
