@@ -601,6 +601,58 @@ class TestCliRun:
         assert result.exit_code == 2, (
             f"Expected exit code 2 from RateLimitExhausted; got {result.exit_code}"
         )
+
+    def test_run_rejects_multiple_window_modes(self, runner):
+        """--since-days and --since together must fail with a mutual-exclusion error."""
+        result = runner.invoke(main, ["run", "--since-days", "7", "--since", "2026-01-01"])
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output.lower()
+
+    def test_run_rejects_from_without_to(self, runner):
+        """--from without --to must fail, mentioning both flags."""
+        result = runner.invoke(main, ["run", "--from", "2025-08-01"])
+        assert result.exit_code != 0
+        assert "--from" in result.output and "--to" in result.output
+
+    def test_run_rejects_from_after_to(self, runner):
+        """--from after --to must fail."""
+        result = runner.invoke(main, ["run", "--from", "2025-09-01", "--to", "2025-08-01"])
+        assert result.exit_code != 0
+
+    def test_run_since_days_passes_window_override(self, runner):
+        """--since-days 7 must reach run_discovery with the correct window_override."""
+        from datetime import date, timedelta
+
+        from lit_monitor.search.window import SearchWindow
+
+        mock_summary = MagicMock()
+        mock_summary.new_papers_found = 0
+        mock_summary.papers_ingested = 0
+        mock_summary.papers_failed = 0
+        mock_summary.digest_path = ""
+        mock_summary.errors = []
+        with (
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.output.embeddings.check_embed_model_change"),
+            patch(
+                "lit_monitor.pipelines.discovery.run_discovery",
+                return_value=mock_summary,
+            ) as mock_run_discovery,
+        ):
+            result = runner.invoke(main, ["run", "--since-days", "7"])
+        assert result.exit_code == 0, result.output
+        called_override = mock_run_discovery.call_args.kwargs.get("window_override")
+        expected = SearchWindow(since=date.today() - timedelta(days=7), until=None)
+        assert called_override == expected, (
+            f"Expected window_override={expected!r}, got {called_override!r}"
+        )
+
+
 class TestCliObsidian:
     def test_retheme_command(self, runner):
         mock_stats = {"files_modified": 7, "wikilinks_rewritten": 14, "page_renamed": 1}

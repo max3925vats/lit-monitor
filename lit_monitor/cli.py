@@ -1446,6 +1446,14 @@ def brain_build_cmd(
     show_default=True,
     help="How this run was triggered. The OS scheduler passes 'scheduled'.",
 )
+@click.option("--since-days", type=int, default=None,
+              help="Search the last N days (overrides the adaptive window).")
+@click.option("--since", "since_date", type=click.DateTime(["%Y-%m-%d"]), default=None,
+              help="Search from this date to today (YYYY-MM-DD).")
+@click.option("--from", "from_date", type=click.DateTime(["%Y-%m-%d"]), default=None,
+              help="Range start (use with --to).")
+@click.option("--to", "to_date", type=click.DateTime(["%Y-%m-%d"]), default=None,
+              help="Range end (use with --from).")
 @click.pass_context
 def run_cmd(
     ctx: click.Context,
@@ -1455,8 +1463,38 @@ def run_cmd(
     sim_threshold: float,
     rag_mode: str | None,
     source: str,
+    since_days: int | None,
+    since_date: object | None,
+    from_date: object | None,
+    to_date: object | None,
 ) -> None:
     """Run the discovery pipeline: search + ranking + ingest new Zotero items."""
+    # Window flag validation fires first — before any I/O — so bad flags are
+    # caught immediately without waiting for config loading.
+    from datetime import date as _date
+
+    from lit_monitor.search.window import resolve_window
+
+    _since = since_date.date() if since_date else None
+    _from = from_date.date() if from_date else None
+    _to = to_date.date() if to_date else None
+    # Count how many mutually-exclusive modes were supplied.
+    _modes = sum(x is not None for x in (since_days, _since, _from or _to))
+    if _modes > 1:
+        raise click.UsageError(
+            "Window options are mutually exclusive: use one of --since-days, "
+            "--since, or --from/--to."
+        )
+    if (_from is None) != (_to is None):
+        raise click.UsageError("--from and --to must be given together.")
+    if _from and _to and _from > _to:
+        raise click.UsageError("--from must be on or before --to.")
+    _today = _date.today()
+    if _to and _to > _today:
+        _to = _today
+    _window_override = resolve_window(
+        since_days=since_days, since=_since, from_date=_from, to_date=_to, today=_today
+    )
     _setup_logging("discovery", verbose=ctx.obj.get("verbose", False))
     # M3: hydrate S2_API_KEY before importing discovery (which transitively
     # imports scripts.search.semantic_scholar at module-load time).
@@ -1510,6 +1548,7 @@ def run_cmd(
             sim_threshold=sim_threshold,
             rag_mode=_effective_rag,
             trigger=source,
+            window_override=_window_override,
         )
     except RateLimitExhausted as exc:
         # P5.5: preserve the historical exit-code-2 behaviour at the CLI
