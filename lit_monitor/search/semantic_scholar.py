@@ -8,7 +8,7 @@ Two entry points:
     open-access PDF URL.  Returns a dict of ``s2_*`` keys to be merged into
     the paper's ``extraction_json``.
 
-(b) ``search_semantic_scholar(query, since_days, limit)`` — discovery search.
+(b) ``search_semantic_scholar(query, window, limit)`` — discovery search.
     Returns paper dicts in pipeline format (same schema as findpapers results)
     so they can be merged with findpapers results and passed through
     ``filter_known_dois → rank_papers`` unchanged.
