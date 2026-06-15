@@ -835,10 +835,11 @@ def _run_discovery(
     Parameters
     ----------
     window:
-        Search window with ``since`` and optional ``until``.  Computed from the
-        stored 'last_run_date' kv_store entry so that skipped weeks are
-        automatically caught up on the next run.  When None, defaults to the
-        last 14 days.
+        Search window with ``since`` and optional ``until``. Resolved by
+        ``run_discovery`` — either an explicit override or the default
+        ``coverage_until`` frontier (latest date prior runs covered → today),
+        so successive runs march forward without gaps. When None, defaults to
+        the last 14 days.
     """
     papers: list[dict[str, Any]] = []
     errors: list[str] = []

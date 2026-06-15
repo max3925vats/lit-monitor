@@ -150,7 +150,9 @@ def run_researcher_searches(
         # Supplementary: OpenAlex ORCID lookup (if orcid provided)
         if orcid:
             try:
-                openalex_papers = _openalex_author_lookup(orcid, since, config)
+                openalex_papers = _openalex_author_lookup(
+                    orcid, since, config, until=window.until
+                )
                 for paper in openalex_papers:
                     doi = _researcher_dedup_key(paper)
                     if doi and doi not in all_papers:
@@ -263,16 +265,23 @@ def _openalex_author_lookup(
     orcid: str,
     since: datetime.date,
     config,
+    until: datetime.date | None = None,
 ) -> list[dict[str, Any]]:
     """
     Query OpenAlex works API filtered by author ORCID.
     Returns a list of paper dicts (tracked_author=True).
+
+    ``until`` (when set) bounds the upper publication date so the OpenAlex leg
+    honors an explicit search-window range, matching the findpapers leg. None
+    (the default/adaptive path) leaves it open-ended.
     """
     from lit_monitor.core.http_client import get_json
     orcid_url = orcid if orcid.startswith("http") else f"https://orcid.org/{orcid}"
     from_date = since.isoformat()
+    _until_filter = f",to_publication_date:{until.isoformat()}" if until else ""
     params_str = (
         f"?filter=author.orcid:{orcid_url},from_publication_date:{from_date}"
+        f"{_until_filter}"
         f"&per-page=50&select=id,doi,title,authorships,publication_year,"
         f"primary_location,keywords,abstract_inverted_index"
     )
