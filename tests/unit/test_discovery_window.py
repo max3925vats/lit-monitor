@@ -66,3 +66,17 @@ def test_seed_from_last_run_date_only_when_unset():
 
 def test_read_none_when_unset():
     assert read_coverage_until(_KV()) is None
+
+
+def test_read_warns_and_resets_on_unparseable(caplog):
+    """A corrupt stored value returns None + WARNING (not a crash), so advance()
+    then self-heals it — the Task 6 forward-safety path."""
+    import logging
+
+    db = _KV(coverage_until="not-a-date")
+    with caplog.at_level(logging.WARNING, logger="lit_monitor.pipelines.discovery"):
+        assert read_coverage_until(db) is None
+    assert "unparseable" in caplog.text
+    # self-heal: advancing over the corrupt value writes a clean frontier
+    advance_coverage_until(db, covered_to=date(2026, 4, 1))
+    assert read_coverage_until(db) == date(2026, 4, 1)

@@ -113,7 +113,9 @@ def seed_coverage_until(state_db) -> None:
         try:
             state_db.set_kv(_COVERAGE_UNTIL_KEY, str(datetime.fromisoformat(raw).date()))
         except ValueError:
-            pass
+            logger.warning(
+                "last_run_date %r unparseable — skipping coverage_until seed", raw
+            )
 
 
 # Historical default for the notification deep-link target; used when no
