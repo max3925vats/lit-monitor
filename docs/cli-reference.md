@@ -21,7 +21,13 @@ lit-monitor run                          # discover new papers + ingest new Zote
 lit-monitor run --dry-run                # preview without writes
 lit-monitor discovery view --run latest  # rich-table view of the latest results
 lit-monitor discovery export-md --to ~/digest.md   # on-demand Markdown export
+lit-monitor discovery backfill-ingested  # mark past recommendations that are now in your library as ingested
 ```
+
+`backfill-ingested` is a one-time catch-up: for every paper ever surfaced in a
+discovery digest that is now in your library, it records that the recommendation
+was ingested, so older run views show their true conversion. It is forward-only
+and safe to re-run.
 
 ## Ask
 
