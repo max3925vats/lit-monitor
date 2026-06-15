@@ -332,8 +332,9 @@ def index_embeddings_and_mark_phases(
                 exc,
             )
 
-    for phase in phases_to_mark:
-        state_db.mark_brain_build_phase(zotero_key, phase)
+    # Audit-6 #2: mark all phases in ONE transaction so a mid-loop failure
+    # can't leave partial state committed.
+    state_db.mark_brain_build_phases(zotero_key, list(phases_to_mark))
 
     # P4 Part C: implicit positive feedback for a saved-then-ingested
     # recommendation.  Opt-in (brain-build only) so discovery's own
