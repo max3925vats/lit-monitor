@@ -1434,3 +1434,61 @@ def test_mark_brain_build_phases_is_all_or_nothing(tmp_path):
     prog = db.get_brain_build_progress("ZKEY")
     assert prog["simple_complete"] == 1
     assert prog["complex_complete"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Helpers for mark_discovery_recommendations_ingested tests
+# ---------------------------------------------------------------------------
+
+def _read_run_papers(db, run_id):
+    """Read discovery paper results for a run via the shared query layer."""
+    from lit_monitor.api.queries import get_discovery_run_papers
+    return get_discovery_run_papers(db, run_id)
+
+
+# ---------------------------------------------------------------------------
+# mark_discovery_recommendations_ingested tests (Task 1, feat/discovery-lifecycle)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_mark_discovery_recommendations_ingested_normalizes_and_is_idempotent(tmp_path):
+    """mark_discovery_recommendations_ingested normalizes DOIs on both sides
+    and is idempotent — first ingested_at timestamp is preserved on re-call."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    run_id = db.start_discovery_run({}, trigger="manual")
+    # stored DOI is URL-wrapped + upper-cased; incoming DOI is bare lower-case
+    db.add_discovery_paper(run_id=run_id, doi="https://doi.org/10.1/ABC",
+                           title="t", score=0.5, rationale="", ingested=False)
+
+    n = db.mark_discovery_recommendations_ingested("10.1/abc")
+    assert n == 1
+    papers = _read_run_papers(db, run_id)
+    assert papers[0]["ingested"] == 1
+    first_ts = papers[0]["ingested_at"]
+    assert first_ts is not None
+
+    # idempotent: second call preserves the original timestamp
+    db.mark_discovery_recommendations_ingested("10.1/abc")
+    assert _read_run_papers(db, run_id)[0]["ingested_at"] == first_ts
+
+
+@pytest.mark.unit
+def test_mark_discovery_recommendations_ingested_no_match_returns_zero(tmp_path):
+    """mark_discovery_recommendations_ingested returns 0 for unknown or blank DOI."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    assert db.mark_discovery_recommendations_ingested("10.1/never") == 0
+    assert db.mark_discovery_recommendations_ingested("") == 0
+
+
+@pytest.mark.unit
+def test_add_discovery_paper_nulls_ingested_at_at_insert(tmp_path):
+    """Regression pin: an un-ingested recommendation has ingested_at IS NULL."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    run_id = db.start_discovery_run({}, trigger="manual")
+    db.add_discovery_paper(run_id=run_id, doi="10.1/x", title="t",
+                           score=0.1, rationale="", ingested=False)
+    p = _read_run_papers(db, run_id)[0]
+    assert p["ingested"] == 0 and p["ingested_at"] is None

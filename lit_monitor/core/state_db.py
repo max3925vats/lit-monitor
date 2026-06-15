@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from lit_monitor.core.doi import normalize_doi
 from lit_monitor.core.strict_mode import strict_fallback
 
 if TYPE_CHECKING:
@@ -1787,6 +1788,43 @@ class StateDB:
                 (run_id, doi, title, score, rationale, int(ingested), int(ingested),
                  breakdown_json),
             )
+
+    def mark_discovery_recommendations_ingested(
+        self, doi: str, *, when: str | None = None
+    ) -> int:
+        """Flip ingested=1 (and stamp ingested_at) for every
+        discovery_paper_results row whose DOI matches ``doi`` after
+        normalization on both sides. Idempotent (first ingested_at wins).
+        Returns the number of matching rows (0 when the DOI was never
+        recommended or is blank).
+
+        ``when`` overrides the timestamp (ISO string); used by backfill to
+        approximate the original ingest time. None -> datetime('now').
+        """
+        target = normalize_doi(doi)
+        if not target:
+            return 0
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, doi FROM discovery_paper_results"
+            ).fetchall()
+            ids = [r["id"] for r in rows if normalize_doi(r["doi"]) == target]
+            if not ids:
+                return 0
+            if when is None:
+                conn.executemany(
+                    "UPDATE discovery_paper_results SET ingested = 1, "
+                    "ingested_at = COALESCE(ingested_at, datetime('now')) "
+                    "WHERE id = ?",
+                    [(i,) for i in ids],
+                )
+            else:
+                conn.executemany(
+                    "UPDATE discovery_paper_results SET ingested = 1, "
+                    "ingested_at = COALESCE(ingested_at, ?) WHERE id = ?",
+                    [(when, i) for i in ids],
+                )
+        return len(ids)
 
     # -- Insight discovery (G16) --
 
