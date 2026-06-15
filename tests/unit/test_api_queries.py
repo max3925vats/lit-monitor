@@ -771,6 +771,11 @@ def test_run_history_includes_converted_counts(tmp_path):
     db.add_discovery_paper(run_id=run_id, doi="10.1/b", title="t", score=0.5,
                            rationale="", ingested=False)
     db.mark_discovery_recommendations_ingested("10.1/a")
+    # A second run with NO recorded recommendations must report 0 (not NULL),
+    # so the template's `{% if r.recommendations %}` em-dash branch fires.
+    empty_run_id = db.start_discovery_run({}, trigger="manual")
     hist = get_discovery_run_history(db)
     row = next(r for r in hist["runs"] if r["id"] == run_id)
     assert row["recommendations"] == 2 and row["converted"] == 1
+    empty_row = next(r for r in hist["runs"] if r["id"] == empty_run_id)
+    assert empty_row["recommendations"] == 0 and empty_row["converted"] == 0

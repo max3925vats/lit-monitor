@@ -629,7 +629,10 @@ def get_discovery_run_history(
         Dict with keys ``runs`` (list of run dicts, newest first) and ``total``
         (count of matching discovery_runs rows). Each run dict has keys: id,
         started_at, finished_at, status, total_found, total_ingested,
-        papers_processed, papers_skipped, papers_failed, trigger.
+        papers_processed, papers_skipped, papers_failed, trigger,
+        recommendations (COUNT of discovery_paper_results rows for the run) and
+        converted (COUNT of those rows with ingested=1). recommendations is 0
+        (not NULL) for runs with no recorded recommendations.
     """
     cols = [
         "id", "started_at", "finished_at", "status", "total_found",
