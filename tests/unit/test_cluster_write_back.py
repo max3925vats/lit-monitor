@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -316,3 +318,15 @@ class TestPushCollectionsToZotero:
         # Should describe at least 2 sub-collections to create
         total_ops = report.get("collections_to_create", 0) + report.get("items_to_add", 0)
         assert total_ops > 0
+
+
+# ---------------------------------------------------------------------------
+# Audit-6 #8 — _tag_value_for_theme must not embed '/' in the theme part
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_theme_slash_does_not_break_tag():
+    from lit_monitor.clustering.write_back import _tag_value_for_theme
+    val = _tag_value_for_theme("ion exchange / HIC")
+    assert val.startswith("lm/")
+    assert "/" not in val.split("/", 1)[1]  # no slash AFTER the namespace prefix

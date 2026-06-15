@@ -21,6 +21,12 @@ logger = logging.getLogger(__name__)
 _TAG_NAMESPACE = "lm"
 
 
+def _tag_value_for_theme(theme: str) -> str:
+    """Build the `lm/<theme>` Zotero tag, collapsing any '/' in the theme so it
+    can't create an unintended nested tag (Audit-6 #8)."""
+    return f"{_TAG_NAMESPACE}/{theme.replace('/', '-').strip()}"
+
+
 def push_tags_to_zotero(
     state_db,
     zotero_client,
@@ -51,7 +57,7 @@ def push_tags_to_zotero(
     for cluster in clusters:
         cid = cluster["id"]
         theme = cluster.get("display_name") or f"Cluster {cid}"
-        tag_value = f"{_TAG_NAMESPACE}/{theme}"
+        tag_value = _tag_value_for_theme(theme)
 
         assignments = state_db.get_cluster_assignments(cid)
         for assignment in assignments:
