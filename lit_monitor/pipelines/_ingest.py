@@ -343,6 +343,20 @@ def index_embeddings_and_mark_phases(
     if record_implicit_save:
         _maybe_record_implicit_save(doi=doi, state_db=state_db, logger=logger)
 
+    # Lifecycle Part A: attribute this ingest back to any discovery
+    # recommendation(s) that surfaced it. UNGATED (unlike the implicit-save
+    # block above) so it fires for BOTH brain-build and discovery's own
+    # auto-ingest. Idempotent + DOI-normalized; a no-op (returns 0) for
+    # never-recommended papers. Strictly non-fatal: a side-signal must never
+    # break the ingest success contract.
+    try:
+        state_db.mark_discovery_recommendations_ingested(doi)
+    except Exception as exc:  # noqa: BLE001 — side-signal, never fail ingestion
+        logger.warning(
+            "lifecycle: recommendation-ingested attribution failed for %s "
+            "(non-fatal): %s", doi, exc, exc_info=True,
+        )
+
     return True, None
 
 
