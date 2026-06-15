@@ -34,9 +34,15 @@ def retheme(vault_path: str | Path, old_theme: str, new_theme: str) -> dict[str,
     old_page = _find_page(vault, old_theme)
     if old_page:
         new_page = old_page.parent / f"{new_theme}.md"
-        old_page.rename(new_page)
-        stats["page_renamed"] = 1
-        logger.info("Renamed theme page: %s → %s", old_page, new_page)
+        if new_page.exists():
+            logger.warning(
+                "Theme page %s already exists; not renaming %s over it.",
+                new_page, old_page,
+            )
+        else:
+            old_page.rename(new_page)
+            stats["page_renamed"] = 1
+            logger.info("Renamed theme page: %s → %s", old_page, new_page)
     # 2. Rewrite wikilinks in all .md files.
     # Each file is written atomically (temp + fsync + os.replace) so no
     # individual note is ever truncated by a mid-write crash. NOTE: this loop
