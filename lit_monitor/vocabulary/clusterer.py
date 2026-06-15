@@ -517,7 +517,7 @@ def _refine_clustering(
     )
 
 
-def _write_draft(output_path, merged) -> None:
+def _write_draft(output_path: Path, merged: dict) -> None:
     """Write *merged* clustering result to *output_path* atomically.
 
     Uses atomic_write_text (temp-file + fsync + os.replace) so a crash
@@ -621,9 +621,7 @@ def build_vocabulary(
     if not canonical_list:
         logger.warning("build_vocabulary: keyword list is empty — returning empty clusters")
         result: dict = {"themes": [], "unclustered": []}
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, "w", encoding="utf-8") as f:
-            yaml.dump(result, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        _write_draft(output_path, result)
         return result
 
     # N1: smart-size the chunks; the CLI `--chunk-size` (if >0) is a hard cap.

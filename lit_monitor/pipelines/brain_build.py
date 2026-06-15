@@ -775,7 +775,7 @@ def _check_item_quality(data: dict[str, Any]) -> tuple[bool, str]:
 
     return True, ""
 
-def _resolve_auto_write(config) -> bool:
+def _resolve_auto_write(config: Any) -> bool:
     """Read discovery.notes.auto_write_per_paper from config, defaulting True.
 
     Warns (instead of silently swallowing) when the config attribute chain
