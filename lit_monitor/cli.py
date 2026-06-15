@@ -1464,9 +1464,9 @@ def run_cmd(
     rag_mode: str | None,
     source: str,
     since_days: int | None,
-    since_date: object | None,
-    from_date: object | None,
-    to_date: object | None,
+    since_date: datetime | None,
+    from_date: datetime | None,
+    to_date: datetime | None,
 ) -> None:
     """Run the discovery pipeline: search + ranking + ingest new Zotero items."""
     # Window flag validation fires first — before any I/O — so bad flags are

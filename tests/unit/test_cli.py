@@ -615,9 +615,11 @@ class TestCliRun:
         assert "--from" in result.output and "--to" in result.output
 
     def test_run_rejects_from_after_to(self, runner):
-        """--from after --to must fail."""
+        """--from after --to must fail for the RIGHT reason (ordering), not a
+        Click parse error — the dates are syntactically valid."""
         result = runner.invoke(main, ["run", "--from", "2025-09-01", "--to", "2025-08-01"])
         assert result.exit_code != 0
+        assert "on or before" in result.output  # the from>to UsageError message
 
     def test_run_since_days_passes_window_override(self, runner):
         """--since-days 7 must reach run_discovery with the correct window_override."""
@@ -651,6 +653,38 @@ class TestCliRun:
         assert called_override == expected, (
             f"Expected window_override={expected!r}, got {called_override!r}"
         )
+
+    def test_run_clamps_future_to_date(self, runner):
+        """A --to date in the future clamps to today (no error)."""
+        from datetime import date, timedelta
+
+        future = date.today() + timedelta(days=30)
+        mock_summary = MagicMock()
+        mock_summary.new_papers_found = 0
+        mock_summary.papers_ingested = 0
+        mock_summary.papers_failed = 0
+        mock_summary.digest_path = ""
+        mock_summary.errors = []
+        with (
+            patch("lit_monitor.cli._make_config", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_state_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_embeddings_db", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_zotero_client", return_value=MagicMock()),
+            patch("lit_monitor.cli._make_llm", return_value=MagicMock()),
+            patch("lit_monitor.cli._load_secrets", return_value={}),
+            patch("lit_monitor.output.embeddings.check_embed_model_change"),
+            patch(
+                "lit_monitor.pipelines.discovery.run_discovery",
+                return_value=mock_summary,
+            ) as mock_run_discovery,
+        ):
+            result = runner.invoke(
+                main, ["run", "--from", "2025-01-01", "--to", future.isoformat()]
+            )
+        assert result.exit_code == 0, result.output
+        called_override = mock_run_discovery.call_args.kwargs.get("window_override")
+        assert called_override is not None
+        assert called_override.until == date.today()  # clamped, not the future date
 
 
 class TestCliObsidian:
