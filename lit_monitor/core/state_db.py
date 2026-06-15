@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -340,6 +341,13 @@ _LIST_PAPERS_STATUS_GAP: dict[str, str] = {
     "missing_notes": "notes_synced = 0",
     "missing_embeddings": "embeddings_indexed = 0",
 }
+
+# Compiled regex used by mark_discovery_recommendations_ingested() to
+# validate the optional `when` parameter before it reaches SQL.
+# Matches YYYY-MM-DD followed by a space or 'T' and HH:MM:SS; no trailing $
+# so fractional seconds (e.g. ".123456") and timezone suffixes ("+00:00", "Z")
+# are also accepted.
+_ISO_DT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}")
 
 
 def upsert_writable_columns() -> list[str]:
@@ -1798,12 +1806,16 @@ class StateDB:
         Returns the number of matching rows (0 when the DOI was never
         recommended or is blank).
 
-        ``when`` overrides the timestamp (ISO string); used by backfill to
-        approximate the original ingest time. None -> datetime('now').
+        ``when`` overrides the timestamp; used by backfill to approximate the
+        original ingest time. Must be an ISO datetime string in the form
+        ``YYYY-MM-DD HH:MM:SS`` (fractional seconds / tz suffix allowed);
+        ``None`` -> ``datetime('now')``.
         """
         target = normalize_doi(doi)
         if not target:
             return 0
+        if when is not None and not _ISO_DT_RE.match(when):
+            raise ValueError(f"when must be an ISO datetime string, got: {when!r}")
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT id, doi FROM discovery_paper_results"

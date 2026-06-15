@@ -1492,3 +1492,29 @@ def test_add_discovery_paper_nulls_ingested_at_at_insert(tmp_path):
                            score=0.1, rationale="", ingested=False)
     p = _read_run_papers(db, run_id)[0]
     assert p["ingested"] == 0 and p["ingested_at"] is None
+
+
+@pytest.mark.unit
+def test_mark_discovery_recommendations_ingested_respects_when(tmp_path):
+    """when= backfills an explicit timestamp; a later call does NOT overwrite it."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    run_id = db.start_discovery_run({}, trigger="manual")
+    db.add_discovery_paper(run_id=run_id, doi="10.1/x", title="t",
+                           score=0.5, rationale="", ingested=False)
+    backfill_ts = "2025-01-01 12:00:00"
+    assert db.mark_discovery_recommendations_ingested("10.1/x", when=backfill_ts) == 1
+    assert _read_run_papers(db, run_id)[0]["ingested_at"] == backfill_ts
+    # idempotent: a later call with a different ts must NOT overwrite
+    db.mark_discovery_recommendations_ingested("10.1/x", when="2030-01-01 00:00:00")
+    assert _read_run_papers(db, run_id)[0]["ingested_at"] == backfill_ts
+
+
+@pytest.mark.unit
+def test_mark_discovery_recommendations_ingested_rejects_bad_when(tmp_path):
+    """when= must be a valid ISO datetime string; freeform strings raise ValueError."""
+    import pytest as _pytest
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    with _pytest.raises(ValueError):
+        db.mark_discovery_recommendations_ingested("10.1/x", when="yesterday")
