@@ -2,6 +2,8 @@
 under `serve --dev`. A throwaway verification surface (not shipped behaviour)."""
 from __future__ import annotations
 
+import html
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 
@@ -16,4 +18,8 @@ def sl_probe(request: Request):
 
 @router.post("/dev/sl-probe/echo", response_class=HTMLResponse)
 def sl_probe_echo(probe: str = Form(default=""), flag: str = Form(default="")):
-    return HTMLResponse(f'<div id="echo">probe={probe}|flag={flag}</div>')
+    # Escape the echoed form values — they're user-controlled, so interpolating
+    # them raw would be reflected XSS (CodeQL py/reflective-xss).
+    return HTMLResponse(
+        f'<div id="echo">probe={html.escape(probe)}|flag={html.escape(flag)}</div>'
+    )
