@@ -779,6 +779,179 @@ class TestImplicitZoteroSave:
 
 
 # ---------------------------------------------------------------------------
+# Task 4: Lifecycle Part A — attribute ingests to surfaced recommendations
+# ---------------------------------------------------------------------------
+
+class TestRecommendationIngested:
+    """Lifecycle Part A: index_embeddings_and_mark_phases must call
+    mark_discovery_recommendations_ingested(doi) unconditionally — for BOTH
+    brain-build (record_implicit_save=True) and discovery's auto-ingest
+    (record_implicit_save=False) — so any surfaced paper gets credited on
+    ingest regardless of how it entered the pipeline.
+
+    Assertions:
+      (a) Ingesting a surfaced DOI flips discovery_paper_results.ingested=1,
+          even when record_implicit_save=False (proves UNGATED).
+      (b) The call is non-fatal: if mark_discovery_recommendations_ingested
+          raises, index_embeddings_and_mark_phases still returns (True, None)
+          and emits a WARNING, never propagating the exception.
+    """
+
+    def _ingest(
+        self,
+        db,
+        doi: str,
+        *,
+        record_implicit_save: bool = False,
+        embeddings_db=None,
+    ):
+        import logging as _logging
+        from unittest.mock import MagicMock
+
+        from lit_monitor.pipelines._ingest import index_embeddings_and_mark_phases
+
+        return index_embeddings_and_mark_phases(
+            doi=doi,
+            zotero_key="ZKEY",
+            fulltext="body",
+            paper_metadata={"title": "T", "year": 2020, "source_type": "paper"},
+            chunks=[],
+            state_db=db,
+            embeddings_db=embeddings_db or MagicMock(),
+            phases_to_mark=("simple",),
+            logger=_logging.getLogger("test.lifecycle"),
+            record_implicit_save=record_implicit_save,
+        )
+
+    def _get_discovery_row(self, db, doi: str) -> dict | None:
+        """Helper: fetch the discovery_paper_results row for the given DOI."""
+        import sqlite3
+
+        with sqlite3.connect(str(db._path)) as conn:  # type: ignore[attr-defined]
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM discovery_paper_results WHERE doi = ?", (doi,)
+            ).fetchall()
+        return dict(rows[0]) if rows else None
+
+    def test_surfaced_doi_marked_ingested_even_without_implicit_save(
+        self, tmp_path
+    ):
+        """(a) UNGATED: discovery auto-ingest path (record_implicit_save=False)
+        must still credit the recommendation row as ingested=1."""
+        from lit_monitor.core.state_db import StateDB
+
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({}, trigger="manual")
+        db.add_discovery_paper(
+            run_id, "10.1/surfaced", "Surfaced Paper", 0.8, "", ingested=False
+        )
+
+        # Pre-condition: row exists with ingested=0.
+        row_before = self._get_discovery_row(db, "10.1/surfaced")
+        assert row_before is not None
+        assert row_before["ingested"] == 0
+
+        # Call with record_implicit_save=False (discovery auto-ingest path).
+        ok, err = self._ingest(db, "10.1/surfaced", record_implicit_save=False)
+
+        assert ok and err is None
+        row_after = self._get_discovery_row(db, "10.1/surfaced")
+        assert row_after is not None
+        assert row_after["ingested"] == 1, (
+            "mark_discovery_recommendations_ingested must fire UNGATED "
+            "(record_implicit_save=False) so discovery auto-ingest credits "
+            "the recommendation row."
+        )
+
+    def test_never_surfaced_doi_is_noop(self, tmp_path):
+        """(a) A DOI that was never recommended must not raise and must leave
+        the (non-existent) row untouched — mark_ returns 0 silently."""
+        from lit_monitor.core.state_db import StateDB
+
+        db = StateDB(tmp_path / "state.db")
+        ok, err = self._ingest(db, "10.1/never-recommended", record_implicit_save=False)
+        assert ok and err is None
+        row = self._get_discovery_row(db, "10.1/never-recommended")
+        assert row is None  # no recommendation row → nothing inserted
+
+    def test_attribution_fires_for_brain_build_path_too(self, tmp_path):
+        """(a) Brain-build path (record_implicit_save=True) also triggers
+        attribution — the UNGATED hook covers both paths."""
+        from lit_monitor.core.state_db import StateDB
+
+        db = StateDB(tmp_path / "state.db")
+        run_id = db.start_discovery_run({}, trigger="manual")
+        db.add_discovery_paper(
+            run_id, "10.1/both", "Both Paths", 0.7, "", ingested=False
+        )
+
+        ok, err = self._ingest(db, "10.1/both", record_implicit_save=True)
+
+        assert ok and err is None
+        row = self._get_discovery_row(db, "10.1/both")
+        assert row is not None and row["ingested"] == 1
+
+    def test_attribution_failure_is_non_fatal(self, tmp_path):
+        """(b) If mark_discovery_recommendations_ingested raises (e.g. DB
+        locked), index_embeddings_and_mark_phases must still return (True, None)
+        — the exception is logged at WARNING but never propagated."""
+        from unittest.mock import MagicMock
+
+        from lit_monitor.core.state_db import StateDB
+        from lit_monitor.pipelines._ingest import index_embeddings_and_mark_phases
+
+        db = StateDB(tmp_path / "state.db")
+
+        log_records: list[logging.LogRecord] = []
+
+        class _Capture(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                log_records.append(record)
+
+        logger = logging.getLogger("test.lifecycle.nonfatal")
+        handler = _Capture()
+        logger.addHandler(handler)
+        logger.setLevel(logging.DEBUG)
+
+        # Monkeypatch the method on the instance to raise.
+        db.mark_discovery_recommendations_ingested = (  # type: ignore[method-assign]
+            lambda *a, **k: (_ for _ in ()).throw(
+                RuntimeError("db locked")
+            )
+        )
+
+        ok, err = index_embeddings_and_mark_phases(
+            doi="10.1/boom",
+            zotero_key="ZKEY",
+            fulltext="body",
+            paper_metadata={"title": "T", "year": 2020, "source_type": "paper"},
+            chunks=[],
+            state_db=db,
+            embeddings_db=MagicMock(),
+            phases_to_mark=("simple",),
+            logger=logger,
+            record_implicit_save=False,
+        )
+
+        # Must succeed despite the attribution failure.
+        assert ok and err is None, (
+            "Attribution failure must be non-fatal — ingest success contract "
+            "must hold."
+        )
+
+        # Must have logged a WARNING (not silently swallowed).
+        warnings = [r for r in log_records if r.levelno == logging.WARNING]
+        assert any(
+            "recommendation-ingested attribution failed" in r.getMessage()
+            or "attribution" in r.getMessage().lower()
+            for r in warnings
+        ), f"Expected a WARNING about attribution failure; got: {[r.getMessage() for r in warnings]}"
+
+        logger.removeHandler(handler)
+
+
+# ---------------------------------------------------------------------------
 # Audit-6 #1 — shared embed-metadata builder
 # ---------------------------------------------------------------------------
 

@@ -11,7 +11,12 @@
       &middot;
       <span class="status-{{ run.status }}">{{ run.status or "unknown" }}</span>
       &middot;
-      {{ run.total_ingested or 0 }} ingested / {{ run.total_found or 0 }} found
+      {{ run.total_ingested or 0 }} ingested this run / {{ run.total_found or 0 }} found
+    </p>
+    <p class="field-note">
+      {{ conversion.recommendations or 0 }} recommendations
+      &middot;
+      {{ conversion.ingested or 0 }} added to your library so far
     </p>
     <sl-button variant="default" href="/discovery">&larr; Back to discovery</sl-button>
   </div>

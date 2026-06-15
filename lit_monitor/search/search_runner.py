@@ -203,9 +203,12 @@ def filter_known_dois(
     Remove papers whose DOI is already in the state database.
     Papers without a DOI are always included (cannot be deduplicated).
     """
-    # AR-4: normalize both the stored known DOIs and the candidate so a
-    # URL-wrapped candidate matches a bare known DOI (and vice versa).
-    known = {normalize_doi(d) for d in state_db.known_dois()}
+    # AR-4 + lifecycle Part B: suppress against the LIBRARY (papers actually
+    # ingested) UNION papers already SHOWN in a digest — NOT bare 'discovered'
+    # candidates that were merely retrieved-and-ranked, so an unshown candidate
+    # stays eligible to surface later under improved ranking.
+    known = {normalize_doi(d) for d in state_db.library_dois()} \
+        | {normalize_doi(d) for d in state_db.surfaced_dois()}
     new_papers = []
     for paper in papers:
         doi = normalize_doi(paper.get("doi"))

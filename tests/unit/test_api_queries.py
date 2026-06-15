@@ -755,3 +755,27 @@ def test_get_discovery_run_history_filters_manual_only(tmp_path):
     assert result["total"] == 2
     assert {r["id"] for r in result["runs"]} == set(manual_ids)
     assert all(r["trigger"] == "manual" for r in result["runs"])
+
+
+def test_run_history_includes_converted_counts(tmp_path):
+    """Each run dict must expose 'recommendations' (total candidates) and
+    'converted' (how many were subsequently ingested via
+    mark_discovery_recommendations_ingested)."""
+    from lit_monitor.api.queries import get_discovery_run_history
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(db_path=tmp_path / "s.db")
+    run_id = db.start_discovery_run({}, trigger="manual")
+    db.add_discovery_paper(run_id=run_id, doi="10.1/a", title="t", score=0.5,
+                           rationale="", ingested=False)
+    db.add_discovery_paper(run_id=run_id, doi="10.1/b", title="t", score=0.5,
+                           rationale="", ingested=False)
+    db.mark_discovery_recommendations_ingested("10.1/a")
+    # A second run with NO recorded recommendations must report 0 (not NULL),
+    # so the template's `{% if r.recommendations %}` em-dash branch fires.
+    empty_run_id = db.start_discovery_run({}, trigger="manual")
+    hist = get_discovery_run_history(db)
+    row = next(r for r in hist["runs"] if r["id"] == run_id)
+    assert row["recommendations"] == 2 and row["converted"] == 1
+    empty_row = next(r for r in hist["runs"] if r["id"] == empty_run_id)
+    assert empty_row["recommendations"] == 0 and empty_row["converted"] == 0

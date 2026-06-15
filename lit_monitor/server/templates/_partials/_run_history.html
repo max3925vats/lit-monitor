@@ -33,6 +33,7 @@
         <th>Status</th>
         <th>Found</th>
         <th>Ingested</th>
+        <th>Converted</th>
         <th>Processed</th>
         <th>Skipped</th>
         <th>Failed</th>
@@ -48,6 +49,7 @@
         <td>{% if r.status %}{{ r.status }}{% else %}&mdash;{% endif %}</td>
         <td>{{ r.total_found or 0 }}</td>
         <td>{{ r.total_ingested or 0 }}</td>
+        <td>{% if r.recommendations %}{{ r.converted or 0 }} / {{ r.recommendations }}{% else %}&mdash;{% endif %}</td>
         <td>{% if r.papers_processed is none %}&mdash;{% else %}{{ r.papers_processed }}{% endif %}</td>
         <td>{% if r.papers_skipped is none %}&mdash;{% else %}{{ r.papers_skipped }}{% endif %}</td>
         <td>{% if r.papers_failed is none %}&mdash;{% else %}{{ r.papers_failed }}{% endif %}</td>

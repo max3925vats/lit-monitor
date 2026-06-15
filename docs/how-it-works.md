@@ -193,6 +193,22 @@ files, a populated install can even be handed to a low-power always-on node (e.g
 a Raspberry Pi) with cloud-routed extraction; see
 [Deployment](configuration.md#deployment-running-on-a-schedule).
 
+### What discovery skips, and what it tracks
+
+A run never re-surfaces a paper that's **already in your library** or that you've
+**already been shown** in a previous digest — so each digest is genuinely new
+work, not a re-run of last week's. A candidate that was retrieved and ranked but
+*never made a digest* stays eligible, so it can still surface later if your
+library (and therefore the ranking) shifts toward it.
+
+When you save a recommended paper to Zotero and lit-monitor later ingests it, the
+run that first surfaced it records the conversion. Re-open a past run and it shows
+"N recommendations · X since ingested," and the run-history list carries a
+**Converted** column — so you can see which runs actually fed your library. (This
+matching is by DOI today; papers identified only by PMID or arXiv ID are a planned
+extension.) If you adopted lit-monitor before this tracking existed, run
+`lit-monitor discovery backfill-ingested` once to populate it for past runs.
+
 ## Local-first and open source
 
 lit-monitor is **MIT-licensed, free, and local-first by design** — built to help

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -23,6 +24,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from lit_monitor.core.doi import normalize_doi
 from lit_monitor.core.strict_mode import strict_fallback
 
 if TYPE_CHECKING:
@@ -339,6 +341,13 @@ _LIST_PAPERS_STATUS_GAP: dict[str, str] = {
     "missing_notes": "notes_synced = 0",
     "missing_embeddings": "embeddings_indexed = 0",
 }
+
+# Compiled regex used by mark_discovery_recommendations_ingested() to
+# validate the optional `when` parameter before it reaches SQL.
+# Matches YYYY-MM-DD followed by a space or 'T' and HH:MM:SS; no trailing $
+# so fractional seconds (e.g. ".123456") and timezone suffixes ("+00:00", "Z")
+# are also accepted.
+_ISO_DT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}")
 
 
 def upsert_writable_columns() -> list[str]:
@@ -1788,6 +1797,47 @@ class StateDB:
                  breakdown_json),
             )
 
+    def mark_discovery_recommendations_ingested(
+        self, doi: str, *, when: str | None = None
+    ) -> int:
+        """Flip ingested=1 (and stamp ingested_at) for every
+        discovery_paper_results row whose DOI matches ``doi`` after
+        normalization on both sides. Idempotent (first ingested_at wins).
+        Returns the number of matching rows (0 when the DOI was never
+        recommended or is blank).
+
+        ``when`` overrides the timestamp; used by backfill to approximate the
+        original ingest time. Must be an ISO datetime string in the form
+        ``YYYY-MM-DD HH:MM:SS`` (fractional seconds / tz suffix allowed);
+        ``None`` -> ``datetime('now')``.
+        """
+        target = normalize_doi(doi)
+        if not target:
+            return 0
+        if when is not None and not _ISO_DT_RE.match(when):
+            raise ValueError(f"when must be an ISO datetime string, got: {when!r}")
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, doi FROM discovery_paper_results"
+            ).fetchall()
+            ids = [r["id"] for r in rows if normalize_doi(r["doi"]) == target]
+            if not ids:
+                return 0
+            if when is None:
+                conn.executemany(
+                    "UPDATE discovery_paper_results SET ingested = 1, "
+                    "ingested_at = COALESCE(ingested_at, datetime('now')) "
+                    "WHERE id = ?",
+                    [(i,) for i in ids],
+                )
+            else:
+                conn.executemany(
+                    "UPDATE discovery_paper_results SET ingested = 1, "
+                    "ingested_at = COALESCE(ingested_at, ?) WHERE id = ?",
+                    [(when, i) for i in ids],
+                )
+        return len(ids)
+
     # -- Insight discovery (G16) --
 
     def get_papers_without_insight_run(
@@ -1973,6 +2023,32 @@ class StateDB:
         with self._connect() as conn:
             rows = conn.execute("SELECT doi FROM papers").fetchall()
         return {r["doi"] for r in rows}
+
+    def library_dois(self) -> set[str]:
+        """DOIs of papers actually in the library (any ingestion status, incl.
+        a NULL/absent status), EXCLUDING only bare 'discovered' candidates that
+        were merely retrieved-and-ranked.
+
+        The ``status IS NULL OR`` clause matters: a paper upserted without an
+        explicit status stores NULL, and a plain ``status != 'discovered'``
+        would silently drop NULL rows (SQL three-valued logic), so a real
+        library paper would stop being suppressed in discovery. Only an
+        explicit 'discovered' status excludes a row here."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT doi FROM papers "
+                "WHERE status IS NULL OR status != 'discovered'"
+            ).fetchall()
+        return {r["doi"] for r in rows if r["doi"]}
+
+    def surfaced_dois(self) -> set[str]:
+        """DOIs ever shown in a discovery digest (any run)."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT doi FROM discovery_paper_results WHERE doi != ''"
+            ).fetchall()
+        return {r["doi"] for r in rows if r["doi"]}
+
     def count_by_status(self) -> dict[str, int]:
         with self._connect() as conn:
             rows = conn.execute(

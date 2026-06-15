@@ -1434,3 +1434,129 @@ def test_mark_brain_build_phases_is_all_or_nothing(tmp_path):
     prog = db.get_brain_build_progress("ZKEY")
     assert prog["simple_complete"] == 1
     assert prog["complex_complete"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Helpers for mark_discovery_recommendations_ingested tests
+# ---------------------------------------------------------------------------
+
+def _read_run_papers(db, run_id):
+    """Read discovery paper results for a run via the shared query layer."""
+    from lit_monitor.api.queries import get_discovery_run_papers
+    return get_discovery_run_papers(db, run_id)
+
+
+# ---------------------------------------------------------------------------
+# mark_discovery_recommendations_ingested tests (Task 1, feat/discovery-lifecycle)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_mark_discovery_recommendations_ingested_normalizes_and_is_idempotent(tmp_path):
+    """mark_discovery_recommendations_ingested normalizes DOIs on both sides
+    and is idempotent — first ingested_at timestamp is preserved on re-call."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    run_id = db.start_discovery_run({}, trigger="manual")
+    # stored DOI is URL-wrapped + upper-cased; incoming DOI is bare lower-case
+    db.add_discovery_paper(run_id=run_id, doi="https://doi.org/10.1/ABC",
+                           title="t", score=0.5, rationale="", ingested=False)
+
+    n = db.mark_discovery_recommendations_ingested("10.1/abc")
+    assert n == 1
+    papers = _read_run_papers(db, run_id)
+    assert papers[0]["ingested"] == 1
+    first_ts = papers[0]["ingested_at"]
+    assert first_ts is not None
+
+    # idempotent: second call preserves the original timestamp
+    db.mark_discovery_recommendations_ingested("10.1/abc")
+    assert _read_run_papers(db, run_id)[0]["ingested_at"] == first_ts
+
+
+@pytest.mark.unit
+def test_mark_discovery_recommendations_ingested_no_match_returns_zero(tmp_path):
+    """mark_discovery_recommendations_ingested returns 0 for unknown or blank DOI."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    assert db.mark_discovery_recommendations_ingested("10.1/never") == 0
+    assert db.mark_discovery_recommendations_ingested("") == 0
+
+
+@pytest.mark.unit
+def test_add_discovery_paper_nulls_ingested_at_at_insert(tmp_path):
+    """Regression pin: an un-ingested recommendation has ingested_at IS NULL."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    run_id = db.start_discovery_run({}, trigger="manual")
+    db.add_discovery_paper(run_id=run_id, doi="10.1/x", title="t",
+                           score=0.1, rationale="", ingested=False)
+    p = _read_run_papers(db, run_id)[0]
+    assert p["ingested"] == 0 and p["ingested_at"] is None
+
+
+@pytest.mark.unit
+def test_mark_discovery_recommendations_ingested_respects_when(tmp_path):
+    """when= backfills an explicit timestamp; a later call does NOT overwrite it."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    run_id = db.start_discovery_run({}, trigger="manual")
+    db.add_discovery_paper(run_id=run_id, doi="10.1/x", title="t",
+                           score=0.5, rationale="", ingested=False)
+    backfill_ts = "2025-01-01 12:00:00"
+    assert db.mark_discovery_recommendations_ingested("10.1/x", when=backfill_ts) == 1
+    assert _read_run_papers(db, run_id)[0]["ingested_at"] == backfill_ts
+    # idempotent: a later call with a different ts must NOT overwrite
+    db.mark_discovery_recommendations_ingested("10.1/x", when="2030-01-01 00:00:00")
+    assert _read_run_papers(db, run_id)[0]["ingested_at"] == backfill_ts
+
+
+@pytest.mark.unit
+def test_mark_discovery_recommendations_ingested_rejects_bad_when(tmp_path):
+    """when= must be a valid ISO datetime string; freeform strings raise ValueError."""
+    db = StateDB(db_path=tmp_path / "s.db")
+    with pytest.raises(ValueError):
+        db.mark_discovery_recommendations_ingested("10.1/x", when="yesterday")
+
+
+# ---------------------------------------------------------------------------
+# Task 2: library_dois + surfaced_dois read helpers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_library_dois_excludes_discovered_status(tmp_path):
+    """library_dois returns papers in the library (any non-'discovered' status)
+    and excludes bare 'discovered' candidates."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    db.upsert_paper({"doi": "10.1/lib", "status": "extraction_complete"})
+    db.upsert_paper({"doi": "10.1/nomd", "status": "no_markdown"})
+    db.upsert_paper({"doi": "10.1/cand", "status": "discovered"})
+    lib = db.library_dois()
+    assert "10.1/lib" in lib and "10.1/nomd" in lib
+    assert "10.1/cand" not in lib
+
+
+@pytest.mark.unit
+def test_library_dois_includes_null_status(tmp_path):
+    """A paper upserted without an explicit status stores NULL; it is still a
+    library paper (not a 'discovered' candidate) and MUST be returned, else it
+    would stop being suppressed in discovery (regression guard)."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    db.upsert_paper({"doi": "10.1/nostatus", "title": "K", "source_type": "paper"})
+    assert "10.1/nostatus" in db.library_dois()
+
+
+@pytest.mark.unit
+def test_surfaced_dois_distinct_nonempty(tmp_path):
+    """surfaced_dois returns DOIs from discovery_paper_results, excluding empty strings."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    run_id = db.start_discovery_run({}, trigger="manual")
+    db.add_discovery_paper(run_id=run_id, doi="10.1/shown", title="t",
+                           score=0.5, rationale="", ingested=False)
+    db.add_discovery_paper(run_id=run_id, doi="", title="nodoi",
+                           score=0.4, rationale="", ingested=False)
+    s = db.surfaced_dois()
+    assert "10.1/shown" in s and "" not in s

@@ -39,7 +39,7 @@ you're doing — **Monitor**, **Semantics**, **Explore**, **Tune**, **Setup**.
 
 | URL | Group | What |
 |---|---|---|
-| `/discovery` | Monitor | Latest discovery run summary, run history, per-paper cards with one-click relink / re-extract actions. Run-now / Dry-run / Stop buttons. |
+| `/discovery` | Monitor | Latest discovery run summary, run history (with a **Converted** column: how many of each run's recommendations you've since ingested), per-paper cards with one-click relink / re-extract actions and an **ingested** badge on recommendations now in your library. The per-run detail page also shows a "**N recommendations · X since ingested**" line, separate from the "ingested / found" line (which counts Zotero items ingested during that run). Run-now / Dry-run / Stop buttons. |
 | `/brain-build` | Monitor | Extract your existing Zotero library into the index. Progress bar, per-paper table, recent runs. Start / Stop / Resume. Live JSONL log stream. |
 | `/schedule` | Monitor | Install or remove a recurring schedule (launchd / systemd). |
 | `/ask` | Semantics | Ask natural-language questions of your corpus (the `lit-monitor ask` pipeline in the browser): prose answer + results table, with show/edit Cypher, recent-questions history, and save-to-vault. Requires the knowledge graph (`lit-monitor graph backfill --all`). |

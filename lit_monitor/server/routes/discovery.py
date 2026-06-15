@@ -31,6 +31,7 @@ from sse_starlette.sse import EventSourceResponse
 from lit_monitor.api.queries import (
     discovery_run_same_day_ordinal,
     get_discovery_run,
+    get_discovery_run_conversion,
     get_discovery_run_history,
     get_discovery_run_papers,
     get_discovery_runs,
@@ -350,12 +351,15 @@ def discovery_run_detail(request: Request, run_id: int) -> HTMLResponse:
     except Exception:
         pass
 
+    conversion = get_discovery_run_conversion(state_db, run_id)
+
     return templates.TemplateResponse(
         request,
         "discovery/run_detail.html",
         {
             "run": run,
             "papers": papers,
+            "conversion": conversion,
             "show_feedback_buttons": show_feedback_buttons,
             "detail_crumb": f"Run {run_id}",
         },

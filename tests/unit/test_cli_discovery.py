@@ -79,3 +79,119 @@ class TestDiscoveryView:
 
         result = runner.invoke(main, ["discovery", "view", "--run-id", "99999"])
         assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# Task 5: backfill-ingested unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_backfill_ingested_flips_recommended_and_library_papers(tmp_path):
+    """Papers in the library (status != 'discovered') that appear in a digest
+    should have their discovery_paper_results.ingested flipped to 1; papers not
+    yet in the library should remain 0."""
+    from lit_monitor.api.queries import get_discovery_run_papers
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.pipelines.discovery_backfill import backfill_ingested
+
+    db = StateDB(db_path=tmp_path / "s.db")
+    run_id = db.start_discovery_run({}, trigger="manual")
+    db.add_discovery_paper(
+        run_id=run_id,
+        doi="10.1/in-lib",
+        title="t",
+        score=0.5,
+        rationale="",
+        ingested=False,
+    )
+    db.add_discovery_paper(
+        run_id=run_id,
+        doi="10.1/not-in-lib",
+        title="t",
+        score=0.5,
+        rationale="",
+        ingested=False,
+    )
+    db.upsert_paper({"doi": "10.1/in-lib", "status": "extraction_complete"})
+
+    flipped = backfill_ingested(db)
+    assert flipped == 1
+
+    papers = {p["doi"]: p for p in get_discovery_run_papers(db, run_id, top_k=100)}
+    assert papers["10.1/in-lib"]["ingested"] == 1
+    assert papers["10.1/not-in-lib"]["ingested"] == 0
+
+
+def test_backfill_ingested_is_idempotent(tmp_path):
+    """Running backfill_ingested twice should not double-count: second call
+    still returns 1 (the row matched) but the timestamp is unchanged
+    (COALESCE keeps the first ingested_at — "first ingested_at wins")."""
+    from lit_monitor.api.queries import get_discovery_run_papers
+    from lit_monitor.core.state_db import StateDB
+    from lit_monitor.pipelines.discovery_backfill import backfill_ingested
+
+    db = StateDB(db_path=tmp_path / "s.db")
+    run_id = db.start_discovery_run({}, trigger="manual")
+    db.add_discovery_paper(
+        run_id=run_id,
+        doi="10.2/paper",
+        title="t",
+        score=0.8,
+        rationale="",
+        ingested=False,
+    )
+    db.upsert_paper({"doi": "10.2/paper", "status": "extraction_complete"})
+
+    first = backfill_ingested(db)
+    assert first == 1
+
+    # Capture ingested_at after the first run — this is the timestamp that must survive.
+    papers_after_first = {
+        p["doi"]: p for p in get_discovery_run_papers(db, run_id, top_k=10)
+    }
+    ingested_at_first = papers_after_first["10.2/paper"]["ingested_at"]
+    assert ingested_at_first is not None, "ingested_at should be set after first backfill"
+
+    second = backfill_ingested(db)
+    assert second == 1  # still matches 1 DOI
+
+    # The second run must NOT move the timestamp — COALESCE keeps the first value.
+    papers_after_second = {
+        p["doi"]: p for p in get_discovery_run_papers(db, run_id, top_k=10)
+    }
+    assert papers_after_second["10.2/paper"]["ingested"] == 1
+    assert papers_after_second["10.2/paper"]["ingested_at"] == ingested_at_first, (
+        "ingested_at changed on a second backfill run — COALESCE should preserve "
+        "the first timestamp"
+    )
+
+
+def test_backfill_ingested_cli_command(tmp_path, monkeypatch):
+    """The CLI subcommand should print a summary line and exit 0."""
+    from unittest.mock import MagicMock
+
+    from click.testing import CliRunner
+
+    from lit_monitor.core.state_db import StateDB
+
+    db = StateDB(db_path=tmp_path / "s.db")
+    run_id = db.start_discovery_run({}, trigger="manual")
+    db.add_discovery_paper(
+        run_id=run_id,
+        doi="10.3/x",
+        title="t",
+        score=0.6,
+        rationale="",
+        ingested=False,
+    )
+    db.upsert_paper({"doi": "10.3/x", "status": "extraction_complete"})
+
+    fake_cfg = MagicMock()
+    fake_cfg.state_db.path = str(tmp_path / "s.db")
+    monkeypatch.setattr("lit_monitor.core.config.get_config", lambda: fake_cfg)
+
+    from lit_monitor.cli import main
+
+    result = CliRunner().invoke(main, ["discovery", "backfill-ingested"])
+    assert result.exit_code == 0, result.output
+    assert "1" in result.output
