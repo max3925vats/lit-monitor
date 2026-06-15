@@ -161,6 +161,7 @@ def run_discovery(
     top_k: int = 20,
     sim_threshold: float = 0.3,
     rag_mode: str | None = None,
+    window_override: SearchWindow | None = None,
     trigger: str = "manual",
 ) -> _RunSummary:
     """
@@ -189,6 +190,9 @@ def run_discovery(
         One of "vector", "graph", "hybrid". Default reads from
         config.retrieval.default_mode; falls back to "vector".
         When "graph" or "hybrid", graph proximity is used for paper ranking.
+    window_override:
+        Explicit search-window override from the CLI/web; when None the adaptive
+        coverage frontier is used.
     trigger:
         How this run was started — "manual" (web "Run now" / CLI) or
         "scheduled" (OS scheduler). Recorded on the discovery_runs row.
@@ -220,28 +224,24 @@ def run_discovery(
             trigger=trigger,
         )
 
-    # A4: compute search window from last successful run date.
-    # Cap at 90 days to avoid overwhelming databases after a long gap.
-    _MAX_SINCE_DAYS = 90
-    last_run_date_str = state_db.get_kv("last_run_date")
-    if last_run_date_str:
-        try:
-            last_run = datetime.fromisoformat(last_run_date_str).date()
-            since_days = min((date.today() - last_run).days + 1, _MAX_SINCE_DAYS)
-            logger.warning("Search window: %d days (last run: %s)", since_days, last_run_date_str)
-        except ValueError:
-            since_days = 14
-            logger.warning("Could not parse last_run_date %r — defaulting to 14 days", last_run_date_str)
+    # Discovery search window. Explicit CLI/web override wins; otherwise the
+    # DEFAULT window starts at the coverage frontier (the latest date any prior
+    # successful search covered) and runs to today. The frontier advances only
+    # on a clean, non-dry run (below), so the default never leaves a gap and
+    # never re-fetches a covered range. Cold start (no frontier yet) = 14 days.
+    # NOTE: the default is intentionally UNCAPPED — a long absence yields a
+    # correspondingly wide catch-up (bounded by findpapers' per-DB limit); the
+    # old 90-day cap belonged to the retired last_run_date model and is dropped.
+    if not dry_run:
+        seed_coverage_until(state_db)  # first-upgrade migration; no-op once set
+    if window_override is not None:
+        _window = window_override
     else:
-        since_days = 14
-        logger.warning("No last_run_date stored — defaulting search window to 14 days")
-
-    # Bridge: translate the legacy since_days scalar into a SearchWindow so
-    # the search layer can propagate the upper bound.  until=None means
-    # "open-ended" (up to today), which preserves the existing behaviour.
-    # The frontier/override logic is a LATER task — this bundle only threads
-    # the type through without changing behaviour.
-    _window = SearchWindow(since=date.today() - timedelta(days=since_days), until=None)
+        _frontier = read_coverage_until(state_db)
+        _since = _frontier or (date.today() - timedelta(days=14))
+        _window = SearchWindow(since=_since, until=None)
+    logger.info("Discovery search window: %s → %s",
+                _window.since, _window.until or "today")
 
     # ----------------------------------------------------------------
     # Discovery block
@@ -267,6 +267,15 @@ def run_discovery(
             # the write so dry runs do not silently mutate kv_store.
             if not dry_run:
                 state_db.set_kv("last_run_date", str(date.today()))
+                # Advance the coverage frontier ONLY when the search block ran
+                # clean (no per-topic errors). A failed/partial search must NOT
+                # advance it, or the un-covered range is skipped forever. A 1-day
+                # boundary overlap is fine — the shown-only suppression layer
+                # (filter_known_dois) absorbs duplicates.
+                if not search_errors:
+                    advance_coverage_until(
+                        state_db, covered_to=(_window.until or date.today())
+                    )
         except Exception as exc:
             logger.error("Discovery searches failed: %s", exc, exc_info=True)
             summary.errors.append(f"discovery: {exc}")

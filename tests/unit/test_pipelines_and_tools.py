@@ -410,14 +410,17 @@ def test_discovery_ingestion_resumes_after_partial_failure(tmp_path):
     zotero_client.get_markdown_attachment.assert_not_called()
 
 @pytest.mark.unit
-def test_since_days_computed_from_last_run_date(tmp_path):
-    """A4: search window is derived from stored last_run_date, not hard-coded 14."""
+def test_default_window_seeds_frontier_from_last_run_date(tmp_path):
+    """Task 6: on first upgrade (last_run_date present, coverage_until absent) the
+    DEFAULT window starts at the frontier seeded from last_run_date — NOT the old
+    today-since_days computation. seed_coverage_until migrates last_run_date →
+    coverage_until, so the window's `since` is exactly the stored last_run_date."""
     import datetime as dt
     config = _make_config(tmp_path)
     state_db = _make_state_db(tmp_path)
-    # Store a last_run_date 30 days ago
-    past_date = (dt.date.today() - dt.timedelta(days=30)).isoformat()
-    state_db.set_kv("last_run_date", past_date)
+    # First-upgrade state: a stored last_run_date, no coverage_until yet.
+    past_date = (dt.date.today() - dt.timedelta(days=30))
+    state_db.set_kv("last_run_date", past_date.isoformat())
     state_db.set_kv("zotero_library_version", "100")
 
     embeddings_db = MagicMock()
@@ -446,10 +449,8 @@ def test_since_days_computed_from_last_run_date(tmp_path):
                     )
 
     assert len(captured_windows) == 1
-    # 30 days ago → since = today - 31 days (inclusive of today)
-    import datetime as dt
-    expected_since = dt.date.today() - dt.timedelta(days=31)
-    assert captured_windows[0].since == expected_since
+    # Frontier seeded from last_run_date → since == the stored last_run_date.
+    assert captured_windows[0].since == past_date
     assert captured_windows[0].until is None
 
 # ===========================================================================
