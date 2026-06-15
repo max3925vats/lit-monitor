@@ -330,3 +330,26 @@ def test_theme_slash_does_not_break_tag():
     val = _tag_value_for_theme("ion exchange / HIC")
     assert val.startswith("lm/")
     assert "/" not in val.split("/", 1)[1]  # no slash AFTER the namespace prefix
+
+
+# ---------------------------------------------------------------------------
+# Audit-6 #9 — sub-collection index must be FIRST-wins + WARN on duplicate names
+# (silent last-wins could route papers to the wrong collection, no warning)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_index_subcollections_first_wins_and_warns(caplog):
+    import logging
+
+    from lit_monitor.clustering.write_back import _index_subcollections
+    # Real shape (ZoteroClient.get_all_collections): flat dicts with
+    # "name", "key", "parent_collection_key".
+    cols = [
+        {"name": "Theme A", "key": "K1", "parent_collection_key": "P"},
+        {"name": "Theme A", "key": "K2", "parent_collection_key": "P"},
+        {"name": "Other", "key": "K3", "parent_collection_key": "Q"},  # different parent — excluded
+    ]
+    with caplog.at_level(logging.WARNING):
+        idx = _index_subcollections(cols, parent_key="P")
+    assert idx == {"Theme A": "K1"}  # first-wins (K1), and Q-parented excluded
+    assert any("duplicate" in r.message.lower() and "Theme A" in r.message for r in caplog.records)

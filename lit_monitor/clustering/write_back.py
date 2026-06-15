@@ -27,6 +27,24 @@ def _tag_value_for_theme(theme: str) -> str:
     return f"{_TAG_NAMESPACE}/{theme.replace('/', '-').strip()}"
 
 
+def _index_subcollections(all_collections: list[dict], parent_key) -> dict[str, str]:
+    """name -> key for sub-collections under parent_key. First-wins on duplicate
+    names (stable across re-runs), warning on each duplicate (Audit-6 #9 — silent
+    last-wins could route papers to the wrong collection)."""
+    index: dict[str, str] = {}
+    for col in all_collections:
+        if col.get("parent_collection_key") == parent_key:
+            name = col["name"]
+            if name in index:
+                logger.warning(
+                    "Duplicate sub-collection name %r under parent — keeping the first match.",
+                    name,
+                )
+                continue
+            index[name] = col["key"]
+    return index
+
+
 def push_tags_to_zotero(
     state_db,
     zotero_client,
@@ -152,11 +170,9 @@ def push_collections_to_zotero(
         if not dry_run:
             parent_key = _create_collection(zotero_client, parent_name, parent_key=None)
 
-    # Resolve existing sub-collections under parent
-    existing_sub: dict[str, str] = {}  # name → key
-    for col in all_collections:
-        if col.get("parent_collection_key") == parent_key:
-            existing_sub[col["name"]] = col["key"]
+    # Resolve existing sub-collections under parent (first-wins + warn on
+    # duplicate names — Audit-6 #9).
+    existing_sub = _index_subcollections(all_collections, parent_key)
 
     for cluster in clusters:
         cid = cluster["id"]
