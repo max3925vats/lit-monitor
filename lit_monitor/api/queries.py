@@ -634,7 +634,7 @@ def get_discovery_run_history(
     cols = [
         "id", "started_at", "finished_at", "status", "total_found",
         "total_ingested", "papers_processed", "papers_skipped", "papers_failed",
-        "trigger",
+        "trigger", "recommendations", "converted",
     ]
     # Optional trigger filter applied identically to both the rows SELECT and
     # the total COUNT so pagination math stays consistent with the filtered set.
@@ -648,7 +648,9 @@ def get_discovery_run_history(
                 "SELECT dr.id, dr.started_at, dr.finished_at, dr.status, "
                 "dr.total_found, dr.total_ingested, "
                 "rl.papers_processed, rl.papers_skipped, rl.papers_failed, "
-                "dr.trigger "
+                "dr.trigger, "
+                "(SELECT COUNT(*) FROM discovery_paper_results dpr WHERE dpr.run_id = dr.id) AS recommendations, "
+                "(SELECT COUNT(*) FROM discovery_paper_results dpr WHERE dpr.run_id = dr.id AND dpr.ingested = 1) AS converted "
                 "FROM discovery_runs dr "
                 "LEFT JOIN run_log rl ON dr.run_log_id = rl.run_id "
                 "WHERE dr.trigger = ? "
@@ -664,7 +666,9 @@ def get_discovery_run_history(
                 "SELECT dr.id, dr.started_at, dr.finished_at, dr.status, "
                 "dr.total_found, dr.total_ingested, "
                 "rl.papers_processed, rl.papers_skipped, rl.papers_failed, "
-                "dr.trigger "
+                "dr.trigger, "
+                "(SELECT COUNT(*) FROM discovery_paper_results dpr WHERE dpr.run_id = dr.id) AS recommendations, "
+                "(SELECT COUNT(*) FROM discovery_paper_results dpr WHERE dpr.run_id = dr.id AND dpr.ingested = 1) AS converted "
                 "FROM discovery_runs dr "
                 "LEFT JOIN run_log rl ON dr.run_log_id = rl.run_id "
                 "ORDER BY dr.started_at DESC, dr.id DESC LIMIT ? OFFSET ?",
