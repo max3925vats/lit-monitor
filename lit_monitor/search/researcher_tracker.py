@@ -26,11 +26,18 @@ from typing import Any
 # it ships with the package, so this is a plain import, not an optional dep.
 from lit_monitor._vendor import findpapers as _findpapers
 from lit_monitor._vendor.findpapers.utils.persistence_util import load as _fp_load
+from lit_monitor.core.doi import normalize_doi
 from lit_monitor.search._constants import FINDPAPERS_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 _OPENALEX_AUTHOR_URL = "https://api.openalex.org/works"
 _DEFAULT_DATABASES = ["pubmed", "arxiv", "scopus"]
+
+
+def _researcher_dedup_key(paper: dict) -> str:
+    """Canonical DOI dedup key — normalize so URL-wrapped and bare forms collapse
+    (Audit-6 #12). Returns '' when there's no DOI (caller skips empties)."""
+    return normalize_doi(paper.get("doi", ""))
 
 
 def run_researcher_searches(
@@ -122,7 +129,7 @@ def run_researcher_searches(
                 search_result = _fp_load(tmp)
                 papers = _convert_findpapers_results(search_result.papers, tracked_author=True)
                 for paper in papers:
-                    doi = paper.get("doi", "").strip().lower()
+                    doi = _researcher_dedup_key(paper)
                     if doi and doi not in all_papers:
                         all_papers[doi] = paper
                 logger.info("Researcher %r: %d results", name, len(papers))
@@ -139,7 +146,7 @@ def run_researcher_searches(
             try:
                 openalex_papers = _openalex_author_lookup(orcid, since, config)
                 for paper in openalex_papers:
-                    doi = paper.get("doi", "").strip().lower()
+                    doi = _researcher_dedup_key(paper)
                     if doi and doi not in all_papers:
                         all_papers[doi] = paper
                 logger.info(
