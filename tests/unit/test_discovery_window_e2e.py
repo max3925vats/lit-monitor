@@ -198,3 +198,38 @@ def test_cold_start_default_window_since_today_minus_14(tmp_path):
 
     assert captured["window"].since == date.today() - timedelta(days=14)
     assert captured["window"].until is None
+
+
+# --------------------------------------------------------------------------- #
+# 6. A FORWARD override advances the frontier to its until
+# --------------------------------------------------------------------------- #
+@pytest.mark.unit
+def test_forward_override_advances_frontier(tmp_path):
+    config = _make_config(tmp_path)
+    state_db = _make_state_db(tmp_path)
+    state_db.set_kv("coverage_until", "2026-02-01")
+
+    override = SearchWindow(since=date(2026, 3, 1), until=date(2026, 4, 1))
+    _, captured = _run(config, state_db, dry_run=False, window_override=override)
+
+    assert captured["window"] == override
+    # covered_to = override.until = 2026-04-01 > 2026-02-01 → frontier advances.
+    assert read_coverage_until(state_db) == date(2026, 4, 1)
+
+
+# --------------------------------------------------------------------------- #
+# 7. Dry-run does NOT seed coverage_until even when last_run_date exists
+#    (locks the seed_coverage_until dry-run gate where it actually bites)
+# --------------------------------------------------------------------------- #
+@pytest.mark.unit
+def test_dry_run_does_not_seed_frontier_from_last_run_date(tmp_path):
+    config = _make_config(tmp_path)
+    state_db = _make_state_db(tmp_path)
+    # last_run_date present but coverage_until absent → seed WOULD fire on a real
+    # run; a dry run must not, to preserve the read-only contract.
+    state_db.set_kv("last_run_date", "2026-03-15")
+    assert state_db.get_kv("coverage_until") is None
+
+    _run(config, state_db, dry_run=True)
+
+    assert state_db.get_kv("coverage_until") is None
