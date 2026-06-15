@@ -44,6 +44,31 @@ work. Same pipeline either way.
 > welcome via [GitHub Issues](https://github.com/max3925vats/lit-monitor/issues).
 > Provided under the [MIT License](#license).
 
+## Who it's for
+
+lit-monitor is for researchers whose Zotero library has outrun them — the papers
+you saved meaning to read, the ones you read once and half-forgot, the threads
+you'd follow if the day job left the time. Rather than re-reading everything to
+decide what matters now, it treats your library as a statement of interest: it
+indexes what you've collected, then watches PubMed, arXiv, and Scopus and surfaces
+new work ranked by closeness to *your* corpus — including the auxiliary interests
+you want to keep a pulse on but don't touch day to day. New papers arrive already
+searched, ranked, extracted into structured notes, and filed in your Obsidian
+vault, on a schedule — so staying current becomes a digest you skim, not a Google
+Scholar tab and an inbox of journal alerts you'll never open.
+
+**How it compares to ResearchRabbit, Litmaps, and Connected Papers.** Those tools
+excel at *interactive citation-graph exploration* — seed a paper and fan out
+visually across what cites it — in a polished, hosted web app. lit-monitor doesn't
+do that visual exploration. What it does instead: it's **local-first and private**
+(runs on your machine, your library never leaves it, no account), **built around
+the tools you already use** (Zotero in, Obsidian out), and it **monitors on a
+schedule against your whole library** rather than a hand-picked seed — filing
+structured notes and a queryable knowledge graph as it goes. So it's less a
+replacement for those tools' citation graph than a complement: an open-source,
+self-hosted answer to *"what should land in my reading queue this week, given
+everything I've ever saved?"*
+
 ## Features
 
 - **Library-relative ranking, augmentable with the knowledge graph.** Recurring
@@ -88,7 +113,9 @@ For the scoring model and the design behind each signal, see
 - Python 3.11+
 - [Ollama](https://ollama.com) installed locally for embeddings
   (`ollama pull mxbai-embed-large`)
-- A Zotero library (Better BibTeX optional)
+- A Zotero library (Better BibTeX optional). lit-monitor ingests **Markdown
+  attachments**, not PDFs — convert your PDFs to Markdown and attach them with
+  [zotero-docling](https://github.com/max3925vats/zotero-docling).
 - An Obsidian vault (full absolute path required)
 
 ## Install

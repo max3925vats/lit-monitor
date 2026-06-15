@@ -9,7 +9,9 @@
 - Python 3.11+
 - [Ollama](https://ollama.com) installed locally for embeddings
   (`ollama pull mxbai-embed-large`)
-- A Zotero library (Better BibTeX optional)
+- A Zotero library (Better BibTeX optional). lit-monitor ingests **Markdown
+  attachments**, not PDFs — convert your PDFs to Markdown and attach them with
+  [zotero-docling](https://github.com/max3925vats/zotero-docling).
 - An Obsidian vault (full absolute path required)
 
 ## Install with pip (recommended)
