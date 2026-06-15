@@ -113,16 +113,22 @@ def test_filter_known_dois_suppresses_library_and_shown_keeps_unshown():
     from lit_monitor.search.search_runner import filter_known_dois
 
     papers = [
-        {"doi": "10.1/lib"},                    # in library -> drop
-        {"doi": "https://doi.org/10.1/SHOWN"},  # shown (normalized match) -> drop
+        {"doi": "10.1/lib"},                    # canonical candidate vs non-canonical stored -> drop
+        {"doi": "10.1/shown"},                  # canonical candidate vs non-canonical stored -> drop
         {"doi": "10.1/unshown"},                # retrieved-only -> keep
         {"doi": ""},                            # no doi -> keep
     ]
-    db = _FakeStateDB_lifecycle(library={"10.1/lib"}, surfaced={"10.1/shown"})
+    # STORED sides are deliberately non-canonical (URL-wrapped / upper-cased) so the
+    # match only succeeds if filter_known_dois normalizes the library/surfaced sets,
+    # not just the candidate side.
+    db = _FakeStateDB_lifecycle(
+        library={"HTTPS://DOI.ORG/10.1/LIB"},
+        surfaced={"10.1/SHOWN"},
+    )
     out = filter_known_dois(papers, db)
     dois = [p["doi"] for p in out]
     assert "10.1/unshown" in dois and "" in dois
-    assert "10.1/lib" not in dois and "https://doi.org/10.1/SHOWN" not in dois
+    assert "10.1/lib" not in dois and "10.1/shown" not in dois
 
 
 def test_convert_findpapers_results_normalizes_stored_doi():
