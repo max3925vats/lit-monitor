@@ -1513,10 +1513,8 @@ def test_mark_discovery_recommendations_ingested_respects_when(tmp_path):
 @pytest.mark.unit
 def test_mark_discovery_recommendations_ingested_rejects_bad_when(tmp_path):
     """when= must be a valid ISO datetime string; freeform strings raise ValueError."""
-    import pytest as _pytest
-    from lit_monitor.core.state_db import StateDB
     db = StateDB(db_path=tmp_path / "s.db")
-    with _pytest.raises(ValueError):
+    with pytest.raises(ValueError):
         db.mark_discovery_recommendations_ingested("10.1/x", when="yesterday")
 
 
