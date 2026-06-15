@@ -242,6 +242,24 @@ def state_targets(config: Any) -> list[ResetTarget]:
     ]
 
 
+def vectors_targets(config: Any) -> list[ResetTarget]:
+    """Enumerate the ChromaDB-only reset target (vectors).
+
+    The matching rebuild is ``embeddings rebuild``; the caller must additionally
+    call ``state_db.reset_embeddings_indexed()`` after deletion.
+    """
+    return [_make_target("ChromaDB persist dir", _chroma_persist_dir(config))]
+
+
+def graph_targets(config: Any) -> list[ResetTarget]:
+    """Enumerate the KuzuDB-only reset target (graph).
+
+    The matching rebuild is ``graph backfill``; the caller must additionally call
+    ``state_db.reset_graph_stamps()`` after deletion (resets all three stamps).
+    """
+    return [_make_target("graph DB", Path(_graph_persist_dir(config)))]
+
+
 def vault_targets(config: Any) -> list[ResetTarget]:
     """Enumerate every path ``reset vault`` would delete.
 
@@ -562,6 +580,8 @@ __all__ = [
     "ResetResult",
     "state_targets",
     "vault_targets",
+    "vectors_targets",
+    "graph_targets",
     "perform_state_reset",
     "perform_vault_reset",
     "_format_size_bytes",

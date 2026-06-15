@@ -1197,6 +1197,24 @@ class StateDB:
             n = cur.rowcount
         logger.info("reset_embeddings_indexed: %d row(s) scheduled for re-embedding.", n)
 
+    def reset_graph_stamps(self) -> int:
+        """Clear every graph processing stamp so a rebuild reprocesses all papers.
+
+        Deleting graph.kuzu invalidates the base index AND both enrichment passes
+        (NER, relationships); leaving any stamp set would make the corresponding
+        backfill pass skip papers and return a thinner graph. Resets all three:
+        graph_indexed=0, ner_processed_at=NULL, rel_processed_at=NULL. Returns the
+        row count touched.
+        """
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE papers SET graph_indexed = 0, "
+                "ner_processed_at = NULL, rel_processed_at = NULL"
+            )
+            n = cur.rowcount
+        logger.info("reset_graph_stamps: %d row(s) scheduled for graph rebuild.", n)
+        return n
+
     # -- Schema version / extraction reset (M8) --
 
     def get_schema_version(self) -> str | None:
@@ -1223,6 +1241,20 @@ class StateDB:
                 "SELECT COUNT(*) FROM papers WHERE extraction_json IS NOT NULL"
             ).fetchone()
         return row[0] if row else 0
+
+    def count_embeddings_indexed(self) -> int:
+        """Number of papers with vectors in ChromaDB (embeddings_indexed=1)."""
+        with self._connect() as conn:
+            return int(conn.execute(
+                "SELECT COUNT(*) FROM papers WHERE embeddings_indexed = 1"
+            ).fetchone()[0])
+
+    def count_graph_indexed(self) -> int:
+        """Number of papers indexed into the knowledge graph (graph_indexed=1)."""
+        with self._connect() as conn:
+            return int(conn.execute(
+                "SELECT COUNT(*) FROM papers WHERE graph_indexed = 1"
+            ).fetchone()[0])
 
     def reset_extractions(self) -> int:
         """Wipe all extraction_json values and reset brain_build_progress.

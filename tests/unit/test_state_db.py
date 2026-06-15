@@ -1343,3 +1343,82 @@ def test_corpus_snapshot_roundtrip(tmp_path):
     assert len(snaps) == 2
     assert snaps[0]["papers"] == 14 and snaps[0]["graph_nodes"] == 28  # newest first
     assert snaps[1]["papers"] == 10
+
+
+# ---------------------------------------------------------------------------
+# RR1: reset_graph_stamps
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_reset_graph_stamps_clears_all_three(tmp_path):
+    """RR1: reset_graph_stamps sets graph_indexed=0, ner_processed_at=NULL,
+    rel_processed_at=NULL for every paper and returns the touched row count."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(tmp_path / "state.db")
+    db.upsert_paper({"doi": "10.1/a", "title": "A", "source_type": "paper"})
+    # Set all three stamps to non-zero/non-NULL values via dedicated setters.
+    db.set_graph_indexed("10.1/a", 1)
+    db.set_ner_processed_at("10.1/a", "2026-01-01T00:00:00")
+    db.set_rel_processed_at("10.1/a", "2026-01-01T00:00:00")
+    # Act.
+    n = db.reset_graph_stamps()
+    # All three columns must be reset; row count must equal 1.
+    assert n == 1
+    row = db.get_paper("10.1/a")
+    assert row["graph_indexed"] == 0
+    assert row["ner_processed_at"] is None
+    assert row["rel_processed_at"] is None
+
+
+# ---------------------------------------------------------------------------
+# FIX 3: count_embeddings_indexed / count_graph_indexed helpers
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_count_embeddings_indexed_empty(tmp_path):
+    """FIX 3: count_embeddings_indexed returns 0 for a fresh DB."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(tmp_path / "state.db")
+    assert db.count_embeddings_indexed() == 0
+
+
+@pytest.mark.unit
+def test_count_embeddings_indexed_counts_flagged_papers(tmp_path):
+    """FIX 3: count_embeddings_indexed returns only papers with embeddings_indexed=1."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(tmp_path / "state.db")
+    # 3 embedded, 2 not.
+    for i in range(3):
+        db.upsert_paper({
+            "doi": f"10.0/e{i}",
+            "title": f"E {i}",
+            "embeddings_indexed": 1,
+        })
+    for i in range(2):
+        db.upsert_paper({
+            "doi": f"10.0/n{i}",
+            "title": f"N {i}",
+            "embeddings_indexed": 0,
+        })
+    assert db.count_embeddings_indexed() == 3
+
+
+@pytest.mark.unit
+def test_count_graph_indexed_empty(tmp_path):
+    """FIX 3: count_graph_indexed returns 0 for a fresh DB."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(tmp_path / "state.db")
+    assert db.count_graph_indexed() == 0
+
+
+@pytest.mark.unit
+def test_count_graph_indexed_counts_flagged_papers(tmp_path):
+    """FIX 3: count_graph_indexed returns only papers with graph_indexed=1."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(tmp_path / "state.db")
+    # Insert 4 papers; graph-index 2 of them.
+    for i in range(4):
+        db.upsert_paper({"doi": f"10.0/g{i}", "title": f"G {i}"})
+    db.set_graph_indexed("10.0/g0", 1)
+    db.set_graph_indexed("10.0/g1", 1)
+    assert db.count_graph_indexed() == 2

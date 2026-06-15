@@ -290,3 +290,111 @@ def test_reset_all_aborting_state_still_runs_vault(
     assert tmp_env["state_db"].exists()
     # Vault wiped.
     assert not (tmp_env["vault"] / "Literature" / "Papers" / "note.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# reset vectors — confirmation flow
+# ---------------------------------------------------------------------------
+
+def _invoke_with_state_db(
+    runner: CliRunner,
+    tmp_env: dict,
+    argv: list[str],
+    stdin: str,
+    fake_state_db=None,
+):
+    """Like ``_invoke`` but also patches ``_make_state_db`` for subcommands
+    that call it (reset vectors / reset graph).
+    """
+    from unittest.mock import MagicMock
+
+    mock_state_db = fake_state_db or MagicMock()
+    with (
+        patch("lit_monitor.cli._make_config", return_value=tmp_env["fake_cfg"]),
+        patch.object(reset_mod, "_project_config_dir", return_value=tmp_env["config_dir"]),
+        patch("lit_monitor.cli._setup_logging"),
+        patch("lit_monitor.cli._make_state_db", return_value=mock_state_db),
+    ):
+        result = runner.invoke(main, argv, input=stdin)
+    return result, mock_state_db
+
+
+@pytest.mark.unit
+def test_reset_vectors_aborts_without_phrase(runner: CliRunner, tmp_env: dict) -> None:
+    """Typing a wrong phrase must abort without deleting the chroma dir."""
+    result, mock_db = _invoke_with_state_db(
+        runner, tmp_env, ["reset", "vectors"], stdin="yes\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert "Aborted" in result.output
+    # Chroma dir still present.
+    assert tmp_env["chroma_dir"].exists()
+    # State-flag method never called.
+    mock_db.reset_embeddings_indexed.assert_not_called()
+
+
+@pytest.mark.unit
+def test_reset_vectors_deletes_and_resets_flag(runner: CliRunner, tmp_env: dict) -> None:
+    """Correct phrase must wipe the chroma dir and call reset_embeddings_indexed."""
+    result, mock_db = _invoke_with_state_db(
+        runner, tmp_env, ["reset", "vectors"], stdin="reset vectors\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert "Aborted" not in result.output
+    # Chroma dir gone.
+    assert not tmp_env["chroma_dir"].exists()
+    # State-flag reset.
+    mock_db.reset_embeddings_indexed.assert_called_once()
+    # Next-step hint shown.
+    assert "embeddings rebuild" in result.output
+
+
+# ---------------------------------------------------------------------------
+# reset graph — confirmation flow
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+def test_reset_graph_aborts_without_phrase(runner: CliRunner, tmp_env: dict) -> None:
+    """Typing a wrong phrase must abort without touching the graph DB or stamps."""
+    # Create a fake graph DB file so the target shows as present.
+    graph_db = tmp_env["state_db"].parent / "graph.kuzu"
+    graph_db.write_bytes(b"kuzu")
+
+    result, mock_db = _invoke_with_state_db(
+        runner, tmp_env, ["reset", "graph"], stdin="yes\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert "Aborted" in result.output
+    # Graph DB untouched.
+    assert graph_db.exists()
+    # Stamp-reset method never called.
+    mock_db.reset_graph_stamps.assert_not_called()
+
+
+@pytest.mark.unit
+def test_reset_graph_deletes_and_resets_stamps(runner: CliRunner, tmp_env: dict) -> None:
+    """Correct phrase must delete the graph DB and call reset_graph_stamps."""
+    # The default graph path is ~/.config/lit-monitor/graph.kuzu; the fake
+    # config points state_db.path to tmp_path/config_home/state.db, so the
+    # default graph path won't be under tmp_path.  We patch _graph_persist_dir
+    # to place the DB alongside the state DB so we can assert file deletion.
+    graph_db = tmp_env["state_db"].parent / "graph.kuzu"
+    graph_db.write_bytes(b"kuzu")
+
+    with patch.object(
+        reset_mod,
+        "_graph_persist_dir",
+        return_value=str(graph_db),
+    ):
+        result, mock_db = _invoke_with_state_db(
+            runner, tmp_env, ["reset", "graph"], stdin="reset graph\n"
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "Aborted" not in result.output
+    # Graph DB gone.
+    assert not graph_db.exists()
+    # Stamp-reset called.
+    mock_db.reset_graph_stamps.assert_called_once()
+    # Next-step hint shown.
+    assert "graph backfill" in result.output

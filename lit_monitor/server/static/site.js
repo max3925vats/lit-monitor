@@ -391,3 +391,306 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
 })();
+
+// RR7: Reset & Rebuild console page wiring.
+//
+// Activates only when #reset-rebuild-page is present (no-ops on every other page).
+// Three responsibilities:
+//   1. On load, fetch /api/reset/status and populate status lines + enrichment gate.
+//   2. Wire SSE rebuild panes: reveal on Rebuild click, stream /api/rebuild/<c>/stream,
+//      refresh status on done.
+//   3. Wire the "Everything" typed-phrase gate: enable the confirm button only when
+//      the sl-input value === "reset all".
+//
+// Uses plain EventSource (vanilla), consistent with the rest of site.js.
+// All element lookups are null-guarded; the entire block no-ops when the page
+// root element is absent.
+(function () {
+  "use strict";
+
+  // Page guard — only run on the Reset & Rebuild page.
+  if (!document.getElementById("reset-rebuild-page")) return;
+
+  var COMPONENTS = ["vectors", "graph", "notes"];
+
+  // --- 1. Status fetch & population -------------------------------------------
+
+  function humanSize(bytes) {
+    if (!bytes) return "0 B";
+    var units = ["B", "KB", "MB", "GB"];
+    var i = 0;
+    var n = bytes;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return n.toFixed(i > 0 ? 1 : 0) + " " + units[i];
+  }
+
+  function setStatusLine(comp, info) {
+    var el = document.getElementById("rr-status-" + comp);
+    if (!el) return;
+    if (!info) { el.textContent = "Status unavailable."; return; }
+    if (info.present) {
+      el.innerHTML =
+        '<span class="status-dot ok" title="Present" aria-label="Present"></span> ' +
+        info.count + " " + info.unit + (info.count !== 1 ? "s" : "") +
+        " · " + humanSize(info.size_bytes);
+    } else {
+      el.innerHTML =
+        '<span class="status-dot pending" title="Not present" aria-label="Not present"></span> ' +
+        "Not present";
+    }
+  }
+
+  function applyEnrichmentGate(enrichment) {
+    var sw = document.getElementById("rr-enrich-switch");
+    var note = document.getElementById("rr-enrich-note");
+    if (!sw || !note) return;
+    var hasNlp = enrichment && enrichment.nlp;
+    var hasKey = enrichment && enrichment.ollama_key;
+    var capable = hasNlp && hasKey;
+    if (capable) {
+      sw.removeAttribute("disabled");
+      note.hidden = true;
+      note.textContent = "";
+    } else {
+      sw.setAttribute("disabled", "");
+      note.hidden = false;
+      var reasons = [];
+      if (!hasNlp) reasons.push("Needs the [nlp] extra (transformers)");
+      if (!hasKey) reasons.push("Needs OLLAMA_API_KEY");
+      note.textContent = reasons.join(" · ");
+    }
+  }
+
+  function setActionsDisabled(disabled) {
+    COMPONENTS.concat(["everything"]).forEach(function (comp) {
+      var btn = document.getElementById("rr-reset-btn-" + comp);
+      if (btn) {
+        if (disabled) btn.setAttribute("disabled", "");
+        else btn.removeAttribute("disabled");
+      }
+      var rbtn = document.getElementById("rr-rebuild-btn-" + comp);
+      if (rbtn) {
+        if (disabled) rbtn.setAttribute("disabled", "");
+        else rbtn.removeAttribute("disabled");
+      }
+    });
+  }
+
+  function fetchStatus() {
+    fetch("/api/reset/status")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        // Show/hide the not-configured banner.
+        var banner = document.getElementById("rr-not-configured");
+        if (banner) banner.hidden = !!data.configured;
+        // Disable action buttons when not configured.
+        setActionsDisabled(!data.configured);
+        // Populate per-component status lines.
+        COMPONENTS.forEach(function (comp) {
+          setStatusLine(comp, data.components && data.components[comp]);
+        });
+        // Wire enrichment gate for the graph card.
+        applyEnrichmentGate(data.enrichment);
+      })
+      .catch(function () { /* network error — leave status lines as-is */ });
+  }
+
+  // --- 2. SSE rebuild panes ---------------------------------------------------
+
+  // Track open EventSources so we can close them if needed.
+  var _sources = {};
+
+  function openRebuildLog(comp, enrich) {
+    var wrap = document.getElementById("rebuild-" + comp + "-log");
+    var lines = document.getElementById("rebuild-" + comp + "-lines");
+    var hint = document.getElementById("rebuild-" + comp + "-hint");
+    if (!wrap || !lines) return;
+
+    // Reveal the log pane.
+    wrap.hidden = false;
+    if (hint) hint.hidden = false;
+
+    // Clear any lines from a previous run so a re-run never interleaves stale
+    // output with fresh output.
+    lines.innerHTML = "";
+
+    // POST to start the rebuild.
+    var body = new URLSearchParams();
+    if (enrich) body.set("enrich", "true");
+
+    fetch("/api/rebuild/" + comp, { method: "POST", body: body })
+      .then(function (r) {
+        if (!r.ok) {
+          return r.json().then(function (d) {
+            var msg = document.createElement("div");
+            msg.className = "log-line";
+            msg.textContent = "Error: " + (d.error || r.status);
+            lines.appendChild(msg);
+          });
+        }
+        // Open SSE stream.
+        if (_sources[comp]) { try { _sources[comp].close(); } catch (e) {} }
+        var es = new EventSource("/api/rebuild/" + comp + "/stream");
+        _sources[comp] = es;
+
+        es.addEventListener("progress", function (evt) {
+          if (!evt.data) return;
+          var div = document.createElement("div");
+          div.innerHTML = evt.data; // data is already an HTML <div class="log-line">…</div>
+          var child = div.firstChild;
+          if (child) lines.appendChild(child);
+          // Auto-scroll to bottom.
+          lines.scrollTop = lines.scrollHeight;
+        });
+
+        es.addEventListener("done", function () {
+          es.close();
+          delete _sources[comp];
+          // Refresh status lines after rebuild completes.
+          fetchStatus();
+        });
+
+        es.onerror = function () {
+          es.close();
+          delete _sources[comp];
+        };
+      })
+      .catch(function (err) {
+        var msg = document.createElement("div");
+        msg.className = "log-line";
+        msg.textContent = "Network error: " + err;
+        lines.appendChild(msg);
+      });
+  }
+
+  // Wire Rebuild buttons.
+  COMPONENTS.forEach(function (comp) {
+    var btn = document.getElementById("rr-rebuild-btn-" + comp);
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var enrich = false;
+      if (comp === "graph") {
+        var sw = document.getElementById("rr-enrich-switch");
+        enrich = sw && sw.checked;
+      }
+      openRebuildLog(comp, enrich);
+    });
+  });
+
+  // --- 3. Reset confirm dialogs ----------------------------------------------
+
+  function wireResetDialog(comp) {
+    var openBtn = document.getElementById("rr-reset-btn-" + comp);
+    var dialog = document.getElementById("rr-dialog-" + comp);
+    var cancelBtn = document.getElementById("rr-dialog-" + comp + "-cancel");
+    var confirmBtn = document.getElementById("rr-dialog-" + comp + "-confirm");
+    if (!openBtn || !dialog || !cancelBtn || !confirmBtn) return;
+
+    openBtn.addEventListener("click", function () { dialog.show(); });
+    cancelBtn.addEventListener("click", function () { dialog.hide(); });
+
+    // After a successful HTMX reset POST, close dialog and refresh status.
+    confirmBtn.addEventListener("htmx:afterRequest", function (evt) {
+      var ok = evt.detail && (evt.detail.successful || (evt.detail.xhr && evt.detail.xhr.status === 200));
+      if (ok) {
+        dialog.hide();
+        fetchStatus();
+      }
+    });
+  }
+
+  ["vectors", "graph", "notes"].forEach(wireResetDialog);
+
+  // "Everything" dialog — typed-phrase gate.
+  (function () {
+    var openBtn = document.getElementById("rr-reset-btn-everything");
+    var dialog = document.getElementById("rr-dialog-everything");
+    var cancelBtn = document.getElementById("rr-dialog-everything-cancel");
+    var confirmBtn = document.getElementById("rr-dialog-everything-confirm");
+    var phraseInput = document.getElementById("rr-everything-phrase");
+    if (!openBtn || !dialog || !cancelBtn || !confirmBtn || !phraseInput) return;
+
+    var PHRASE = "reset all";
+
+    function updateConfirmState() {
+      var val = (phraseInput.value || "").trim();
+      if (val === PHRASE) {
+        confirmBtn.removeAttribute("disabled");
+      } else {
+        confirmBtn.setAttribute("disabled", "");
+      }
+    }
+
+    openBtn.addEventListener("click", function () {
+      // Clear the input each time the dialog opens so the state is fresh.
+      phraseInput.value = "";
+      confirmBtn.setAttribute("disabled", "");
+      dialog.show();
+    });
+    cancelBtn.addEventListener("click", function () { dialog.hide(); });
+
+    // sl-input fires sl-input on value changes.
+    phraseInput.addEventListener("sl-input", updateConfirmState);
+    // Also wire native input in case the browser fires it before Shoelace.
+    phraseInput.addEventListener("input", updateConfirmState);
+
+    // Also update the hidden form field on the HTMX POST so the server
+    // receives confirm=<typed value>.  The confirmBtn carries hx-post;
+    // HTMX will serialize closest form or the element's own attrs — we
+    // inject the param via htmx:configRequest.
+    document.body.addEventListener("htmx:configRequest", function (evt) {
+      if (evt.target !== confirmBtn) return;
+      evt.detail.parameters.confirm = (phraseInput.value || "").trim();
+    });
+
+    confirmBtn.addEventListener("htmx:afterRequest", function (evt) {
+      var ok = evt.detail && (evt.detail.successful || (evt.detail.xhr && evt.detail.xhr.status === 200));
+      if (ok) {
+        dialog.hide();
+        phraseInput.value = "";
+        fetchStatus();
+      }
+    });
+  })();
+
+  // --- Initial status load ---------------------------------------------------
+  fetchStatus();
+})();
+
+// RR6: entry-guard for the Reset & Rebuild sidebar link. Intercept clicks on
+// a[href="/setup/reset"], show a confirm dialog, and navigate only on "Continue".
+// Uses delegated click on document.body so it works regardless of when the
+// sidebar is rendered (HTMX swaps, etc.). Guard for null elements defensively.
+(function () {
+  "use strict";
+
+  function init() {
+    var dialog = document.getElementById("reset-entry-guard");
+    var continueBtn = document.getElementById("reset-entry-continue");
+    var cancelBtn = document.getElementById("reset-entry-cancel");
+    if (!dialog || !continueBtn || !cancelBtn) return; // dialog not in DOM (shouldn't happen)
+
+    // Delegated click: intercept any click on the Reset & Rebuild nav link.
+    document.body.addEventListener("click", function (evt) {
+      var anchor = evt.target && evt.target.closest('a[href="/setup/reset"]');
+      if (!anchor) return;
+      evt.preventDefault();
+      dialog.show();
+    });
+
+    // "Continue" navigates to the reset page and closes the dialog.
+    continueBtn.addEventListener("click", function () {
+      dialog.hide();
+      window.location.href = "/setup/reset";
+    });
+
+    // "Cancel" just closes the dialog.
+    cancelBtn.addEventListener("click", function () {
+      dialog.hide();
+    });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();

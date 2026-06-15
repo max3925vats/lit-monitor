@@ -71,5 +71,13 @@
     </div>
 
     {% include "_partials/ask_drawer.html" %}
+
+    {# RR6: entry-guard for the Reset & Rebuild page. Intercept the sidebar link,
+       show this dialog first, and navigate only on explicit "Continue". #}
+    <sl-dialog label="Open Reset &amp; Rebuild?" id="reset-entry-guard">
+      <p>This opens maintenance tools that can permanently delete data (databases, generated notes). Continue?</p>
+      <sl-button slot="footer" variant="default" id="reset-entry-cancel">Cancel</sl-button>
+      <sl-button slot="footer" variant="danger" id="reset-entry-continue">Continue</sl-button>
+    </sl-dialog>
   </body>
 </html>

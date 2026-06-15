@@ -82,3 +82,16 @@ def test_paper_card_title_whitespace_trimmed():
         "expected an sl-card.paper-card::part(body) padding override to trim "
         "whitespace above the title"
     )
+
+
+# --- RR review: .card[hidden] must override .card{display:block} ------------
+# A `.card` element with the `hidden` attribute (e.g. the Reset & Rebuild
+# "Not set up yet" banner) was always visible: the author rule
+# `.card { display: block }` beats the UA `[hidden] { display: none }` (author
+# origin wins), so the `hidden` attribute was ignored. An explicit
+# `.card[hidden] { display: none !important }` is required — mirrors the
+# existing `.live-progress-wrap[hidden]` fix.
+def test_card_hidden_attribute_is_honored():
+    assert re.search(
+        r"\.card\[hidden\]\s*\{[^}]*display:\s*none[^}]*\}", CSS
+    ), ".card[hidden] { display: none } rule missing — hidden .card elements won't hide"

@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Reset &amp; Rebuild — lit-monitor{% endblock %}
+{% block content %}
+<section id="reset-rebuild-page" class="dashboard">
+  <div class="page-header">
+    <h1>Reset &amp; Rebuild</h1>
+    <p class="field-note">
+      Your extractions live in the state database; vectors, the knowledge graph,
+      and your notes are rebuilt from it. Resetting a single component (vectors, graph, or notes) is safe — rebuild
+      it from your saved extractions without re-running the LLM.
+      &ldquo;Reset Everything&rdquo; also deletes your saved extractions and your
+      generated notes.
+    </p>
+  </div>
+
+  {# Not-configured banner — shown by JS when /api/reset/status returns configured=false. #}
+  <div id="rr-not-configured" class="card warning" hidden>
+    <h2>Not set up yet</h2>
+    <p>Finish the <a href="/setup">setup wizard</a> first — there is nothing to
+       reset or rebuild until a collection has been configured and brain-built.</p>
+  </div>
+
+  {# ── Vectors card ── #}
+  <div class="card rr-card" id="rr-card-vectors">
+    <h2>Vectors (semantic search index)</h2>
+    <p>The ChromaDB embeddings used for similarity search. Rebuilds from the
+       state DB with the local embedding model — no LLM, no notes touched.</p>
+    <p class="field-note rr-status-line" id="rr-status-vectors">Loading…</p>
+    <div class="card-action rr-actions">
+      <sl-button variant="danger" size="small" id="rr-reset-btn-vectors">Reset</sl-button>
+      <sl-button variant="primary" size="small" id="rr-rebuild-btn-vectors">Rebuild</sl-button>
+    </div>
+    <div id="rebuild-vectors-log" class="rebuild-log" hidden>
+      <p class="field-note live-progress-hint" id="rebuild-vectors-hint">
+        Rebuild log will appear here…
+      </p>
+      <div class="live-progress-pane" id="rebuild-vectors-lines"></div>
+    </div>
+  </div>
+
+  {# ── Graph card ── #}
+  <div class="card rr-card" id="rr-card-graph">
+    <h2>Knowledge graph</h2>
+    <p>The KuzuDB entity/relationship graph. Base rebuild reconstructs it
+       deterministically from your saved extractions (no LLM).</p>
+    <p class="field-note rr-status-line" id="rr-status-graph">Loading…</p>
+    <div class="rr-enrich-row">
+      <sl-switch id="rr-enrich-switch" name="enrich" size="small">
+        Include LLM enrichment
+      </sl-switch>
+      <small class="field-note" id="rr-enrich-note" hidden></small>
+    </div>
+    <div class="card-action rr-actions">
+      <sl-button variant="danger" size="small" id="rr-reset-btn-graph">Reset</sl-button>
+      <sl-button variant="primary" size="small" id="rr-rebuild-btn-graph">Rebuild</sl-button>
+    </div>
+    <div id="rebuild-graph-log" class="rebuild-log" hidden>
+      <p class="field-note live-progress-hint" id="rebuild-graph-hint">
+        Rebuild log will appear here…
+      </p>
+      <div class="live-progress-pane" id="rebuild-graph-lines"></div>
+    </div>
+  </div>
+
+  {# ── Notes card ── #}
+  <div class="card rr-card" id="rr-card-notes">
+    <h2>Obsidian notes</h2>
+    <p>The Markdown notes lit-monitor generated in your vault
+       (Papers/Digests/Synthesis). Rebuilds (re-renders) from the state DB —
+       no LLM.</p>
+    <p class="field-note rr-status-line" id="rr-status-notes">Loading…</p>
+    <div class="card-action rr-actions">
+      <sl-button variant="danger" size="small" id="rr-reset-btn-notes">Reset</sl-button>
+      <sl-button variant="primary" size="small" id="rr-rebuild-btn-notes">Rebuild</sl-button>
+    </div>
+    <div id="rebuild-notes-log" class="rebuild-log" hidden>
+      <p class="field-note live-progress-hint" id="rebuild-notes-hint">
+        Rebuild log will appear here…
+      </p>
+      <div class="live-progress-pane" id="rebuild-notes-lines"></div>
+    </div>
+  </div>
+
+  {# ── Reset Everything card (nuclear) ── #}
+  <div class="card rr-card rr-card-nuclear" id="rr-card-everything">
+    <h2>Reset Everything</h2>
+    <p>Deletes the state database (your saved extractions), the vector store,
+       the knowledge graph, AND your generated notes. This cannot be undone
+       without re-running brain-build (which re-extracts via the LLM).</p>
+    <div class="card-action rr-actions">
+      <sl-button variant="danger" size="small" id="rr-reset-btn-everything">
+        Reset Everything
+      </sl-button>
+    </div>
+    <p class="field-note">
+      Rebuild everything with a full <a href="/brain-build">brain-build</a>.
+    </p>
+  </div>
+</section>
+
+{# ── Confirm dialogs — one per reset component ── #}
+
+<sl-dialog label="Reset vector store?" id="rr-dialog-vectors">
+  <p>Delete the ChromaDB vector store? You can rebuild it from your saved
+     extractions — no LLM needed.</p>
+  <sl-button slot="footer" variant="default" id="rr-dialog-vectors-cancel">Cancel</sl-button>
+  <sl-button slot="footer" variant="danger" id="rr-dialog-vectors-confirm"
+             hx-post="/api/reset/vectors"
+             hx-swap="none">Continue — Reset Vectors</sl-button>
+</sl-dialog>
+
+<sl-dialog label="Reset knowledge graph?" id="rr-dialog-graph">
+  <p>Delete the KuzuDB knowledge graph? You can rebuild it from your saved
+     extractions — base rebuild needs no LLM.</p>
+  <sl-button slot="footer" variant="default" id="rr-dialog-graph-cancel">Cancel</sl-button>
+  <sl-button slot="footer" variant="danger" id="rr-dialog-graph-confirm"
+             hx-post="/api/reset/graph"
+             hx-swap="none">Continue — Reset Graph</sl-button>
+</sl-dialog>
+
+<sl-dialog label="Reset Obsidian notes?" id="rr-dialog-notes">
+  <p>Delete the generated Markdown notes from your vault? You can rebuild them
+     from your saved extractions — no LLM needed.</p>
+  <sl-button slot="footer" variant="default" id="rr-dialog-notes-cancel">Cancel</sl-button>
+  <sl-button slot="footer" variant="danger" id="rr-dialog-notes-confirm"
+             hx-post="/api/reset/notes"
+             hx-swap="none">Continue — Reset Notes</sl-button>
+</sl-dialog>
+
+<sl-dialog label="Reset Everything?" id="rr-dialog-everything">
+  <p><strong>This deletes your saved extractions, vector store, knowledge
+     graph, AND generated notes.</strong> To recover you must re-run brain-build,
+     which re-extracts via the LLM.</p>
+  <p>Type <code>reset all</code> to confirm:</p>
+  <sl-input id="rr-everything-phrase"
+            placeholder="reset all"
+            autocomplete="off"
+            spellcheck="false"></sl-input>
+  <sl-button slot="footer" variant="default" id="rr-dialog-everything-cancel">Cancel</sl-button>
+  <sl-button slot="footer" variant="danger" id="rr-dialog-everything-confirm"
+             disabled
+             hx-post="/api/reset/everything"
+             hx-swap="none">Continue — Reset Everything</sl-button>
+</sl-dialog>
+{% endblock %}

@@ -33,10 +33,12 @@ from lit_monitor.setup.reset import (
     ResetResult,
     ResetTarget,
     _format_size_bytes,
+    graph_targets,
     perform_state_reset,
     perform_vault_reset,
     state_targets,
     vault_targets,
+    vectors_targets,
 )
 
 logger = logging.getLogger(__name__)
@@ -2633,6 +2635,93 @@ def reset_all(ctx: click.Context) -> None:
     _setup_logging("reset_all", verbose=ctx.obj.get("verbose", False))
     _run_state_reset(ctx)
     _run_vault_reset(ctx)
+
+
+def _run_vectors_reset(ctx: click.Context) -> None:
+    """Shared body for ``reset vectors``.
+
+    Wipes the ChromaDB persist directory, then resets the
+    ``embeddings_indexed`` flag on every paper row so the next
+    ``embeddings rebuild`` re-embeds from scratch.
+    """
+    try:
+        config = _make_config()
+    except (FileNotFoundError, KeyError, ValueError, RuntimeError) as exc:
+        click.echo(f"Error loading config: {exc}", err=True)
+        click.echo(
+            "Run 'lit-monitor first-run' or 'lit-monitor diagnose' first.",
+            err=True,
+        )
+        sys.exit(1)
+    targets = vectors_targets(config)
+    _render_targets(targets, "About to PERMANENTLY DELETE (vector store):")
+    _render_preserved([
+        "state DB — your extractions (vectors rebuild from it)",
+        "knowledge graph",
+        "vault notes",
+        "credentials (~/.config/lit-monitor/config.toml)",
+    ])
+    if not _confirm_phrase("reset vectors"):
+        click.echo("Aborted — nothing deleted.")
+        return
+    click.echo()
+    results = perform_state_reset(targets)
+    state_db = _make_state_db(config)
+    state_db.reset_embeddings_indexed()
+    _render_results(results)
+    click.echo()
+    click.echo("Next: run 'lit-monitor embeddings rebuild --confirm' to re-embed.")
+
+
+def _run_graph_reset(ctx: click.Context) -> None:
+    """Shared body for ``reset graph``.
+
+    Wipes the KuzuDB knowledge graph, then resets the graph-stamp columns on
+    every paper row so the next ``graph backfill`` re-indexes from scratch.
+    """
+    try:
+        config = _make_config()
+    except (FileNotFoundError, KeyError, ValueError, RuntimeError) as exc:
+        click.echo(f"Error loading config: {exc}", err=True)
+        click.echo(
+            "Run 'lit-monitor first-run' or 'lit-monitor diagnose' first.",
+            err=True,
+        )
+        sys.exit(1)
+    targets = graph_targets(config)
+    _render_targets(targets, "About to PERMANENTLY DELETE (knowledge graph):")
+    _render_preserved([
+        "state DB — your extractions (graph rebuilds from it)",
+        "vector store",
+        "vault notes",
+        "credentials (~/.config/lit-monitor/config.toml)",
+    ])
+    if not _confirm_phrase("reset graph"):
+        click.echo("Aborted — nothing deleted.")
+        return
+    click.echo()
+    results = perform_state_reset(targets)
+    state_db = _make_state_db(config)
+    state_db.reset_graph_stamps()
+    _render_results(results)
+    click.echo()
+    click.echo("Next: run 'lit-monitor graph backfill --all' to rebuild the graph.")
+
+
+@reset_group.command("vectors")
+@click.pass_context
+def reset_vectors(ctx: click.Context) -> None:
+    """Wipe the ChromaDB vector store (rebuild with ``embeddings rebuild``)."""
+    _setup_logging("reset_vectors", verbose=ctx.obj.get("verbose", False))
+    _run_vectors_reset(ctx)
+
+
+@reset_group.command("graph")
+@click.pass_context
+def reset_graph(ctx: click.Context) -> None:
+    """Wipe the KuzuDB knowledge graph (rebuild with ``graph backfill --all``)."""
+    _setup_logging("reset_graph", verbose=ctx.obj.get("verbose", False))
+    _run_graph_reset(ctx)
 
 
 # ---------------------------------------------------------------------------

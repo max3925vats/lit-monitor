@@ -566,6 +566,12 @@ a:hover {
 .live-progress-wrap { margin-top: 1.5rem; }
 .live-progress-wrap[hidden] { display: none !important; }
 .live-progress { margin: 1rem 0; }
+
+/* `.card { display: block }` (author origin) otherwise beats the UA
+   `[hidden] { display: none }` rule, so a `.card` with the `hidden` attribute
+   (e.g. the Reset & Rebuild "Not set up yet" banner) would stay visible even
+   when JS sets `hidden`. Restore the attribute's effect for all `.card`s. */
+.card[hidden] { display: none !important; }
 .live-progress-pane {
   height: 30vh;            /* fixed height so the pane stops growing and the
                               browser HAS something to scroll inside */
@@ -1448,3 +1454,27 @@ sl-button.btn-obsidian::part(base):hover {
 .last-run-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 1.5rem; margin: 0; }
 .last-run-line > span { white-space: nowrap; }
 .last-run-line .stat-eyebrow { display: inline; margin-right: 0.4rem; }
+
+/* RR7: Reset & Rebuild console page
+   ── rr-card: breathing room between consecutive cards (replaces the generic
+      .card gap; .card itself has no margin).
+   ── rr-card-nuclear: red accent border signals destructive intent.
+   ── rr-actions: inline button row (Reset + Rebuild side-by-side), sizes to
+      content per rubric #1 (no full-width stretch).
+   ── rr-enrich-row: switch + note laid out in a compact column.
+   ── rebuild-log: height-capped scroll pane (rubric #15); hidden until rebuild
+      is triggered (JS reveals it).  The inner .live-progress-pane handles the
+      actual scroll region — reuses existing log styles.
+*/
+.rr-card { margin-top: 1.25rem; }
+.rr-card-nuclear { border-color: var(--danger-fg); }
+.rr-card-nuclear h2 { color: var(--danger-fg); }
+.rr-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; margin: 1rem 0 0.5rem; }
+.rr-enrich-row { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.75rem; }
+.rr-enrich-row sl-switch { margin-top: 0; }
+.rebuild-log { margin-top: 0.75rem; }
+.rebuild-log .live-progress-pane {
+  max-height: 20rem;  /* cap so one section can't stretch the whole page */
+  height: 20rem;
+  min-height: 0;
+}
