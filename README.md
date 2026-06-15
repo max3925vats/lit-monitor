@@ -57,18 +57,6 @@ searched, ranked, extracted into structured notes, and filed in your Obsidian
 vault, on a schedule — so staying current becomes a digest you skim, not a Google
 Scholar tab and an inbox of journal alerts you'll never open.
 
-**How it compares to ResearchRabbit, Litmaps, and Connected Papers.** Those tools
-excel at *interactive citation-graph exploration* — seed a paper and fan out
-visually across what cites it — in a polished, hosted web app. lit-monitor doesn't
-do that visual exploration. What it does instead: it's **local-first and private**
-(runs on your machine, your library never leaves it, no account), **built around
-the tools you already use** (Zotero in, Obsidian out), and it **monitors on a
-schedule against your whole library** rather than a hand-picked seed — filing
-structured notes and a queryable knowledge graph as it goes. So it's less a
-replacement for those tools' citation graph than a complement: an open-source,
-self-hosted answer to *"what should land in my reading queue this week, given
-everything I've ever saved?"*
-
 ## Features
 
 - **Library-relative ranking, augmentable with the knowledge graph.** Recurring
