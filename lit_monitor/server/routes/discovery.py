@@ -19,7 +19,7 @@ import importlib.util
 import logging
 import os
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import markdown
@@ -52,6 +52,39 @@ _VALID_RAG_MODES = ("vector", "graph", "hybrid")
 
 # P4: page size for the paginated Run History card on the dashboard.
 _RUNS_PAGE_SIZE = 10
+
+# Task 8: fallback window when no coverage_until frontier exists yet.
+_DEFAULT_WINDOW_DAYS = 14
+
+
+def _window_defaults() -> dict:
+    """Compute the at-load search-window defaults for the time-range card.
+
+    Mirrors the adaptive frontier an untouched run would use: N = (today -
+    coverage_until).days, since = coverage_until. When no frontier is set yet
+    (fresh install), fall back to a 14-day rolling window (matching the
+    pipeline's first-run behaviour). Best-effort and 500-leak-safe — any failure
+    yields the 14-day fallback so the card still renders. The returned ``days``
+    is clamped to >= 0 (a future-dated frontier would otherwise go negative).
+    """
+    today = date.today()
+    frontier: date | None = None
+    db = _safe_db()
+    if db is not None:
+        try:
+            from lit_monitor.pipelines.discovery import read_coverage_until
+
+            frontier = read_coverage_until(db)
+        except Exception:
+            logger.warning("read_coverage_until failed", exc_info=True)
+            frontier = None
+    if frontier is None:
+        since = today - timedelta(days=_DEFAULT_WINDOW_DAYS)
+        return {"window_default_days": _DEFAULT_WINDOW_DAYS,
+                "window_default_since": since.isoformat()}
+    days = max((today - frontier).days, 0)
+    return {"window_default_days": days,
+            "window_default_since": frontier.isoformat()}
 
 
 def _graph_extra_available() -> bool:
@@ -218,6 +251,10 @@ def dashboard(
             "runs_next_offset": offset + _RUNS_PAGE_SIZE,
             "digest_options": digest_options,
             "db_unavailable": db is None,
+            # Task 8: at-load defaults for the search time-range card (summary +
+            # pre-populated rolling inputs). Computed from the coverage_until
+            # frontier; falls back to a 14-day window when unset.
+            **_window_defaults(),
         },
     )
 
@@ -371,15 +408,68 @@ def discovery_run_detail(request: Request, run_id: int) -> HTMLResponse:
 # ---------------------------------------------------------------------------
 
 
+def _window_argv(
+    *,
+    window_mode: str,
+    since_days: str,
+    since: str,
+    from_date: str,
+    to_date: str,
+) -> list[str]:
+    """Map the time-range card's selection to the CLI's window flags.
+
+    There is ONE window-resolution path (the CLI's ``resolve_window`` + its
+    mutual-exclusivity validation); the web form only chooses which flags to
+    pass. ``default`` (or any unrecognized/empty mode, or a mode whose inputs are
+    blank) appends NOTHING → the run uses the adaptive frontier. Values are
+    passed through verbatim; the CLI validates date format and ranges and will
+    refuse a malformed spawn loudly rather than silently mis-running.
+    """
+    if window_mode == "rolling":
+        # Prefer the explicit day count; fall back to the date if only that was
+        # written. (site.js keeps them in sync, so usually since_days is set.)
+        if since_days:
+            return ["--since-days", since_days]
+        if since:
+            return ["--since", since]
+        return []
+    if window_mode == "range":
+        if from_date and to_date:
+            return ["--from", from_date, "--to", to_date]
+        return []
+    # 'default' / unknown → adaptive frontier (no flags).
+    return []
+
+
 async def _spawn_discovery(
-    *, dry_run: bool, rag_mode: str
+    *,
+    dry_run: bool,
+    rag_mode: str,
+    window_mode: str = "default",
+    since_days: str = "",
+    since: str = "",
+    from_date: str = "",
+    to_date: str = "",
 ) -> asyncio.subprocess.Process:
-    """Build the argv and spawn ``lit-monitor run [--dry-run] --rag-mode <mode>``."""
+    """Build the argv and spawn ``lit-monitor run`` with the chosen flags.
+
+    Appends ``[--dry-run]``, ``--rag-mode <mode>`` (FG-3), and the window flags
+    matching ``window_mode`` (Task 8): ``--since-days N`` / ``--since D`` /
+    ``--from D --to D``; ``default`` appends no window flags (adaptive frontier).
+    """
     argv = ["uv", "run", "lit-monitor", "run"]
     if dry_run:
         argv.append("--dry-run")
     # FG-3: thread the chosen retrieval mode through to the CLI.
     argv += ["--rag-mode", rag_mode]
+    # Task 8: thread the search-window selection through to the CLI flags.
+    argv += _window_argv(
+        window_mode=window_mode,
+        since_days=since_days,
+        since=since,
+        from_date=from_date,
+        to_date=to_date,
+    )
     logger.info("Spawning discovery: %s", " ".join(argv))
     return await asyncio.create_subprocess_exec(*argv, cwd=str(_REPO_ROOT))
 
@@ -389,6 +479,11 @@ async def discovery_start(
     request: Request,
     dry_run: bool = Form(False),
     rag_mode: str = Form(""),
+    window_mode: str = Form("default"),
+    since_days: str = Form(""),
+    since: str = Form(""),
+    from_date: str = Form(""),
+    to_date: str = Form(""),
 ) -> JSONResponse:
     """Spawn a discovery run subprocess. Refuses if a run is already in flight.
 
@@ -397,6 +492,12 @@ async def discovery_start(
     without the ``[graph]`` extra installed is refused up-front with a visible
     warning (mirrors the CLI W4 hard error) rather than spawning a run that would
     crash mid-flight.
+
+    Task 8: reads the search-window selection (``window_mode`` +
+    ``since_days``/``since``/``from_date``/``to_date``) and threads it into the
+    spawned argv as the matching CLI flags. ``default`` (untouched) appends no
+    window flags → the adaptive frontier is used (unchanged behaviour). The CLI
+    owns window validation (mutual exclusivity, date format/ranges).
     """
     runtime = get_runtime()
     slot = runtime.processes["discovery"]
@@ -430,7 +531,15 @@ async def discovery_start(
                 status_code=409,
             )
         try:
-            slot.process = await _spawn_discovery(dry_run=dry_run, rag_mode=mode)
+            slot.process = await _spawn_discovery(
+                dry_run=dry_run,
+                rag_mode=mode,
+                window_mode=window_mode,
+                since_days=since_days,
+                since=since,
+                from_date=from_date,
+                to_date=to_date,
+            )
             slot.started_at = datetime.now(UTC).isoformat(timespec="seconds")
             slot.dry_run = dry_run
         except Exception:  # noqa: BLE001 — surface any spawn failure
@@ -493,6 +602,8 @@ async def discovery_controls(request: Request) -> HTMLResponse:
             # FG-3: default retrieval mode for the rag_mode select (config-driven).
             "default_rag_mode": _default_rag_mode(),
             "rag_modes": _VALID_RAG_MODES,
+            # Task 8: defaults for the collapsed-summary line inside controls.
+            **_window_defaults(),
         },
     )
 

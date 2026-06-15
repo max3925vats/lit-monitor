@@ -960,3 +960,156 @@ class TestConversionHeadline:
         # The ingested badge is emitted by paper_card.html for rows with ingested=1.
         # sl-badge variant="success" pill — at least one should appear for 10.9/0.
         assert 'variant="success"' in r.text
+
+
+# ---------------------------------------------------------------------------
+# Task 8: search time-range card — argv mapping (window_mode -> CLI flags)
+# ---------------------------------------------------------------------------
+
+
+class TestDiscoveryWindowArgvMapping:
+    """POST /api/discovery/start threads the window selection into the spawned
+    argv as the matching CLI flags.
+
+    These are the load-bearing tests: they patch ``create_subprocess_exec`` (NOT
+    ``_spawn_discovery``) so the PRODUCTION argv-builder (``_window_argv``) runs
+    end-to-end — mirroring ``test_routes_discovery_rag_mode.py``. No real
+    subprocess is ever spawned.
+    """
+
+    @pytest.fixture
+    def captured_argv(self, client, monkeypatch):
+        """Patch the subprocess spawn; return a dict that receives the argv."""
+        captured: dict = {}
+
+        async def _fake_exec(*argv, **kwargs):
+            captured["argv"] = list(argv)
+            fake = MagicMock()
+            fake.returncode = None
+            fake.pid = 4242
+            return fake
+
+        monkeypatch.setattr(
+            "lit_monitor.server.routes.discovery.asyncio.create_subprocess_exec",
+            _fake_exec,
+        )
+        # vector mode needs no [graph] extra, so the start always proceeds.
+        monkeypatch.setattr(
+            "lit_monitor.server.routes.discovery._default_rag_mode",
+            lambda: "vector",
+        )
+        return captured
+
+    def test_range_mode_appends_from_and_to(self, client, captured_argv):
+        r = client.post(
+            "/api/discovery/start",
+            data={
+                "rag_mode": "vector",
+                "window_mode": "range",
+                "from_date": "2025-08-01",
+                "to_date": "2025-09-01",
+            },
+        )
+        assert r.status_code == 200, r.text
+        flat = " ".join(captured_argv["argv"])
+        assert "--from 2025-08-01 --to 2025-09-01" in flat
+
+    def test_rolling_mode_appends_since_days(self, client, captured_argv):
+        r = client.post(
+            "/api/discovery/start",
+            data={
+                "rag_mode": "vector",
+                "window_mode": "rolling",
+                "since_days": "30",
+            },
+        )
+        assert r.status_code == 200, r.text
+        flat = " ".join(captured_argv["argv"])
+        assert "--since-days 30" in flat
+        # The day-count path wins; no --since when since_days is present.
+        assert "--since " not in flat
+
+    def test_rolling_mode_falls_back_to_since_date(self, client, captured_argv):
+        """When only a Since date is supplied (no day count), use --since."""
+        r = client.post(
+            "/api/discovery/start",
+            data={
+                "rag_mode": "vector",
+                "window_mode": "rolling",
+                "since": "2025-07-15",
+            },
+        )
+        assert r.status_code == 200, r.text
+        flat = " ".join(captured_argv["argv"])
+        assert "--since 2025-07-15" in flat
+        assert "--since-days" not in flat
+
+    def test_default_mode_appends_no_window_flags(self, client, captured_argv):
+        r = client.post(
+            "/api/discovery/start",
+            data={"rag_mode": "vector", "window_mode": "default"},
+        )
+        assert r.status_code == 200, r.text
+        flat = " ".join(captured_argv["argv"])
+        for flag in ("--since-days", "--since", "--from", "--to"):
+            assert flag not in flat, f"default mode must not append {flag}"
+
+    def test_missing_window_mode_defaults_to_no_flags(self, client, captured_argv):
+        """A start with no window fields at all (Form default) = adaptive frontier."""
+        r = client.post(
+            "/api/discovery/start", data={"rag_mode": "vector"}
+        )
+        assert r.status_code == 200, r.text
+        flat = " ".join(captured_argv["argv"])
+        for flag in ("--since-days", "--since", "--from", "--to"):
+            assert flag not in flat
+
+    def test_range_mode_with_missing_to_appends_nothing(self, client, captured_argv):
+        """A partial range (only From) appends no window flags — the CLI owns
+        pairing validation; the web side never sends a half range as flags."""
+        r = client.post(
+            "/api/discovery/start",
+            data={
+                "rag_mode": "vector",
+                "window_mode": "range",
+                "from_date": "2025-08-01",
+            },
+        )
+        assert r.status_code == 200, r.text
+        flat = " ".join(captured_argv["argv"])
+        assert "--from" not in flat and "--to" not in flat
+
+
+class TestDiscoveryWindowCardRender:
+    """The card renders on the page (full load) and the controls fragment carries
+    the window defaults."""
+
+    def test_window_card_present_on_dashboard(self, client, empty_db):
+        rt = _make_fake_runtime(empty_db)
+        with patch(
+            "lit_monitor.server.routes.discovery.get_runtime", return_value=rt
+        ):
+            r = client.get("/discovery")
+        assert r.status_code == 200
+        assert 'id="discovery-window-card"' in r.text
+        assert 'summary="Search time range"' in r.text
+        # The radio group with the three modes is present.
+        assert 'name="window_mode"' in r.text
+        for mode in ("default", "rolling", "range"):
+            assert f'value="{mode}"' in r.text
+
+    def test_window_card_summary_falls_back_to_14_days(self, client, empty_db):
+        """No coverage_until frontier (empty db) -> 14-day fallback summary."""
+        rt = _make_fake_runtime(empty_db)
+        with patch(
+            "lit_monitor.server.routes.discovery.get_runtime", return_value=rt
+        ):
+            r = client.get("/discovery")
+        assert r.status_code == 200
+        assert "last 14 days" in r.text
+
+    def test_start_form_has_stable_id(self, client):
+        """The start form carries a stable id so site.js can target its POST."""
+        r = client.get("/api/discovery/controls")
+        assert r.status_code == 200
+        assert 'id="discovery-start-form"' in r.text
