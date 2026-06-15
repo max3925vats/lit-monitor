@@ -730,3 +730,13 @@ def test_relink_note_survives_replace_failure(tmp_path, monkeypatch):
         if p.name.startswith(".") and p.name.endswith(".tmp")
     ]
     assert leftovers == [], f"leaked temp files: {leftovers}"
+
+
+@pytest.mark.unit
+def test_replace_persist_zone_reports_miss():
+    from lit_monitor.obsidian_tools.relink import _replace_persist_zone_content
+    updated, replaced = _replace_persist_zone_content("no zones here\n", "related_work", "BODY")
+    assert replaced is False and updated == "no zones here\n"
+    note2 = '{% persist "related_work" %}old{% endpersist %}'
+    updated2, replaced2 = _replace_persist_zone_content(note2, "related_work", "NEW")
+    assert replaced2 is True and "NEW" in updated2
