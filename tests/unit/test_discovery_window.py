@@ -1,4 +1,5 @@
 from datetime import date
+
 from lit_monitor.search.window import SearchWindow, resolve_window
 
 

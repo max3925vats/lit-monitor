@@ -29,6 +29,9 @@ def resolve_window(
         return SearchWindow(since=today - timedelta(days=since_days), until=None)
     if since is not None:
         return SearchWindow(since=since, until=None)
+    # from_date+to_date: both required. A partial range (only one supplied)
+    # falls through to None (a silent no-op) — the caller validates
+    # exclusivity/pairing upstream (CLI flags, Task 7), so it never reaches here.
     if from_date is not None and to_date is not None:
         return SearchWindow(since=from_date, until=to_date)
     return None
