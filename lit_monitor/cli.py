@@ -2033,8 +2033,8 @@ def obsidian_build_citation_graph(
 ) -> None:
     """Resolve key_citations to DOIs via S2 and write citation_edges rows.
 
-    Requires pass-4 extraction to have run for the target paper(s).
-    Use ``lit-monitor obsidian re-extract --pass 4 --scope all`` first.
+    Requires complex-phase extraction (key_citations) to have run for the
+    target paper(s). Run ``lit-monitor obsidian re-extract --doi <doi> --phase complex`` first.
     """
     from lit_monitor.core.config import Config
     from lit_monitor.core.state_db import StateDB

@@ -126,6 +126,7 @@ def switch_provider(
                 "Failed to clean up half-built collection %r after a failed "
                 "rebuild: %s",
                 new_collection, cleanup_exc,
+                exc_info=True,
             )
         raise
 

@@ -126,3 +126,11 @@ def test_non_request_exception_is_not_retried():
         with pytest.raises(ValueError, match="not json"):
             http_client.get_json("https://api.example/badjson")
     assert mock_get.call_count == 1
+
+
+@pytest.mark.unit
+def test_user_agent_is_not_hardcoded_legacy_version():
+    from lit_monitor.core import http_client
+    ua = http_client._SESSION.headers["User-Agent"]
+    assert ua.startswith("lit-monitor/")
+    assert "0.1.0" not in ua
