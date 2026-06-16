@@ -459,7 +459,7 @@ def _process_paper(
             "zotero_key": zotero_key,
             "status": "no_markdown",
             "source_type": source_type,
-            "first_seen_date": str(date.today()),
+            "first_seen_date": state_db.first_surfaced_date(doi) or str(date.today()),
             "last_updated": _now(),
         })
         return False, []  # not counted as processed
@@ -561,7 +561,7 @@ def _process_paper(
         "year": year,
         "journal": journal,
         "zotero_key": zotero_key,
-        "first_seen_date": str(date.today()),
+        "first_seen_date": state_db.first_surfaced_date(doi) or str(date.today()),
         "source_type": source_type,
         "extraction_json": json.dumps(extraction),
         "extraction_provider": _llm_provider_str(llm),
@@ -582,7 +582,7 @@ def _process_paper(
         "year": year,
         "journal": journal,
         "zotero_key": zotero_key,
-        "first_seen_date": str(date.today()),
+        "first_seen_date": state_db.first_surfaced_date(doi) or str(date.today()),
         "keywords": keywords,
         "themes": themes,
         "tracked_author": False,

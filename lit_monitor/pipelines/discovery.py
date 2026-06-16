@@ -1289,7 +1289,7 @@ def _run_ingestion(
                     "extraction_provider": _llm_provider_str(llm),
                     "extraction_model": _llm_model_str(llm),
                     "keywords_json": keywords,
-                    "first_seen_date": str(date.today()),
+                    "first_seen_date": state_db.first_surfaced_date(doi) or str(date.today()),
                     "last_updated": _now(),
                 })
                 # Assign vocabulary themes from Zotero tags (B2).
@@ -1302,7 +1302,7 @@ def _run_ingestion(
                     "year": year,
                     "journal": journal,
                     "zotero_key": zotero_key,
-                    "first_seen_date": str(date.today()),
+                    "first_seen_date": state_db.first_surfaced_date(doi) or str(date.today()),
                     "keywords": keywords,
                     "themes": themes,
                     "tracked_author": item.get("tracked_author", False),

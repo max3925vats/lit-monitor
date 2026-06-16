@@ -1648,3 +1648,20 @@ def test_first_surfaced_date_none_for_unsurfaced(tmp_path):
     assert db.first_surfaced_date("10.1/never") is None
     assert db.first_surfaced_date("") is None
     assert db.first_surfaced_date("   ") is None
+
+
+def test_first_seen_date_provenance_expression(tmp_path):
+    """The expression ingest sites use: first_surfaced_date(doi) when surfaced,
+    else today."""
+    from datetime import date
+
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    run_id = db.start_discovery_run({}, trigger="manual")
+    db.add_discovery_paper(run_id=run_id, doi="10.1/surfaced", title="t", score=0.5,
+                           rationale="", ingested=False)
+    with db._connect() as conn:
+        conn.execute("UPDATE discovery_runs SET started_at = ? WHERE id = ?",
+                     ("2025-02-03 09:00:00", run_id))
+    assert (db.first_surfaced_date("10.1/surfaced") or str(date.today())) == "2025-02-03"
+    assert (db.first_surfaced_date("10.1/never") or str(date.today())) == str(date.today())
