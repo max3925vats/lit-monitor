@@ -1601,3 +1601,15 @@ def test_ner_and_rel_backfill_queries_exclude_null_extraction(tmp_path):
     ner_dois = {p["doi"] for p in db.get_papers_for_ner_backfill()}
     rel_dois = {p["doi"] for p in db.get_papers_for_rel_backfill()}
     assert ner_dois == {"10.1/extracted"} and rel_dois == {"10.1/extracted"}
+
+
+def test_get_extracted_by_source_type_excludes_null_extraction(tmp_path):
+    """get_extracted_by_source_type must return only papers with non-NULL
+    extraction_json, applying EXTRACTED_PAPER_SQL at the SQL level."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    db.upsert_paper({"doi": "10.1/e", "source_type": "paper",
+                     "status": "extraction_complete", "extraction_json": '{"x":1}'})
+    db.upsert_paper({"doi": "10.1/c", "source_type": "paper", "status": "discovered"})
+    dois = {p["doi"] for p in db.get_extracted_by_source_type("paper")}
+    assert dois == {"10.1/e"}

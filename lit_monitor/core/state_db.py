@@ -720,6 +720,17 @@ class StateDB:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def get_extracted_by_source_type(self, source_type: str) -> list[dict]:
+        """Like get_all_by_source_type, but only papers that have been extracted
+        (the canonical 'indexable paper' set — see EXTRACTED_PAPER_SQL). Used by
+        the vector rebuild so it selects the same set the graph backfill does."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM papers WHERE source_type = ? AND {EXTRACTED_PAPER_SQL}",
+                (source_type,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     @staticmethod
     def _row_confidence(extraction_json: str | None) -> float | None:
         """Parse ``extraction_json`` → ``_overall_confidence`` (None on absent/bad).

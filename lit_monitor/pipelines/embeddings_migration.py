@@ -297,8 +297,8 @@ def _rebuild_collection(
         papers_collection=collection_name,
     )
 
-    papers = state_db.get_all_by_source_type("paper")
-    papers += state_db.get_all_by_source_type("review")
+    papers = state_db.get_extracted_by_source_type("paper")
+    papers += state_db.get_extracted_by_source_type("review")
     logger.info("Rebuild: %d papers to re-embed into %r", len(papers), collection_name)
 
     ok = 0
@@ -307,10 +307,9 @@ def _rebuild_collection(
         doi = paper.get("doi", "")
         if not doi:
             continue
+        # extraction_json is guaranteed non-NULL by get_extracted_by_source_type;
+        # still guard against malformed JSON so one bad blob can't abort the loop.
         extraction_json = paper.get("extraction_json")
-        if not extraction_json:
-            logger.debug("Skip %s: no extraction_json", doi)
-            continue
         import json as _json
         try:
             ext = _json.loads(extraction_json)
