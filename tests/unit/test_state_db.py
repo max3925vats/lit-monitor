@@ -1613,3 +1613,28 @@ def test_get_extracted_by_source_type_excludes_null_extraction(tmp_path):
     db.upsert_paper({"doi": "10.1/c", "source_type": "paper", "status": "discovered"})
     dois = {p["doi"] for p in db.get_extracted_by_source_type("paper")}
     assert dois == {"10.1/e"}
+
+
+# ---------------------------------------------------------------------------
+# first_surfaced_date
+# ---------------------------------------------------------------------------
+
+def test_first_surfaced_date_returns_earliest_run_date(tmp_path):
+    """first_surfaced_date returns the YYYY-MM-DD of the earliest discovery run
+    that surfaced the given DOI (joined via discovery_runs.started_at)."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    run_id = db.start_discovery_run({}, trigger="manual")
+    db.add_discovery_paper(run_id=run_id, doi="10.1/x", title="t", score=0.5,
+                           rationale="", ingested=False)
+    d = db.first_surfaced_date("10.1/x")
+    assert d is not None and len(d) == 10 and d[4] == "-"   # YYYY-MM-DD slice
+
+
+def test_first_surfaced_date_none_for_unsurfaced(tmp_path):
+    """first_surfaced_date returns None for a DOI that never appeared in
+    discovery results, and for an empty DOI."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    assert db.first_surfaced_date("10.1/never") is None
+    assert db.first_surfaced_date("") is None

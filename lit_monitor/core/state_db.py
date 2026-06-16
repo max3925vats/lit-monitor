@@ -2410,6 +2410,27 @@ class StateDB:
                 result[cid] = r["last_surfaced"]
         return result
 
+    def first_surfaced_date(self, doi: str) -> str | None:
+        """The date (YYYY-MM-DD) of the EARLIEST discovery run that surfaced this
+        DOI, or None if never surfaced. Preserves a paper's first-discovered date
+        as its first_seen_date when it is later ingested (discovery_paper_results
+        has no per-row timestamp, so the run's started_at is the surface time —
+        same granularity as get_cluster_last_surfaced). DOI matched after
+        normalization (discovery stores normalized DOIs)."""
+        target = normalize_doi(doi)
+        if not target:
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT MIN(dr.started_at) AS first "
+                "FROM discovery_paper_results dpr "
+                "JOIN discovery_runs dr ON dpr.run_id = dr.id "
+                "WHERE dpr.doi = ?",
+                (target,),
+            ).fetchone()
+        raw = row["first"] if row else None
+        return raw[:10] if raw else None
+
     # ---------------------------------------------------------------------------
     # Bundle E (v0.9): trending-concept suggestion helpers
     # ---------------------------------------------------------------------------
