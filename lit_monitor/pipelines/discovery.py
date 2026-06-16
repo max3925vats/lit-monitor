@@ -8,7 +8,7 @@ DISCOVERY BLOCK:
   4. Sort by cosine similarity to existing knowledge base
   5. LLM rationale for top-K
   6. Write Literature/Digests/Discovery_{date}.md
-  7. Store new DOIs as status='discovered'
+  7. Persist ranked candidates to discovery_paper_results (shown-only; no papers-table row)
 INGESTION BLOCK:
   8. Poll Zotero for items added since the last recorded library version
      (stored as kv_store key 'zotero_library_version' in state DB).
@@ -350,25 +350,6 @@ def run_discovery(
                 "P10b: digest auto-write disabled; use "
                 "'lit-monitor discovery export-md --run latest' to render."
             )
-        # Persist discovered papers
-        if not dry_run:
-            for paper in new_papers:
-                doi = paper.get("doi", "")
-                if doi:
-                    # B4: similarity_score / llm_rationale are NOT papers columns
-                    # (they were silently dropped here); the ranked score+rationale
-                    # are persisted in discovery_paper_results via add_discovery_paper
-                    # above, so they are not passed to upsert_paper.
-                    state_db.upsert_paper({
-                        "doi": doi,
-                        "title": paper.get("title", ""),
-                        "authors": paper.get("authors", []),
-                        "year": paper.get("year", 0),
-                        "status": "discovered",
-                        "source_type": "paper",
-                        "first_seen_date": str(date.today()),
-                        "last_updated": _now(),
-                    })
         # ----------------------------------------------------------------
         # Ingestion block
         # ----------------------------------------------------------------
@@ -561,8 +542,8 @@ def _fetch_graph_signals_if_needed(
         return None, None
 
     try:
-        # Fetch the current library DOIs (papers table, all known DOIs).
-        library_dois = list(state_db.known_dois())
+        # Fetch the current library DOIs (excludes bare 'discovered' candidates).
+        library_dois = list(state_db.library_dois())
 
         graph_signals: dict[str, dict] = {}
         for paper in candidates:
