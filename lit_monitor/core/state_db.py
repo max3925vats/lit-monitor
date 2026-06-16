@@ -52,6 +52,13 @@ class NewClusterSpec:
 # Brain-build checks this against the stored kv_store value on startup (M8).
 CURRENT_SCHEMA_VERSION: str = "M3"
 
+# A paper belongs in a derived index (KuzuDB graph, ChromaDB vectors) iff it has
+# been extracted. The single canonical "indexable paper" predicate: ingest
+# establishes it (writes extraction_json + indexes together); batch re-index
+# paths (graph backfill, vector rebuild) must filter on it. See Audit_8 / the
+# discovery-candidate-conflation-fix spec.
+EXTRACTED_PAPER_SQL = "extraction_json IS NOT NULL"
+
 # M4: static map from pass_num → column name for brain_build_progress updates.
 # Used by mark_brain_build_pass() instead of building the column name from an
 # f-string, so a regression that drops upstream pass_num validation cannot
@@ -1920,7 +1927,9 @@ class StateDB:
         Returns:
             List of paper rows as dicts.
         """
-        conditions: list[str] = []
+        # Seed with the canonical indexable-paper predicate so unextracted rows
+        # (discovery candidates, no-markdown library rows) are always excluded.
+        conditions: list[str] = [EXTRACTED_PAPER_SQL]
         params: list[Any] = []
 
         if only_unprocessed:
@@ -1993,7 +2002,9 @@ class StateDB:
         Returns:
             List of paper rows as dicts.
         """
-        conditions: list[str] = []
+        # Seed with the canonical indexable-paper predicate so unextracted rows
+        # (discovery candidates, no-markdown library rows) are always excluded.
+        conditions: list[str] = [EXTRACTED_PAPER_SQL]
         params: list[Any] = []
 
         if only_unprocessed:

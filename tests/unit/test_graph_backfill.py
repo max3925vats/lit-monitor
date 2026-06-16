@@ -12,6 +12,12 @@ from lit_monitor.graph.backfill import (
     rebuild_all,
 )
 
+# Minimal extraction_json value required by the EXTRACTED_PAPER_SQL guard
+# (extraction_json IS NOT NULL). All existing tests that exercise real backfill
+# logic need extracted papers; only the guard-specific test supplies a NULL-
+# extraction candidate alongside.
+_EXTRACTED = '{"core_finding": "x"}'
+
 
 def _make_stub_cfg(llm_enabled: bool = False) -> MagicMock:
     """Return a minimal config stub that satisfies the _CfgShim in backfill_relationships.
@@ -24,14 +30,38 @@ def _make_stub_cfg(llm_enabled: bool = False) -> MagicMock:
     return cfg
 
 
+class TestBackfillPapersExtractionGuard:
+    """Guard: backfill_papers must skip papers with NULL extraction_json."""
+
+    def test_backfill_papers_skips_null_extraction(self, tmp_path):
+        """A paper with NULL extraction_json (discovery candidate or no_markdown
+        library row) is never graph-indexed by backfill_papers."""
+        from unittest.mock import MagicMock
+
+        db = StateDB(tmp_path / "s.db")
+        db.upsert_paper({"doi": "10.1/extracted", "status": "extraction_complete",
+                         "extraction_json": '{"core_finding": "x"}'})
+        db.upsert_paper({"doi": "10.1/candidate", "status": "discovered"})  # NULL extraction
+        graph_db = MagicMock()
+        backfill_papers(db, graph_db)
+        graphed = set()
+        for c in graph_db.add_paper.call_args_list:
+            doi_val = c.kwargs.get("doi") if "doi" in c.kwargs else (c.args[0] if c.args else None)
+            graphed.add(doi_val)
+        assert "10.1/extracted" in graphed
+        assert "10.1/candidate" not in graphed
+        assert db.count_graph_indexed() == 1
+
+
 class TestBackfillPapers:
     def test_backfill_processes_only_graph_indexed_zero(self, tmp_path):
         """G10: backfill_papers walks only rows where graph_indexed=0."""
         state_db_path = tmp_path / "state.db"
         state_db = StateDB(state_db_path)
-        # 3 papers — 1 already indexed
+        # 3 papers — 1 already indexed; all need extraction_json for the indexable guard
         for doi in ("10.0/a", "10.0/b", "10.0/c"):
-            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024,
+                                   "source_type": "zotero", "extraction_json": _EXTRACTED})
         state_db.set_graph_indexed("10.0/a", 1)
 
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
@@ -48,7 +78,8 @@ class TestBackfillPapers:
         """G10: filter_doi processes just one paper."""
         state_db = StateDB(tmp_path / "state.db")
         for doi in ("10.0/a", "10.0/b"):
-            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024,
+                                   "source_type": "zotero", "extraction_json": _EXTRACTED})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         processed = backfill_papers(state_db, graph_db, filter_doi="10.0/a", since=None)
         assert processed == 1
@@ -60,7 +91,8 @@ class TestBackfillPapers:
     def test_backfill_idempotent_on_already_indexed(self, tmp_path):
         """G10: running backfill twice doesn't double-process."""
         state_db = StateDB(tmp_path / "state.db")
-        state_db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+        state_db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024,
+                               "source_type": "zotero", "extraction_json": _EXTRACTED})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         first = backfill_papers(state_db, graph_db, filter_doi=None, since=None)
         second = backfill_papers(state_db, graph_db, filter_doi=None, since=None)
@@ -70,8 +102,10 @@ class TestBackfillPapers:
     def test_backfill_since_filter(self, tmp_path):
         """G10: --since filters by papers.last_updated."""
         state_db = StateDB(tmp_path / "state.db")
-        state_db.upsert_paper({"doi": "10.0/old", "title": "O", "year": 2020, "source_type": "zotero"})
-        state_db.upsert_paper({"doi": "10.0/new", "title": "N", "year": 2024, "source_type": "zotero"})
+        state_db.upsert_paper({"doi": "10.0/old", "title": "O", "year": 2020,
+                               "source_type": "zotero", "extraction_json": _EXTRACTED})
+        state_db.upsert_paper({"doi": "10.0/new", "title": "N", "year": 2024,
+                               "source_type": "zotero", "extraction_json": _EXTRACTED})
         # Manually backdate /old
         with state_db._connect() as conn:
             conn.execute(
@@ -89,7 +123,8 @@ class TestBackfillPapers:
         """G10: progress_callback receives (doi, done, total) for each paper."""
         state_db = StateDB(tmp_path / "state.db")
         for doi in ("10.0/a", "10.0/b"):
-            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024,
+                                   "source_type": "zotero", "extraction_json": _EXTRACTED})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
 
         calls: list[tuple[str, int, int]] = []
@@ -106,7 +141,8 @@ class TestRebuildAll:
     def test_rebuild_all_drops_and_repopulates(self, tmp_path):
         """G10: rebuild --all drops all Kuzu data, resets graph_indexed=0, re-backfills."""
         state_db = StateDB(tmp_path / "state.db")
-        state_db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+        state_db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024,
+                               "source_type": "zotero", "extraction_json": _EXTRACTED})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         # Initial backfill
         backfill_papers(state_db, graph_db, filter_doi=None, since=None)
@@ -118,7 +154,8 @@ class TestRebuildAll:
         """G10: rebuild_all resets graph_indexed=0 before re-backfilling."""
         state_db = StateDB(tmp_path / "state.db")
         for doi in ("10.0/a", "10.0/b"):
-            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024,
+                                   "source_type": "zotero", "extraction_json": _EXTRACTED})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         # Mark both indexed
         state_db.set_graph_indexed("10.0/a", 1)
@@ -234,7 +271,8 @@ class TestBackfillNer:
 
         state_db = StateDB(tmp_path / "state.db")
         for doi in ("10.0/a", "10.0/b"):
-            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024,
+                                   "source_type": "zotero", "extraction_json": _EXTRACTED})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
 
         fake_edge = self._fake_edge  # bind helper
@@ -255,7 +293,8 @@ class TestBackfillNer:
 
         state_db = StateDB(tmp_path / "state.db")
         for doi in ("10.0/a", "10.0/b"):
-            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024,
+                                   "source_type": "zotero", "extraction_json": _EXTRACTED})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
 
         monkeypatch.setattr("lit_monitor.graph.backfill.build_mention_edges", lambda **kw: [])
@@ -273,7 +312,8 @@ class TestBackfillNer:
 
         state_db = StateDB(tmp_path / "state.db")
         for doi in ("10.0/a", "10.0/b", "10.0/c"):
-            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024,
+                                   "source_type": "zotero", "extraction_json": _EXTRACTED})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
 
         monkeypatch.setattr("lit_monitor.graph.backfill.build_mention_edges", lambda **kw: [])
@@ -286,8 +326,10 @@ class TestBackfillNer:
         from lit_monitor.graph.backfill import backfill_ner
 
         state_db = StateDB(tmp_path / "state.db")
-        state_db.upsert_paper({"doi": "10.0/old", "title": "O", "year": 2020, "source_type": "zotero"})
-        state_db.upsert_paper({"doi": "10.0/new", "title": "N", "year": 2024, "source_type": "zotero"})
+        state_db.upsert_paper({"doi": "10.0/old", "title": "O", "year": 2020,
+                               "source_type": "zotero", "extraction_json": _EXTRACTED})
+        state_db.upsert_paper({"doi": "10.0/new", "title": "N", "year": 2024,
+                               "source_type": "zotero", "extraction_json": _EXTRACTED})
         # Backdate the old paper.
         with state_db._connect() as conn:
             conn.execute(
@@ -308,7 +350,8 @@ class TestBackfillNer:
         from lit_monitor.graph.backfill import backfill_ner
 
         state_db = StateDB(tmp_path / "state.db")
-        state_db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+        state_db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024,
+                               "source_type": "zotero", "extraction_json": _EXTRACTED})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
 
         captured: dict[str, object] = {}
@@ -327,7 +370,8 @@ class TestBackfillNer:
         from lit_monitor.graph.backfill import backfill_ner
 
         state_db = StateDB(tmp_path / "state.db")
-        state_db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+        state_db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024,
+                               "source_type": "zotero", "extraction_json": _EXTRACTED})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
 
         captured: dict[str, object] = {}
@@ -347,7 +391,8 @@ class TestBackfillNer:
 
         state_db = StateDB(tmp_path / "state.db")
         for doi in ("10.0/a", "10.0/b"):
-            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024,
+                                   "source_type": "zotero", "extraction_json": _EXTRACTED})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
 
         call_count = {"n": 0}
@@ -370,7 +415,8 @@ class TestBackfillNer:
 
         state_db = StateDB(tmp_path / "state.db")
         for doi in ("10.0/a", "10.0/b"):
-            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024,
+                                   "source_type": "zotero", "extraction_json": _EXTRACTED})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
 
         monkeypatch.setattr("lit_monitor.graph.backfill.build_mention_edges", lambda **kw: [])
@@ -392,10 +438,15 @@ class TestBackfillRelationships:
     """R5: backfill_relationships — G4 schema + optional R2 LLM over existing corpus."""
 
     def _setup(self, tmp_path, dois=("10.0/a", "10.0/b")):
-        """Insert papers and return (state_db, graph_db)."""
+        """Insert papers and return (state_db, graph_db).
+
+        All papers include extraction_json so they pass the EXTRACTED_PAPER_SQL
+        guard applied by get_papers_for_rel_backfill.
+        """
         state_db = StateDB(tmp_path / "state.db")
         for doi in dois:
-            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+            state_db.upsert_paper({"doi": doi, "title": doi, "year": 2024,
+                                   "source_type": "zotero", "extraction_json": _EXTRACTED})
         graph_db = GraphDB(persist_dir=str(tmp_path / "g.kuzu"))
         return state_db, graph_db
 
