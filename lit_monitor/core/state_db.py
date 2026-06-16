@@ -724,11 +724,12 @@ class StateDB:
         """Like get_all_by_source_type, but only papers that have been extracted
         (the canonical 'indexable paper' set — see EXTRACTED_PAPER_SQL). Used by
         the vector rebuild so it selects the same set the graph backfill does."""
+        # Build the SQL as a local (concatenating the constant predicate, not an
+        # f-string inside .execute()) to match the codebase's parameterized-SQL
+        # idiom — source_type is bound, EXTRACTED_PAPER_SQL is a constant clause.
+        sql = "SELECT * FROM papers WHERE source_type = ? AND " + EXTRACTED_PAPER_SQL
         with self._connect() as conn:
-            rows = conn.execute(
-                f"SELECT * FROM papers WHERE source_type = ? AND {EXTRACTED_PAPER_SQL}",
-                (source_type,),
-            ).fetchall()
+            rows = conn.execute(sql, (source_type,)).fetchall()
         return [dict(r) for r in rows]
 
     @staticmethod
