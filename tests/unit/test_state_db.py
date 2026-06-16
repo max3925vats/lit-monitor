@@ -470,10 +470,16 @@ class TestNerBackfillHelpers:
         db.set_ner_processed_at("10.0/nope", "2026-06-01T00:00:00")
 
     def test_get_papers_for_ner_backfill_returns_only_unprocessed(self, tmp_path):
-        """N5: only papers with ner_processed_at IS NULL are returned."""
+        """N5: only papers with ner_processed_at IS NULL are returned.
+
+        Papers must have extraction_json set (EXTRACTED_PAPER_SQL guard).
+        """
         db = StateDB(tmp_path / "state.db")
-        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
-        db.upsert_paper({"doi": "10.0/b", "title": "B", "year": 2024, "source_type": "zotero"})
+        ej = '{"core_finding": "x"}'
+        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024,
+                         "source_type": "zotero", "extraction_json": ej})
+        db.upsert_paper({"doi": "10.0/b", "title": "B", "year": 2024,
+                         "source_type": "zotero", "extraction_json": ej})
         db.set_ner_processed_at("10.0/a", "2026-06-01T00:00:00")
 
         candidates = db.get_papers_for_ner_backfill()
@@ -481,10 +487,12 @@ class TestNerBackfillHelpers:
         assert dois == {"10.0/b"}
 
     def test_get_papers_for_ner_backfill_with_only_unprocessed_false(self, tmp_path):
-        """N5: only_unprocessed=False returns all papers regardless of stamp."""
+        """N5: only_unprocessed=False returns all extracted papers regardless of stamp."""
         db = StateDB(tmp_path / "state.db")
+        ej = '{"core_finding": "x"}'
         for doi in ("10.0/a", "10.0/b"):
-            db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+            db.upsert_paper({"doi": doi, "title": doi, "year": 2024,
+                             "source_type": "zotero", "extraction_json": ej})
         db.set_ner_processed_at("10.0/a", "2026-06-01T00:00:00")
 
         candidates = db.get_papers_for_ner_backfill(only_unprocessed=False)
@@ -494,8 +502,11 @@ class TestNerBackfillHelpers:
     def test_get_papers_for_ner_backfill_since_filter(self, tmp_path):
         """N5: since= restricts candidates by papers.last_updated."""
         db = StateDB(tmp_path / "state.db")
-        db.upsert_paper({"doi": "10.0/old", "title": "O", "year": 2020, "source_type": "zotero"})
-        db.upsert_paper({"doi": "10.0/new", "title": "N", "year": 2024, "source_type": "zotero"})
+        ej = '{"core_finding": "x"}'
+        db.upsert_paper({"doi": "10.0/old", "title": "O", "year": 2020,
+                         "source_type": "zotero", "extraction_json": ej})
+        db.upsert_paper({"doi": "10.0/new", "title": "N", "year": 2024,
+                         "source_type": "zotero", "extraction_json": ej})
         # Backdate the old paper.
         with db._connect() as conn:
             conn.execute(
@@ -513,8 +524,10 @@ class TestNerBackfillHelpers:
     def test_get_papers_for_ner_backfill_limit(self, tmp_path):
         """N5: limit= caps the result count."""
         db = StateDB(tmp_path / "state.db")
+        ej = '{"core_finding": "x"}'
         for doi in ("10.0/a", "10.0/b", "10.0/c"):
-            db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+            db.upsert_paper({"doi": doi, "title": doi, "year": 2024,
+                             "source_type": "zotero", "extraction_json": ej})
 
         candidates = db.get_papers_for_ner_backfill(limit=2)
         assert len(candidates) == 2
@@ -522,7 +535,8 @@ class TestNerBackfillHelpers:
     def test_get_papers_for_ner_backfill_returns_list_of_dicts(self, tmp_path):
         """N5: result is list[dict], not list of Row objects."""
         db = StateDB(tmp_path / "state.db")
-        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024,
+                         "source_type": "zotero", "extraction_json": '{"core_finding": "x"}'})
 
         result = db.get_papers_for_ner_backfill()
         assert isinstance(result, list)
@@ -579,10 +593,16 @@ class TestRelBackfillHelpers:
         db.set_rel_processed_at("10.0/nope", "2026-06-01T00:00:00")
 
     def test_get_papers_for_rel_backfill_returns_only_unprocessed(self, tmp_path):
-        """R5: only papers with rel_processed_at IS NULL are returned."""
+        """R5: only papers with rel_processed_at IS NULL are returned.
+
+        Papers must have extraction_json set (EXTRACTED_PAPER_SQL guard).
+        """
         db = StateDB(tmp_path / "state.db")
-        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
-        db.upsert_paper({"doi": "10.0/b", "title": "B", "year": 2024, "source_type": "zotero"})
+        ej = '{"core_finding": "x"}'
+        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024,
+                         "source_type": "zotero", "extraction_json": ej})
+        db.upsert_paper({"doi": "10.0/b", "title": "B", "year": 2024,
+                         "source_type": "zotero", "extraction_json": ej})
         db.set_rel_processed_at("10.0/a", "2026-06-01T00:00:00")
 
         candidates = db.get_papers_for_rel_backfill()
@@ -590,10 +610,12 @@ class TestRelBackfillHelpers:
         assert dois == {"10.0/b"}
 
     def test_get_papers_for_rel_backfill_with_only_unprocessed_false(self, tmp_path):
-        """R5: only_unprocessed=False returns all papers regardless of stamp."""
+        """R5: only_unprocessed=False returns all extracted papers regardless of stamp."""
         db = StateDB(tmp_path / "state.db")
+        ej = '{"core_finding": "x"}'
         for doi in ("10.0/a", "10.0/b"):
-            db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+            db.upsert_paper({"doi": doi, "title": doi, "year": 2024,
+                             "source_type": "zotero", "extraction_json": ej})
         db.set_rel_processed_at("10.0/a", "2026-06-01T00:00:00")
 
         candidates = db.get_papers_for_rel_backfill(only_unprocessed=False)
@@ -603,8 +625,11 @@ class TestRelBackfillHelpers:
     def test_get_papers_for_rel_backfill_since_filter(self, tmp_path):
         """R5: since= restricts candidates by papers.last_updated."""
         db = StateDB(tmp_path / "state.db")
-        db.upsert_paper({"doi": "10.0/old", "title": "O", "year": 2020, "source_type": "zotero"})
-        db.upsert_paper({"doi": "10.0/new", "title": "N", "year": 2024, "source_type": "zotero"})
+        ej = '{"core_finding": "x"}'
+        db.upsert_paper({"doi": "10.0/old", "title": "O", "year": 2020,
+                         "source_type": "zotero", "extraction_json": ej})
+        db.upsert_paper({"doi": "10.0/new", "title": "N", "year": 2024,
+                         "source_type": "zotero", "extraction_json": ej})
         # Backdate the old paper.
         with db._connect() as conn:
             conn.execute(
@@ -622,8 +647,10 @@ class TestRelBackfillHelpers:
     def test_get_papers_for_rel_backfill_limit(self, tmp_path):
         """R5: limit= caps the result count."""
         db = StateDB(tmp_path / "state.db")
+        ej = '{"core_finding": "x"}'
         for doi in ("10.0/a", "10.0/b", "10.0/c"):
-            db.upsert_paper({"doi": doi, "title": doi, "year": 2024, "source_type": "zotero"})
+            db.upsert_paper({"doi": doi, "title": doi, "year": 2024,
+                             "source_type": "zotero", "extraction_json": ej})
 
         candidates = db.get_papers_for_rel_backfill(limit=2)
         assert len(candidates) == 2
@@ -631,7 +658,8 @@ class TestRelBackfillHelpers:
     def test_get_papers_for_rel_backfill_returns_list_of_dicts(self, tmp_path):
         """R5: result is list[dict], not list of Row objects."""
         db = StateDB(tmp_path / "state.db")
-        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024, "source_type": "zotero"})
+        db.upsert_paper({"doi": "10.0/a", "title": "A", "year": 2024,
+                         "source_type": "zotero", "extraction_json": '{"core_finding": "x"}'})
 
         result = db.get_papers_for_rel_backfill()
         assert isinstance(result, list)
@@ -1560,3 +1588,80 @@ def test_surfaced_dois_distinct_nonempty(tmp_path):
                            score=0.4, rationale="", ingested=False)
     s = db.surfaced_dois()
     assert "10.1/shown" in s and "" not in s
+
+
+def test_ner_and_rel_backfill_queries_exclude_null_extraction(tmp_path):
+    """get_papers_for_ner_backfill and get_papers_for_rel_backfill must exclude
+    papers with NULL extraction_json (EXTRACTED_PAPER_SQL guard)."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    db.upsert_paper({"doi": "10.1/extracted", "status": "extraction_complete",
+                     "extraction_json": '{"x":1}'})
+    db.upsert_paper({"doi": "10.1/candidate", "status": "discovered"})
+    ner_dois = {p["doi"] for p in db.get_papers_for_ner_backfill()}
+    rel_dois = {p["doi"] for p in db.get_papers_for_rel_backfill()}
+    assert ner_dois == {"10.1/extracted"} and rel_dois == {"10.1/extracted"}
+
+
+def test_get_extracted_by_source_type_excludes_null_extraction(tmp_path):
+    """get_extracted_by_source_type must return only papers with non-NULL
+    extraction_json, applying EXTRACTED_PAPER_SQL at the SQL level."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    db.upsert_paper({"doi": "10.1/e", "source_type": "paper",
+                     "status": "extraction_complete", "extraction_json": '{"x":1}'})
+    db.upsert_paper({"doi": "10.1/c", "source_type": "paper", "status": "discovered"})
+    dois = {p["doi"] for p in db.get_extracted_by_source_type("paper")}
+    assert dois == {"10.1/e"}
+
+
+# ---------------------------------------------------------------------------
+# first_surfaced_date
+# ---------------------------------------------------------------------------
+
+def test_first_surfaced_date_returns_earliest_run_date(tmp_path):
+    """first_surfaced_date returns the YYYY-MM-DD of the earliest discovery run
+    that surfaced the given DOI (joined via discovery_runs.started_at)."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    r1 = db.start_discovery_run({}, trigger="manual")
+    db.add_discovery_paper(run_id=r1, doi="10.1/x", title="t", score=0.5,
+                           rationale="", ingested=False)
+    r2 = db.start_discovery_run({}, trigger="manual")
+    db.add_discovery_paper(run_id=r2, doi="10.1/x", title="t", score=0.6,
+                           rationale="", ingested=False)
+    # Force distinct started_at so MIN (earliest) is unambiguous — this would
+    # FAIL if the query used MAX instead of MIN.
+    with db._connect() as conn:
+        conn.execute("UPDATE discovery_runs SET started_at = ? WHERE id = ?",
+                     ("2025-01-01 09:00:00", r1))
+        conn.execute("UPDATE discovery_runs SET started_at = ? WHERE id = ?",
+                     ("2026-03-01 09:00:00", r2))
+    assert db.first_surfaced_date("10.1/x") == "2025-01-01"
+
+
+def test_first_surfaced_date_none_for_unsurfaced(tmp_path):
+    """first_surfaced_date returns None for a DOI that never appeared in
+    discovery results, and for an empty/blank DOI."""
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    assert db.first_surfaced_date("10.1/never") is None
+    assert db.first_surfaced_date("") is None
+    assert db.first_surfaced_date("   ") is None
+
+
+def test_first_seen_date_provenance_expression(tmp_path):
+    """The expression ingest sites use: first_surfaced_date(doi) when surfaced,
+    else today."""
+    from datetime import date
+
+    from lit_monitor.core.state_db import StateDB
+    db = StateDB(db_path=tmp_path / "s.db")
+    run_id = db.start_discovery_run({}, trigger="manual")
+    db.add_discovery_paper(run_id=run_id, doi="10.1/surfaced", title="t", score=0.5,
+                           rationale="", ingested=False)
+    with db._connect() as conn:
+        conn.execute("UPDATE discovery_runs SET started_at = ? WHERE id = ?",
+                     ("2025-02-03 09:00:00", run_id))
+    assert (db.first_surfaced_date("10.1/surfaced") or str(date.today())) == "2025-02-03"
+    assert (db.first_surfaced_date("10.1/never") or str(date.today())) == str(date.today())

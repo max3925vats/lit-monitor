@@ -52,6 +52,13 @@ class NewClusterSpec:
 # Brain-build checks this against the stored kv_store value on startup (M8).
 CURRENT_SCHEMA_VERSION: str = "M3"
 
+# A paper belongs in a derived index (KuzuDB graph, ChromaDB vectors) iff it has
+# been extracted. The single canonical "indexable paper" predicate: ingest
+# establishes it (writes extraction_json + indexes together); batch re-index
+# paths (graph backfill, vector rebuild) must filter on it. See Audit_8 / the
+# discovery-candidate-conflation-fix spec.
+EXTRACTED_PAPER_SQL = "extraction_json IS NOT NULL"
+
 # M4: static map from pass_num → column name for brain_build_progress updates.
 # Used by mark_brain_build_pass() instead of building the column name from an
 # f-string, so a regression that drops upstream pass_num validation cannot
@@ -711,6 +718,18 @@ class StateDB:
             rows = conn.execute(
                 "SELECT * FROM papers WHERE source_type = ?", (source_type,)
             ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_extracted_by_source_type(self, source_type: str) -> list[dict]:
+        """Like get_all_by_source_type, but only papers that have been extracted
+        (the canonical 'indexable paper' set — see EXTRACTED_PAPER_SQL). Used by
+        the vector rebuild so it selects the same set the graph backfill does."""
+        # Build the SQL as a local (concatenating the constant predicate, not an
+        # f-string inside .execute()) to match the codebase's parameterized-SQL
+        # idiom — source_type is bound, EXTRACTED_PAPER_SQL is a constant clause.
+        sql = "SELECT * FROM papers WHERE source_type = ? AND " + EXTRACTED_PAPER_SQL
+        with self._connect() as conn:
+            rows = conn.execute(sql, (source_type,)).fetchall()
         return [dict(r) for r in rows]
 
     @staticmethod
@@ -1920,7 +1939,9 @@ class StateDB:
         Returns:
             List of paper rows as dicts.
         """
-        conditions: list[str] = []
+        # Seed with the canonical indexable-paper predicate so unextracted rows
+        # (discovery candidates, no-markdown library rows) are always excluded.
+        conditions: list[str] = [EXTRACTED_PAPER_SQL]
         params: list[Any] = []
 
         if only_unprocessed:
@@ -1993,7 +2014,9 @@ class StateDB:
         Returns:
             List of paper rows as dicts.
         """
-        conditions: list[str] = []
+        # Seed with the canonical indexable-paper predicate so unextracted rows
+        # (discovery candidates, no-markdown library rows) are always excluded.
+        conditions: list[str] = [EXTRACTED_PAPER_SQL]
         params: list[Any] = []
 
         if only_unprocessed:
@@ -2387,6 +2410,27 @@ class StateDB:
             if cid in result:
                 result[cid] = r["last_surfaced"]
         return result
+
+    def first_surfaced_date(self, doi: str) -> str | None:
+        """The date (YYYY-MM-DD) of the EARLIEST discovery run that surfaced this
+        DOI, or None if never surfaced. Preserves a paper's first-discovered date
+        as its first_seen_date when it is later ingested (discovery_paper_results
+        has no per-row timestamp, so the run's started_at is the surface time —
+        same granularity as get_cluster_last_surfaced). DOI matched after
+        normalization (discovery stores normalized DOIs)."""
+        target = normalize_doi(doi)
+        if not target:
+            return None
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT MIN(dr.started_at) AS first "
+                "FROM discovery_paper_results dpr "
+                "JOIN discovery_runs dr ON dpr.run_id = dr.id "
+                "WHERE dpr.doi = ?",
+                (target,),
+            ).fetchone()
+        raw = row["first"] if row else None
+        return raw[:10] if raw else None
 
     # ---------------------------------------------------------------------------
     # Bundle E (v0.9): trending-concept suggestion helpers

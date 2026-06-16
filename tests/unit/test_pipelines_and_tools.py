@@ -1942,3 +1942,122 @@ class TestDigestAutoWriteFlag:
             "A non-success status means search results were the wrong shape and the "
             "pipeline fell into the exception-catch path."
         )
+
+
+# ===========================================================================
+# Task 5: stop persisting candidate rows; rank against library_dois
+# ===========================================================================
+
+@pytest.mark.unit
+def test_discovery_writes_no_discovered_rows(tmp_path):
+    """After a non-dry discovery run that finds candidates, the papers table
+    must have NO rows with status='discovered'.  Candidates live only in
+    memory (new_papers / ranked) and in discovery_paper_results — they are
+    never upserted into the papers table."""
+    config = _make_config(tmp_path)
+    state_db = _make_state_db(tmp_path)
+    embeddings_db = MagicMock()
+    embeddings_db.find_similar_to_text.return_value = []
+    llm = MagicMock()
+    llm.complete.return_value = "{}"
+    zotero_client = MagicMock()
+    # First-run baseline: no ingestion items; we just care about candidate upserts.
+    zotero_client.get_current_version.return_value = 100
+
+    paper = _make_paper("10.1/candidate1", score=0.7)
+
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=[paper]), \
+         patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=[paper]), \
+         patch("lit_monitor.pipelines.discovery.rank_papers", return_value=[paper]):
+        run_discovery(
+            config, state_db, zotero_client, embeddings_db, llm,
+            dry_run=False,
+        )
+
+    # No 'discovered' row must exist anywhere in the papers table.
+    by_status = state_db.count_by_status()
+    assert "discovered" not in by_status, (
+        f"Expected no 'discovered' rows in papers table; got count_by_status()={by_status!r}. "
+        "The candidate-upsert block was not removed or is still active."
+    )
+
+
+@pytest.mark.unit
+def test_graph_signals_sourced_from_library_dois_not_known_dois(tmp_path):
+    """_fetch_graph_signals_if_needed must enumerate library_dois() (which
+    excludes 'discovered' candidates) rather than known_dois() (which includes
+    them).  Concretely: a DOI in the papers table with status='discovered'
+    must NOT appear in the library_dois set passed to get_graph_signals_for_candidate;
+    a DOI with status='extraction_complete' MUST appear in it."""
+    from types import SimpleNamespace
+
+    config = _make_config(tmp_path)
+    # Activate the graph-signal path: set at least one non-zero graph weight.
+    config.ranking = SimpleNamespace(
+        weights=SimpleNamespace(
+            graph_entity_overlap=0.5,
+            graph_citation=0.0,
+            graph_shared_authors=0.0,
+            feedback=0.0,
+        )
+    )
+    state_db = _make_state_db(tmp_path)
+
+    # Seed a 'discovered' candidate row (should be excluded from library_dois).
+    state_db.upsert_paper({
+        "doi": "10.1/candidate-only",
+        "title": "Candidate not in library",
+        "status": "discovered",
+    })
+    # Seed a real library paper (should appear in library_dois).
+    state_db.upsert_paper({
+        "doi": "10.1/library-paper",
+        "title": "Real library paper",
+        "status": "extraction_complete",
+    })
+
+    candidate = _make_paper("10.1/new-candidate", score=0.9)
+    captured: list[list[str]] = []
+
+    def fake_get_graph_signals(doi: str, graph_db: object, library_dois: list[str]) -> dict:
+        captured.append(list(library_dois))
+        return {}
+
+    embeddings_db = MagicMock()
+    embeddings_db.find_similar_to_text.return_value = []
+    llm = MagicMock()
+    llm.complete.return_value = "{}"
+    zotero_client = MagicMock()
+
+    # safe_graph_db must return a non-None object so the code proceeds past the guard.
+    fake_graph_db = MagicMock()
+    fake_graph_db.close = MagicMock()
+
+    with patch("lit_monitor.pipelines.discovery.run_searches", return_value=[candidate]), \
+         patch("lit_monitor.pipelines.discovery.run_researcher_searches", return_value=[]), \
+         patch("lit_monitor.pipelines.discovery.filter_known_dois", return_value=[candidate]), \
+         patch("lit_monitor.pipelines.discovery.rank_papers", return_value=[candidate]), \
+         patch("lit_monitor.pipelines.discovery.safe_graph_db", return_value=fake_graph_db), \
+         patch(
+             "lit_monitor.pipelines.discovery.get_graph_signals_for_candidate",
+             side_effect=fake_get_graph_signals,
+         ):
+        run_discovery(
+            config, state_db, zotero_client, embeddings_db, llm,
+            dry_run=True,  # dry_run to avoid ingestion side-effects
+        )
+
+    assert captured, (
+        "get_graph_signals_for_candidate was never called — "
+        "check that the graph weights activated the path and safe_graph_db returned non-None."
+    )
+    seen_dois = set(captured[0])
+    assert "10.1/candidate-only" not in seen_dois, (
+        "The 'discovered' candidate DOI leaked into the library_dois list passed to "
+        "get_graph_signals_for_candidate.  known_dois() was used instead of library_dois()."
+    )
+    assert "10.1/library-paper" in seen_dois, (
+        "The real library DOI is missing from the library_dois list — "
+        "library_dois() is not returning extraction_complete rows correctly."
+    )

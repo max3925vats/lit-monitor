@@ -201,6 +201,12 @@ work, not a re-run of last week's. A candidate that was retrieved and ranked but
 *never made a digest* stays eligible, so it can still surface later if your
 library (and therefore the ranking) shifts toward it.
 
+Discovery candidates are not added to your library until you actually save one to
+Zotero and lit-monitor ingests it. Until then they live only in the run's records
+(the digest and its result list), never as half-built library entries — so the
+knowledge graph and vector store only ever contain papers that have been fully
+extracted, not raw search hits.
+
 When you save a recommended paper to Zotero and lit-monitor later ingests it, the
 run that first surfaced it records the conversion. Re-open a past run and it shows
 "N recommendations · X since ingested," and the run-history list carries a

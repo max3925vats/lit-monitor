@@ -95,6 +95,14 @@ lit-monitor graph rebuild --all          # drop + rebuild the whole graph from s
 lit-monitor graph propose-aliases        # suggest entity normalization rules
 ```
 
+Only papers that have been extracted are indexed into the graph (and the vector
+store) — discovery candidates and not-yet-processed items are never added.
+
+> **Upgrading from a version before this?** Earlier builds could index discovery
+> candidates into the knowledge graph. Run `lit-monitor graph rebuild --all` once
+> after upgrading to purge those nodes; the rebuild re-indexes only your extracted
+> papers.
+
 ## Obsidian helpers
 
 ```bash

@@ -308,3 +308,44 @@ def _make_mock_config(tmp_path):
     cfg._chroma_dir = chroma_dir
 
     return cfg
+
+
+class TestRebuildCollectionExtractionGuard:
+    """Direct test of the _rebuild_collection loop (not the function-level mock):
+    only extraction-present papers reach add_paper — the SQL guard replacing the
+    old `if not extraction_json: continue` is exercised end-to-end."""
+
+    def test_rebuild_collection_embeds_only_extracted_papers(self, tmp_path, monkeypatch):
+        from types import SimpleNamespace
+
+        import lit_monitor.output.embeddings as emb_mod
+        from lit_monitor.core.state_db import StateDB
+        from lit_monitor.pipelines import embeddings_migration as mig
+
+        db = StateDB(db_path=tmp_path / "s.db")
+        db.upsert_paper({
+            "doi": "10.1/extracted", "source_type": "paper",
+            "status": "extraction_complete", "title": "T",
+            "extraction_json": '{"core_finding": "f", "abstract": "a"}',
+        })
+        db.upsert_paper({"doi": "10.1/candidate", "source_type": "paper",
+                         "status": "discovered"})  # NULL extraction
+
+        added: list[str] = []
+
+        class _FakeEmbed:
+            def __init__(self, **kwargs):
+                pass
+
+            def add_paper(self, *, doi, text, metadata):
+                added.append(doi)
+
+        monkeypatch.setattr(emb_mod, "EmbeddingsDB", _FakeEmbed)
+
+        mig._rebuild_collection(
+            collection_name="papers_new", provider="ollama", model="m",
+            dim=8, persist_dir=str(tmp_path / "chroma"), state_db=db,
+            cfg=SimpleNamespace(),
+        )
+
+        assert added == ["10.1/extracted"]

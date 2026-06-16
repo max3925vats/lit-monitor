@@ -13,6 +13,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from lit_monitor.core.state_db import EXTRACTED_PAPER_SQL
 from lit_monitor.graph.aliases import load_aliases
 from lit_monitor.graph.entity_extractor import extract_entities
 from lit_monitor.graph.migrations import apply_schema
@@ -53,7 +54,7 @@ def backfill_papers(
     Returns:
         Count of papers successfully processed.
     """
-    sql = "SELECT * FROM papers WHERE graph_indexed = 0"
+    sql = f"SELECT * FROM papers WHERE graph_indexed = 0 AND {EXTRACTED_PAPER_SQL}"
     params: list[Any] = []
 
     if filter_doi:
