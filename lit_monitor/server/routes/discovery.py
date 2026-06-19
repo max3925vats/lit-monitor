@@ -88,13 +88,13 @@ def _window_defaults() -> dict:
 
 
 def _graph_extra_available() -> bool:
-    """True when the optional [graph] extra (kuzu) is importable.
+    """True when the graph backend (ladybug / LadybugDB) is importable.
 
     A lightweight availability probe — does NOT open the production graph DB
     (which would run migrations + take the write lock and mask a 'DB busy'
     error as 'extra missing').
     """
-    return importlib.util.find_spec("kuzu") is not None
+    return importlib.util.find_spec("ladybug") is not None
 
 
 def _default_rag_mode() -> str:
