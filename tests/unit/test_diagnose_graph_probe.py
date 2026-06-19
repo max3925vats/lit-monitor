@@ -14,9 +14,9 @@ from lit_monitor.setup import diagnose as _diag
 @pytest.mark.unit
 def test_check_graph_extra_does_not_create_dirs(tmp_path, monkeypatch) -> None:
     """When kuzu is importable, the probe must not mkdir a missing parent."""
-    # Ensure the [graph] extra "appears installed" without requiring kuzu: the
-    # import is `import kuzu` inside the function, so inject a dummy module.
-    monkeypatch.setitem(sys.modules, "kuzu", object())
+    # Ensure the [graph] extra "appears installed" without requiring ladybug: the
+    # import is `import ladybug` inside the function, so inject a dummy module.
+    monkeypatch.setitem(sys.modules, "ladybug", object())
 
     missing_parent = tmp_path / "does_not_exist" / "graph.kuzu"
 

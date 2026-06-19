@@ -97,7 +97,7 @@ dependencies = [
     "nh3>=0.2",
 
     # Knowledge graph — KuzuDB + entity normalization
-    "kuzu>=0.6",
+    "ladybug>=0.17",
     "inflect>=7",
 
     # MCP server — Claude Desktop / Cursor / Continue integration
