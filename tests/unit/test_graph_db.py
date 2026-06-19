@@ -61,14 +61,14 @@ class TestGraphDBInit:
         assert target.exists()  # kuzu created the database file
 
     def test_conn_is_live(self, tmp_path):
-        """After init, _conn is a live kuzu Connection that can execute queries."""
-        import kuzu
+        """After init, _conn is a live ladybug Connection that can execute queries."""
+        import ladybug
 
         from lit_monitor.graph import GraphDB
 
         g = GraphDB(persist_dir=str(tmp_path / "graph.kuzu"))
 
-        assert isinstance(g._conn, kuzu.Connection)
+        assert isinstance(g._conn, ladybug.Connection)
         # A trivial query must succeed
         result = g._conn.execute("RETURN 1 AS x")
         assert result.has_next()
@@ -565,11 +565,11 @@ class TestAddPaper:
 @pytest.mark.unit
 @contextlib.contextmanager
 def _kuzu_absent():
-    """Run a block with kuzu blocked and scripts.graph.* freshly re-imported.
+    """Run a block with ladybug blocked and scripts.graph.* freshly re-imported.
 
     monkeypatch's setitem/delitem only restore the *keys it touched*; the
     re-import triggered inside the block adds NEW scripts.graph.* module objects
-    (built against the blocked kuzu slot) into sys.modules. Those re-imported
+    (built against the blocked ladybug slot) into sys.modules. Those re-imported
     objects are not the same as the originals — leaving them in place poisons
     later tests that monkeypatch attributes on the *original* scripts.graph
     objects (e.g. test_graph_citations.py::test_safe_graph_db_path_precedence,
@@ -580,7 +580,7 @@ def _kuzu_absent():
     — deleting any keys that were added during the block and reinstating the
     originals — so the global module table is left byte-identical.
     """
-    # Re-importing scripts.graph.* under a blocked kuzu rebinds two things:
+    # Re-importing scripts.graph.* under a blocked ladybug rebinds two things:
     #   1. the sys.modules["lit_monitor.graph*"] slots, and
     #   2. the submodule ATTRIBUTE on each parent package object — Python's
     #      import machinery sets ``scripts.graph = <new module>`` on the
@@ -591,9 +591,9 @@ def _kuzu_absent():
     # *attributes*, not sys.modules — so it would patch the wrong object and the
     # real GraphDB would run. Restore both sys.modules and the parent attrs.
     snapshot = dict(sys.modules)
-    keys = ["kuzu"] + [k for k in sys.modules if k.startswith("lit_monitor.graph")]
+    keys = ["ladybug"] + [k for k in sys.modules if k.startswith("lit_monitor.graph")]
     try:
-        sys.modules["kuzu"] = None  # type: ignore[assignment]
+        sys.modules["ladybug"] = None  # type: ignore[assignment]
         for k in keys:
             if k.startswith("lit_monitor.graph"):
                 sys.modules.pop(k, None)
@@ -613,18 +613,18 @@ def _kuzu_absent():
 
 
 class TestGraphDBImportError:
-    """GraphDB raises ImportError when kuzu is not installed."""
+    """GraphDB raises ImportError when ladybug is not installed."""
 
     def test_import_error_without_kuzu(self, tmp_path):
-        """Instantiating GraphDB without kuzu raises a clear ImportError."""
+        """Instantiating GraphDB without ladybug raises a clear ImportError."""
         with _kuzu_absent():
             from lit_monitor.graph.db import GraphDB as FreshGraphDB
 
-            with pytest.raises(ImportError, match="uv sync --extra graph"):
+            with pytest.raises(ImportError, match="uv sync"):
                 FreshGraphDB(persist_dir=str(tmp_path / "graph.kuzu"))
 
     def test_module_import_succeeds_without_kuzu(self):
-        """lit_monitor.graph imports cleanly even when kuzu is absent."""
+        """lit_monitor.graph imports cleanly even when ladybug is absent."""
         with _kuzu_absent():
             # Importing the package must NOT raise — only instantiation does.
             import lit_monitor.graph  # noqa: F401

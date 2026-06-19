@@ -100,19 +100,20 @@ class GraphDB:
         # Stored alongside the DB file: <persist_dir>.schema_version
         self._version_file = Path(str(self._persist_dir) + ".schema_version")
 
-        # Lazy kuzu import — deferred so non-graph users never hit ImportError
-        # at module-load time.  Only instantiation requires kuzu to be present.
+        # Lazy ladybug import — deferred so non-graph users never hit ImportError
+        # at module-load time.  Only instantiation requires ladybug to be present.
+        # (ladybug = the maintained drop-in fork of the archived KuzuDB; same API.)
         try:
-            import kuzu  # noqa: PLC0415  (intentional lazy import)
+            import ladybug  # noqa: PLC0415  (intentional lazy import)
         except ImportError as exc:
             raise ImportError(
-                "kuzu is required for GraphDB but is not installed. "
-                "Install with: uv sync --extra graph"
+                "ladybug (LadybugDB) is required for GraphDB but is not installed. "
+                "Install with: uv sync"
             ) from exc
 
-        logger.debug("Opening KuzuDB at %s", self._persist_dir)
-        self._db = kuzu.Database(str(self._persist_dir))
-        self._conn = kuzu.Connection(self._db)
+        logger.debug("Opening graph DB at %s", self._persist_dir)
+        self._db = ladybug.Database(str(self._persist_dir))
+        self._conn = ladybug.Connection(self._db)
 
         # Step 1: Apply the full schema DDL — idempotent on re-open.
         apply_schema(self._conn)

@@ -71,7 +71,7 @@ Scholar tab and an inbox of journal alerts you'll never open.
   search is table stakes; the graph is where the ranking gets opinionated about
   *your* corpus. *Explicit search coverage for individual journal publishers is
   planned for a future release.*
-- **Knowledge graph with an ask interface.** A KuzuDB graph stores entities
+- **Knowledge graph with an ask interface.** A LadybugDB graph stores entities
   (topics, methods, materials, authors, journals, keywords) and ten typed
   relationships across the corpus. Ask questions in plain English from the CLI,
   HTTP, or MCP — for example, `lit-monitor ask "what methods extend Carta
@@ -191,7 +191,7 @@ A few terms used throughout the docs:
 - **Ollama** — runs language and embedding models locally on your machine (no
   cloud account needed for the default setup).
 - **ChromaDB** — the local vector database that stores paper embeddings.
-- **KuzuDB** — the local graph database that stores entities (methods, authors,
+- **LadybugDB** — the local graph database that stores entities (methods, authors,
   …) and their typed relationships.
 - **LiteLLM** — an optional adapter to route LLM or embedding calls to cloud
   providers (OpenAI, Anthropic, Vertex AI) instead of local Ollama.

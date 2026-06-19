@@ -108,12 +108,12 @@ def _build_v1_kuzu_db(db_path: str) -> tuple:  # type: ignore[type-arg]
     Uses _DDL_V1_STATEMENTS from migrations.py — the verbatim G1 DDL snapshot —
     so this test does not rely on reading old Git commits.
     """
-    import kuzu
+    import ladybug
 
     from lit_monitor.graph.migrations import _DDL_V1_STATEMENTS
 
-    db = kuzu.Database(db_path)
-    conn = kuzu.Connection(db)
+    db = ladybug.Database(db_path)
+    conn = ladybug.Connection(db)
     for ddl in _DDL_V1_STATEMENTS:
         conn.execute(ddl)
     return db, conn
@@ -234,9 +234,9 @@ class TestKuzuSchemaMigrationV1ToV2:
         db_path = str(tmp_path / "current.kuzu")
         GraphDB(persist_dir=db_path)  # fresh init at v2
 
-        import kuzu
-        db2 = kuzu.Database(db_path)
-        conn2 = kuzu.Connection(db2)
+        import ladybug
+        db2 = ladybug.Database(db_path)
+        conn2 = ladybug.Connection(db2)
 
         result = apply_migrations(conn2, current_version=SCHEMA_VERSION)
         assert result == SCHEMA_VERSION
@@ -387,7 +387,7 @@ class TestSchemaVersionV3:
 
     def test_apply_migrations_v2_reaches_current_version(self, tmp_path):
         """apply_migrations from v2 chains v2→v3→v4 and returns SCHEMA_VERSION."""
-        import kuzu
+        import ladybug
 
         from lit_monitor.graph import GraphDB
         from lit_monitor.graph.migrations import (  # noqa: F401
@@ -405,8 +405,8 @@ class TestSchemaVersionV3:
                 pass
 
         # Open a fresh connection to the same on-disk DB (simulate re-open at v2).
-        db2 = kuzu.Database(str(tmp_path / "v2_to_current.kuzu"))
-        conn2 = kuzu.Connection(db2)
+        db2 = ladybug.Database(str(tmp_path / "v2_to_current.kuzu"))
+        conn2 = ladybug.Connection(db2)
 
         new_version = apply_migrations(conn2, current_version=2)
         assert new_version == SCHEMA_VERSION

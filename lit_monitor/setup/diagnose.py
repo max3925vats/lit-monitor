@@ -137,7 +137,7 @@ def _check_graph_extra() -> tuple[bool, str]:
         failure — it's an optional feature.
     """
     try:
-        import kuzu  # noqa: F401, PLC0415
+        import ladybug  # noqa: F401, PLC0415
     except ImportError:
         return (True, "[graph] extra not installed (optional)")
 

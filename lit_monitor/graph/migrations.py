@@ -208,7 +208,7 @@ def apply_schema(conn) -> None:  # type: ignore[type-arg]
     Parameters
     ----------
     conn:
-        A ``kuzu.Connection`` instance pointing at the target database.
+        A ``ladybug.Connection`` instance pointing at the target database.
 
     The function is idempotent — calling it more than once on the same
     database is safe because every statement uses ``IF NOT EXISTS``.
@@ -248,7 +248,7 @@ def migrate_v1_to_v2(conn) -> None:  # type: ignore[type-arg]
     Parameters
     ----------
     conn:
-        An open ``kuzu.Connection`` pointing at a v1-schema KuzuDB database.
+        An open ``ladybug.Connection`` pointing at a v1-schema LadybugDB database.
     """
     new_cols = [
         ("confidence", "DOUBLE DEFAULT 1.0"),
@@ -321,7 +321,7 @@ def migrate_v2_to_v3(conn) -> int:  # type: ignore[type-arg]
     Parameters
     ----------
     conn:
-        An open ``kuzu.Connection`` pointing at a v2-schema KuzuDB database.
+        An open ``ladybug.Connection`` pointing at a v2-schema LadybugDB database.
 
     Returns
     -------
@@ -369,7 +369,7 @@ def migrate_v3_to_v4(conn) -> int:  # type: ignore[type-arg]
     Parameters
     ----------
     conn:
-        An open ``kuzu.Connection`` pointing at a v3-schema KuzuDB database.
+        An open ``ladybug.Connection`` pointing at a v3-schema LadybugDB database.
 
     Returns
     -------
@@ -428,7 +428,7 @@ def migrate_v4_to_v5(conn) -> int:  # type: ignore[type-arg]
     Parameters
     ----------
     conn:
-        An open ``kuzu.Connection`` pointing at a v4-schema KuzuDB database.
+        An open ``ladybug.Connection`` pointing at a v4-schema LadybugDB database.
 
     Returns
     -------
@@ -466,7 +466,7 @@ def apply_migrations(conn, current_version: int) -> int:  # type: ignore[type-ar
     Parameters
     ----------
     conn:
-        An open ``kuzu.Connection`` to the target database.
+        An open ``ladybug.Connection`` to the target database.
     current_version:
         The schema version read from the sentinel file (or 1 if the file is
         absent — meaning the database was created by G1 and has never been

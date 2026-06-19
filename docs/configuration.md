@@ -61,7 +61,7 @@ two are required; the rest progressively enrich ranking and the knowledge graph.
 
 | File | Required? | What it controls |
 |---|---|---|
-| `paths.yaml` | **Yes** | Filesystem wiring: Obsidian vault path, Zotero library/collection, and the locations of the state DB, ChromaDB vector store, KuzuDB graph, and logs. |
+| `paths.yaml` | **Yes** | Filesystem wiring: Obsidian vault path, Zotero library/collection, and the locations of the state DB, ChromaDB vector store, LadybugDB graph, and logs. |
 | `extraction.yaml` | **Yes** | The behaviour hub: per-mode LLM model selection (`simple`/`complex`/`brain_build`/`build_vocabulary`), the `ranking:` signal weights, `clustering:`, `embeddings:`, the `discovery:` notification/delivery flags, and `feedback:` (active-learning) keys. |
 | `topics.yaml` | Recommended | The recurring searches that feed discovery — each entry is a named query across PubMed/arXiv/Scopus. Auto-grows from `discovered_topics` over time. |
 | `domain_context.yaml` | Optional | A free-text paragraph describing your research focus. `lit-monitor domain analyze` turns it into the `domain_context` ranking signal. |
