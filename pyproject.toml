@@ -86,7 +86,7 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "sse-starlette>=2.1",
     "tomli_w>=1.0",
-    "python-multipart>=0.0.29",
+    "python-multipart>=0.0.31",
     # Digest viewer: render the stored Markdown digest to HTML, then sanitize.
     # nh3 is a maintained Rust HTML sanitizer with prebuilt wheels (default
     # allowlist covers headings/p/lists/links/code/tables/blockquote). markdown
