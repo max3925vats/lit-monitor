@@ -129,7 +129,7 @@ lit-monitor diagnose                     # strict-mode config audit
 lit-monitor status                       # extraction + embedding + graph counts
 lit-monitor reset state                  # wipe state DB + all regenerable views (also: reset vault / reset all)
 lit-monitor reset vectors                # wipe just the ChromaDB vector store
-lit-monitor reset graph                  # wipe just the KuzuDB knowledge graph
+lit-monitor reset graph                  # wipe just the LadybugDB knowledge graph
 ```
 
 Each `reset` subcommand prompts for a typed confirmation. The web UI offers the

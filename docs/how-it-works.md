@@ -24,7 +24,7 @@ shaped by what you actually read, and it follows you as your interests drift.
 To do that, your Zotero collection is turned into **two complementary
 representations**, both stored locally:
 
-1. **A knowledge graph (KuzuDB).** Entities — methods, materials, targets,
+1. **A knowledge graph (LadybugDB).** Entities — methods, materials, targets,
    authors, journals, topics — and the typed relationships between them
    (`CITES`, `EXTENDS`, `CONTRADICTS`, and more) are extracted from each paper and
    stored as a real graph. This is the part that sets lit-monitor apart from
@@ -58,7 +58,7 @@ modest, because it connects to your library structurally.
 ## Knowledge graph and query surfaces
 
 The graph isn't just a ranking input — it's something you can talk to. Once your
-library has been indexed (`lit-monitor graph backfill --all`), the same KuzuDB
+library has been indexed (`lit-monitor graph backfill --all`), the same LadybugDB
 graph and ChromaDB index sit behind three interchangeable interfaces:
 
 - **`lit-monitor ask`** — ask in plain English (*"what methods extend Carta
@@ -240,7 +240,7 @@ researchers put modern LLM tooling to work on their own literature without cost
 barriers or lock-in.
 
 On the default configuration, everything runs on your machine: your library is
-embedded and stored locally (Ollama + ChromaDB + KuzuDB), with **no per-call API
+embedded and stored locally (Ollama + ChromaDB + LadybugDB), with **no per-call API
 costs** and **no account required**. The only thing that leaves your machine is
 the outbound paper search to PubMed, arXiv, and Scopus. Your library, your notes,
 your graph, and your reading history stay yours, on disk, in open formats
